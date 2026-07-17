@@ -10,7 +10,7 @@
 
 # Canonical documentation (required)
 - Read and obey (via sibling path or multi-root workspace):
-  - `tagkin/Docs/Rules.md` (hard constraints R1–R7)
+  - `tagkin/Docs/Rules.md` (hard constraints R1–R10)
   - `tagkin/Docs/Specs_Initial.md`
   - `tagkin/Docs/Tech_Solutions.md`
   - `tagkin/Docs/System_Design.md` (includes client strategy, §2.1)
@@ -30,7 +30,13 @@
 - **R2** — UI terms ≡ code terms. Prefer models generated from `@tagkin/contract`
   so Dart names match TypeScript/DB. Do not invent synonyms for Item, Tag, Person,
   Key period, etc.
-- **R6** — Person likeness suggestions need human confirm/correct UI.
+- **R6** — Human authority over generated knowledge: expose confirm/correct UI for
+  person links **and** add/edit/remove/undo for activities, places, times, and key
+  periods, with provenance.
+- **R9** — Video is analyzed as **individual sample frames** (no video model in any
+  mode); analysis runs on a cloud vendor today (provider pluggable for a self-hosted
+  model later); prefer the cheapest model that meets the bar.
+- **R10** — Records are account-scoped; support export / delete flows via the API.
 
 # Platform targets
 - **Targets:** Windows and macOS desktop.

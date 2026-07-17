@@ -2,7 +2,7 @@
 
 Flutter/Dart desktop client for **TagKin** (Windows, macOS).
 
-TagKin is a multi-user orchestration service for family photos and videos that auto-tags and links people **without ever reading or storing user media**. This desktop app handles local-first work: folder enumeration, batch ingest, local → user-cloud copy, client → model-host upload, local viewing, and heavy video key-period review.
+TagKin is a multi-user orchestration service for family photos and videos that auto-tags and links people **without ever reading or storing user media**. This desktop app handles local-first work: folder enumeration, batch ingest, local → user-cloud copy, client → model-host upload of **individual sample frames**, local viewing, and key-period review.
 
 ## Canonical documentation
 
@@ -20,7 +20,9 @@ Do not duplicate product docs here. This README covers **desktop-specific** setu
 - **R1** — never read or store user media bytes on TagKin servers.
 - **R2** — UI terms ≡ code terms; domain models are generated from the shared API contract (`@tagkin/contract`) so Dart names match the TypeScript/DB names.
 - **R5** — media moves client → model host / client → user cloud, never through TagKin.
-- **R6** — person likeness links require human confirmation and correction.
+- **R6** — human authority over generated knowledge: person links and all other dimensions (activities, places, times, key periods) are confirmable/correctable with provenance and undo.
+- **R9** — analysis uses individual sample frames (no video model) on a cloud vendor today; the provider stays pluggable to swap in a self-hosted model later.
+- **R10** — records are account-scoped; export and delete are explicit behavior.
 
 ## Prerequisites
 
