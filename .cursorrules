@@ -1,0 +1,103 @@
+# TagKin Desktop — Cursor Agent Rules
+
+# Project scope
+- This repo (`tagkin-desktop`) is the Flutter/Dart desktop client for TagKin
+  (Windows and macOS only for now; no iOS/Android until product says otherwise).
+- Product name: TagKin — orchestration for family photos/videos that auto-tags and
+  links people without TagKin servers reading or storing user media bytes.
+- Canonical product/architecture docs live in the sibling **`tagkin`** repo under
+  `Docs/` — not in this repo.
+
+# Canonical documentation (required)
+- Read and obey (via sibling path or multi-root workspace):
+  - `tagkin/Docs/Rules.md` (hard constraints R1–R7)
+  - `tagkin/Docs/Specs_Initial.md`
+  - `tagkin/Docs/Tech_Solutions.md`
+  - `tagkin/Docs/web_and_client_considerations.md`
+  - `tagkin/Docs/System_Design.md`
+- This repo keeps only a thin `README.md` for desktop build/run. Do **not** copy
+  or fork product Docs here.
+- When a change affects product behavior, API usage, or hard rules, update the
+  relevant file under `tagkin/Docs/` in the **same change** (or call out that the
+  docs edit must land in the `tagkin` repo in the same PR/commit set). Prefer
+  amending existing sections and changelog rows.
+- Desktop-only setup details may stay in this README.
+- If code and Docs disagree, fix whichever is wrong; do not leave them out of sync.
+
+# Hard rules (summary — full text in tagkin/Docs/Rules.md)
+- **R1 / R5 / R7** — TagKin servers never hold media bytes. Desktop may read local
+  files and upload client → model host / client → user cloud; never upload media
+  bytes into TagKin storage or through the API as a media vault.
+- **R2** — UI terms ≡ code terms. Prefer models generated from `@tagkin/contract`
+  so Dart names match TypeScript/DB. Do not invent synonyms for Item, Tag, Person,
+  Key period, etc.
+- **R6** — Person likeness suggestions need human confirm/correct UI.
+
+# Platform targets
+- **Targets:** Windows and macOS desktop.
+- Write shared logic in `lib/` to be platform-agnostic; isolate OS-specific code
+  in services/plugins.
+- Use `dart:io` Platform checks only at init boundaries and inside services — not
+  scattered through widgets.
+- Avoid hard-coded OS paths; use path_provider / app path helpers.
+- Prefer packages with Windows + macOS desktop support.
+
+# Architecture (Flutter)
+- Keep business logic out of widgets; use services / state notifiers (or the
+  state pattern already in the tree once scaffolding exists).
+- Prefer Riverpod (or the project’s chosen state library) for shared state; avoid
+  global mutable singletons.
+- Match existing naming, import style, and folder layout.
+
+# Dart / Flutter conventions
+- Package name: follow `pubspec.yaml` (import as that package).
+- Use async/await; never block the UI isolate.
+- Use explicit model classes; avoid dynamic and reflection.
+- Prefer const constructors and widgets where possible.
+- Run `flutter analyze` after substantive edits; keep zero analyzer issues.
+- Do not add packages without clear need; prefer what is already in pubspec.yaml.
+- Native plugins require per-platform rebuilds (Windows: VS C++; macOS: Xcode).
+
+# IMPORTANT: Workflow (required)
+You must always follow this workflow:
+
+1. Before making any changes, you must produce a clear, structured plan.
+   - The plan must describe the steps you intend to take.
+   - The plan must list which files you will read or modify.
+   - The plan must explain the reasoning behind the steps.
+   - The plan must not make any code changes.
+
+2. After producing the plan, you must stop and wait for my confirmation.
+   - Do not execute the plan automatically.
+   - Do not generate diffs.
+   - Do not modify any files until I explicitly approve the plan.
+
+3. When I approve the plan, you will run the agent to execute it.
+   - Only then may you generate diffs and modify files.
+   - Stay within the scope of the approved plan.
+   - If new information appears that requires changing the plan, pause and request approval again.
+
+4. Never skip the planning step.
+   Never combine planning and execution in the same response.
+   Never modify files without an approved plan.
+
+Your behavior must always follow this sequence:
+PLAN → WAIT → EXECUTE (AGENT)
+
+# IMPORTANT: Restart guidance (required)
+- **Always** end every reply that includes code or config changes with a clear **Restart**
+  line telling the user exactly how to apply the change. Do not skip this, even for small edits.
+- Pick one (or explain why more than one is needed):
+  - **Hot reload / hot sync** — Dart-only UI/logic changes; no native/plugin/init changes.
+  - **Hot restart** — state reset needed (providers, initState, route changes).
+  - **Full restart** — stop and re-run `flutter run -d windows` (or macOS); process must restart.
+  - **Rebuild** — native code, plugins, pubspec dependencies, assets, or CMake/Xcode files changed;
+    rebuild before running again.
+- Be specific to the change just made.
+- If no code changed (question-only reply), omit the Restart line.
+
+# Maintainability
+- Minimize diff scope; do not refactor unrelated code.
+- No over-abstraction; reuse existing services and widgets.
+- Comments only for non-obvious logic.
+- Prefer contract-generated Dart models over hand-maintained duplicates (R2).
