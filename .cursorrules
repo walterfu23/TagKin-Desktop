@@ -13,8 +13,7 @@
   - `tagkin/Docs/Rules.md` (hard constraints R1–R7)
   - `tagkin/Docs/Specs_Initial.md`
   - `tagkin/Docs/Tech_Solutions.md`
-  - `tagkin/Docs/web_and_client_considerations.md`
-  - `tagkin/Docs/System_Design.md`
+  - `tagkin/Docs/System_Design.md` (includes client strategy, §2.1)
 - This repo keeps only a thin `README.md` for desktop build/run. Do **not** copy
   or fork product Docs here.
 - When a change affects product behavior, API usage, or hard rules, update the

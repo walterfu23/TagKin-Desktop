@@ -11,8 +11,7 @@ Product specs, hard rules, tech choices, and system architecture live in the **`
 - Rules (hard constraints) — `tagkin/Docs/Rules.md`
 - Product specs — `tagkin/Docs/Specs_Initial.md`
 - Tech solutions — `tagkin/Docs/Tech_Solutions.md`
-- Client strategy — `tagkin/Docs/web_and_client_considerations.md`
-- System design (projects, repos, data flow) — `tagkin/Docs/System_Design.md`
+- System design (projects, repos, client strategy, data flow) — `tagkin/Docs/System_Design.md`
 
 Do not duplicate product docs here. This README covers **desktop-specific** setup only.
 
