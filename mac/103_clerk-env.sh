@@ -36,6 +36,7 @@ echo "    1. https://dashboard.clerk.com -> same application as tagkin-api/web"
 echo "    2. API Keys -> copy Publishable key (pk_test_… / pk_live_…)"
 echo "    3. Do NOT paste Secret key here (R8 — desktop never holds sk_*)"
 echo "    4. Ensure API CLERK_AUTHORIZED_PARTIES allows this Clerk application's JWT azp"
+echo "       (web: http://localhost:3000; desktop: https://<instance>.clerk.accounts.dev)"
 echo ""
 
 read_line() {

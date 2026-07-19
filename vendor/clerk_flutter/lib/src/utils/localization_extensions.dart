@@ -1,0 +1,155 @@
+import 'package:clerk_auth/clerk_auth.dart' as clerk;
+import 'package:clerk_flutter/generated/clerk_sdk_localizations.dart';
+
+/// Function that performs localization
+typedef LocalizedMessage = String Function(ClerkSdkLocalizations l10ns);
+
+/// An extension class to enable localization of [clerk.ClerkError]
+///
+extension ClerkAuthErrorExtension on clerk.ClerkError {
+  /// Allow localization of an [clerk.ClerkError]
+  String localizedMessage(ClerkSdkLocalizations l10ns) {
+    return switch (code) {
+      // codes requiring localisation
+      clerk.ClerkErrorCode.cannotDeleteSelf => l10ns.cannotDeleteSelf,
+      clerk.ClerkErrorCode.externalError =>
+        l10ns.externalError(argument.toString()),
+      clerk.ClerkErrorCode.jwtPoorlyFormatted =>
+        l10ns.jwtPoorlyFormatted(argument.toString()),
+      clerk.ClerkErrorCode.legalAcceptanceRequired =>
+        l10ns.legalAcceptanceRequired,
+      clerk.ClerkErrorCode.noAssociatedCodeRetrievalMethod =>
+        l10ns.noAssociatedCodeRetrievalMethod(argument.toString()),
+      clerk.ClerkErrorCode.noAssociatedStrategy =>
+        l10ns.noAssociatedStrategy(argument.toString()),
+      clerk.ClerkErrorCode.noInitialCodeHasBeenSetUpToResend =>
+        l10ns.noInitialCodeHasBeenSetUpToResend,
+      clerk.ClerkErrorCode.noSessionFoundForUser =>
+        l10ns.noSessionFoundForUser(argument.toString()),
+      clerk.ClerkErrorCode.noSessionTokenRetrieved =>
+        l10ns.noSessionTokenRetrieved,
+      clerk.ClerkErrorCode.noStageForStatus =>
+        l10ns.noStageForStatus(argument.toString()),
+      clerk.ClerkErrorCode.noSuchFirstFactorStrategy =>
+        l10ns.noSuchFirstFactorStrategy(argument.toString()),
+      clerk.ClerkErrorCode.noSuchSecondFactorStrategy =>
+        l10ns.noSuchSecondFactorStrategy(argument.toString()),
+      clerk.ClerkErrorCode.noUserAttributeForField =>
+        l10ns.noUserAttributeForField(argument.toString()),
+      clerk.ClerkErrorCode.passwordMatchError => l10ns.passwordMatchError,
+      clerk.ClerkErrorCode.passwordResetStrategyError =>
+        l10ns.unsupportedPasswordResetStrategy(argument.toString()),
+      clerk.ClerkErrorCode.serverErrorResponse =>
+        l10ns.serverErrorResponse(argument.toString()),
+      clerk.ClerkErrorCode.tooManyRetries => l10ns.tooManyRetries,
+      clerk.ClerkErrorCode.unknownError =>
+        l10ns.unknownError(argument.toString()),
+
+      // Fallback for errors generated within clerk_flutter. We can assume
+      // the message will already be localised.
+      clerk.ClerkErrorCode.clientAppError => toString(),
+    };
+  }
+}
+
+/// An extension class to enable localization of [clerk.EnrollmentMode]
+///
+extension ClerkEnrollmentTypeExtension on clerk.EnrollmentMode {
+  /// Allow localization of a "via [clerk.EnrollmentMode]" message
+  String viaInvitationMessage(ClerkSdkLocalizations l10ns) {
+    return switch (this) {
+      clerk.EnrollmentMode.manualInvitation => l10ns.viaManualInvitation,
+      clerk.EnrollmentMode.automaticInvitation => l10ns.viaAutomaticInvitation,
+      clerk.EnrollmentMode.automaticSuggestion => l10ns.viaAutomaticSuggestion,
+    };
+  }
+
+  /// Allow localization of a [clerk.EnrollmentMode]
+  String localizedName(ClerkSdkLocalizations l10ns) {
+    return switch (this) {
+      clerk.EnrollmentMode.manualInvitation => l10ns.manualInvitation,
+      clerk.EnrollmentMode.automaticInvitation => l10ns.automaticInvitation,
+      clerk.EnrollmentMode.automaticSuggestion => l10ns.automaticSuggestion,
+    };
+  }
+}
+
+/// An extension class to enable localization of [clerk.Status]
+///
+extension ClerkStatusLocalization on clerk.Status {
+  /// Allow localization of an [clerk.Status]
+  String localizedMessage(ClerkSdkLocalizations l10ns) {
+    return switch (this) {
+      clerk.Status.abandoned => l10ns.abandoned,
+      clerk.Status.active => l10ns.active,
+      clerk.Status.complete => l10ns.complete,
+      clerk.Status.expired => l10ns.expired,
+      clerk.Status.failed => l10ns.failed,
+      clerk.Status.missingRequirements => l10ns.missingRequirements,
+      clerk.Status.needsFirstFactor => l10ns.needsFirstFactor,
+      clerk.Status.needsIdentifier => l10ns.needsIdentifier,
+      clerk.Status.needsSecondFactor => l10ns.needsSecondFactor,
+      clerk.Status.pending => l10ns.pending,
+      clerk.Status.transferable => l10ns.transferable,
+      clerk.Status.unverified => l10ns.unverified,
+      clerk.Status.verified => l10ns.verified,
+      _ => title,
+    };
+  }
+}
+
+/// An extension class to enable localization of [clerk.Strategy]
+///
+extension ClerkStrategyLocalization on clerk.Strategy {
+  /// Allow localization of a [clerk.Strategy]
+  String localizedMessage(
+    ClerkSdkLocalizations l10ns, {
+    bool concise = false,
+  }) {
+    return switch (this) {
+      clerk.Strategy.resetPasswordEmailCode ||
+      clerk.Strategy.emailAddress =>
+        concise ? l10ns.emailAddressConcise : l10ns.emailAddress,
+      clerk.Strategy.resetPasswordPhoneCode ||
+      clerk.Strategy.phoneNumber =>
+        concise ? l10ns.phoneNumberConcise : l10ns.phoneNumber,
+      clerk.Strategy.username => l10ns.username,
+      _ => toString(),
+    };
+  }
+}
+
+/// An extension class to enable localization of [clerk.Field]
+///
+extension ClerkFieldLocalization on clerk.Field {
+  /// Allow localization of an [clerk.Field]
+  String localizedMessage(ClerkSdkLocalizations l10ns) {
+    return switch (this) {
+      clerk.Field.emailAddress => l10ns.emailAddress,
+      clerk.Field.phoneNumber => l10ns.phoneNumber,
+      clerk.Field.username => l10ns.username,
+      _ => name,
+    };
+  }
+}
+
+/// An extension class to enable localization of [clerk.UserAttribute]
+///
+extension ClerkUserAttributeLocalization on clerk.UserAttribute {
+  /// Allow localization of an [clerk.UserAttribute]
+  String localizedMessage(ClerkSdkLocalizations l10ns) {
+    return switch (this) {
+      clerk.UserAttribute.emailAddress => l10ns.emailAddress,
+      clerk.UserAttribute.phoneNumber => l10ns.phoneNumber,
+      clerk.UserAttribute.username => l10ns.username,
+      clerk.UserAttribute.firstName => l10ns.firstName,
+      clerk.UserAttribute.lastName => l10ns.lastName,
+      clerk.UserAttribute.password => l10ns.password,
+      clerk.UserAttribute.passwordConfirmation => l10ns.passwordConfirmation,
+      clerk.UserAttribute.web3Wallet => l10ns.web3Wallet,
+      clerk.UserAttribute.authenticatorApp => l10ns.authenticatorApp,
+      clerk.UserAttribute.backupCode => l10ns.backupCode,
+      clerk.UserAttribute.passkey => l10ns.passkey,
+    };
+  }
+}

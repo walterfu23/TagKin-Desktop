@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/app_shell.dart';
+import 'package:tagkin_desktop/auth/clerk_theme.dart';
 
 /// App name shown in the shell. Auth arrives in D1; library UI in D2+.
 const String kAppTitle = 'TagKin';
@@ -19,10 +20,14 @@ class TagKinDesktopApp extends StatelessWidget {
       title: kAppTitle,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3B5BDB)),
+        colorScheme: ColorScheme.fromSeed(seedColor: kTagKinClerkAccent),
         useMaterial3: true,
+        extensions: <ThemeExtension<dynamic>>[tagKinClerkTheme()],
       ),
-      home: const AuthShell(signedInHome: FoundationHomePage()),
+      // SelectionArea: all Text in the window is selectable/copyable (desktop rule).
+      home: const SelectionArea(
+        child: AuthShell(signedInHome: FoundationHomePage()),
+      ),
     );
   }
 }

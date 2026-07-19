@@ -63,6 +63,17 @@
 - Do not add packages without clear need; prefer what is already in pubspec.yaml.
 - Native plugins require per-platform rebuilds (Windows: VS C++; macOS: Xcode).
 
+# IMPORTANT: Selectable text (required)
+- Any string shown in the desktop window must be **selectable** so the user can
+  copy it (errors, account ids/emails, status, labels, debug/config messages).
+- Default: keep using `Text`; rely on the ancestor `SelectionArea` on the app
+  shell (`TagKinDesktopApp` home). Do not introduce display-only, non-selectable
+  text for user-visible content.
+- Use `SelectableText` only when a widget must opt into selection outside that
+  tree. Do not strip selection from body/error/content surfaces.
+- Exceptions: purely ephemeral chrome (e.g. snackbar) may stay non-selectable;
+  never apply that exception to errors, account info, or primary content.
+
 # IMPORTANT: Workflow (required)
 You must always follow this workflow:
 

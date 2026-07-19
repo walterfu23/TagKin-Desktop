@@ -44,10 +44,9 @@ packages:
   clerk_flutter:
     dependency: "direct main"
     description:
-      name: clerk_flutter
-      sha256: f5531673ed9953a8a9db88a98cd99e9b0ba89cb06860d42a5f491382c52dcf26
-      url: "https://pub.dev"
-    source: hosted
+      path: "vendor/clerk_flutter"
+      relative: true
+    source: path
     version: "0.0.18-beta"
   clock:
     dependency: transitive

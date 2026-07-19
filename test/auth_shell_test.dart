@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/app_shell.dart';
+import 'package:tagkin_desktop/config/app_config.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/main.dart';
 
@@ -59,7 +60,14 @@ void main() {
   testWidgets('missing Clerk key shows configure prompt (no crash)',
       (tester) async {
     await tester.pumpWidget(
-      const ProviderScope(child: TagKinDesktopApp()),
+      ProviderScope(
+        overrides: [
+          appConfigProvider.overrideWithValue(
+            const AppConfig(apiUrl: 'http://localhost:8787'),
+          ),
+        ],
+        child: const TagKinDesktopApp(),
+      ),
     );
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('missing-clerk-config')), findsOneWidget);

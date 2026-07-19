@@ -26,8 +26,12 @@ class FlutterSecureKeyValueStore implements SecureKeyValueStore {
               iOptions: IOSOptions(
                 accessibility: KeychainAccessibility.first_unlock,
               ),
+              // Unsigned/debug macOS: use login keychain (not data-protection),
+              // which needs keychain-access-groups in entitlements. Data-protection
+              // keychain alone → errSecMissingEntitlement (-34018).
               mOptions: MacOsOptions(
                 accessibility: KeychainAccessibility.first_unlock,
+                usesDataProtectionKeychain: false,
               ),
               wOptions: WindowsOptions(),
             );

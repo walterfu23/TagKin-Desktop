@@ -1,3 +1,4 @@
+import 'package:clerk_auth/clerk_auth.dart' show RetryOptions;
 import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -66,6 +67,12 @@ class AuthShell extends ConsumerWidget {
       config: ClerkAuthConfig(
         publishableKey: config.clerkPublishableKey!,
         persistor: persistor,
+        // Default httpConnectionTimeout is 500ms with 8 retries — a slightly
+        // slow Clerk reachability check burns >5s before the login form appears.
+        httpConnectionTimeout: const Duration(seconds: 15),
+        retryOptions: const RetryOptions(maxAttempts: 3),
+        sessionTokenPolling: false,
+        loading: const _ClerkBootLoading(),
       ),
       child: ClerkErrorListener(
         child: ClerkAuthBuilder(
@@ -89,6 +96,35 @@ class AuthShell extends ConsumerWidget {
               signedInHome: signedInHome,
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+/// Shown immediately while Clerk SDK initializes (network + secure store).
+class _ClerkBootLoading extends StatelessWidget {
+  const _ClerkBootLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'TagKin',
+              style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600),
+            ),
+            SizedBox(height: 16),
+            CircularProgressIndicator(key: Key('clerk-boot-loading')),
+            SizedBox(height: 16),
+            Text(
+              'Loading sign-in…',
+              key: Key('clerk-boot-loading-label'),
+            ),
+          ],
         ),
       ),
     );
@@ -206,7 +242,9 @@ class _ClerkSignedInHostState extends State<_ClerkSignedInHost> {
   Widget build(BuildContext context) {
     return AccountBootstrap(
       loadAccount: () => MeRepository(_client).getMe(),
-      onUnauthorized: _signOut,
+      // Do not auto-sign-out on /me 401 — that flashes back to Clerk login and
+      // hides the real failure (often CLERK_AUTHORIZED_PARTIES / azp mismatch).
+      onUnauthorized: () {},
       onSignOut: _signOut,
       signedInHome: widget.signedInHome,
     );
@@ -234,7 +272,6 @@ class AccountBootstrap extends StatefulWidget {
 
 class _AccountBootstrapState extends State<AccountBootstrap> {
   late Future<Account> _future = widget.loadAccount();
-  var _unauthorizedNotified = false;
 
   @override
   Widget build(BuildContext context) {
@@ -251,19 +288,42 @@ class _AccountBootstrapState extends State<AccountBootstrap> {
         if (snapshot.hasError) {
           final error = snapshot.error!;
           if (error is UnauthorizedException) {
-            // No silent retry — surface once and ask the host to sign out.
-            if (!_unauthorizedNotified) {
-              _unauthorizedNotified = true;
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                widget.onUnauthorized();
-              });
-            }
             return Scaffold(
               body: Center(
-                child: Text(
-                  'Session expired — sign in again.',
-                  key: const Key('auth-unauthorized'),
-                  style: Theme.of(context).textTheme.titleMedium,
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Could not authorize with tagkin-api (401): $error\n\n'
+                        'Confirm tagkin-api is running with the same Clerk JWT '
+                        'public key, then Retry. If this persists after an API '
+                        'restart, Sign out and sign in again.',
+                        key: const Key('auth-unauthorized'),
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        key: const Key('account-retry'),
+                        onPressed: () {
+                          setState(() {
+                            _future = widget.loadAccount();
+                          });
+                        },
+                        child: const Text('Retry'),
+                      ),
+                      if (widget.onSignOut != null) ...[
+                        const SizedBox(height: 8),
+                        TextButton(
+                          key: const Key('auth-sign-out'),
+                          onPressed: () => widget.onSignOut!(),
+                          child: const Text('Sign out'),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               ),
             );
@@ -285,12 +345,18 @@ class _AccountBootstrapState extends State<AccountBootstrap> {
                       key: const Key('account-retry'),
                       onPressed: () {
                         setState(() {
-                          _unauthorizedNotified = false;
                           _future = widget.loadAccount();
                         });
                       },
                       child: const Text('Retry'),
                     ),
+                    if (widget.onSignOut != null) ...[
+                      const SizedBox(height: 8),
+                      TextButton(
+                        onPressed: () => widget.onSignOut!(),
+                        child: const Text('Sign out'),
+                      ),
+                    ],
                   ],
                 ),
               ),
