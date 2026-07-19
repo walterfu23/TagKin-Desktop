@@ -1,0 +1,75 @@
+name: desktop-ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: D-series regression (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            flutter_device: macos
+            enable_desktop: macos
+            build_target: macos
+          - os: windows-latest
+            flutter_device: windows
+            enable_desktop: windows
+            build_target: windows
+    steps:
+      - uses: actions/checkout@v4
+
+      # The canonical @tagkin/contract OpenAPI lives in the sibling TagKin repo;
+      # check it out next to this one so codegen (R2) can read it.
+      - name: Checkout TagKin (contract)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/TagKin
+          path: TagKin
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - run: flutter --version
+
+      - name: Enable desktop target
+        run: flutter config --enable-${{ matrix.enable_desktop }}-desktop
+
+      - name: pub get
+        run: flutter pub get
+
+      - name: Contract codegen (R2)
+        shell: bash
+        run: |
+          SPEC="../TagKin/packages/contract/openapi/openapi.yaml"
+          if [ ! -f "$SPEC" ]; then SPEC="TagKin/packages/contract/openapi/openapi.yaml"; fi
+          if [ ! -f "$SPEC" ]; then
+            echo "error: contract OpenAPI not found at $SPEC" >&2
+            exit 1
+          fi
+          TAGKIN_OPENAPI="$SPEC" dart run tool/gen_contract.dart
+          # Intent-to-add so untracked files appear in git diff (matches 106_test_d0).
+          git add -N -- lib/contract 2>/dev/null || true
+          if ! git diff --quiet -- lib/contract; then
+            echo "error: generated Dart contract models drifted — commit regenerated output." >&2
+            git --no-pager diff --stat -- lib/contract || true
+            exit 1
+          fi
+
+      - name: analyze
+        run: flutter analyze
+
+      - name: unit / widget tests
+        run: flutter test
+
+      - name: integration smoke (foundation boot)
+        run: flutter test integration_test/app_test.dart -d ${{ matrix.flutter_device }}
+
+      - name: build smoke
+        run: flutter build ${{ matrix.build_target }} --debug

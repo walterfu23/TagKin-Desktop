@@ -1,0 +1,54 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Flutter (macOS · debug)",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "deviceId": "macos",
+      "flutterMode": "debug"
+    },
+    {
+      "name": "Flutter (Windows · debug)",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "deviceId": "windows",
+      "flutterMode": "debug"
+    },
+    {
+      "name": "Flutter (macOS · profile)",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "deviceId": "macos",
+      "flutterMode": "profile"
+    },
+    {
+      "name": "Flutter (Windows · profile)",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "deviceId": "windows",
+      "flutterMode": "profile"
+    },
+    {
+      "name": "Integration test (macOS)",
+      "type": "dart",
+      "request": "launch",
+      "program": "integration_test/app_test.dart",
+      "deviceId": "macos",
+      "flutterMode": "debug"
+    },
+    {
+      "name": "Integration test (Windows)",
+      "type": "dart",
+      "request": "launch",
+      "program": "integration_test/app_test.dart",
+      "deviceId": "windows",
+      "flutterMode": "debug"
+    }
+  ],
+  "compounds": []
+}
