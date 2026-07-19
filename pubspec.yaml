@@ -40,6 +40,10 @@ dependencies:
 
   # Reads the shared @tagkin/contract OpenAPI for the Dart model generator (R2).
   yaml: ^3.1.2
+  http: ^1.6.0
+  flutter_secure_storage: ^10.3.1
+  clerk_auth: 0.0.18-beta
+  clerk_flutter: 0.0.18-beta
 
 dev_dependencies:
   flutter_test:
