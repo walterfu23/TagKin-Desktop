@@ -38,6 +38,7 @@ Subsystem regression entry points use **`NNN_test_dN.ps1`** (`d0`, `d1`, … `d1
 | [`103_clerk-env.ps1`](./103_clerk-env.ps1) | Interactive Clerk publishable-key + API URL into `.env` (D1; never secret key). |
 | [`104_analyze.ps1`](./104_analyze.ps1) | Static analysis bar (`flutter analyze`). |
 | [`11_dev.ps1`](./11_dev.ps1) | Run the app on Windows (`flutter run -d windows`). |
-| [`51_test_all.ps1`](./51_test_all.ps1) | All completed desktop subsystem bars in order (`106_test_d0`, `107_test_d1`, …). Before a PR. |
+| [`51_test_all.ps1`](./51_test_all.ps1) | All completed desktop subsystem bars in order (`106_test_d0`, `107_test_d1`, `108_test_d2`, …). Before a PR. |
 | [`106_test_d0.ps1`](./106_test_d0.ps1) | D0 Foundation regression bar alone. |
 | [`107_test_d1.ps1`](./107_test_d1.ps1) | D1 Auth & Account regression bar alone. |
+| [`108_test_d2.ps1`](./108_test_d2.ps1) | D2 Library & Item Registry regression bar alone. |

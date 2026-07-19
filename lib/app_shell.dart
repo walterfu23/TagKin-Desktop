@@ -3,6 +3,7 @@ import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
+import 'package:tagkin_desktop/api/items_repository.dart';
 import 'package:tagkin_desktop/api/me_repository.dart';
 import 'package:tagkin_desktop/auth/secure_persistor.dart';
 import 'package:tagkin_desktop/config/app_config.dart';
@@ -19,6 +20,17 @@ final securePersistorProvider = Provider<SecureStoragePersistor>((ref) {
 /// Optional override: when non-null, the shell skips live Clerk and uses this
 /// session (unit/widget/integration tests).
 final testSessionProvider = Provider<TestSession?>((ref) => null);
+
+/// Authenticated [ApiClient] — overridden inside the signed-in host.
+final apiClientProvider = Provider<ApiClient>((ref) {
+  throw StateError('apiClientProvider must be overridden when signed in');
+});
+
+/// Library items API (D2). Override in tests with a fake; otherwise built from
+/// [apiClientProvider].
+final itemsRepositoryProvider = Provider<ItemsRepository>((ref) {
+  return ItemsRepository(ref.watch(apiClientProvider));
+});
 
 /// Fake signed-in session for tests — supplies a bearer token + optional /me
 /// result without talking to Clerk or the network.
@@ -44,7 +56,7 @@ class AuthShell extends ConsumerWidget {
     required this.signedInHome,
   });
 
-  /// Post-auth home (D0 foundation placeholder until D2).
+  /// Post-auth home (D2 library list).
   final Widget signedInHome;
 
   @override
@@ -185,18 +197,23 @@ class _TestSignedInHostState extends ConsumerState<_TestSignedInHost> {
 
   @override
   Widget build(BuildContext context) {
-    return AccountBootstrap(
-      loadAccount: () async {
-        if (widget.session.meError != null) {
-          throw widget.session.meError!;
-        }
-        if (widget.session.account != null) {
-          return widget.session.account!;
-        }
-        return MeRepository(_client).getMe();
-      },
-      onUnauthorized: () {},
-      signedInHome: widget.signedInHome,
+    return ProviderScope(
+      overrides: [
+        apiClientProvider.overrideWithValue(_client),
+      ],
+      child: AccountBootstrap(
+        loadAccount: () async {
+          if (widget.session.meError != null) {
+            throw widget.session.meError!;
+          }
+          if (widget.session.account != null) {
+            return widget.session.account!;
+          }
+          return MeRepository(_client).getMe();
+        },
+        onUnauthorized: () {},
+        signedInHome: widget.signedInHome,
+      ),
     );
   }
 }
@@ -240,13 +257,18 @@ class _ClerkSignedInHostState extends State<_ClerkSignedInHost> {
 
   @override
   Widget build(BuildContext context) {
-    return AccountBootstrap(
-      loadAccount: () => MeRepository(_client).getMe(),
-      // Do not auto-sign-out on /me 401 — that flashes back to Clerk login and
-      // hides the real failure (often CLERK_AUTHORIZED_PARTIES / azp mismatch).
-      onUnauthorized: () {},
-      onSignOut: _signOut,
-      signedInHome: widget.signedInHome,
+    return ProviderScope(
+      overrides: [
+        apiClientProvider.overrideWithValue(_client),
+      ],
+      child: AccountBootstrap(
+        loadAccount: () => MeRepository(_client).getMe(),
+        // Do not auto-sign-out on /me 401 — that flashes back to Clerk login and
+        // hides the real failure (often CLERK_AUTHORIZED_PARTIES / azp mismatch).
+        onUnauthorized: () {},
+        onSignOut: _signOut,
+        signedInHome: widget.signedInHome,
+      ),
     );
   }
 }

@@ -34,9 +34,10 @@ Do **not** reuse the API `sN` ids (those are the `tagkin` repo's `TagKin/mac/`);
 | [`103_clerk-env.sh`](./103_clerk-env.sh) | Interactive Clerk publishable-key + API URL into `.env` (D1; never secret key). |
 | [`104_analyze.sh`](./104_analyze.sh) | Static analysis bar (`flutter analyze`). |
 | [`11_dev.sh`](./11_dev.sh) | Run the app on macOS (`flutter run -d macos`). |
-| [`51_test_all.sh`](./51_test_all.sh) | All completed desktop subsystem bars in order (`106_test_d0`, `107_test_d1`, …). Before a PR. |
+| [`51_test_all.sh`](./51_test_all.sh) | All completed desktop subsystem bars in order (`106_test_d0`, `107_test_d1`, `108_test_d2`, …). Before a PR. |
 | [`106_test_d0.sh`](./106_test_d0.sh) | D0 Foundation regression bar alone. |
 | [`107_test_d1.sh`](./107_test_d1.sh) | D1 Auth & Account regression bar alone. |
+| [`108_test_d2.sh`](./108_test_d2.sh) | D2 Library & Item Registry regression bar alone. |
 
 ## Example flows
 
@@ -45,3 +46,5 @@ Do **not** reuse the API `sN` ids (those are the `tagkin` repo's `TagKin/mac/`);
 **After a contract change:** `102_codegen.sh` → `106_test_d0.sh` (codegen determinism + parity) → `51_test_all.sh`.
 
 **Auth only:** `107_test_d1.sh` (mocked; no live Clerk required).
+
+**Library only:** `108_test_d2.sh` (mocked items API; no live network required).

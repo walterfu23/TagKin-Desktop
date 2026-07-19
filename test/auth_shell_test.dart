@@ -5,7 +5,10 @@ import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/config/app_config.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/library/items_list_page.dart';
 import 'package:tagkin_desktop/main.dart';
+
+import 'fake_items_repository.dart';
 
 Account _account(String id) => Account(
       id: id,
@@ -14,7 +17,7 @@ Account _account(String id) => Account(
     );
 
 void main() {
-  testWidgets('valid session populates account and shows foundation home',
+  testWidgets('valid session populates account and shows items library',
       (tester) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -22,13 +25,14 @@ void main() {
           testSessionProvider.overrideWithValue(
             TestSession(token: 'tok', account: _account('acc_1')),
           ),
+          itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
         ],
         child: const TagKinDesktopApp(),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('foundation-ready')), findsOneWidget);
+    expect(find.byKey(const Key('items-empty')), findsOneWidget);
     expect(find.byKey(const Key('account-label')), findsOneWidget);
     expect(find.text('acc_1@example.com'), findsOneWidget);
   });
@@ -44,17 +48,19 @@ void main() {
               meError: UnauthorizedException(message: 'Expired'),
             ),
           ),
+          itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
         ],
         child: const MaterialApp(
           home: AuthShell(
-            signedInHome: FoundationHomePage(),
+            signedInHome: ItemsListPage(),
           ),
         ),
       ),
     );
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('auth-unauthorized')), findsOneWidget);
-    expect(find.byKey(const Key('foundation-ready')), findsNothing);
+    expect(find.byKey(const Key('items-list')), findsNothing);
+    expect(find.byKey(const Key('items-empty')), findsNothing);
   });
 
   testWidgets('missing Clerk key shows configure prompt (no crash)',

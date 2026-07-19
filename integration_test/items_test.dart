@@ -1,6 +1,6 @@
-// D0/D1/D2 integration smoke: boot the real app on the host desktop (macOS/Windows)
-// with a fake signed-in session and confirm the library shell renders.
-//   flutter test integration_test/app_test.dart -d macos   (or -d windows)
+// D2 Library & Item Registry integration: list → detail against a fake
+// ItemsRepository (mocked API per §5; no live network).
+//   flutter test integration_test/items_test.dart -d macos   (or -d windows)
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,8 +15,12 @@ import '../test/fake_items_repository.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('signed-in library shell boots on the desktop host',
+  testWidgets('items list renders and opens detail on the desktop host',
       (WidgetTester tester) async {
+    final item = fixtureItem(
+      id: 'item_int',
+      processingStatus: ProcessingStatus.tagged,
+    );
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -30,13 +34,23 @@ void main() {
               ),
             ),
           ),
-          itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
+          itemsRepositoryProvider.overrideWithValue(
+            FakeItemsRepository(items: [item]),
+          ),
         ],
         child: const TagKinDesktopApp(),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('items-empty')), findsOneWidget);
+    expect(find.byKey(const Key('items-list')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-item_int')), findsOneWidget);
+    expect(find.byKey(const Key('processing-status-tagged')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('item-row-item_int')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('item-detail')), findsOneWidget);
+    expect(find.byKey(const Key('item-id')), findsOneWidget);
   });
 }
