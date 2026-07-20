@@ -31,6 +31,7 @@ jobs:
         with:
           repository: ${{ github.repository_owner }}/TagKin
           path: TagKin
+          token: ${{ secrets.TAGKIN_CHECKOUT_TOKEN }}
 
       - uses: subosito/flutter-action@v2
         with:
