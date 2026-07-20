@@ -1,0 +1,4 @@
+# Downloaded static ffmpeg/ffprobe binaries (not committed).
+*
+!.gitignore
+!README.md

@@ -106,3 +106,17 @@ install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
 install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   CONFIGURATIONS Profile;Release
   COMPONENT Runtime)
+
+# D4: ship ffmpeg/ffprobe next to the exe so end users never install them.
+set(TAGKIN_FFMPEG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/ffmpeg/windows")
+if(EXISTS "${TAGKIN_FFMPEG_DIR}/ffmpeg.exe" AND EXISTS "${TAGKIN_FFMPEG_DIR}/ffprobe.exe")
+  install(DIRECTORY "${TAGKIN_FFMPEG_DIR}/"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/ffmpeg"
+    COMPONENT Runtime
+    FILES_MATCHING
+      PATTERN "ffmpeg.exe"
+      PATTERN "ffprobe.exe"
+      PATTERN "*.dll")
+else()
+  message(WARNING "Bundled ffmpeg missing at ${TAGKIN_FFMPEG_DIR} — run TagKin-Desktop/win/105_fetch_ffmpeg.ps1 (video pre-pass falls back to PATH in dev only)")
+endif()

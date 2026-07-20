@@ -198,5 +198,59 @@ void main() {
       }
       client.close();
     });
+
+    test(
+        'recordPrePassResult posts vectors/metadata only — no bytes, no owner '
+        '(R1/R5/R10)', () async {
+      final mock = MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/items/item_1/pre-pass-result');
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body.containsKey('ownerUserId'), isFalse);
+        expect(body.containsKey('bytes'), isFalse);
+        expect(body.containsKey('blob'), isFalse);
+        expect(body.containsKey('base64'), isFalse);
+        expect(body['contentHash'], 'abc');
+        expect(body['appearances'], isA<List<dynamic>>());
+        final emb = (body['appearances'] as List).first as Map<String, dynamic>;
+        expect((emb['embedding'] as List).length, 512);
+        return http.Response(
+          jsonEncode({
+            'item': _itemJson(id: 'item_1'),
+            'keyPeriodIds': <String>[],
+            'appearanceIds': <String>['ap_1'],
+            'tagIds': <String>[],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final client = ApiClient(
+        baseUrl: 'http://api.test',
+        tokenProvider: () => 'tok',
+        httpClient: mock,
+      )..recordRequests = true;
+
+      final response = await ItemsRepository(client).recordPrePassResult(
+        'item_1',
+        PrePassResult(
+          contentHash: 'abc',
+          perceptualHash: '0123456789abcdef',
+          appearances: [
+            PrePassAppearanceInput(
+              embedding: List<double>.filled(512, 0.01),
+              embeddingModelId: 'stub-face-embed-v1',
+            ),
+          ],
+        ),
+      );
+      expect(response.item.id, 'item_1');
+      expect(response.appearanceIds, ['ap_1']);
+      for (final r in client.recordedRequests) {
+        expect(r.bodyContainsOwnerField, isFalse);
+      }
+      client.close();
+    });
   });
 }

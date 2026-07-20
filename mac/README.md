@@ -29,15 +29,19 @@ Do **not** reuse the API `sN` ids (those are the `tagkin` repo's `TagKin/mac/`);
 
 | Script | When |
 |--------|------|
-| [`101_setup.sh`](./101_setup.sh) | First clone (or after a toolchain change): `flutter pub get` + contract codegen. |
+| [`101_setup.sh`](./101_setup.sh) | First clone (or after a toolchain change): `flutter pub get` + contract codegen + fetch bundled ffmpeg. |
 | [`102_codegen.sh`](./102_codegen.sh) | After the shared `@tagkin/contract` OpenAPI changes — regenerate Dart models. |
 | [`103_clerk-env.sh`](./103_clerk-env.sh) | Interactive Clerk publishable-key + API URL into `.env` (D1; never secret key). |
 | [`104_analyze.sh`](./104_analyze.sh) | Static analysis bar (`flutter analyze`). |
+| [`105_fetch_ffmpeg.sh`](./105_fetch_ffmpeg.sh) | Download/copy ffmpeg+ffprobe into `third_party/ffmpeg/macos/` for embedding in the `.app` (D4; end users never install ffmpeg). |
+| [`111_clear_secure_store.sh`](./111_clear_secure_store.sh) | Wipe Keychain items for `tagkin.desktop.secure` (D1; force clean sign-in / stop repeat access prompts). |
 | [`11_dev.sh`](./11_dev.sh) | Run the app on macOS (`flutter run -d macos`). |
 | [`51_test_all.sh`](./51_test_all.sh) | All completed desktop subsystem bars in order (`106_test_d0`, `107_test_d1`, `108_test_d2`, …). Before a PR. |
 | [`106_test_d0.sh`](./106_test_d0.sh) | D0 Foundation regression bar alone. |
 | [`107_test_d1.sh`](./107_test_d1.sh) | D1 Auth & Account regression bar alone. |
 | [`108_test_d2.sh`](./108_test_d2.sh) | D2 Library & Item Registry regression bar alone. |
+| [`109_test_d3.sh`](./109_test_d3.sh) | D3 Local Folder Ingest & Batch regression bar alone. |
+| [`110_test_d4.sh`](./110_test_d4.sh) | D4 Client Pre-pass regression bar alone. |
 
 ## Example flows
 

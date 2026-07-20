@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/ingest/batch_ingest_controller.dart';
 import 'package:tagkin_desktop/ingest/dedup.dart';
+import 'package:tagkin_desktop/prepass/prepass_controller.dart';
 
-/// D3 Local Folder Ingest & Batch: pick a folder → review deduped
-/// candidates → batch `POST /items` (refs/hashes only, R1/R7).
+/// D3 Local Folder Ingest & Batch + D4 Client Pre-pass: pick a folder →
+/// review deduped candidates → batch `POST /items` (refs/hashes only) →
+/// optional classic pre-pass (`POST /items/{id}/pre-pass-result`).
 ///
 /// Pops `true` when at least one item was created, so the caller can
 /// refresh the library list; pops `false`/`null` otherwise.
@@ -14,20 +16,28 @@ class FolderIngestPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = ref.watch(batchIngestControllerProvider);
+    final prePass = ref.watch(prePassControllerProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Add from folder')),
       body: ListenableBuilder(
-        listenable: controller,
-        builder: (context, _) => _FolderIngestBody(controller: controller),
+        listenable: Listenable.merge([controller, prePass]),
+        builder: (context, _) => _FolderIngestBody(
+          controller: controller,
+          prePass: prePass,
+        ),
       ),
     );
   }
 }
 
 class _FolderIngestBody extends StatelessWidget {
-  const _FolderIngestBody({required this.controller});
+  const _FolderIngestBody({
+    required this.controller,
+    required this.prePass,
+  });
 
   final BatchIngestController controller;
+  final PrePassController prePass;
 
   @override
   Widget build(BuildContext context) {
@@ -41,7 +51,7 @@ class _FolderIngestBody extends StatelessWidget {
       case BatchIngestPhase.ingesting:
         return _IngestingView(controller: controller);
       case BatchIngestPhase.done:
-        return _DoneView(controller: controller);
+        return _DoneView(controller: controller, prePass: prePass);
       case BatchIngestPhase.error:
         return _ErrorView(controller: controller);
     }
@@ -198,14 +208,24 @@ class _IngestingView extends StatelessWidget {
 }
 
 class _DoneView extends StatelessWidget {
-  const _DoneView({required this.controller});
+  const _DoneView({
+    required this.controller,
+    required this.prePass,
+  });
 
   final BatchIngestController controller;
+  final PrePassController prePass;
 
   @override
   Widget build(BuildContext context) {
     final succeeded = controller.outcomes.where((o) => o.succeeded).length;
     final failed = controller.outcomes.length - succeeded;
+    final prePassRunning = prePass.phase == PrePassPhase.running;
+    final prePassDone = prePass.phase == PrePassPhase.done;
+    final prePassOk =
+        prePass.outcomes.where((o) => o.succeeded).length;
+    final prePassFail = prePass.outcomes.length - prePassOk;
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -220,19 +240,57 @@ class _DoneView extends StatelessWidget {
               key: const Key('ingest-done-summary'),
               textAlign: TextAlign.center,
             ),
+            if (prePassRunning) ...[
+              const SizedBox(height: 16),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 8),
+              Text(
+                'Running client pre-pass… '
+                '${prePass.outcomes.length} of $succeeded',
+                key: const Key('prepass-progress'),
+              ),
+            ],
+            if (prePassDone) ...[
+              const SizedBox(height: 12),
+              Text(
+                prePassFail == 0
+                    ? 'Pre-pass recorded for $prePassOk item(s).'
+                    : 'Pre-pass: $prePassOk ok; $prePassFail failed.',
+                key: const Key('prepass-done-summary'),
+                textAlign: TextAlign.center,
+              ),
+            ],
             const SizedBox(height: 16),
+            if (succeeded > 0 &&
+                prePass.phase == PrePassPhase.idle &&
+                !prePassRunning)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: FilledButton.tonal(
+                  key: const Key('run-prepass-button'),
+                  onPressed: () => prePass.run(controller.outcomes),
+                  child: const Text('Run client pre-pass'),
+                ),
+              ),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 OutlinedButton(
                   key: const Key('ingest-another-folder'),
-                  onPressed: controller.reset,
+                  onPressed: prePassRunning
+                      ? null
+                      : () {
+                          prePass.reset();
+                          controller.reset();
+                        },
                   child: const Text('Ingest another folder'),
                 ),
                 const SizedBox(width: 12),
                 FilledButton(
                   key: const Key('ingest-done-close'),
-                  onPressed: () => Navigator.of(context).pop(succeeded > 0),
+                  onPressed: prePassRunning
+                      ? null
+                      : () => Navigator.of(context).pop(succeeded > 0),
                   child: const Text('Done'),
                 ),
               ],

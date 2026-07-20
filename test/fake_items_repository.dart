@@ -15,6 +15,8 @@ class FakeItemsRepository implements ItemsRepository {
   final Object? listError;
 
   final List<CreateItem> created = <CreateItem>[];
+  final List<({String itemId, PrePassResult input})> prePassRecorded =
+      <({String itemId, PrePassResult input})>[];
 
   @override
   Future<List<Item>> listItems({ProcessingStatus? status}) async {
@@ -50,6 +52,21 @@ class FakeItemsRepository implements ItemsRepository {
     );
     _items.add(item);
     return item;
+  }
+
+  @override
+  Future<PrePassResultResponse> recordPrePassResult(
+    String itemId,
+    PrePassResult input,
+  ) async {
+    prePassRecorded.add((itemId: itemId, input: input));
+    final item = await getItem(itemId);
+    return PrePassResultResponse(
+      item: item,
+      keyPeriodIds: const [],
+      appearanceIds: const [],
+      tagIds: const [],
+    );
   }
 }
 

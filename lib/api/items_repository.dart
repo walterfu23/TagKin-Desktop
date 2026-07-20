@@ -56,4 +56,26 @@ class ItemsRepository {
     }
     return Item.fromJson(json);
   }
+
+  /// `POST /items/{id}/pre-pass-result` — vectors/metadata/text only (D4).
+  ///
+  /// Never attaches media bytes (R1/R5). Owner is derived server-side from
+  /// the bearer token; this client never sends `ownerUserId` (R10).
+  Future<PrePassResultResponse> recordPrePassResult(
+    String itemId,
+    PrePassResult input,
+  ) async {
+    final response = await _client.post(
+      '/items/$itemId/pre-pass-result',
+      body: input.toJson(),
+    );
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected pre-pass-result response shape',
+      );
+    }
+    return PrePassResultResponse.fromJson(json);
+  }
 }

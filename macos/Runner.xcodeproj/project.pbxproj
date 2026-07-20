@@ -244,6 +244,7 @@
 				33CC10EB2044A3C60003C045 /* Resources */,
 				33CC110E2044A8840003C045 /* Bundle Framework */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
+				A4F0B1C2D3E4F5061728394A /* Bundle FFmpeg */,
 				CEA8AF56CCE9725CA9BCA350 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
@@ -350,6 +351,29 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "echo \"$PRODUCT_NAME.app\" > \"$PROJECT_DIR\"/Flutter/ephemeral/.app_filename && \"$FLUTTER_ROOT\"/packages/flutter_tools/bin/macos_assemble.sh embed\n";
+		};
+		A4F0B1C2D3E4F5061728394A /* Bundle FFmpeg */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${SRCROOT}/../third_party/ffmpeg/macos/ffmpeg",
+				"${SRCROOT}/../third_party/ffmpeg/macos/ffprobe",
+			);
+			name = "Bundle FFmpeg";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ffmpeg/ffmpeg",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ffmpeg/ffprobe",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Ship ffmpeg/ffprobe inside the .app so end users never install them.\nSRC=\"${SRCROOT}/../third_party/ffmpeg/macos\"\nDST=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ffmpeg\"\nif [ ! -x \"${SRC}/ffmpeg\" ] || [ ! -x \"${SRC}/ffprobe\" ]; then\n  echo \"warning: bundled ffmpeg missing at ${SRC} — run TagKin-Desktop/mac/105_fetch_ffmpeg.sh (video pre-pass will fall back to PATH in dev only)\" >&2\n  exit 0\nfi\nmkdir -p \"${DST}\"\ncp -f \"${SRC}/ffmpeg\" \"${SRC}/ffprobe\" \"${DST}/\"\nchmod +x \"${DST}/ffmpeg\" \"${DST}/ffprobe\"\necho \"Bundled ffmpeg into ${DST}\"\n";
 		};
 		33CC111E2044C6BF0003C045 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
