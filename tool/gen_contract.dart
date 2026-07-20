@@ -18,7 +18,10 @@ import 'package:yaml/yaml.dart';
 
 const List<String> _openApiCandidates = <String>[
   'openapi/openapi.yaml',
+  // Local monorepo sibling (mac/win scripts).
   '../TagKin/packages/contract/openapi/openapi.yaml',
+  // CI: actions/checkout path: TagKin under GITHUB_WORKSPACE.
+  'TagKin/packages/contract/openapi/openapi.yaml',
 ];
 
 void main() {
