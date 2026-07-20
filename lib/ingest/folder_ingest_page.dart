@@ -2,16 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/ingest/batch_ingest_controller.dart';
 import 'package:tagkin_desktop/ingest/dedup.dart';
+import 'package:tagkin_desktop/ingest/upload_controller.dart';
 import 'package:tagkin_desktop/prepass/prepass_controller.dart';
 import 'package:tagkin_desktop/usage/usage_banner.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
 import 'package:tagkin_desktop/usage/usage_gate.dart';
 
-/// D3 Local Folder Ingest & Batch + D4 Client Pre-pass: pick a folder →
-/// review deduped candidates → batch `POST /items` (refs/hashes only) →
-/// optional classic pre-pass (`POST /items/{id}/pre-pass-result`).
+/// D3 Local Folder Ingest & Batch + D4 Client Pre-pass + D5 Upload & Grants:
+/// pick a folder → review deduped candidates → batch `POST /items`
+/// (refs/hashes only) → optional classic pre-pass → optional direct
+/// model-host upload + `analysisRef` recording.
 ///
-/// D6 gates the folder-pick button on [UsageGate.blocked].
+/// D6 gates the folder-pick and upload buttons on [UsageGate.blocked].
 ///
 /// Pops `true` when at least one item was created, so the caller can
 /// refresh the library list; pops `false`/`null` otherwise.
@@ -35,11 +37,12 @@ class _FolderIngestPageState extends ConsumerState<FolderIngestPage> {
   Widget build(BuildContext context) {
     final controller = ref.watch(batchIngestControllerProvider);
     final prePass = ref.watch(prePassControllerProvider);
+    final upload = ref.watch(uploadControllerProvider);
     final usage = ref.watch(usageControllerProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Add from folder')),
       body: ListenableBuilder(
-        listenable: Listenable.merge([controller, prePass, usage]),
+        listenable: Listenable.merge([controller, prePass, upload, usage]),
         builder: (context, _) => Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -48,6 +51,7 @@ class _FolderIngestPageState extends ConsumerState<FolderIngestPage> {
               child: _FolderIngestBody(
                 controller: controller,
                 prePass: prePass,
+                upload: upload,
                 gate: usage.gate,
               ),
             ),
@@ -62,11 +66,13 @@ class _FolderIngestBody extends StatelessWidget {
   const _FolderIngestBody({
     required this.controller,
     required this.prePass,
+    required this.upload,
     required this.gate,
   });
 
   final BatchIngestController controller;
   final PrePassController prePass;
+  final UploadController upload;
   final UsageGate gate;
 
   @override
@@ -81,7 +87,12 @@ class _FolderIngestBody extends StatelessWidget {
       case BatchIngestPhase.ingesting:
         return _IngestingView(controller: controller);
       case BatchIngestPhase.done:
-        return _DoneView(controller: controller, prePass: prePass);
+        return _DoneView(
+          controller: controller,
+          prePass: prePass,
+          upload: upload,
+          gate: gate,
+        );
       case BatchIngestPhase.error:
         return _ErrorView(controller: controller);
     }
@@ -244,10 +255,14 @@ class _DoneView extends StatelessWidget {
   const _DoneView({
     required this.controller,
     required this.prePass,
+    required this.upload,
+    required this.gate,
   });
 
   final BatchIngestController controller;
   final PrePassController prePass;
+  final UploadController upload;
+  final UsageGate gate;
 
   @override
   Widget build(BuildContext context) {
@@ -258,6 +273,11 @@ class _DoneView extends StatelessWidget {
     final prePassOk =
         prePass.outcomes.where((o) => o.succeeded).length;
     final prePassFail = prePass.outcomes.length - prePassOk;
+    final uploadRunning = upload.phase == UploadPhase.running;
+    final uploadDone = upload.phase == UploadPhase.done;
+    final uploadOk = upload.outcomes.where((o) => o.succeeded).length;
+    final uploadFail = upload.outcomes.length - uploadOk;
+    final busy = prePassRunning || uploadRunning;
 
     return Center(
       child: Padding(
@@ -293,6 +313,26 @@ class _DoneView extends StatelessWidget {
                 textAlign: TextAlign.center,
               ),
             ],
+            if (uploadRunning) ...[
+              const SizedBox(height: 16),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 8),
+              Text(
+                'Uploading for analysis… '
+                '${upload.outcomes.length} of $prePassOk',
+                key: const Key('upload-progress'),
+              ),
+            ],
+            if (uploadDone) ...[
+              const SizedBox(height: 12),
+              Text(
+                uploadFail == 0
+                    ? 'Uploaded $uploadOk item(s) for analysis.'
+                    : 'Upload: $uploadOk ok; $uploadFail failed.',
+                key: const Key('upload-done-summary'),
+                textAlign: TextAlign.center,
+              ),
+            ],
             const SizedBox(height: 16),
             if (succeeded > 0 &&
                 prePass.phase == PrePassPhase.idle &&
@@ -301,8 +341,25 @@ class _DoneView extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: 12),
                 child: FilledButton.tonal(
                   key: const Key('run-prepass-button'),
-                  onPressed: () => prePass.run(controller.outcomes),
+                  onPressed: busy ? null : () => prePass.run(controller.outcomes),
                   child: const Text('Run client pre-pass'),
+                ),
+              ),
+            if (prePassDone &&
+                prePassOk > 0 &&
+                upload.phase == UploadPhase.idle &&
+                !uploadRunning)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: FilledButton.tonal(
+                  key: const Key('run-upload-button'),
+                  onPressed: gate.blocked || busy
+                      ? null
+                      : () => upload.run(
+                            prePass.outcomes,
+                            prePass.frameSamplesByItemId,
+                          ),
+                  child: const Text('Upload for analysis'),
                 ),
               ),
             Row(
@@ -310,9 +367,10 @@ class _DoneView extends StatelessWidget {
               children: [
                 OutlinedButton(
                   key: const Key('ingest-another-folder'),
-                  onPressed: prePassRunning
+                  onPressed: busy
                       ? null
                       : () {
+                          upload.reset();
                           prePass.reset();
                           controller.reset();
                         },
@@ -321,7 +379,7 @@ class _DoneView extends StatelessWidget {
                 const SizedBox(width: 12),
                 FilledButton(
                   key: const Key('ingest-done-close'),
-                  onPressed: prePassRunning
+                  onPressed: busy
                       ? null
                       : () => Navigator.of(context).pop(succeeded > 0),
                   child: const Text('Done'),

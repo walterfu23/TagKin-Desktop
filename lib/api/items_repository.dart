@@ -78,4 +78,46 @@ class ItemsRepository {
     }
     return PrePassResultResponse.fromJson(json);
   }
+
+  /// `POST /items/{id}/upload-grant` — mint a short-lived model-host URL (D5).
+  ///
+  /// Returns URL only — never a provider key (R8). Owner is derived
+  /// server-side from the bearer token (R10).
+  Future<UploadGrant> createUploadGrant(
+    String itemId,
+    CreateUploadGrant input,
+  ) async {
+    final response = await _client.post(
+      '/items/$itemId/upload-grant',
+      body: input.toJson(),
+    );
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected upload-grant response shape',
+      );
+    }
+    return UploadGrant.fromJson(json);
+  }
+
+  /// `POST /items/{id}/analysis-ref` — record model-host ref after direct
+  /// upload (D5). Metadata/ref only — never media bytes (R1/R4).
+  Future<Item> recordAnalysisRef(
+    String itemId,
+    RecordAnalysisRef input,
+  ) async {
+    final response = await _client.post(
+      '/items/$itemId/analysis-ref',
+      body: input.toJson(),
+    );
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected analysis-ref response shape',
+      );
+    }
+    return Item.fromJson(json);
+  }
 }

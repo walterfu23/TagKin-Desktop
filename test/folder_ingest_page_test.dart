@@ -7,6 +7,8 @@ import 'package:tagkin_desktop/ingest/batch_ingest_controller.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_page.dart';
 import 'package:tagkin_desktop/ingest/folder_picker.dart';
 import 'package:tagkin_desktop/ingest/media_enumerator.dart';
+import 'package:tagkin_desktop/prepass/prepass_controller.dart';
+import 'package:tagkin_desktop/prepass/prepass_payload_builder.dart';
 
 import 'fake_items_repository.dart';
 import 'fake_usage_repository.dart';
@@ -173,5 +175,100 @@ void main() {
 
     expect(find.byKey(const Key('ingest-error')), findsOneWidget);
     expect(find.byKey(const Key('ingest-error-retry')), findsOneWidget);
+  });
+
+  testWidgets(
+      'kill-switch disables Upload for analysis after pre-pass (D5/D6)',
+      (tester) async {
+    const folderPath = '/fixtures/d5-blocked';
+    final repo = FakeItemsRepository();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          folderPickerProvider.overrideWithValue(() async => folderPath),
+          itemsRepositoryProvider.overrideWithValue(repo),
+          usageRepositoryProvider.overrideWithValue(
+            FakeUsageRepository(
+              summary: fixtureUsageSummary(
+                killSwitchEnabled: true,
+                killSwitchReason: 'ops',
+                pauseReason: 'kill switch enabled',
+              ),
+            ),
+          ),
+          mediaEnumeratorProvider.overrideWithValue(
+            (path) async => [_fixtureCandidate('$path/a.jpg')],
+          ),
+          contentHasherProvider.overrideWithValue(
+            (path) async => 'fixture-hash-$path',
+          ),
+          perceptualHasherProvider.overrideWithValue((path) async => null),
+          prePassControllerProvider.overrideWith((ref) {
+            final controller = PrePassController(
+              itemsRepository: repo,
+              buildPayload: ({
+                required path,
+                required type,
+                faceEmbedder,
+                skipFaces = false,
+                maxFrames = 20,
+              }) async {
+                return PrePassBuildResult(
+                  payload: PrePassResult(
+                    contentHash: 'hash',
+                    appearances: [
+                      PrePassAppearanceInput(
+                        embedding: List<double>.filled(512, 0.0),
+                        embeddingModelId: 'stub-face-embed-v1',
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+            ref.onDispose(controller.dispose);
+            return controller;
+          }),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => FilledButton(
+                onPressed: () => Navigator.of(context).push<bool>(
+                  MaterialPageRoute<bool>(
+                    builder: (_) => const FolderIngestPage(),
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    // Folder pick is also blocked by kill-switch — force scan via controller
+    // to reach the done view with upload button gated.
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(FolderIngestPage)),
+    );
+    final batch = container.read(batchIngestControllerProvider);
+    await batch.scanFolder(folderPath);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('confirm-ingest-button')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('run-prepass-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('run-upload-button')), findsOneWidget);
+    final uploadBtn = tester.widget<FilledButton>(
+      find.byKey(const Key('run-upload-button')),
+    );
+    expect(uploadBtn.onPressed, isNull);
   });
 }

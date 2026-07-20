@@ -252,5 +252,83 @@ void main() {
       }
       client.close();
     });
+
+    test(
+        'createUploadGrant posts mimeType only — no key, no owner, no bytes '
+        '(R8/R10/R1)', () async {
+      final mock = MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/items/item_1/upload-grant');
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body.keys.toSet(), {'mimeType'});
+        expect(body['mimeType'], 'image/jpeg');
+        expect(body.containsKey('ownerUserId'), isFalse);
+        expect(body.containsKey('apiKey'), isFalse);
+        return http.Response(
+          jsonEncode({
+            'uploadUrl': 'https://stub.tagkin.test/upload',
+            'expiresAt': '2026-07-19T12:00:00.000Z',
+          }),
+          201,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final client = ApiClient(
+        baseUrl: 'http://api.test',
+        tokenProvider: () => 'tok',
+        httpClient: mock,
+      )..recordRequests = true;
+
+      final grant = await ItemsRepository(client).createUploadGrant(
+        'item_1',
+        const CreateUploadGrant(mimeType: 'image/jpeg'),
+      );
+      expect(grant.uploadUrl, 'https://stub.tagkin.test/upload');
+      expect(grant.toJson().containsKey('apiKey'), isFalse);
+      for (final r in client.recordedRequests) {
+        expect(r.bodyContainsOwnerField, isFalse);
+      }
+      client.close();
+    });
+
+    test(
+        'recordAnalysisRef posts analysisRef only — no bytes, no owner '
+        '(R1/R4/R10)', () async {
+      final mock = MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/items/item_1/analysis-ref');
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body.keys.toSet(), {'analysisRef'});
+        expect(body['analysisRef'], 'files/abc');
+        expect(body.containsKey('bytes'), isFalse);
+        expect(body.containsKey('ownerUserId'), isFalse);
+        return http.Response(
+          jsonEncode(_itemJson(id: 'item_1')
+            ..['analysisRef'] = 'files/abc'
+            ..['analysisRefState'] = 'ready'
+            ..['processingStatus'] = 'awaiting_model_access'),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final client = ApiClient(
+        baseUrl: 'http://api.test',
+        tokenProvider: () => 'tok',
+        httpClient: mock,
+      )..recordRequests = true;
+
+      final item = await ItemsRepository(client).recordAnalysisRef(
+        'item_1',
+        const RecordAnalysisRef(analysisRef: 'files/abc'),
+      );
+      expect(item.analysisRef, 'files/abc');
+      expect(item.analysisRefState, AnalysisRefState.ready);
+      for (final r in client.recordedRequests) {
+        expect(r.bodyContainsOwnerField, isFalse);
+      }
+      client.close();
+    });
   });
 }

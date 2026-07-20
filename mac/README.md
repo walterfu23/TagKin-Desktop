@@ -42,6 +42,8 @@ Do **not** reuse the API `sN` ids (those are the `tagkin` repo's `TagKin/mac/`);
 | [`108_test_d2.sh`](./108_test_d2.sh) | D2 Library & Item Registry regression bar alone. |
 | [`109_test_d3.sh`](./109_test_d3.sh) | D3 Local Folder Ingest & Batch regression bar alone. |
 | [`110_test_d4.sh`](./110_test_d4.sh) | D4 Client Pre-pass regression bar alone. |
+| [`111_test_d6.sh`](./111_test_d6.sh) | D6 Cost & Usage Surface regression bar alone. |
+| [`112_test_d5.sh`](./112_test_d5.sh) | D5 Ingest Upload & Grants regression bar alone. |
 
 ## Example flows
 
