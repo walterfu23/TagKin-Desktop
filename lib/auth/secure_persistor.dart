@@ -24,12 +24,17 @@ class FlutterSecureKeyValueStore implements SecureKeyValueStore {
             const FlutterSecureStorage(
               aOptions: AndroidOptions(),
               iOptions: IOSOptions(
+                // Prefer a TagKin-specific service name (maps to kSecAttrService)
+                // so Keychain Access doesn't pile up generic
+                // "flutter_secure_storage_service" rows shared with other apps.
+                accountName: 'tagkin.desktop.secure',
                 accessibility: KeychainAccessibility.first_unlock,
               ),
               // Unsigned/debug macOS: use login keychain (not data-protection),
               // which needs keychain-access-groups in entitlements. Data-protection
               // keychain alone → errSecMissingEntitlement (-34018).
               mOptions: MacOsOptions(
+                accountName: 'tagkin.desktop.secure',
                 accessibility: KeychainAccessibility.first_unlock,
                 usesDataProtectionKeychain: false,
               ),

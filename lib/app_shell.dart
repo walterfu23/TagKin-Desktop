@@ -27,10 +27,12 @@ final apiClientProvider = Provider<ApiClient>((ref) {
 });
 
 /// Library items API (D2). Override in tests with a fake; otherwise built from
-/// [apiClientProvider].
-final itemsRepositoryProvider = Provider<ItemsRepository>((ref) {
-  return ItemsRepository(ref.watch(apiClientProvider));
-});
+/// [apiClientProvider]. Declares that dependency so nested [ProviderScope]
+/// overrides of [apiClientProvider] (signed-in host) are valid.
+final itemsRepositoryProvider = Provider<ItemsRepository>(
+  (ref) => ItemsRepository(ref.watch(apiClientProvider)),
+  dependencies: [apiClientProvider],
+);
 
 /// Fake signed-in session for tests — supplies a bearer token + optional /me
 /// result without talking to Clerk or the network.

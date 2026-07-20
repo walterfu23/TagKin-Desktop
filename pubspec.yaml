@@ -47,6 +47,15 @@ dependencies:
   clerk_flutter:
     path: vendor/clerk_flutter
 
+  # D3 Local Folder Ingest & Batch: native directory picker (macOS + Windows).
+  file_picker: ^8.1.7
+  # Cross-OS path join/split — never hard-coded separators (D3).
+  path: ^1.9.0
+  # SHA-256 exact content-hash for dedup/idempotency anchor (D3).
+  crypto: ^3.0.6
+  # Greyscale/resize for the local perceptual (dHash) near-duplicate check (D3).
+  image: ^4.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
