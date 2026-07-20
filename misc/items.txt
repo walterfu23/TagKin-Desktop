@@ -1,0 +1,6 @@
+1. the full folder path and file names should remain in the desktop, perhaps as table columns.
+table columns: path, file name, vid/photo, len, tags, ingestion date, status
+might want to consider path hiearchy.
+
+
+

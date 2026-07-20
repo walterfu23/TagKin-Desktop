@@ -5,8 +5,13 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_page.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/library/processing_status_view.dart';
+import 'package:tagkin_desktop/usage/usage_banner.dart';
+import 'package:tagkin_desktop/usage/usage_controller.dart';
 
 /// Post-auth library home (D2): lists the authenticated account's items.
+///
+/// D6 gates the "Add from folder" FAB on [UsageGate.blocked] and shows a
+/// warn/blocked [UsageBanner] above the list.
 class ItemsListPage extends ConsumerStatefulWidget {
   const ItemsListPage({super.key});
 
@@ -21,6 +26,10 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
   void initState() {
     super.initState();
     _future = _load();
+    // On-demand usage fetch (no polling in D6 v1).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(usageControllerProvider).load();
+    });
   }
 
   Future<List<Item>> _load() {
@@ -31,6 +40,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     setState(() {
       _future = _load();
     });
+    ref.read(usageControllerProvider).load();
   }
 
   void _openDetail(Item item) {
@@ -66,14 +76,27 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      floatingActionButton: FloatingActionButton.extended(
-        key: const Key('add-from-folder'),
-        onPressed: _openFolderIngest,
-        icon: const Icon(Icons.drive_folder_upload),
-        label: const Text('Add from folder'),
-      ),
-      body: _buildBody(),
+    final usage = ref.watch(usageControllerProvider);
+    return ListenableBuilder(
+      listenable: usage,
+      builder: (context, _) {
+        final blocked = usage.gate.blocked;
+        return Scaffold(
+          floatingActionButton: FloatingActionButton.extended(
+            key: const Key('add-from-folder'),
+            onPressed: blocked ? null : _openFolderIngest,
+            icon: const Icon(Icons.drive_folder_upload),
+            label: const Text('Add from folder'),
+          ),
+          body: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              UsageBanner(gate: usage.gate),
+              Expanded(child: _buildBody()),
+            ],
+          ),
+        );
+      },
     );
   }
 

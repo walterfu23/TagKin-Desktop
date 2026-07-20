@@ -1,10 +1,10 @@
-// D0/D1/D2 integration smoke: boot the real app on the host desktop (macOS/Windows)
-// with a fake signed-in session and confirm the library shell renders.
-//   flutter test integration_test/app_test.dart -d macos   (or -d windows)
+// D6 Cost & Usage Surface integration: GET /usage gate against a fake
+// UsageRepository (mocked API per §5; no live network).
+//   flutter test integration_test/usage_test.dart -d macos   (or -d windows)
 
-import 'package:flutter/widgets.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
@@ -16,8 +16,16 @@ import '../test/fake_usage_repository.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('signed-in library shell boots on the desktop host',
+  testWidgets(
+      'kill-switch fixture disables Add from folder and shows pause reason',
       (WidgetTester tester) async {
+    final usage = FakeUsageRepository(
+      summary: fixtureUsageSummary(
+        killSwitchEnabled: true,
+        pauseReason: 'integration kill switch',
+      ),
+    );
+
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -32,13 +40,20 @@ void main() {
             ),
           ),
           itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
-          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          usageRepositoryProvider.overrideWithValue(usage),
         ],
         child: const TagKinDesktopApp(),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('items-empty')), findsOneWidget);
+    expect(find.byKey(const Key('usage-banner-blocked')), findsOneWidget);
+    expect(find.textContaining('integration kill switch'), findsOneWidget);
+
+    final fab = tester.widget<FloatingActionButton>(
+      find.byKey(const Key('add-from-folder')),
+    );
+    expect(fab.onPressed, isNull);
+    expect(usage.getUsageCallCount, greaterThan(0));
   });
 }

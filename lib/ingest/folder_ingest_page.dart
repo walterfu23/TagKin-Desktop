@@ -3,27 +3,55 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/ingest/batch_ingest_controller.dart';
 import 'package:tagkin_desktop/ingest/dedup.dart';
 import 'package:tagkin_desktop/prepass/prepass_controller.dart';
+import 'package:tagkin_desktop/usage/usage_banner.dart';
+import 'package:tagkin_desktop/usage/usage_controller.dart';
+import 'package:tagkin_desktop/usage/usage_gate.dart';
 
 /// D3 Local Folder Ingest & Batch + D4 Client Pre-pass: pick a folder →
 /// review deduped candidates → batch `POST /items` (refs/hashes only) →
 /// optional classic pre-pass (`POST /items/{id}/pre-pass-result`).
 ///
+/// D6 gates the folder-pick button on [UsageGate.blocked].
+///
 /// Pops `true` when at least one item was created, so the caller can
 /// refresh the library list; pops `false`/`null` otherwise.
-class FolderIngestPage extends ConsumerWidget {
+class FolderIngestPage extends ConsumerStatefulWidget {
   const FolderIngestPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<FolderIngestPage> createState() => _FolderIngestPageState();
+}
+
+class _FolderIngestPageState extends ConsumerState<FolderIngestPage> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(usageControllerProvider).load();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final controller = ref.watch(batchIngestControllerProvider);
     final prePass = ref.watch(prePassControllerProvider);
+    final usage = ref.watch(usageControllerProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Add from folder')),
       body: ListenableBuilder(
-        listenable: Listenable.merge([controller, prePass]),
-        builder: (context, _) => _FolderIngestBody(
-          controller: controller,
-          prePass: prePass,
+        listenable: Listenable.merge([controller, prePass, usage]),
+        builder: (context, _) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            UsageBanner(gate: usage.gate),
+            Expanded(
+              child: _FolderIngestBody(
+                controller: controller,
+                prePass: prePass,
+                gate: usage.gate,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -34,16 +62,18 @@ class _FolderIngestBody extends StatelessWidget {
   const _FolderIngestBody({
     required this.controller,
     required this.prePass,
+    required this.gate,
   });
 
   final BatchIngestController controller;
   final PrePassController prePass;
+  final UsageGate gate;
 
   @override
   Widget build(BuildContext context) {
     switch (controller.phase) {
       case BatchIngestPhase.idle:
-        return _IdleView(controller: controller);
+        return _IdleView(controller: controller, gate: gate);
       case BatchIngestPhase.scanning:
         return _ScanningView(controller: controller);
       case BatchIngestPhase.reviewing:
@@ -59,9 +89,13 @@ class _FolderIngestBody extends StatelessWidget {
 }
 
 class _IdleView extends StatelessWidget {
-  const _IdleView({required this.controller});
+  const _IdleView({
+    required this.controller,
+    required this.gate,
+  });
 
   final BatchIngestController controller;
+  final UsageGate gate;
 
   @override
   Widget build(BuildContext context) {
@@ -79,7 +113,7 @@ class _IdleView extends StatelessWidget {
             const SizedBox(height: 16),
             FilledButton(
               key: const Key('pick-folder-button'),
-              onPressed: controller.pickAndScan,
+              onPressed: gate.blocked ? null : controller.pickAndScan,
               child: const Text('Pick folder…'),
             ),
           ],
@@ -88,7 +122,6 @@ class _IdleView extends StatelessWidget {
     );
   }
 }
-
 class _ScanningView extends StatelessWidget {
   const _ScanningView({required this.controller});
 

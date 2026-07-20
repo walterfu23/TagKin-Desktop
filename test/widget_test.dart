@@ -9,6 +9,7 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/main.dart';
 
 import 'fake_items_repository.dart';
+import 'fake_usage_repository.dart';
 
 void main() {
   testWidgets('app boots to the library shell when signed in',
@@ -27,6 +28,7 @@ void main() {
             ),
           ),
           itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
         ],
         child: const TagKinDesktopApp(),
       ),

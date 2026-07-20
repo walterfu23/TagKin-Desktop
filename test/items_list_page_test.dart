@@ -9,12 +9,30 @@ import 'package:tagkin_desktop/library/items_list_page.dart';
 import 'package:tagkin_desktop/main.dart';
 
 import 'fake_items_repository.dart';
+import 'fake_usage_repository.dart';
 
 Account _account(String id) => Account(
       id: id,
       email: '$id@example.com',
       createdAt: '2026-07-18T00:00:00.000Z',
     );
+
+List<Override> _sessionOverrides({
+  required FakeItemsRepository items,
+  String accountId = 'acc_1',
+  String token = 'tok',
+  FakeUsageRepository? usage,
+}) {
+  return [
+    testSessionProvider.overrideWithValue(
+      TestSession(token: token, account: _account(accountId)),
+    ),
+    itemsRepositoryProvider.overrideWithValue(items),
+    usageRepositoryProvider.overrideWithValue(
+      usage ?? FakeUsageRepository(),
+    ),
+  ];
+}
 
 void main() {
   testWidgets('items list renders fixture items with processingStatus',
@@ -29,14 +47,9 @@ void main() {
     ];
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          testSessionProvider.overrideWithValue(
-            TestSession(token: 'tok', account: _account('acc_1')),
-          ),
-          itemsRepositoryProvider.overrideWithValue(
-            FakeItemsRepository(items: items),
-          ),
-        ],
+        overrides: _sessionOverrides(
+          items: FakeItemsRepository(items: items),
+        ),
         child: const TagKinDesktopApp(),
       ),
     );
@@ -52,12 +65,7 @@ void main() {
   testWidgets('empty library shows empty state', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          testSessionProvider.overrideWithValue(
-            TestSession(token: 'tok', account: _account('acc_1')),
-          ),
-          itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
-        ],
+        overrides: _sessionOverrides(items: FakeItemsRepository()),
         child: const TagKinDesktopApp(),
       ),
     );
@@ -69,14 +77,9 @@ void main() {
     final item = fixtureItem(id: 'item_nav');
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          testSessionProvider.overrideWithValue(
-            TestSession(token: 'tok', account: _account('acc_1')),
-          ),
-          itemsRepositoryProvider.overrideWithValue(
-            FakeItemsRepository(items: [item]),
-          ),
-        ],
+        overrides: _sessionOverrides(
+          items: FakeItemsRepository(items: [item]),
+        ),
         child: const TagKinDesktopApp(),
       ),
     );
@@ -117,14 +120,11 @@ void main() {
     // Second fake account only sees its own empty library — never A's items.
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          testSessionProvider.overrideWithValue(
-            TestSession(token: 'tok-b', account: _account('acc_b')),
-          ),
-          itemsRepositoryProvider.overrideWithValue(
-            FakeItemsRepository(), // B has no items
-          ),
-        ],
+        overrides: _sessionOverrides(
+          items: FakeItemsRepository(), // B has no items
+          accountId: 'acc_b',
+          token: 'tok-b',
+        ),
         child: const TagKinDesktopApp(),
       ),
     );
@@ -138,16 +138,11 @@ void main() {
   testWidgets('list error shows retry', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          testSessionProvider.overrideWithValue(
-            TestSession(token: 'tok', account: _account('acc_1')),
+        overrides: _sessionOverrides(
+          items: FakeItemsRepository(
+            listError: ApiException(statusCode: 500, message: 'boom'),
           ),
-          itemsRepositoryProvider.overrideWithValue(
-            FakeItemsRepository(
-              listError: ApiException(statusCode: 500, message: 'boom'),
-            ),
-          ),
-        ],
+        ),
         child: const MaterialApp(
           home: AuthShell(signedInHome: ItemsListPage()),
         ),

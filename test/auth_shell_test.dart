@@ -9,6 +9,7 @@ import 'package:tagkin_desktop/library/items_list_page.dart';
 import 'package:tagkin_desktop/main.dart';
 
 import 'fake_items_repository.dart';
+import 'fake_usage_repository.dart';
 
 Account _account(String id) => Account(
       id: id,
@@ -26,6 +27,7 @@ void main() {
             TestSession(token: 'tok', account: _account('acc_1')),
           ),
           itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
         ],
         child: const TagKinDesktopApp(),
       ),

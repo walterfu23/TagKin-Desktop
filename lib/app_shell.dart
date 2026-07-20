@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/api/items_repository.dart';
 import 'package:tagkin_desktop/api/me_repository.dart';
+import 'package:tagkin_desktop/api/usage_repository.dart';
 import 'package:tagkin_desktop/auth/secure_persistor.dart';
 import 'package:tagkin_desktop/config/app_config.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
@@ -31,6 +32,13 @@ final apiClientProvider = Provider<ApiClient>((ref) {
 /// overrides of [apiClientProvider] (signed-in host) are valid.
 final itemsRepositoryProvider = Provider<ItemsRepository>(
   (ref) => ItemsRepository(ref.watch(apiClientProvider)),
+  dependencies: [apiClientProvider],
+);
+
+/// Cost usage API (D6). Override in tests with a fake; otherwise built from
+/// [apiClientProvider].
+final usageRepositoryProvider = Provider<UsageRepository>(
+  (ref) => UsageRepository(ref.watch(apiClientProvider)),
   dependencies: [apiClientProvider],
 );
 

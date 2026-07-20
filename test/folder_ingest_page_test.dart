@@ -9,6 +9,7 @@ import 'package:tagkin_desktop/ingest/folder_picker.dart';
 import 'package:tagkin_desktop/ingest/media_enumerator.dart';
 
 import 'fake_items_repository.dart';
+import 'fake_usage_repository.dart';
 
 // Widget tests never touch real `dart:io` here — `testWidgets`'s pumped
 // frame loop (`AutomatedTestWidgetsFlutterBinding`) does not reliably drive
@@ -38,6 +39,7 @@ Future<void> _pushFolderIngestPage(
       overrides: [
         folderPickerProvider.overrideWithValue(folderPicker),
         itemsRepositoryProvider.overrideWithValue(repository),
+        usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
         if (enumerate != null) mediaEnumeratorProvider.overrideWithValue(enumerate),
         // No real file bytes to decode/hash in these widget fixtures.
         contentHasherProvider.overrideWithValue(

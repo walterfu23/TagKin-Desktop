@@ -15,6 +15,7 @@ import 'package:tagkin_desktop/ingest/folder_picker.dart';
 import 'package:tagkin_desktop/main.dart';
 
 import '../test/fake_items_repository.dart';
+import '../test/fake_usage_repository.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -45,6 +46,7 @@ void main() {
             ),
           ),
           itemsRepositoryProvider.overrideWithValue(repo),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
           folderPickerProvider.overrideWithValue(() async => dir.path),
         ],
         child: const TagKinDesktopApp(),
