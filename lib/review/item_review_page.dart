@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
+import 'package:tagkin_desktop/app_shell.dart' show itemsRepositoryProvider;
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/persons/person_detail_page.dart';
 import 'package:tagkin_desktop/review/key_period_scrubber.dart';
 import 'package:tagkin_desktop/review/knowledge_view.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
@@ -12,8 +14,9 @@ import 'package:tagkin_desktop/review/review_controller.dart';
 
 /// D8 review surface: local media + approved knowledge + key-period scrub.
 ///
-/// Embedded below D2/D7 metadata on the item detail screen. Corrections (D10)
-/// and person linking (D9) are out of scope.
+/// Embedded below D2/D7 metadata on the item detail screen. D9 adds
+/// Find person matches + appearance → person navigation. Corrections (D10)
+/// remain out of scope.
 class ItemReviewSection extends ConsumerStatefulWidget {
   const ItemReviewSection({
     super.key,
@@ -34,6 +37,8 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
   Player? _player;
   VideoController? _videoController;
   String? _openedPath;
+  bool _linking = false;
+  String? _linkStatus;
 
   @override
   void initState() {
@@ -81,6 +86,49 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
         _videoController = null;
         _openedPath = null;
       });
+    }
+  }
+
+  Future<void> _linkPeople() async {
+    if (_linking) return;
+    setState(() {
+      _linking = true;
+      _linkStatus = null;
+    });
+    try {
+      final result = await ref
+          .read(itemsRepositoryProvider)
+          .linkPeopleForItem(widget.itemId);
+      if (!mounted) return;
+      setState(() {
+        _linkStatus =
+            'Found ${result.appearances.length} appearance link(s)';
+      });
+      await ref.read(reviewControllerProvider(widget.itemId)).load();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _linkStatus = 'Find person matches failed: $e';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _linking = false);
+      }
+    }
+  }
+
+  Future<void> _openPerson(String personId) async {
+    final container = ProviderScope.containerOf(context);
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => UncontrolledProviderScope(
+          container: container,
+          child: PersonDetailPage(personId: personId),
+        ),
+      ),
+    );
+    if (mounted) {
+      await ref.read(reviewControllerProvider(widget.itemId)).load();
     }
   }
 
@@ -136,7 +184,25 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
                 videoController: _videoController,
               ),
               const SizedBox(height: 16),
-              KnowledgeView(knowledge: knowledge),
+              KnowledgeView(
+                knowledge: knowledge,
+                onPersonTap: _openPerson,
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                key: const Key('item-link-people'),
+                onPressed: _linking ? null : _linkPeople,
+                child: Text(
+                  _linking ? 'Finding matches…' : 'Find person matches',
+                ),
+              ),
+              if (_linkStatus != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _linkStatus!,
+                  key: const Key('link-people-status'),
+                ),
+              ],
               if (knowledge.item.type == ItemType.video) ...[
                 const SizedBox(height: 16),
                 KeyPeriodScrubber(

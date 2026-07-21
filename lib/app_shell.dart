@@ -6,10 +6,12 @@ import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/api/items_repository.dart';
 import 'package:tagkin_desktop/api/jobs_repository.dart';
 import 'package:tagkin_desktop/api/me_repository.dart';
+import 'package:tagkin_desktop/api/persons_repository.dart';
 import 'package:tagkin_desktop/api/usage_repository.dart';
 import 'package:tagkin_desktop/auth/secure_persistor.dart';
 import 'package:tagkin_desktop/config/app_config.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/persons/persons_list_page.dart';
 
 /// App-wide config (overridable in tests).
 final appConfigProvider = Provider<AppConfig>((ref) => AppConfig.load());
@@ -47,6 +49,13 @@ final usageRepositoryProvider = Provider<UsageRepository>(
 /// otherwise built from [apiClientProvider].
 final jobsRepositoryProvider = Provider<JobsRepository>(
   (ref) => JobsRepository(ref.watch(apiClientProvider)),
+  dependencies: [apiClientProvider],
+);
+
+/// Person linking API (D9). Override in tests with a fake; otherwise built
+/// from [apiClientProvider].
+final personsRepositoryProvider = Provider<PersonsRepository>(
+  (ref) => PersonsRepository(ref.watch(apiClientProvider)),
   dependencies: [apiClientProvider],
 );
 
@@ -426,12 +435,30 @@ class _SignedInScaffold extends StatelessWidget {
   final Widget child;
   final Future<void> Function()? onSignOut;
 
+  Future<void> _openPersons(BuildContext context) async {
+    final container = ProviderScope.containerOf(context);
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => UncontrolledProviderScope(
+          container: container,
+          child: const PersonsListPage(),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('TagKin'),
         actions: [
+          IconButton(
+            key: const Key('nav-persons'),
+            tooltip: 'Persons',
+            onPressed: () => _openPersons(context),
+            icon: const Icon(Icons.people_outline),
+          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Center(

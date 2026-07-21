@@ -11,7 +11,8 @@ enum ReviewPhase { idle, loading, ready, error }
 /// Loads approved [ItemKnowledge] and resolves authorized local media.
 ///
 /// Never sends `ownerUserId` (R10). Never uploads media bytes (R1/R5/R7).
-/// Displays provenance only — no corrections (D10) or person linking (D9).
+/// Displays provenance only — corrections live in D10. Person confirm/correct
+/// controls live in D9 (linked from appearance rows + Find person matches).
 class ReviewController extends ChangeNotifier {
   ReviewController({
     required this.itemId,

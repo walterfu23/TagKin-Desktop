@@ -4,11 +4,19 @@ import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 
 /// Renders approved who/what/when/where from [ItemKnowledge] (D8).
 ///
-/// Canonical terms only (R2). Read-only — corrections live in D10.
+/// Canonical terms only (R2). Read-only tags — corrections live in D10.
+/// Person appearance rows link to D9 person detail when [onPersonTap] is set.
 class KnowledgeView extends StatelessWidget {
-  const KnowledgeView({super.key, required this.knowledge});
+  const KnowledgeView({
+    super.key,
+    required this.knowledge,
+    this.onPersonTap,
+  });
 
   final ItemKnowledge knowledge;
+
+  /// Opens person detail for a linked appearance (D9).
+  final void Function(String personId)? onPersonTap;
 
   @override
   Widget build(BuildContext context) {
@@ -43,17 +51,48 @@ class KnowledgeView extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           for (final appearance in knowledge.appearances)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Text(
-                'appearance ${appearance.id}'
-                '${appearance.personId != null ? ' → person ${appearance.personId}' : ''}'
-                ' (${appearance.linkState.wire})',
-                key: Key('appearance-${appearance.id}'),
-              ),
+            _AppearanceRow(
+              appearance: appearance,
+              onPersonTap: onPersonTap,
             ),
         ],
       ],
+    );
+  }
+}
+
+class _AppearanceRow extends StatelessWidget {
+  const _AppearanceRow({
+    required this.appearance,
+    this.onPersonTap,
+  });
+
+  final PersonAppearance appearance;
+  final void Function(String personId)? onPersonTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final personId = appearance.personId;
+    final label = 'appearance ${appearance.id}'
+        '${personId != null ? ' → person $personId' : ''}'
+        ' (${appearance.linkState.wire})';
+    final text = Text(
+      label,
+      key: Key('appearance-${appearance.id}'),
+    );
+    if (personId != null && onPersonTap != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: InkWell(
+          key: Key('appearance-person-link-${appearance.id}'),
+          onTap: () => onPersonTap!(personId),
+          child: text,
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: text,
     );
   }
 }

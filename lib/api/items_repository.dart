@@ -137,4 +137,20 @@ class ItemsRepository {
     }
     return Item.fromJson(json);
   }
+
+  /// `POST /items/{id}/link-people` — run server-side likeness matching (D9).
+  ///
+  /// Produces `suggested` links only — never an automatic `confirmed` merge
+  /// (R6). No media bytes; similarity stays server-side (R1/R8).
+  Future<LinkPeopleResponse> linkPeopleForItem(String itemId) async {
+    final response = await _client.post('/items/$itemId/link-people');
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected link-people response shape',
+      );
+    }
+    return LinkPeopleResponse.fromJson(json);
+  }
 }

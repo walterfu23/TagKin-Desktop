@@ -46,6 +46,15 @@ class FakeItemsRepository implements ItemsRepository {
   final List<({String itemId, RecordAnalysisRef input})> analysisRefRecorded =
       <({String itemId, RecordAnalysisRef input})>[];
 
+  /// Appearances returned by [linkPeopleForItem] (D9 tests).
+  final List<PersonAppearance> linkPeopleResult = <PersonAppearance>[];
+
+  /// Call log for [linkPeopleForItem].
+  final List<String> linkPeopleCalls = <String>[];
+
+  /// When set, [linkPeopleForItem] throws this.
+  Object? linkPeopleError;
+
   /// Removes an item from the in-memory library (D7 delete tests).
   void removeItem(String id) {
     _items.removeWhere((i) => i.id == id);
@@ -169,6 +178,25 @@ class FakeItemsRepository implements ItemsRepository {
     );
     _items[index] = updated;
     return updated;
+  }
+
+  @override
+  Future<LinkPeopleResponse> linkPeopleForItem(String itemId) async {
+    await getItem(itemId);
+    linkPeopleCalls.add(itemId);
+    if (linkPeopleError != null) throw linkPeopleError!;
+    // Merge linked appearances into stored knowledge when present.
+    final existing = _knowledgeByItemId[itemId];
+    if (existing != null && linkPeopleResult.isNotEmpty) {
+      _knowledgeByItemId[itemId] = ItemKnowledge(
+        item: existing.item,
+        tags: existing.tags,
+        keyPeriods: existing.keyPeriods,
+        appearances: linkPeopleResult,
+        corrections: existing.corrections,
+      );
+    }
+    return LinkPeopleResponse(appearances: List.from(linkPeopleResult));
   }
 }
 
