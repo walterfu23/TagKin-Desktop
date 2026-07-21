@@ -39,6 +39,11 @@ class FakeItemsRepository implements ItemsRepository {
   final List<({String itemId, RecordAnalysisRef input})> analysisRefRecorded =
       <({String itemId, RecordAnalysisRef input})>[];
 
+  /// Removes an item from the in-memory library (D7 delete tests).
+  void removeItem(String id) {
+    _items.removeWhere((i) => i.id == id);
+  }
+
   @override
   Future<List<Item>> listItems({ProcessingStatus? status}) async {
     if (listError != null) throw listError!;

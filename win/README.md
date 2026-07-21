@@ -48,3 +48,4 @@ Subsystem regression entry points use **`NNN_test_dN.ps1`** (`d0`, `d1`, … `d1
 | [`110_test_d4.ps1`](./110_test_d4.ps1) | D4 Client Pre-pass regression bar alone. |
 | [`111_test_d6.ps1`](./111_test_d6.ps1) | D6 Cost & Usage Surface regression bar alone. |
 | [`112_test_d5.ps1`](./112_test_d5.ps1) | D5 Ingest Upload & Grants regression bar alone. |
+| [`113_test_d7.ps1`](./113_test_d7.ps1) | D7 Tagging & Jobs Lifecycle regression bar alone. |

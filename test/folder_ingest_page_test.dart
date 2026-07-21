@@ -11,6 +11,7 @@ import 'package:tagkin_desktop/prepass/prepass_controller.dart';
 import 'package:tagkin_desktop/prepass/prepass_payload_builder.dart';
 
 import 'fake_items_repository.dart';
+import 'fake_jobs_repository.dart';
 import 'fake_usage_repository.dart';
 
 // Widget tests never touch real `dart:io` here — `testWidgets`'s pumped
@@ -42,6 +43,7 @@ Future<void> _pushFolderIngestPage(
         folderPickerProvider.overrideWithValue(folderPicker),
         itemsRepositoryProvider.overrideWithValue(repository),
         usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          jobsRepositoryProvider.overrideWithValue(FakeJobsRepository()),
         if (enumerate != null) mediaEnumeratorProvider.overrideWithValue(enumerate),
         // No real file bytes to decode/hash in these widget fixtures.
         contentHasherProvider.overrideWithValue(
@@ -197,6 +199,7 @@ void main() {
               ),
             ),
           ),
+          jobsRepositoryProvider.overrideWithValue(FakeJobsRepository()),
           mediaEnumeratorProvider.overrideWithValue(
             (path) async => [_fixtureCandidate('$path/a.jpg')],
           ),

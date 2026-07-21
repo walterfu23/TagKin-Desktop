@@ -11,6 +11,7 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/main.dart';
 
 import '../test/fake_items_repository.dart';
+import '../test/fake_jobs_repository.dart';
 import '../test/fake_usage_repository.dart';
 
 void main() {
@@ -33,6 +34,7 @@ void main() {
           ),
           itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
           usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          jobsRepositoryProvider.overrideWithValue(FakeJobsRepository()),
         ],
         child: const TagKinDesktopApp(),
       ),

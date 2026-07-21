@@ -9,6 +9,7 @@ import 'package:tagkin_desktop/library/items_list_page.dart';
 import 'package:tagkin_desktop/main.dart';
 
 import 'fake_items_repository.dart';
+import 'fake_jobs_repository.dart';
 import 'fake_usage_repository.dart';
 
 Account _account(String id) => Account(
@@ -22,6 +23,7 @@ List<Override> _sessionOverrides({
   String accountId = 'acc_1',
   String token = 'tok',
   FakeUsageRepository? usage,
+  FakeJobsRepository? jobs,
 }) {
   return [
     testSessionProvider.overrideWithValue(
@@ -30,6 +32,9 @@ List<Override> _sessionOverrides({
     itemsRepositoryProvider.overrideWithValue(items),
     usageRepositoryProvider.overrideWithValue(
       usage ?? FakeUsageRepository(),
+    ),
+    jobsRepositoryProvider.overrideWithValue(
+      jobs ?? FakeJobsRepository(),
     ),
   ];
 }
@@ -102,6 +107,10 @@ void main() {
               getItemError: ApiException(statusCode: 404, message: 'Not found'),
             ),
           ),
+          jobsRepositoryProvider.overrideWithValue(
+            FakeJobsRepository(itemId: 'foreign-id'),
+          ),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
         ],
         child: const MaterialApp(
           home: ItemDetailPage(itemId: 'foreign-id'),

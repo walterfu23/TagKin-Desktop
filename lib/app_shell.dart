@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/api/items_repository.dart';
+import 'package:tagkin_desktop/api/jobs_repository.dart';
 import 'package:tagkin_desktop/api/me_repository.dart';
 import 'package:tagkin_desktop/api/usage_repository.dart';
 import 'package:tagkin_desktop/auth/secure_persistor.dart';
@@ -39,6 +40,13 @@ final itemsRepositoryProvider = Provider<ItemsRepository>(
 /// [apiClientProvider].
 final usageRepositoryProvider = Provider<UsageRepository>(
   (ref) => UsageRepository(ref.watch(apiClientProvider)),
+  dependencies: [apiClientProvider],
+);
+
+/// Tagging & jobs lifecycle API (D7). Override in tests with a fake;
+/// otherwise built from [apiClientProvider].
+final jobsRepositoryProvider = Provider<JobsRepository>(
+  (ref) => JobsRepository(ref.watch(apiClientProvider)),
   dependencies: [apiClientProvider],
 );
 

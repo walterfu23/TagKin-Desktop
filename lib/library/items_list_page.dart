@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_page.dart';
+import 'package:tagkin_desktop/jobs/export_controller.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/library/processing_status_view.dart';
 import 'package:tagkin_desktop/usage/usage_banner.dart';
@@ -11,7 +12,7 @@ import 'package:tagkin_desktop/usage/usage_controller.dart';
 /// Post-auth library home (D2): lists the authenticated account's items.
 ///
 /// D6 gates the "Add from folder" FAB on [UsageGate.blocked] and shows a
-/// warn/blocked [UsageBanner] above the list.
+/// warn/blocked [UsageBanner] above the list. D7 adds library export.
 class ItemsListPage extends ConsumerStatefulWidget {
   const ItemsListPage({super.key});
 
@@ -43,16 +44,19 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     ref.read(usageControllerProvider).load();
   }
 
-  void _openDetail(Item item) {
+  Future<void> _openDetail(Item item) async {
     final container = ProviderScope.containerOf(context);
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
+    final deleted = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
         builder: (_) => UncontrolledProviderScope(
           container: container,
           child: ItemDetailPage(itemId: item.id),
         ),
       ),
     );
+    if (deleted == true) {
+      _retry();
+    }
   }
 
   /// Opens D3 folder ingest; refreshes the list when it reports new items.
@@ -74,13 +78,36 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     }
   }
 
+  Future<void> _exportLibrary() async {
+    final export = ref.read(exportControllerProvider);
+    await export.exportLibrary();
+    if (!mounted) return;
+    if (export.phase == ExportPhase.done) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          key: const Key('export-success'),
+          content: Text('Exported to ${export.savedPath}'),
+        ),
+      );
+    } else if (export.phase == ExportPhase.error) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          key: const Key('export-error'),
+          content: Text('Export failed: ${export.error}'),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final usage = ref.watch(usageControllerProvider);
+    final export = ref.watch(exportControllerProvider);
     return ListenableBuilder(
-      listenable: usage,
+      listenable: Listenable.merge([usage, export]),
       builder: (context, _) {
         final blocked = usage.gate.blocked;
+        final exporting = export.phase == ExportPhase.running;
         return Scaffold(
           floatingActionButton: FloatingActionButton.extended(
             key: const Key('add-from-folder'),
@@ -92,6 +119,24 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               UsageBanner(gate: usage.gate),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    key: const Key('export-library'),
+                    onPressed: exporting ? null : _exportLibrary,
+                    icon: exporting
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.download_outlined),
+                    label: const Text('Export library…'),
+                  ),
+                ),
+              ),
               Expanded(child: _buildBody()),
             ],
           ),
