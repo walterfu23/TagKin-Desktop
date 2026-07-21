@@ -60,6 +60,14 @@ class FakeItemsRepository implements ItemsRepository {
     _items.removeWhere((i) => i.id == id);
   }
 
+  /// Updates the stored knowledge projection (D10 correction fakes).
+  void setKnowledge(String itemId, ItemKnowledge knowledge) {
+    _knowledgeByItemId[itemId] = knowledge;
+  }
+
+  /// Returns stored knowledge without falling back (D10 fakes).
+  ItemKnowledge? peekKnowledge(String itemId) => _knowledgeByItemId[itemId];
+
   @override
   Future<List<Item>> listItems({ProcessingStatus? status}) async {
     if (listError != null) throw listError!;

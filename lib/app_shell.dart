@@ -3,6 +3,8 @@ import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
+import 'package:tagkin_desktop/api/comments_repository.dart';
+import 'package:tagkin_desktop/api/corrections_repository.dart';
 import 'package:tagkin_desktop/api/items_repository.dart';
 import 'package:tagkin_desktop/api/jobs_repository.dart';
 import 'package:tagkin_desktop/api/me_repository.dart';
@@ -56,6 +58,18 @@ final jobsRepositoryProvider = Provider<JobsRepository>(
 /// from [apiClientProvider].
 final personsRepositoryProvider = Provider<PersonsRepository>(
   (ref) => PersonsRepository(ref.watch(apiClientProvider)),
+  dependencies: [apiClientProvider],
+);
+
+/// Knowledge corrections API (D10 / S8). Override in tests with a fake.
+final correctionsRepositoryProvider = Provider<CorrectionsRepository>(
+  (ref) => CorrectionsRepository(ref.watch(apiClientProvider)),
+  dependencies: [apiClientProvider],
+);
+
+/// Comments API (D10 / S9). Override in tests with a fake.
+final commentsRepositoryProvider = Provider<CommentsRepository>(
+  (ref) => CommentsRepository(ref.watch(apiClientProvider)),
   dependencies: [apiClientProvider],
 );
 

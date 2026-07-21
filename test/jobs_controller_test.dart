@@ -76,6 +76,36 @@ void main() {
       controller.dispose();
     });
 
+    test('stale refreshJobs after cancel does not clobber cancelled job',
+        () async {
+      final pending = fixtureJob(id: 'job_p', state: JobState.processing);
+      final repo = FakeJobsRepository(
+        itemId: 'item_1',
+        jobs: [pending],
+      );
+      // First list is instant (enter polling); second is delayed so cancel
+      // can finish while a refresh is still in flight.
+      final controller = JobsController(
+        itemId: 'item_1',
+        jobsRepository: repo,
+        pollInterval: const Duration(hours: 1),
+        ticker: (d, cb) => Timer(d, cb),
+      );
+
+      await controller.refreshJobs();
+      expect(controller.phase, JobsPhase.polling);
+
+      repo.listJobsDelay = const Duration(milliseconds: 30);
+      final staleRefresh = controller.refreshJobs();
+      await controller.cancel();
+      expect(controller.latestJob?.state, JobState.cancelled);
+
+      await staleRefresh;
+      expect(controller.latestJob?.state, JobState.cancelled);
+      expect(controller.phase, JobsPhase.terminal);
+      controller.dispose();
+    });
+
     test('delete sets deleted and never touches local paths', () async {
       final repo = FakeJobsRepository(itemId: 'item_1');
       final controller = JobsController(

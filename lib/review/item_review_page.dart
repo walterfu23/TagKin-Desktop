@@ -5,6 +5,9 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/app_shell.dart' show itemsRepositoryProvider;
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/knowledge/comments_view.dart';
+import 'package:tagkin_desktop/knowledge/corrections_history_view.dart';
+import 'package:tagkin_desktop/knowledge/tag_edit_dialog.dart';
 import 'package:tagkin_desktop/persons/person_detail_page.dart';
 import 'package:tagkin_desktop/review/key_period_scrubber.dart';
 import 'package:tagkin_desktop/review/knowledge_view.dart';
@@ -12,11 +15,11 @@ import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/review/media_viewer.dart';
 import 'package:tagkin_desktop/review/review_controller.dart';
 
-/// D8 review surface: local media + approved knowledge + key-period scrub.
+/// Review surface: local media + approved knowledge + corrections/comments.
 ///
 /// Embedded below D2/D7 metadata on the item detail screen. D9 adds
-/// Find person matches + appearance → person navigation. Corrections (D10)
-/// remain out of scope.
+/// Find person matches + appearance → person navigation. D10 owns tag /
+/// captured-at / key-period corrections, undo, and comments.
 class ItemReviewSection extends ConsumerStatefulWidget {
   const ItemReviewSection({
     super.key,
@@ -132,6 +135,72 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     }
   }
 
+  Future<void> _addTag(ReviewController review, String dimension) async {
+    final result = await showTagEditDialog(
+      context,
+      initialDimension: dimension,
+      lockDimension: true,
+    );
+    if (result == null) return;
+    await review.addTag(dimension: result.dimension, value: result.value);
+  }
+
+  Future<void> _editTag(ReviewController review, Tag tag) async {
+    final result = await showTagEditDialog(
+      context,
+      initialDimension: tag.dimension,
+      initialValue: tag.value,
+      lockDimension: true,
+    );
+    if (result == null) return;
+    await review.editTag(tag.id, result.value);
+  }
+
+  Future<void> _editBounds(
+    ReviewController review,
+    KeyPeriodKnowledge period,
+  ) async {
+    final result = await showKeyPeriodBoundsDialog(
+      context,
+      startMs: period.startMs,
+      endMs: period.endMs,
+    );
+    if (result == null) return;
+    await review.correctKeyPeriodBounds(
+      keyPeriodId: period.id,
+      startMs: result.startMs,
+      endMs: result.endMs,
+    );
+  }
+
+  Future<void> _editCapturedAt(ReviewController review) async {
+    final current = review.knowledge?.item.capturedAt;
+    DateTime initial = DateTime.now();
+    if (current != null) {
+      initial = DateTime.tryParse(current) ?? initial;
+    }
+    final date = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(1970),
+      lastDate: DateTime(2100),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initial),
+    );
+    if (time == null || !mounted) return;
+    final combined = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    ).toUtc();
+    await review.correctCapturedAt(combined.toIso8601String());
+  }
+
   @override
   Widget build(BuildContext context) {
     final review = ref.watch(reviewControllerProvider(widget.itemId));
@@ -184,9 +253,53 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
                 videoController: _videoController,
               ),
               const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'capturedAt: ${knowledge.item.capturedAt ?? '—'}',
+                      key: const Key('review-captured-at'),
+                    ),
+                  ),
+                  TextButton(
+                    key: const Key('captured-at-edit'),
+                    onPressed: review.isBusy
+                        ? null
+                        : () => _editCapturedAt(review),
+                    child: const Text('Edit'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
               KnowledgeView(
                 knowledge: knowledge,
                 onPersonTap: _openPerson,
+                onAddTag: (d) => _addTag(review, d),
+                onEditTag: (t) => _editTag(review, t),
+                onRemoveTag: (t) => review.removeTag(t.id),
+                correctionsEnabled: !review.isBusy,
+              ),
+              if (review.mutationError != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  '${review.mutationError}',
+                  key: const Key('correction-error'),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+              const SizedBox(height: 16),
+              CorrectionsHistoryView(
+                corrections: knowledge.corrections,
+                onUndo: review.undoCorrection,
+                enabled: !review.isBusy,
+              ),
+              const SizedBox(height: 16),
+              CommentsView(
+                comments: review.itemComments,
+                onAdd: review.addItemComment,
+                onEdit: review.editComment,
+                onDelete: review.deleteComment,
+                enabled: !review.isBusy,
               ),
               const SizedBox(height: 12),
               OutlinedButton(
@@ -208,6 +321,12 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
                 KeyPeriodScrubber(
                   keyPeriods: knowledge.keyPeriods,
                   player: _player,
+                  onEditBounds: (p) => _editBounds(review, p),
+                  commentsFor: review.commentsForKeyPeriod,
+                  onAddComment: review.addKeyPeriodComment,
+                  onEditComment: review.editComment,
+                  onDeleteComment: review.deleteComment,
+                  correctionsEnabled: !review.isBusy,
                 ),
               ],
             ],

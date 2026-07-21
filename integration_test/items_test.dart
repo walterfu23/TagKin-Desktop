@@ -10,6 +10,8 @@ import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/main.dart';
 
+import '../test/fake_comments_repository.dart';
+import '../test/fake_corrections_repository.dart';
 import '../test/fake_items_repository.dart';
 import '../test/fake_jobs_repository.dart';
 import '../test/fake_usage_repository.dart';
@@ -23,6 +25,7 @@ void main() {
       id: 'item_int',
       processingStatus: ProcessingStatus.tagged,
     );
+    final items = FakeItemsRepository(items: [item]);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -36,8 +39,12 @@ void main() {
               ),
             ),
           ),
-          itemsRepositoryProvider.overrideWithValue(
-            FakeItemsRepository(items: [item]),
+          itemsRepositoryProvider.overrideWithValue(items),
+          correctionsRepositoryProvider.overrideWithValue(
+            FakeCorrectionsRepository(items: items),
+          ),
+          commentsRepositoryProvider.overrideWithValue(
+            FakeCommentsRepository(),
           ),
           usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
           jobsRepositoryProvider.overrideWithValue(FakeJobsRepository()),

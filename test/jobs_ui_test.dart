@@ -6,6 +6,8 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/main.dart';
 
+import 'fake_comments_repository.dart';
+import 'fake_corrections_repository.dart';
 import 'fake_items_repository.dart';
 import 'fake_jobs_repository.dart';
 import 'fake_usage_repository.dart';
@@ -26,6 +28,10 @@ List<Override> _overrides({
       TestSession(token: 'tok', account: _account('acc_1')),
     ),
     itemsRepositoryProvider.overrideWithValue(items),
+    correctionsRepositoryProvider.overrideWithValue(
+      FakeCorrectionsRepository(items: items),
+    ),
+    commentsRepositoryProvider.overrideWithValue(FakeCommentsRepository()),
     usageRepositoryProvider.overrideWithValue(
       usage ?? FakeUsageRepository(),
     ),

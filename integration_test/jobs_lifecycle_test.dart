@@ -12,6 +12,8 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/jobs/export_controller.dart';
 import 'package:tagkin_desktop/main.dart';
 
+import '../test/fake_comments_repository.dart';
+import '../test/fake_corrections_repository.dart';
 import '../test/fake_items_repository.dart';
 import '../test/fake_jobs_repository.dart';
 import '../test/fake_usage_repository.dart';
@@ -49,6 +51,12 @@ void main() {
             ),
           ),
           itemsRepositoryProvider.overrideWithValue(items),
+          correctionsRepositoryProvider.overrideWithValue(
+            FakeCorrectionsRepository(items: items),
+          ),
+          commentsRepositoryProvider.overrideWithValue(
+            FakeCommentsRepository(),
+          ),
           usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
           jobsRepositoryProvider.overrideWithValue(jobs),
           exportControllerProvider.overrideWith((ref) {
@@ -96,7 +104,13 @@ void main() {
 
   testWidgets('cancel while job non-terminal reflects cancelled',
       (WidgetTester tester) async {
+    // Tall surface so Cancel stays hittable above the D10 review section.
+    tester.view.physicalSize = const Size(1200, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
     final item = fixtureItem(id: 'item_cancel');
+    final items = FakeItemsRepository(items: [item]);
     final jobs = FakeJobsRepository(
       itemId: 'item_cancel',
       item: item,
@@ -122,8 +136,12 @@ void main() {
               ),
             ),
           ),
-          itemsRepositoryProvider.overrideWithValue(
-            FakeItemsRepository(items: [item]),
+          itemsRepositoryProvider.overrideWithValue(items),
+          correctionsRepositoryProvider.overrideWithValue(
+            FakeCorrectionsRepository(items: items),
+          ),
+          commentsRepositoryProvider.overrideWithValue(
+            FakeCommentsRepository(),
           ),
           usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
           jobsRepositoryProvider.overrideWithValue(jobs),
@@ -143,6 +161,8 @@ void main() {
     await tester.ensureVisible(find.byKey(const Key('item-cancel-job')));
     await tester.pump();
     await tester.tap(find.byKey(const Key('item-cancel-job')));
+    // Allow cancel + notifyListeners; avoid pumpAndSettle (progress spinner).
+    await tester.pump();
     await tester.pump();
     await tester.pump();
     expect(jobs.cancelCallCount, 1);

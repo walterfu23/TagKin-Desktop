@@ -2,21 +2,40 @@ import 'package:flutter/material.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 
-/// Renders approved who/what/when/where from [ItemKnowledge] (D8).
+/// Renders approved who/what/when/where from [ItemKnowledge] (D8 + D10).
 ///
-/// Canonical terms only (R2). Read-only tags — corrections live in D10.
-/// Person appearance rows link to D9 person detail when [onPersonTap] is set.
+/// Canonical terms only (R2). Optional correction callbacks enable add/edit/
+/// remove (D10). Person appearance rows link to D9 when [onPersonTap] is set.
 class KnowledgeView extends StatelessWidget {
   const KnowledgeView({
     super.key,
     required this.knowledge,
     this.onPersonTap,
+    this.onAddTag,
+    this.onEditTag,
+    this.onRemoveTag,
+    this.correctionsEnabled = true,
   });
 
   final ItemKnowledge knowledge;
 
   /// Opens person detail for a linked appearance (D9).
   final void Function(String personId)? onPersonTap;
+
+  /// Add a tag for [dimension] (D10).
+  final void Function(String dimension)? onAddTag;
+
+  /// Edit an existing tag (D10).
+  final void Function(Tag tag)? onEditTag;
+
+  /// Remove an existing tag (D10).
+  final void Function(Tag tag)? onRemoveTag;
+
+  final bool correctionsEnabled;
+
+  bool get _canCorrect =>
+      correctionsEnabled &&
+      (onAddTag != null || onEditTag != null || onRemoveTag != null);
 
   @override
   Widget build(BuildContext context) {
@@ -32,7 +51,7 @@ class KnowledgeView extends StatelessWidget {
           style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 8),
-        if (!hasAny)
+        if (!hasAny && !_canCorrect)
           const Text(
             'No tags yet — run Analyze when ready.',
             key: Key('knowledge-empty'),
@@ -42,6 +61,10 @@ class KnowledgeView extends StatelessWidget {
             _DimensionSection(
               dimension: dimension,
               tags: grouped[dimension]!,
+              onAddTag: onAddTag,
+              onEditTag: onEditTag,
+              onRemoveTag: onRemoveTag,
+              enabled: correctionsEnabled,
             ),
         if (knowledge.appearances.isNotEmpty) ...[
           const SizedBox(height: 12),
@@ -101,10 +124,18 @@ class _DimensionSection extends StatelessWidget {
   const _DimensionSection({
     required this.dimension,
     required this.tags,
+    this.onAddTag,
+    this.onEditTag,
+    this.onRemoveTag,
+    this.enabled = true,
   });
 
   final String dimension;
   final List<Tag> tags;
+  final void Function(String dimension)? onAddTag;
+  final void Function(Tag tag)? onEditTag;
+  final void Function(Tag tag)? onRemoveTag;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -113,12 +144,26 @@ class _DimensionSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            dimension,
-            key: Key('knowledge-dimension-$dimension'),
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  dimension,
+                  key: Key('knowledge-dimension-$dimension'),
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                 ),
+              ),
+              if (onAddTag != null)
+                IconButton(
+                  key: Key('tag-add-$dimension'),
+                  tooltip: 'Add tag',
+                  iconSize: 18,
+                  onPressed: enabled ? () => onAddTag!(dimension) : null,
+                  icon: const Icon(Icons.add),
+                ),
+            ],
           ),
           if (tags.isEmpty)
             const Text('—')
@@ -148,6 +193,22 @@ class _DimensionSection extends StatelessWidget {
                         textAlign: TextAlign.end,
                       ),
                     ),
+                    if (onEditTag != null)
+                      IconButton(
+                        key: Key('tag-edit-${tag.id}'),
+                        tooltip: 'Edit tag',
+                        iconSize: 18,
+                        onPressed: enabled ? () => onEditTag!(tag) : null,
+                        icon: const Icon(Icons.edit_outlined),
+                      ),
+                    if (onRemoveTag != null)
+                      IconButton(
+                        key: Key('tag-remove-${tag.id}'),
+                        tooltip: 'Remove tag',
+                        iconSize: 18,
+                        onPressed: enabled ? () => onRemoveTag!(tag) : null,
+                        icon: const Icon(Icons.close),
+                      ),
                   ],
                 ),
               ),

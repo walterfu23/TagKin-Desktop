@@ -36,6 +36,9 @@ class FakeJobsRepository implements JobsRepository {
   /// Optional delay before [analyzeItem] completes (tests race/cancel).
   final Duration? analyzeDelay;
 
+  /// Optional delay before [listItemJobs] completes (tests stale-refresh race).
+  Duration? listJobsDelay;
+
   /// Invoked after a successful [deleteItem] (e.g. to update [FakeItemsRepository]).
   final void Function(String itemId)? onDelete;
 
@@ -103,6 +106,9 @@ class FakeJobsRepository implements JobsRepository {
   @override
   Future<List<Job>> listItemJobs(String id) async {
     listJobsCallCount++;
+    if (listJobsDelay != null) {
+      await Future<void>.delayed(listJobsDelay!);
+    }
     if (jobsError != null) throw jobsError!;
     if (id != itemId) {
       throw ApiException(statusCode: 404, message: 'Not found');

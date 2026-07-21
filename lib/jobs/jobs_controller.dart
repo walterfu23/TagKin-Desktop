@@ -52,7 +52,10 @@ class JobsController extends ChangeNotifier {
     if (deleted) return;
     try {
       final jobs = await jobsRepository.listItemJobs(itemId);
-      if (_disposed) return;
+      if (_disposed || deleted) return;
+      // Cancel/delete may have finished while this list was in flight — do not
+      // clobber the terminal job (e.g. cancelled) with a stale snapshot.
+      if (phase == JobsPhase.terminal) return;
       latestJob = jobs.isEmpty ? null : jobs.first;
       error = null;
       if (latestJob != null && !isTerminalJobState(latestJob!.state)) {
@@ -67,7 +70,7 @@ class JobsController extends ChangeNotifier {
       }
       notifyListeners();
     } catch (e) {
-      if (_disposed) return;
+      if (_disposed || deleted || phase == JobsPhase.terminal) return;
       error = e;
       phase = JobsPhase.error;
       _stopPolling();

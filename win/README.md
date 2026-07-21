@@ -50,3 +50,5 @@ Subsystem regression entry points use **`NNN_test_dN.ps1`** (`d0`, `d1`, … `d1
 | [`112_test_d5.ps1`](./112_test_d5.ps1) | D5 Ingest Upload & Grants regression bar alone. |
 | [`113_test_d7.ps1`](./113_test_d7.ps1) | D7 Tagging & Jobs Lifecycle regression bar alone. |
 | [`114_test_d8.ps1`](./114_test_d8.ps1) | D8 Review UI (item detail + key-period scrub) regression bar alone. |
+| [`115_test_d9.ps1`](./115_test_d9.ps1) | D9 Person Linking UI regression bar alone. |
+| [`116_test_d10.ps1`](./116_test_d10.ps1) | D10 Knowledge Corrections & Comments UI regression bar alone. |

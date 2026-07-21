@@ -6,6 +6,8 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/review/item_review_page.dart';
 
+import 'fake_comments_repository.dart';
+import 'fake_corrections_repository.dart';
 import 'fake_items_repository.dart';
 import 'fake_jobs_repository.dart';
 import 'fake_usage_repository.dart';
@@ -27,6 +29,12 @@ void main() {
       ProviderScope(
         overrides: [
           itemsRepositoryProvider.overrideWithValue(items),
+          correctionsRepositoryProvider.overrideWithValue(
+            FakeCorrectionsRepository(items: items),
+          ),
+          commentsRepositoryProvider.overrideWithValue(
+            FakeCommentsRepository(),
+          ),
           usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
           jobsRepositoryProvider.overrideWithValue(
             FakeJobsRepository(itemId: 'item_1', item: item),
@@ -85,6 +93,12 @@ void main() {
       ProviderScope(
         overrides: [
           itemsRepositoryProvider.overrideWithValue(items),
+          correctionsRepositoryProvider.overrideWithValue(
+            FakeCorrectionsRepository(items: items),
+          ),
+          commentsRepositoryProvider.overrideWithValue(
+            FakeCommentsRepository(),
+          ),
           usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
           jobsRepositoryProvider.overrideWithValue(
             FakeJobsRepository(itemId: 'item_v', item: item),
@@ -92,7 +106,9 @@ void main() {
         ],
         child: const MaterialApp(
           home: Scaffold(
-            body: ItemReviewSection(itemId: 'item_v', openVideo: false),
+            body: SingleChildScrollView(
+              child: ItemReviewSection(itemId: 'item_v', openVideo: false),
+            ),
           ),
         ),
       ),
