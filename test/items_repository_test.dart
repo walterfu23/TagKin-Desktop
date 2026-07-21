@@ -93,6 +93,75 @@ void main() {
       client.close();
     });
 
+    test('getKnowledge returns approved projection; foreign id 404 (R10)',
+        () async {
+      final mock = MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/items/item_1/knowledge');
+        expect(request.headers['Authorization'], 'Bearer tok-a');
+        return http.Response(
+          jsonEncode({
+            'item': _itemJson(id: 'item_1', status: 'tagged'),
+            'tags': [
+              {
+                'id': 'tag_1',
+                'itemId': 'item_1',
+                'keyPeriodId': null,
+                'dimension': 'what',
+                'value': 'picnic',
+                'source': 'model',
+                'status': 'active',
+                'correctedFromTagId': null,
+                'confidence': 0.91,
+                'provider': 'stub',
+                'modelId': 'stub-model',
+                'schemaVersion': 1,
+                'createdAt': '2026-07-19T00:00:00.000Z',
+              },
+            ],
+            'keyPeriods': [],
+            'appearances': [],
+            'corrections': [],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      final client = ApiClient(
+        baseUrl: 'http://api.test',
+        tokenProvider: () => 'tok-a',
+        httpClient: mock,
+      );
+      final knowledge = await ItemsRepository(client).getKnowledge('item_1');
+      expect(knowledge.item.id, 'item_1');
+      expect(knowledge.tags.single.value, 'picnic');
+      expect(knowledge.tags.single.dimension, 'what');
+      client.close();
+    });
+
+    test('getKnowledge foreign id surfaces 404 (R10)', () async {
+      final mock = MockClient((request) async {
+        expect(request.url.path, '/items/foreign/knowledge');
+        return http.Response(
+          jsonEncode({'code': 'not_found', 'message': 'Not found'}),
+          404,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      final client = ApiClient(
+        baseUrl: 'http://api.test',
+        tokenProvider: () => 'tok-a',
+        httpClient: mock,
+      );
+      await expectLater(
+        ItemsRepository(client).getKnowledge('foreign'),
+        throwsA(
+          isA<ApiException>().having((e) => e.statusCode, 'status', 404),
+        ),
+      );
+      client.close();
+    });
+
     test('createItem sends metadata/refs only — no byte/blob fields (R1)',
         () async {
       final mock = MockClient((request) async {

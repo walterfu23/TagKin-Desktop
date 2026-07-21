@@ -44,6 +44,23 @@ class ItemsRepository {
     return Item.fromJson(json);
   }
 
+  /// `GET /items/{id}/knowledge` — approved who/what/when/where projection (D8).
+  ///
+  /// Metadata/text only — never media bytes (R1/R5). Owner is derived
+  /// server-side from the bearer token; this client never sends `ownerUserId`
+  /// (R10). Foreign ids surface as [ApiException] 404.
+  Future<ItemKnowledge> getKnowledge(String itemId) async {
+    final response = await _client.get('/items/$itemId/knowledge');
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected /items/{id}/knowledge response shape',
+      );
+    }
+    return ItemKnowledge.fromJson(json);
+  }
+
   /// `POST /items` — metadata/refs only ([CreateItem]); plumbing for D3.
   Future<Item> createItem(CreateItem input) async {
     final response = await _client.post('/items', body: input.toJson());

@@ -56,6 +56,10 @@ dependencies:
   # Greyscale/resize for the local perceptual (dHash) near-duplicate check (D3).
   image: ^4.3.0
   exif: ^3.3.0
+  media_kit: ^1.2.6
+  media_kit_video: ^2.0.1
+  media_kit_libs_macos_video: ^1.1.4
+  media_kit_libs_windows_video: ^1.0.11
 
 dev_dependencies:
   flutter_test:

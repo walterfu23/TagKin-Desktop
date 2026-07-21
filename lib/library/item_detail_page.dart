@@ -6,11 +6,10 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/jobs/job_state_view.dart';
 import 'package:tagkin_desktop/jobs/jobs_controller.dart';
 import 'package:tagkin_desktop/library/processing_status_view.dart';
+import 'package:tagkin_desktop/review/item_review_page.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
 
-/// Item detail (D2 metadata + D7 tagging/jobs lifecycle actions).
-///
-/// Media/knowledge review is D8 — this screen stays metadata + job controls.
+/// Item detail (D2 metadata + D7 tagging/jobs + D8 review).
 class ItemDetailPage extends ConsumerStatefulWidget {
   const ItemDetailPage({super.key, required this.itemId});
 
@@ -290,6 +289,8 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
                         key: Key('analyze-budget-blocked-hint'),
                       ),
                     ),
+                  const SizedBox(height: 32),
+                  ItemReviewSection(itemId: widget.itemId),
                 ],
               );
             },

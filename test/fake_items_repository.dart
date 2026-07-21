@@ -6,16 +6,23 @@ import 'package:tagkin_desktop/contract/contract.dart';
 class FakeItemsRepository implements ItemsRepository {
   FakeItemsRepository({
     List<Item>? items,
+    Map<String, ItemKnowledge>? knowledgeByItemId,
     this.getItemError,
     this.listError,
+    this.getKnowledgeError,
     this.grantFactory,
     this.grantError,
     this.analysisRefError,
-  }) : _items = List<Item>.from(items ?? const []);
+  })  : _items = List<Item>.from(items ?? const []),
+        _knowledgeByItemId = Map<String, ItemKnowledge>.from(
+          knowledgeByItemId ?? const {},
+        );
 
   final List<Item> _items;
+  final Map<String, ItemKnowledge> _knowledgeByItemId;
   final Object? getItemError;
   final Object? listError;
+  final Object? getKnowledgeError;
 
   /// Optional grant factory; defaults to a non-expiring stub URL.
   final UploadGrant Function(String itemId, CreateUploadGrant input)?
@@ -58,6 +65,22 @@ class FakeItemsRepository implements ItemsRepository {
       if (item.id == id) return item;
     }
     throw ApiException(statusCode: 404, message: 'Not found');
+  }
+
+  @override
+  Future<ItemKnowledge> getKnowledge(String itemId) async {
+    if (getKnowledgeError != null) throw getKnowledgeError!;
+    final knowledge = _knowledgeByItemId[itemId];
+    if (knowledge != null) return knowledge;
+    // Fall back to empty projection for items that exist in the library.
+    final item = await getItem(itemId);
+    return ItemKnowledge(
+      item: item,
+      tags: const [],
+      keyPeriods: const [],
+      appearances: const [],
+      corrections: const [],
+    );
   }
 
   @override
@@ -157,18 +180,73 @@ Item fixtureItem({
   String? capturedAt = '2026-07-01T12:00:00.000Z',
   AnalysisRefState analysisRefState = AnalysisRefState.pending,
   String? analysisRef,
+  String? sourceRef,
+  String? contentHash = '__default__',
 }) {
   return Item(
     id: id,
     type: type,
     sourceType: SourceType.local,
-    sourceRef: 'file:///tmp/$id.jpg',
+    sourceRef: sourceRef ?? 'file:///tmp/$id.jpg',
     analysisRef: analysisRef,
     analysisRefState: analysisRefState,
-    contentHash: 'hash_$id',
+    contentHash: contentHash == '__default__' ? 'hash_$id' : contentHash,
     capturedAt: capturedAt,
     processingStatus: processingStatus,
     schemaVersion: 1,
     createdAt: '2026-07-19T00:00:00.000Z',
+  );
+}
+
+/// Fixture [Tag] for D8 knowledge tests.
+Tag fixtureTag({
+  String id = 'tag_1',
+  String? itemId = 'item_1',
+  String? keyPeriodId,
+  String dimension = 'what',
+  String value = 'picnic',
+  KnowledgeSource source = KnowledgeSource.model,
+  TagStatus status = TagStatus.active,
+  double? confidence = 0.9,
+  String? provider = 'stub',
+  String? modelId = 'stub-model',
+}) {
+  return Tag(
+    id: id,
+    itemId: itemId,
+    keyPeriodId: keyPeriodId,
+    dimension: dimension,
+    value: value,
+    source: source,
+    status: status,
+    confidence: confidence,
+    provider: provider,
+    modelId: modelId,
+    schemaVersion: 1,
+    createdAt: '2026-07-19T00:00:00.000Z',
+  );
+}
+
+/// Fixture [ItemKnowledge] for D8 review tests.
+ItemKnowledge fixtureKnowledge({
+  Item? item,
+  List<Tag>? tags,
+  List<KeyPeriodKnowledge>? keyPeriods,
+  List<PersonAppearance>? appearances,
+  List<Correction>? corrections,
+}) {
+  final resolved = item ?? fixtureItem(processingStatus: ProcessingStatus.tagged);
+  return ItemKnowledge(
+    item: resolved,
+    tags: tags ??
+        [
+          fixtureTag(id: 'tag_who', dimension: 'who', value: 'Sam'),
+          fixtureTag(id: 'tag_what', dimension: 'what', value: 'picnic'),
+          fixtureTag(id: 'tag_when', dimension: 'when', value: '2026-07-01'),
+          fixtureTag(id: 'tag_where', dimension: 'where', value: 'park'),
+        ],
+    keyPeriods: keyPeriods ?? const [],
+    appearances: appearances ?? const [],
+    corrections: corrections ?? const [],
   );
 }
