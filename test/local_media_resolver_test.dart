@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 
 import 'fake_items_repository.dart';
@@ -18,15 +19,16 @@ void main() {
   });
 
   test('localPathFromSourceRef parses file:// URIs', () {
-    final path = localPathFromSourceRef(Uri.file('/tmp/photo.jpg').toString());
-    expect(path, '/tmp/photo.jpg');
+    final uri = Uri.file('/tmp/photo.jpg');
+    final path = localPathFromSourceRef(uri.toString());
+    expect(path, uri.toFilePath());
     expect(localPathFromSourceRef(null), isNull);
     expect(localPathFromSourceRef('https://example.com/a.jpg'), isNull);
   });
 
   test('resolveLocalMedia reports missing when file absent', () async {
     final item = fixtureItem(
-      sourceRef: Uri.file('${tmp.path}/gone.jpg').toString(),
+      sourceRef: Uri.file(p.join(tmp.path, 'gone.jpg')).toString(),
       contentHash: 'abc',
     );
     final result = await resolveLocalMedia(item);
@@ -34,7 +36,7 @@ void main() {
   });
 
   test('resolveLocalMedia available when contentHash is null', () async {
-    final file = File('${tmp.path}/photo.png');
+    final file = File(p.join(tmp.path, 'photo.png'));
     await file.writeAsBytes(solidImagePng());
     final result = await resolveLocalMedia(
       fixtureItem(
@@ -47,7 +49,7 @@ void main() {
   });
 
   test('resolveLocalMedia reports hashMismatch', () async {
-    final file = File('${tmp.path}/photo.png');
+    final file = File(p.join(tmp.path, 'photo.png'));
     await file.writeAsBytes(solidImagePng());
     final result = await resolveLocalMedia(
       fixtureItem(
@@ -61,7 +63,7 @@ void main() {
   });
 
   test('resolveLocalMedia reports available when hash matches', () async {
-    final file = File('${tmp.path}/photo.png');
+    final file = File(p.join(tmp.path, 'photo.png'));
     await file.writeAsBytes(solidImagePng());
     final result = await resolveLocalMedia(
       fixtureItem(
