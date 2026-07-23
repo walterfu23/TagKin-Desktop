@@ -40,6 +40,14 @@ class MediaViewer extends StatelessWidget {
         message: 'Local media not found at sourceRef.',
       );
     }
+    if (resolution.status == LocalMediaStatus.accessDenied) {
+      return const _MediaBanner(
+        key: Key('media-access-denied'),
+        message:
+            'macOS blocked access to this file. Use Add from folder and '
+            're-select the folder (security-scoped bookmark), then reopen.',
+      );
+    }
     if (resolution.status == LocalMediaStatus.hashMismatch) {
       return const _MediaBanner(
         key: Key('media-hash-mismatch'),

@@ -10,6 +10,7 @@ import 'fake_comments_repository.dart';
 import 'fake_corrections_repository.dart';
 import 'fake_items_repository.dart';
 import 'fake_jobs_repository.dart';
+import 'fake_persons_repository.dart';
 import 'fake_usage_repository.dart';
 
 void main() {
@@ -121,5 +122,89 @@ void main() {
     expect(find.textContaining('00:02.50'), findsOneWidget);
     expect(find.textContaining('00:08.00'), findsOneWidget);
     expect(find.text('party'), findsOneWidget);
+  });
+
+  testWidgets('Find person matches prompts to name unnamed persons',
+      (tester) async {
+    final item = fixtureItem(
+      id: 'item_1',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final knowledge = fixtureKnowledge(item: item);
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {'item_1': knowledge},
+    );
+    items.linkPeopleResult.add(
+      fixtureAppearance(
+        id: 'ap_new',
+        personId: 'person_new',
+        itemId: 'item_1',
+        linkState: LinkState.suggested,
+      ),
+    );
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_new',
+          name: null,
+          linkState: LinkState.suggested,
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_new',
+              personId: 'person_new',
+              itemId: 'item_1',
+            ),
+          ],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          itemsRepositoryProvider.overrideWithValue(items),
+          personsRepositoryProvider.overrideWithValue(persons),
+          correctionsRepositoryProvider.overrideWithValue(
+            FakeCorrectionsRepository(items: items),
+          ),
+          commentsRepositoryProvider.overrideWithValue(
+            FakeCommentsRepository(),
+          ),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          jobsRepositoryProvider.overrideWithValue(
+            FakeJobsRepository(itemId: 'item_1', item: item),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: ItemReviewSection(itemId: 'item_1', openVideo: false),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byKey(const Key('item-link-people')));
+    await tester.tap(find.byKey(const Key('item-link-people')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('person-name-dialog')), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('person-name-field')),
+      'Jordan',
+    );
+    await tester.tap(find.byKey(const Key('person-name-save')));
+    await tester.pumpAndSettle();
+
+    expect(items.linkPeopleCalls, ['item_1']);
+    expect(persons.renameCalls.single.name, 'Jordan');
+    expect(
+      find.byKey(const Key('link-people-status')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Jordan'), findsOneWidget);
   });
 }

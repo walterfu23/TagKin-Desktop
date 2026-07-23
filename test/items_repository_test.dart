@@ -283,6 +283,8 @@ void main() {
         expect(body['appearances'], isA<List<dynamic>>());
         final emb = (body['appearances'] as List).first as Map<String, dynamic>;
         expect((emb['embedding'] as List).length, 512);
+        // Optional nulls must be omitted — API rejects keyPeriodIndex: null.
+        expect(emb.containsKey('keyPeriodIndex'), isFalse);
         return http.Response(
           jsonEncode({
             'item': _itemJson(id: 'item_1'),

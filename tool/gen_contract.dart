@@ -232,11 +232,14 @@ void _writeClass(
     ..writeln('      );')
     ..writeln();
 
-  // toJson.
+  // toJson — omit null optional fields so clients don't send e.g.
+  // `keyPeriodIndex: null`, which some servers treat as present+invalid.
   out
-    ..writeln('  Map<String, dynamic> toJson() => <String, dynamic>{')
-    ..writeAll(fields.map(_toJsonLine))
-    ..writeln('      };')
+    ..writeln('  Map<String, dynamic> toJson() {')
+    ..writeln('    final json = <String, dynamic>{};')
+    ..writeAll(fields.map(_toJsonAssignLine))
+    ..writeln('    return json;')
+    ..writeln('  }')
     ..writeln('}')
     ..writeln();
 }
@@ -249,8 +252,12 @@ String _fromJsonLine(_Field f) {
   return '        ${f.name}: $expr,\n';
 }
 
-String _toJsonLine(_Field f) {
-  return "        '${f.name}': ${_toExpr(f.name, f.type, f.nullable)},\n";
+String _toJsonAssignLine(_Field f) {
+  final expr = _toExpr(f.name, f.type, f.nullable);
+  if (f.nullable) {
+    return "    if (${f.name} != null) json['${f.name}'] = $expr;\n";
+  }
+  return "    json['${f.name}'] = $expr;\n";
 }
 
 String _fromExpr(String access, _Type t) {

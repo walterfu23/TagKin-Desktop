@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:tagkin_desktop/ingest/folder_bookmark_store.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 
 import 'fake_items_repository.dart';
@@ -74,5 +75,31 @@ void main() {
     );
     expect(result.status, LocalMediaStatus.available);
     expect(result.path, file.path);
+  });
+
+  test('resolveLocalMedia reports accessDenied on PathAccessException', () async {
+    final path = p.join(tmp.path, 'locked.jpg');
+    final result = await resolveLocalMedia(
+      fixtureItem(
+        sourceRef: Uri.file(path).toString(),
+        contentHash: 'x',
+      ),
+      fileExists: (_) => throw PathAccessException(
+        'existsSync',
+        OSError('Operation not permitted', 1),
+        path,
+      ),
+    );
+    expect(result.status, LocalMediaStatus.accessDenied);
+    expect(result.path, path);
+  });
+
+  test('FolderBookmarkStore matches longest folder prefix', () async {
+    final store = FolderBookmarkStore(supportDir: tmp);
+    await store.save(tmp.path, 'bookmark-root');
+    final nested = p.join(tmp.path, 'sub');
+    await store.save(nested, 'bookmark-nested');
+    final filePath = p.join(nested, 'a.jpg');
+    expect(await store.bookmarkForFile(filePath), 'bookmark-nested');
   });
 }

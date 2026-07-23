@@ -1,8 +1,8 @@
-// D2 Library & Item Registry integration: list → detail against a fake
+// D2 Library & Item Registry integration: table → detail against a fake
 // ItemsRepository (mocked API per §5; no live network).
 //   flutter test integration_test/items_test.dart -d macos   (or -d windows)
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:integration_test/integration_test.dart';
@@ -19,13 +19,18 @@ import '../test/fake_usage_repository.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('items list renders and opens detail on the desktop host',
+  testWidgets('library table renders and opens detail on the desktop host',
       (WidgetTester tester) async {
     final item = fixtureItem(
       id: 'item_int',
       processingStatus: ProcessingStatus.tagged,
     );
-    final items = FakeItemsRepository(items: [item]);
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {
+        'item_int': fixtureKnowledge(item: item),
+      },
+    );
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -57,8 +62,10 @@ void main() {
     expect(find.byKey(const Key('items-list')), findsOneWidget);
     expect(find.byKey(const Key('item-row-item_int')), findsOneWidget);
     expect(find.byKey(const Key('processing-status-tagged')), findsOneWidget);
+    expect(find.byKey(const Key('sort-header-who')), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('item-row-item_int')));
+    await tester.ensureVisible(find.byKey(const Key('item-what-item_int')));
+    await tester.tap(find.byKey(const Key('item-what-item_int')));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('item-detail')), findsOneWidget);

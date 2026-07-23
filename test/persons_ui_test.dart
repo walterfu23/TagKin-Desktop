@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/person_detail_page.dart';
+import 'package:tagkin_desktop/persons/person_name_dialog.dart';
 import 'package:tagkin_desktop/persons/persons_list_page.dart';
 
 import 'fake_persons_repository.dart';
@@ -126,6 +127,79 @@ void main() {
 
     expect(find.text('Samantha'), findsOneWidget);
     expect(persons.renameCalls.single.name, 'Samantha');
+  });
+
+  testWidgets('person detail: unnamed shows name field by default',
+      (tester) async {
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: null,
+          linkState: LinkState.suggested,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+        ],
+        child: const MaterialApp(
+          home: PersonDetailPage(personId: 'person_1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('(unnamed)'), findsOneWidget);
+    expect(find.byKey(const Key('person-rename')), findsNothing);
+    expect(find.byKey(const Key('person-rename-field')), findsOneWidget);
+    expect(find.byKey(const Key('person-rename-cancel')), findsNothing);
+
+    await tester.enterText(
+      find.byKey(const Key('person-rename-field')),
+      'Alex',
+    );
+    await tester.tap(find.byKey(const Key('person-rename-save')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Alex'), findsOneWidget);
+    expect(persons.renameCalls.single.name, 'Alex');
+    expect(find.byKey(const Key('person-rename')), findsOneWidget);
+  });
+
+  testWidgets('person name dialog: save returns trimmed name', (tester) async {
+    String? result;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              key: const Key('open-name-dialog'),
+              onPressed: () async {
+                result = await showPersonNameDialog(context);
+              },
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('open-name-dialog')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('person-name-dialog')), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('person-name-field')),
+      '  Jordan  ',
+    );
+    await tester.tap(find.byKey(const Key('person-name-save')));
+    await tester.pumpAndSettle();
+
+    expect(result, 'Jordan');
   });
 
   testWidgets('person detail: unlink / split controls present (R6)',

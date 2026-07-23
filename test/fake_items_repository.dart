@@ -13,6 +13,7 @@ class FakeItemsRepository implements ItemsRepository {
     this.grantFactory,
     this.grantError,
     this.analysisRefError,
+    this.onListItems,
   })  : _items = List<Item>.from(items ?? const []),
         _knowledgeByItemId = Map<String, ItemKnowledge>.from(
           knowledgeByItemId ?? const {},
@@ -23,6 +24,9 @@ class FakeItemsRepository implements ItemsRepository {
   final Object? getItemError;
   final Object? listError;
   final Object? getKnowledgeError;
+
+  /// Optional hook before returning the list (e.g. inject one-shot failures).
+  final Future<void> Function()? onListItems;
 
   /// Optional grant factory; defaults to a non-expiring stub URL.
   final UploadGrant Function(String itemId, CreateUploadGrant input)?
@@ -70,6 +74,7 @@ class FakeItemsRepository implements ItemsRepository {
 
   @override
   Future<List<Item>> listItems({ProcessingStatus? status}) async {
+    if (onListItems != null) await onListItems!();
     if (listError != null) throw listError!;
     if (status == null) return List<Item>.from(_items);
     return _items.where((i) => i.processingStatus == status).toList();

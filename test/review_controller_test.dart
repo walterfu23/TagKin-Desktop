@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
@@ -48,6 +50,28 @@ void main() {
     expect(controller.knowledge!.tags.length, 4);
     expect(seen, isNotNull);
     expect(controller.media!.status, LocalMediaStatus.missing);
+    controller.dispose();
+  });
+
+  test('load keeps knowledge when resolveMedia throws (sandbox)', () async {
+    final item = fixtureItem(id: 'item_1');
+    final knowledge = fixtureKnowledge(item: item);
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {'item_1': knowledge},
+    );
+    final controller = ReviewController(
+      itemId: 'item_1',
+      itemsRepository: items,
+      correctionsRepository: FakeCorrectionsRepository(items: items),
+      commentsRepository: FakeCommentsRepository(),
+      resolveMedia: (_) async =>
+          throw const PathAccessException('open', OSError('denied', 1), '/x'),
+    );
+    await controller.load();
+    expect(controller.phase, ReviewPhase.ready);
+    expect(controller.knowledge, isNotNull);
+    expect(controller.media!.status, LocalMediaStatus.accessDenied);
     controller.dispose();
   });
 

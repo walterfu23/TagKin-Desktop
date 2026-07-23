@@ -3,17 +3,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
-import 'package:tagkin_desktop/app_shell.dart' show itemsRepositoryProvider;
+import 'package:tagkin_desktop/app_shell.dart'
+    show itemsRepositoryProvider, personsRepositoryProvider;
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/knowledge/comments_view.dart';
 import 'package:tagkin_desktop/knowledge/corrections_history_view.dart';
 import 'package:tagkin_desktop/knowledge/tag_edit_dialog.dart';
 import 'package:tagkin_desktop/persons/person_detail_page.dart';
+import 'package:tagkin_desktop/persons/person_name_dialog.dart';
 import 'package:tagkin_desktop/review/key_period_scrubber.dart';
 import 'package:tagkin_desktop/review/knowledge_view.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/review/media_viewer.dart';
 import 'package:tagkin_desktop/review/review_controller.dart';
+import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
 /// Review surface: local media + approved knowledge + corrections/comments.
 ///
@@ -99,14 +102,44 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
       _linkStatus = null;
     });
     try {
-      final result = await ref
-          .read(itemsRepositoryProvider)
-          .linkPeopleForItem(widget.itemId);
+      final items = ref.read(itemsRepositoryProvider);
+      final persons = ref.read(personsRepositoryProvider);
+      final result = await items.linkPeopleForItem(widget.itemId);
       if (!mounted) return;
-      setState(() {
-        _linkStatus =
-            'Found ${result.appearances.length} appearance link(s)';
-      });
+
+      final personIds = result.appearances
+          .map((a) => a.personId)
+          .whereType<String>()
+          .toSet();
+      final named = <String>[];
+      var skipped = 0;
+      for (final personId in personIds) {
+        final detail = await persons.getPerson(personId);
+        if (!mounted) return;
+        if (detail.name != null && detail.name!.trim().isNotEmpty) {
+          named.add(detail.name!.trim());
+          continue;
+        }
+        final entered = await showPersonNameDialog(context);
+        if (!mounted) return;
+        if (entered == null || entered.isEmpty) {
+          skipped++;
+          continue;
+        }
+        await persons.renamePerson(personId, entered);
+        named.add(entered);
+      }
+
+      if (!mounted) return;
+      final linkCount = result.appearances.length;
+      final status = StringBuffer('Found $linkCount appearance link(s)');
+      if (named.isNotEmpty) {
+        status.write(' — ${named.join(', ')}');
+      }
+      if (skipped > 0) {
+        status.write(' ($skipped unnamed skipped)');
+      }
+      setState(() => _linkStatus = status.toString());
       await ref.read(reviewControllerProvider(widget.itemId)).load();
     } catch (e) {
       if (!mounted) return;
@@ -124,9 +157,11 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     final container = ProviderScope.containerOf(context);
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (_) => UncontrolledProviderScope(
-          container: container,
-          child: PersonDetailPage(personId: personId),
+        builder: (_) => SelectableScope(
+          child: UncontrolledProviderScope(
+            container: container,
+            child: PersonDetailPage(personId: personId),
+          ),
         ),
       ),
     );
@@ -387,6 +422,10 @@ class _MediaStatusBanner extends StatelessWidget {
       case LocalMediaStatus.missing:
         label = 'Local media missing.';
         key = const Key('media-status-missing');
+      case LocalMediaStatus.accessDenied:
+        label =
+            'Local media access denied (macOS sandbox). Re-select the folder.';
+        key = const Key('media-status-access-denied');
       case LocalMediaStatus.hashMismatch:
         label = 'Local media contentHash mismatch.';
         key = const Key('media-status-hash-mismatch');

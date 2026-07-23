@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 108_test_d2.sh — D2 Library & Item Registry regression: ItemsRepository,
-# processingStatus mapping, list/detail UI, no-bytes create, R10 tenant
-# isolation, §5 mandatory assertions.
+# wide library table (thumb/who/what/where/source), client sort/filter/page,
+# processingStatus mapping, detail UI, no-bytes create, R10 tenant isolation,
+# §5 mandatory assertions.
 # Naming: NNN_test_dN.sh for desktop subsystem regression mac entry points.
 set -euo pipefail
 MAC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

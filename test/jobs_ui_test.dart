@@ -41,6 +41,11 @@ List<Override> _overrides({
 
 void main() {
   testWidgets('Analyze on photo reaches completed job state', (tester) async {
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     final item = fixtureItem(
       id: 'item_1',
       analysisRef: 'ref_1',
@@ -58,7 +63,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('item-row-item_1')));
+    await tester.ensureVisible(find.byKey(const Key('item-what-item_1')));
+    await tester.tap(find.byKey(const Key('item-what-item_1')));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('item-analyze')), findsOneWidget);
@@ -92,6 +98,11 @@ void main() {
   });
 
   testWidgets('Delete confirms and pops with deleted result', (tester) async {
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     final item = fixtureItem(id: 'item_del');
     final items = FakeItemsRepository(items: [item]);
     final jobs = FakeJobsRepository(
@@ -109,7 +120,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('item-row-item_del')));
+    await tester.ensureVisible(find.byKey(const Key('item-what-item_del')));
+    await tester.tap(find.byKey(const Key('item-what-item_del')));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('item-delete')));

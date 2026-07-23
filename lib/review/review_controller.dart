@@ -55,7 +55,15 @@ class ReviewController extends ChangeNotifier {
       final result = await itemsRepository.getKnowledge(itemId);
       if (_disposed) return;
       knowledge = result;
-      media = await resolveMedia(result.item);
+      try {
+        media = await resolveMedia(result.item);
+      } catch (e) {
+        // Knowledge still renders when local media cannot be opened (sandbox).
+        media = LocalMediaResolution(
+          status: LocalMediaStatus.accessDenied,
+          path: localPathFromSourceRef(result.item.sourceRef),
+        );
+      }
       if (_disposed) return;
       try {
         comments = await commentsRepository.listItemComments(itemId);

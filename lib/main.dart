@@ -4,6 +4,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/auth/clerk_theme.dart';
 import 'package:tagkin_desktop/library/items_list_page.dart';
+import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
 /// App name shown in the shell.
 const String kAppTitle = 'TagKin';
@@ -28,8 +29,8 @@ class TagKinDesktopApp extends StatelessWidget {
         useMaterial3: true,
         extensions: <ThemeExtension<dynamic>>[tagKinClerkTheme()],
       ),
-      // SelectionArea: all Text in the window is selectable/copyable (desktop rule).
-      home: const SelectionArea(
+      // SelectionArea must be under Overlay (per route), not MaterialApp.builder.
+      home: const SelectableScope(
         child: AuthShell(signedInHome: ItemsListPage()),
       ),
     );

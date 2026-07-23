@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/auth/secure_persistor.dart';
 
@@ -45,5 +46,54 @@ void main() {
       expect(await persistor.read<String>('a'), isNull);
       expect(await persistor.read<String>('b'), '2');
     });
+
+    test('initialize survives a canceled Keychain read', () async {
+      final persistor = SecureStoragePersistor(store: _CancelingKeyValueStore());
+      await persistor.initialize();
+      expect(await persistor.read<String>('session_token'), isNull);
+    });
   });
+
+  group('isSecureStoreUserCanceled', () {
+    test('detects Keychain -128 cancel', () {
+      expect(
+        isSecureStoreUserCanceled(
+          PlatformException(
+            code: '-128',
+            message: 'User canceled the operation.',
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        isSecureStoreUserCanceled(
+          PlatformException(code: 'Unexpected security result code'),
+        ),
+        isFalse,
+      );
+    });
+  });
+}
+
+/// Secure store that always throws Keychain user-cancel (-128).
+class _CancelingKeyValueStore implements SecureKeyValueStore {
+  static PlatformException get _cancel => PlatformException(
+        code: '-128',
+        message: 'User canceled the operation.',
+      );
+
+  @override
+  Future<void> write({required String key, required String? value}) async {
+    throw _cancel;
+  }
+
+  @override
+  Future<String?> read({required String key}) async {
+    throw _cancel;
+  }
+
+  @override
+  Future<void> delete({required String key}) async {
+    throw _cancel;
+  }
 }

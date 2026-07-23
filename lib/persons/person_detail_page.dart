@@ -51,6 +51,9 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
     }
   }
 
+  bool _isUnnamed(PersonDetail detail) =>
+      detail.name == null || detail.name!.trim().isEmpty;
+
   @override
   Widget build(BuildContext context) {
     final controller =
@@ -143,18 +146,23 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 16),
-        if (_renaming)
+        if (_renaming || _isUnnamed(detail))
           Row(
             children: [
               Expanded(
                 child: TextField(
                   key: const Key('person-rename-field'),
                   controller: _renameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Person name',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: _isUnnamed(detail)
+                        ? 'Enter a name for this person'
+                        : 'Person name',
+                    border: const OutlineInputBorder(),
                   ),
                   enabled: !controller.isBusy,
+                  onSubmitted: controller.isBusy
+                      ? null
+                      : (_) => _saveRename(controller),
                 ),
               ),
               const SizedBox(width: 8),
@@ -165,13 +173,14 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
                     : () => _saveRename(controller),
                 child: const Text('Save'),
               ),
-              TextButton(
-                key: const Key('person-rename-cancel'),
-                onPressed: controller.isBusy
-                    ? null
-                    : () => setState(() => _renaming = false),
-                child: const Text('Cancel'),
-              ),
+              if (!_isUnnamed(detail))
+                TextButton(
+                  key: const Key('person-rename-cancel'),
+                  onPressed: controller.isBusy
+                      ? null
+                      : () => setState(() => _renaming = false),
+                  child: const Text('Cancel'),
+                ),
             ],
           )
         else

@@ -5,6 +5,7 @@ import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/link_state_view.dart';
 import 'package:tagkin_desktop/persons/person_detail_page.dart';
+import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
 /// Library-wide persons list (D9): suggested vs confirmed sections.
 ///
@@ -39,9 +40,11 @@ class _PersonsListPageState extends ConsumerState<PersonsListPage> {
     final container = ProviderScope.containerOf(context);
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (_) => UncontrolledProviderScope(
-          container: container,
-          child: PersonDetailPage(personId: person.id),
+        builder: (_) => SelectableScope(
+          child: UncontrolledProviderScope(
+            container: container,
+            child: PersonDetailPage(personId: person.id),
+          ),
         ),
       ),
     );

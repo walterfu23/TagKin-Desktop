@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:clerk_auth/clerk_auth.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// Key prefix so Clerk session data is namespaced in the OS secure store.
@@ -15,6 +16,15 @@ abstract class SecureKeyValueStore {
   Future<void> write({required String key, required String? value});
   Future<String?> read({required String key});
   Future<void> delete({required String key});
+}
+
+/// True when the OS secure-store prompt was dismissed (macOS Keychain -128).
+bool isSecureStoreUserCanceled(Object error) {
+  if (error is! PlatformException) return false;
+  if (error.code == '-128') return true;
+  final message = error.message ?? '';
+  return message.contains('User canceled') ||
+      message.contains('User cancelled');
 }
 
 /// Production store → OS Keychain / Credential Manager via [FlutterSecureStorage].
@@ -44,14 +54,34 @@ class FlutterSecureKeyValueStore implements SecureKeyValueStore {
   final FlutterSecureStorage _storage;
 
   @override
-  Future<void> write({required String key, required String? value}) =>
-      _storage.write(key: key, value: value);
+  Future<void> write({required String key, required String? value}) async {
+    try {
+      await _storage.write(key: key, value: value);
+    } on PlatformException catch (e) {
+      if (isSecureStoreUserCanceled(e)) return;
+      rethrow;
+    }
+  }
 
   @override
-  Future<String?> read({required String key}) => _storage.read(key: key);
+  Future<String?> read({required String key}) async {
+    try {
+      return await _storage.read(key: key);
+    } on PlatformException catch (e) {
+      if (isSecureStoreUserCanceled(e)) return null;
+      rethrow;
+    }
+  }
 
   @override
-  Future<void> delete({required String key}) => _storage.delete(key: key);
+  Future<void> delete({required String key}) async {
+    try {
+      await _storage.delete(key: key);
+    } on PlatformException catch (e) {
+      if (isSecureStoreUserCanceled(e)) return;
+      rethrow;
+    }
+  }
 }
 
 /// In-memory store for unit tests (never hits the OS secure store).
@@ -94,7 +124,13 @@ class SecureStoragePersistor implements Persistor {
 
   @override
   Future<void> initialize() async {
-    final index = await _store.read(key: kSecurePersistorIndexKey);
+    String? index;
+    try {
+      index = await _store.read(key: kSecurePersistorIndexKey);
+    } catch (e) {
+      if (isSecureStoreUserCanceled(e)) return;
+      rethrow;
+    }
     if (index == null || index.isEmpty) return;
     try {
       final decoded = jsonDecode(index);
@@ -113,7 +149,13 @@ class SecureStoragePersistor implements Persistor {
 
   @override
   FutureOr<T?> read<T>(String key) async {
-    final raw = await _store.read(key: _prefixed(key));
+    String? raw;
+    try {
+      raw = await _store.read(key: _prefixed(key));
+    } catch (e) {
+      if (isSecureStoreUserCanceled(e)) return null;
+      rethrow;
+    }
     if (raw == null) return null;
     if (T == String) return raw as T;
     try {
@@ -127,7 +169,12 @@ class SecureStoragePersistor implements Persistor {
   @override
   FutureOr<void> write<T>(String key, T value) async {
     final encoded = value is String ? value : jsonEncode(value);
-    await _store.write(key: _prefixed(key), value: encoded);
+    try {
+      await _store.write(key: _prefixed(key), value: encoded);
+    } catch (e) {
+      if (isSecureStoreUserCanceled(e)) return;
+      rethrow;
+    }
     if (_knownKeys.add(key)) {
       await _persistIndex();
     }
@@ -135,7 +182,12 @@ class SecureStoragePersistor implements Persistor {
 
   @override
   FutureOr<void> delete(String key) async {
-    await _store.delete(key: _prefixed(key));
+    try {
+      await _store.delete(key: _prefixed(key));
+    } catch (e) {
+      if (isSecureStoreUserCanceled(e)) return;
+      rethrow;
+    }
     if (_knownKeys.remove(key)) {
       await _persistIndex();
     }

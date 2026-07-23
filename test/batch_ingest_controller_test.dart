@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/batch_ingest_controller.dart';
 import 'package:tagkin_desktop/ingest/dedup.dart';
@@ -167,6 +168,28 @@ void main() {
       expect(controller.phase, BatchIngestPhase.idle);
       expect(controller.dedupResult, isNull);
       expect(controller.selectedPaths, isEmpty);
+    });
+
+    test('listItemsWithRetry recovers from one connection-closed error',
+        () async {
+      var calls = 0;
+      final repo = FakeItemsRepository(
+        onListItems: () async {
+          calls++;
+          if (calls == 1) {
+            throw http.ClientException(
+              'Connection closed before full header was received',
+              Uri.parse('http://localhost:8787/items'),
+            );
+          }
+        },
+      );
+      final items = await listItemsWithRetry(
+        repo,
+        delay: Duration.zero,
+      );
+      expect(calls, 2);
+      expect(items, isEmpty);
     });
   });
 }

@@ -14,6 +14,7 @@ import 'package:tagkin_desktop/auth/secure_persistor.dart';
 import 'package:tagkin_desktop/config/app_config.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/persons_list_page.dart';
+import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
 /// App-wide config (overridable in tests).
 final appConfigProvider = Provider<AppConfig>((ref) => AppConfig.load());
@@ -453,9 +454,11 @@ class _SignedInScaffold extends StatelessWidget {
     final container = ProviderScope.containerOf(context);
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (_) => UncontrolledProviderScope(
-          container: container,
-          child: const PersonsListPage(),
+        builder: (_) => SelectableScope(
+          child: UncontrolledProviderScope(
+            container: container,
+            child: const PersonsListPage(),
+          ),
         ),
       ),
     );

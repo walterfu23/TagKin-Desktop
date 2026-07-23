@@ -187,6 +187,22 @@ Win32Window::MessageHandler(HWND hwnd,
       }
       return 0;
 
+    case WM_GETMINMAXINFO: {
+      // Logical 1200x700 min for the wide library table (matches macOS).
+      POINT target = {0, 0};
+      HMONITOR monitor =
+          MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+      if (!monitor) {
+        monitor = MonitorFromPoint(target, MONITOR_DEFAULTTOPRIMARY);
+      }
+      UINT dpi = FlutterDesktopGetDpiForMonitor(monitor);
+      double scale_factor = dpi / 96.0;
+      auto info = reinterpret_cast<MINMAXINFO*>(lparam);
+      info->ptMinTrackSize.x = Scale(1200, scale_factor);
+      info->ptMinTrackSize.y = Scale(700, scale_factor);
+      return 0;
+    }
+
     case WM_DPICHANGED: {
       auto newRectSize = reinterpret_cast<RECT*>(lparam);
       LONG newWidth = newRectSize->right - newRectSize->left;

@@ -1,6 +1,7 @@
 # 108_test_d2.ps1 — D2 Library & Item Registry regression: ItemsRepository,
-# processingStatus mapping, list/detail UI, no-bytes create, R10 tenant
-# isolation, §5 mandatory assertions.
+# wide library table (thumb/who/what/where/source), client sort/filter/page,
+# processingStatus mapping, detail UI, no-bytes create, R10 tenant isolation,
+# §5 mandatory assertions.
 # Naming: NNN_test_dN.ps1 for desktop subsystem regression Windows entry points.
 $ErrorActionPreference = 'Stop'
 $winDir = Split-Path -Parent $PSCommandPath

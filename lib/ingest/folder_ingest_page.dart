@@ -312,6 +312,28 @@ class _DoneView extends StatelessWidget {
                 key: const Key('prepass-done-summary'),
                 textAlign: TextAlign.center,
               ),
+              if (prePassFail > 0) ...[
+                const SizedBox(height: 8),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 480, maxHeight: 160),
+                  child: ListView(
+                    key: const Key('prepass-failures'),
+                    shrinkWrap: true,
+                    children: [
+                      for (final o in prePass.outcomes.where((o) => !o.succeeded))
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            '${o.path}: ${o.error}',
+                            key: Key('prepass-failure-${o.itemId}'),
+                            textAlign: TextAlign.left,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
             ],
             if (uploadRunning) ...[
               const SizedBox(height: 16),

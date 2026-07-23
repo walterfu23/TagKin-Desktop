@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:tagkin_desktop/api/items_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart' show itemsRepositoryProvider;
 import 'package:tagkin_desktop/contract/contract.dart';
@@ -103,7 +104,9 @@ class BatchIngestController extends ChangeNotifier {
         );
       }
 
-      final existingItems = await itemsRepository.listItems();
+      // Library list for dedup — retry once on transient connection drops
+      // (API restart / tsx watch) so a brief blip doesn't fail the whole scan.
+      final existingItems = await listItemsWithRetry(itemsRepository);
       final existingHashes = existingItems
           .map((item) => item.contentHash)
           .whereType<String>()
@@ -178,6 +181,26 @@ class BatchIngestController extends ChangeNotifier {
     selectedPaths.clear();
     outcomes = const [];
     notifyListeners();
+  }
+}
+
+/// Retries [ItemsRepository.listItems] once when the HTTP connection drops
+/// before headers (common during local API restart / `tsx watch`).
+@visibleForTesting
+Future<List<Item>> listItemsWithRetry(
+  ItemsRepository itemsRepository, {
+  Duration delay = const Duration(milliseconds: 400),
+}) async {
+  try {
+    return await itemsRepository.listItems();
+  } on http.ClientException catch (e) {
+    final msg = e.message.toLowerCase();
+    final transient = msg.contains('connection closed') ||
+        msg.contains('connection reset') ||
+        msg.contains('broken pipe');
+    if (!transient) rethrow;
+    await Future<void>.delayed(delay);
+    return itemsRepository.listItems();
   }
 }
 

@@ -20,11 +20,13 @@ class Account {
         createdAt: json['createdAt'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'id': id,
-        'email': email,
-        'createdAt': createdAt,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['id'] = id;
+    if (email != null) json['email'] = email;
+    json['createdAt'] = createdAt;
+    return json;
+  }
 }
 
 class AddTag {
@@ -44,11 +46,13 @@ class AddTag {
         keyPeriodId: json['keyPeriodId'] == null ? null : json['keyPeriodId'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'dimension': dimension,
-        'value': value,
-        'keyPeriodId': keyPeriodId,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['dimension'] = dimension;
+    json['value'] = value;
+    if (keyPeriodId != null) json['keyPeriodId'] = keyPeriodId;
+    return json;
+  }
 }
 
 enum AnalysisRefState {
@@ -92,13 +96,15 @@ class AnalyzeResultResponse {
         escalated: json['escalated'] as bool,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'item': item.toJson(),
-        'tagIds': tagIds.map((e) => e).toList(),
-        'provider': provider,
-        'modelId': modelId,
-        'escalated': escalated,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['item'] = item.toJson();
+    json['tagIds'] = tagIds.map((e) => e).toList();
+    json['provider'] = provider;
+    json['modelId'] = modelId;
+    json['escalated'] = escalated;
+    return json;
+  }
 }
 
 class CancelItemResponse {
@@ -115,10 +121,12 @@ class CancelItemResponse {
         job: json['job'] == null ? null : Job.fromJson(json['job'] as Map<String, dynamic>),
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'item': item.toJson(),
-        'job': job?.toJson(),
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['item'] = item.toJson();
+    if (job != null) json['job'] = job?.toJson();
+    return json;
+  }
 }
 
 class CapturedAtMutationResult {
@@ -135,10 +143,12 @@ class CapturedAtMutationResult {
         correction: Correction.fromJson(json['correction'] as Map<String, dynamic>),
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'item': item.toJson(),
-        'correction': correction.toJson(),
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['item'] = item.toJson();
+    json['correction'] = correction.toJson();
+    return json;
+  }
 }
 
 class Comment {
@@ -173,16 +183,18 @@ class Comment {
         updatedAt: json['updatedAt'] == null ? null : json['updatedAt'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'id': id,
-        'itemId': itemId,
-        'keyPeriodId': keyPeriodId,
-        'authorUserId': authorUserId,
-        'body': body,
-        'deletedAt': deletedAt,
-        'createdAt': createdAt,
-        'updatedAt': updatedAt,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['id'] = id;
+    if (itemId != null) json['itemId'] = itemId;
+    if (keyPeriodId != null) json['keyPeriodId'] = keyPeriodId;
+    json['authorUserId'] = authorUserId;
+    json['body'] = body;
+    if (deletedAt != null) json['deletedAt'] = deletedAt;
+    json['createdAt'] = createdAt;
+    if (updatedAt != null) json['updatedAt'] = updatedAt;
+    return json;
+  }
 }
 
 class CorrectCapturedAt {
@@ -196,9 +208,11 @@ class CorrectCapturedAt {
         capturedAt: json['capturedAt'] == null ? null : json['capturedAt'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'capturedAt': capturedAt,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    if (capturedAt != null) json['capturedAt'] = capturedAt;
+    return json;
+  }
 }
 
 class CorrectKeyPeriodBounds {
@@ -215,10 +229,12 @@ class CorrectKeyPeriodBounds {
         endMs: (json['endMs'] as num).toInt(),
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'startMs': startMs,
-        'endMs': endMs,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['startMs'] = startMs;
+    json['endMs'] = endMs;
+    return json;
+  }
 }
 
 class Correction {
@@ -250,15 +266,17 @@ class Correction {
         createdAt: json['createdAt'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'id': id,
-        'targetType': targetType,
-        'targetId': targetId,
-        'previousValue': previousValue,
-        'newValue': newValue,
-        'source': source.wire,
-        'createdAt': createdAt,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['id'] = id;
+    json['targetType'] = targetType;
+    json['targetId'] = targetId;
+    if (previousValue != null) json['previousValue'] = previousValue;
+    if (newValue != null) json['newValue'] = newValue;
+    json['source'] = source.wire;
+    json['createdAt'] = createdAt;
+    return json;
+  }
 }
 
 class CreateComment {
@@ -272,9 +290,11 @@ class CreateComment {
         body: json['body'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'body': body,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['body'] = body;
+    return json;
+  }
 }
 
 class CreateItem {
@@ -300,13 +320,15 @@ class CreateItem {
         capturedAt: json['capturedAt'] == null ? null : json['capturedAt'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'type': type.wire,
-        'sourceType': sourceType.wire,
-        'sourceRef': sourceRef,
-        'contentHash': contentHash,
-        'capturedAt': capturedAt,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['type'] = type.wire;
+    json['sourceType'] = sourceType.wire;
+    if (sourceRef != null) json['sourceRef'] = sourceRef;
+    if (contentHash != null) json['contentHash'] = contentHash;
+    if (capturedAt != null) json['capturedAt'] = capturedAt;
+    return json;
+  }
 }
 
 class CreateUploadGrant {
@@ -320,9 +342,11 @@ class CreateUploadGrant {
         mimeType: json['mimeType'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'mimeType': mimeType,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['mimeType'] = mimeType;
+    return json;
+  }
 }
 
 class EditComment {
@@ -336,9 +360,11 @@ class EditComment {
         body: json['body'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'body': body,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['body'] = body;
+    return json;
+  }
 }
 
 class EditTag {
@@ -352,9 +378,11 @@ class EditTag {
         value: json['value'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'value': value,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['value'] = value;
+    return json;
+  }
 }
 
 class Error {
@@ -371,10 +399,12 @@ class Error {
         message: json['message'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'code': code,
-        'message': message,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['code'] = code;
+    json['message'] = message;
+    return json;
+  }
 }
 
 class Health {
@@ -391,10 +421,12 @@ class Health {
         version: json['version'] == null ? null : json['version'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'status': status,
-        'version': version,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['status'] = status;
+    if (version != null) json['version'] = version;
+    return json;
+  }
 }
 
 class Item {
@@ -444,21 +476,23 @@ class Item {
         createdAt: json['createdAt'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'id': id,
-        'type': type.wire,
-        'sourceType': sourceType.wire,
-        'sourceRef': sourceRef,
-        'analysisRef': analysisRef,
-        'analysisRefState': analysisRefState.wire,
-        'contentHash': contentHash,
-        'perceptualHash': perceptualHash,
-        'dedupOfItemId': dedupOfItemId,
-        'capturedAt': capturedAt,
-        'processingStatus': processingStatus.wire,
-        'schemaVersion': schemaVersion,
-        'createdAt': createdAt,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['id'] = id;
+    json['type'] = type.wire;
+    json['sourceType'] = sourceType.wire;
+    if (sourceRef != null) json['sourceRef'] = sourceRef;
+    if (analysisRef != null) json['analysisRef'] = analysisRef;
+    json['analysisRefState'] = analysisRefState.wire;
+    if (contentHash != null) json['contentHash'] = contentHash;
+    if (perceptualHash != null) json['perceptualHash'] = perceptualHash;
+    if (dedupOfItemId != null) json['dedupOfItemId'] = dedupOfItemId;
+    if (capturedAt != null) json['capturedAt'] = capturedAt;
+    json['processingStatus'] = processingStatus.wire;
+    json['schemaVersion'] = schemaVersion;
+    json['createdAt'] = createdAt;
+    return json;
+  }
 }
 
 class ItemKnowledge {
@@ -484,13 +518,15 @@ class ItemKnowledge {
         corrections: (json['corrections'] as List<dynamic>).map((e) => Correction.fromJson(e as Map<String, dynamic>)).toList(),
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'item': item.toJson(),
-        'tags': tags.map((e) => e.toJson()).toList(),
-        'keyPeriods': keyPeriods.map((e) => e.toJson()).toList(),
-        'appearances': appearances.map((e) => e.toJson()).toList(),
-        'corrections': corrections.map((e) => e.toJson()).toList(),
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['item'] = item.toJson();
+    json['tags'] = tags.map((e) => e.toJson()).toList();
+    json['keyPeriods'] = keyPeriods.map((e) => e.toJson()).toList();
+    json['appearances'] = appearances.map((e) => e.toJson()).toList();
+    json['corrections'] = corrections.map((e) => e.toJson()).toList();
+    return json;
+  }
 }
 
 enum ItemType {
@@ -540,16 +576,18 @@ class Job {
         updatedAt: json['updatedAt'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'id': id,
-        'itemId': itemId,
-        'kind': kind.wire,
-        'state': state.wire,
-        'attempts': attempts,
-        'pipelineVersion': pipelineVersion,
-        'createdAt': createdAt,
-        'updatedAt': updatedAt,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['id'] = id;
+    if (itemId != null) json['itemId'] = itemId;
+    json['kind'] = kind.wire;
+    json['state'] = state.wire;
+    json['attempts'] = attempts;
+    json['pipelineVersion'] = pipelineVersion;
+    json['createdAt'] = createdAt;
+    json['updatedAt'] = updatedAt;
+    return json;
+  }
 }
 
 enum JobKind {
@@ -607,12 +645,14 @@ class KeyPeriod {
         endMs: (json['endMs'] as num).toInt(),
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'id': id,
-        'itemId': itemId,
-        'startMs': startMs,
-        'endMs': endMs,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['id'] = id;
+    json['itemId'] = itemId;
+    json['startMs'] = startMs;
+    json['endMs'] = endMs;
+    return json;
+  }
 }
 
 class KeyPeriodKnowledge {
@@ -638,13 +678,15 @@ class KeyPeriodKnowledge {
         tags: (json['tags'] as List<dynamic>).map((e) => Tag.fromJson(e as Map<String, dynamic>)).toList(),
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'id': id,
-        'itemId': itemId,
-        'startMs': startMs,
-        'endMs': endMs,
-        'tags': tags.map((e) => e.toJson()).toList(),
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['id'] = id;
+    json['itemId'] = itemId;
+    json['startMs'] = startMs;
+    json['endMs'] = endMs;
+    json['tags'] = tags.map((e) => e.toJson()).toList();
+    return json;
+  }
 }
 
 class KeyPeriodMutationResult {
@@ -661,10 +703,12 @@ class KeyPeriodMutationResult {
         correction: Correction.fromJson(json['correction'] as Map<String, dynamic>),
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'keyPeriod': keyPeriod.toJson(),
-        'correction': correction.toJson(),
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['keyPeriod'] = keyPeriod.toJson();
+    json['correction'] = correction.toJson();
+    return json;
+  }
 }
 
 class KillSwitchState {
@@ -681,10 +725,12 @@ class KillSwitchState {
         reason: json['reason'] == null ? null : json['reason'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'enabled': enabled,
-        'reason': reason,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['enabled'] = enabled;
+    if (reason != null) json['reason'] = reason;
+    return json;
+  }
 }
 
 enum KnowledgeSource {
@@ -729,14 +775,16 @@ class LibraryExport {
         exportedAt: json['exportedAt'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'items': items.map((e) => e.toJson()).toList(),
-        'tags': tags.map((e) => e.toJson()).toList(),
-        'persons': persons.map((e) => e.toJson()).toList(),
-        'comments': comments.map((e) => e.toJson()).toList(),
-        'corrections': corrections.map((e) => e.toJson()).toList(),
-        'exportedAt': exportedAt,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['items'] = items.map((e) => e.toJson()).toList();
+    json['tags'] = tags.map((e) => e.toJson()).toList();
+    json['persons'] = persons.map((e) => e.toJson()).toList();
+    json['comments'] = comments.map((e) => e.toJson()).toList();
+    json['corrections'] = corrections.map((e) => e.toJson()).toList();
+    json['exportedAt'] = exportedAt;
+    return json;
+  }
 }
 
 class LinkPeopleResponse {
@@ -750,9 +798,11 @@ class LinkPeopleResponse {
         appearances: (json['appearances'] as List<dynamic>).map((e) => PersonAppearance.fromJson(e as Map<String, dynamic>)).toList(),
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'appearances': appearances.map((e) => e.toJson()).toList(),
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['appearances'] = appearances.map((e) => e.toJson()).toList();
+    return json;
+  }
 }
 
 enum LinkState {
@@ -790,12 +840,14 @@ class Person {
         createdAt: json['createdAt'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'id': id,
-        'name': name,
-        'linkState': linkState.wire,
-        'createdAt': createdAt,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['id'] = id;
+    if (name != null) json['name'] = name;
+    json['linkState'] = linkState.wire;
+    json['createdAt'] = createdAt;
+    return json;
+  }
 }
 
 class PersonAppearance {
@@ -824,14 +876,16 @@ class PersonAppearance {
         createdAt: json['createdAt'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'id': id,
-        'personId': personId,
-        'itemId': itemId,
-        'keyPeriodId': keyPeriodId,
-        'linkState': linkState.wire,
-        'createdAt': createdAt,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['id'] = id;
+    if (personId != null) json['personId'] = personId;
+    if (itemId != null) json['itemId'] = itemId;
+    if (keyPeriodId != null) json['keyPeriodId'] = keyPeriodId;
+    json['linkState'] = linkState.wire;
+    json['createdAt'] = createdAt;
+    return json;
+  }
 }
 
 class PersonDetail {
@@ -857,13 +911,15 @@ class PersonDetail {
         appearances: (json['appearances'] as List<dynamic>).map((e) => PersonAppearance.fromJson(e as Map<String, dynamic>)).toList(),
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'id': id,
-        'name': name,
-        'linkState': linkState.wire,
-        'createdAt': createdAt,
-        'appearances': appearances.map((e) => e.toJson()).toList(),
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['id'] = id;
+    if (name != null) json['name'] = name;
+    json['linkState'] = linkState.wire;
+    json['createdAt'] = createdAt;
+    json['appearances'] = appearances.map((e) => e.toJson()).toList();
+    return json;
+  }
 }
 
 class PrePassAppearanceInput {
@@ -883,11 +939,13 @@ class PrePassAppearanceInput {
         embeddingModelId: json['embeddingModelId'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'keyPeriodIndex': keyPeriodIndex,
-        'embedding': embedding.map((e) => e).toList(),
-        'embeddingModelId': embeddingModelId,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    if (keyPeriodIndex != null) json['keyPeriodIndex'] = keyPeriodIndex;
+    json['embedding'] = embedding.map((e) => e).toList();
+    json['embeddingModelId'] = embeddingModelId;
+    return json;
+  }
 }
 
 class PrePassKeyPeriodInput {
@@ -904,10 +962,12 @@ class PrePassKeyPeriodInput {
         endMs: (json['endMs'] as num).toInt(),
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'startMs': startMs,
-        'endMs': endMs,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['startMs'] = startMs;
+    json['endMs'] = endMs;
+    return json;
+  }
 }
 
 class PrePassResult {
@@ -939,15 +999,17 @@ class PrePassResult {
         appearances: json['appearances'] == null ? null : (json['appearances'] as List<dynamic>).map((e) => PrePassAppearanceInput.fromJson(e as Map<String, dynamic>)).toList(),
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'contentHash': contentHash,
-        'perceptualHash': perceptualHash,
-        'capturedAt': capturedAt,
-        'where': where?.toJson(),
-        'durationMs': durationMs,
-        'keyPeriods': keyPeriods?.map((e) => e.toJson()).toList(),
-        'appearances': appearances?.map((e) => e.toJson()).toList(),
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    if (contentHash != null) json['contentHash'] = contentHash;
+    if (perceptualHash != null) json['perceptualHash'] = perceptualHash;
+    if (capturedAt != null) json['capturedAt'] = capturedAt;
+    if (where != null) json['where'] = where?.toJson();
+    if (durationMs != null) json['durationMs'] = durationMs;
+    if (keyPeriods != null) json['keyPeriods'] = keyPeriods?.map((e) => e.toJson()).toList();
+    if (appearances != null) json['appearances'] = appearances?.map((e) => e.toJson()).toList();
+    return json;
+  }
 }
 
 class PrePassResultResponse {
@@ -970,12 +1032,14 @@ class PrePassResultResponse {
         tagIds: (json['tagIds'] as List<dynamic>).map((e) => e as String).toList(),
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'item': item.toJson(),
-        'keyPeriodIds': keyPeriodIds.map((e) => e).toList(),
-        'appearanceIds': appearanceIds.map((e) => e).toList(),
-        'tagIds': tagIds.map((e) => e).toList(),
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['item'] = item.toJson();
+    json['keyPeriodIds'] = keyPeriodIds.map((e) => e).toList();
+    json['appearanceIds'] = appearanceIds.map((e) => e).toList();
+    json['tagIds'] = tagIds.map((e) => e).toList();
+    return json;
+  }
 }
 
 class PrePassWhere {
@@ -992,10 +1056,12 @@ class PrePassWhere {
         lng: (json['lng'] as num).toDouble(),
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'lat': lat,
-        'lng': lng,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['lat'] = lat;
+    json['lng'] = lng;
+    return json;
+  }
 }
 
 enum ProcessingStatus {
@@ -1028,9 +1094,11 @@ class ReassignAppearance {
         personId: json['personId'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'personId': personId,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['personId'] = personId;
+    return json;
+  }
 }
 
 class RecordAnalysisRef {
@@ -1044,9 +1112,11 @@ class RecordAnalysisRef {
         analysisRef: json['analysisRef'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'analysisRef': analysisRef,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['analysisRef'] = analysisRef;
+    return json;
+  }
 }
 
 class RenamePerson {
@@ -1060,9 +1130,11 @@ class RenamePerson {
         name: json['name'] == null ? null : json['name'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'name': name,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    if (name != null) json['name'] = name;
+    return json;
+  }
 }
 
 enum SourceType {
@@ -1090,9 +1162,11 @@ class SplitPerson {
         appearanceIds: (json['appearanceIds'] as List<dynamic>).map((e) => e as String).toList(),
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'appearanceIds': appearanceIds.map((e) => e).toList(),
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['appearanceIds'] = appearanceIds.map((e) => e).toList();
+    return json;
+  }
 }
 
 class Tag {
@@ -1142,21 +1216,23 @@ class Tag {
         createdAt: json['createdAt'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'id': id,
-        'itemId': itemId,
-        'keyPeriodId': keyPeriodId,
-        'dimension': dimension,
-        'value': value,
-        'source': source.wire,
-        'status': status.wire,
-        'correctedFromTagId': correctedFromTagId,
-        'confidence': confidence,
-        'provider': provider,
-        'modelId': modelId,
-        'schemaVersion': schemaVersion,
-        'createdAt': createdAt,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['id'] = id;
+    if (itemId != null) json['itemId'] = itemId;
+    if (keyPeriodId != null) json['keyPeriodId'] = keyPeriodId;
+    json['dimension'] = dimension;
+    json['value'] = value;
+    json['source'] = source.wire;
+    json['status'] = status.wire;
+    if (correctedFromTagId != null) json['correctedFromTagId'] = correctedFromTagId;
+    if (confidence != null) json['confidence'] = confidence;
+    if (provider != null) json['provider'] = provider;
+    if (modelId != null) json['modelId'] = modelId;
+    json['schemaVersion'] = schemaVersion;
+    json['createdAt'] = createdAt;
+    return json;
+  }
 }
 
 class TagMutationResult {
@@ -1173,10 +1249,12 @@ class TagMutationResult {
         correction: Correction.fromJson(json['correction'] as Map<String, dynamic>),
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'tag': tag.toJson(),
-        'correction': correction.toJson(),
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['tag'] = tag.toJson();
+    json['correction'] = correction.toJson();
+    return json;
+  }
 }
 
 enum TagStatus {
@@ -1209,10 +1287,12 @@ class UndoCorrectionResult {
         restored: UndoCorrectionResultRestored.fromJson(json['restored'] as Map<String, dynamic>),
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'correction': correction.toJson(),
-        'restored': restored.toJson(),
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['correction'] = correction.toJson();
+    json['restored'] = restored.toJson();
+    return json;
+  }
 }
 
 class UndoCorrectionResultRestored {
@@ -1235,12 +1315,14 @@ class UndoCorrectionResultRestored {
         keyPeriod: json['keyPeriod'] == null ? null : KeyPeriodKnowledge.fromJson(json['keyPeriod'] as Map<String, dynamic>),
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'kind': kind,
-        'tag': tag?.toJson(),
-        'item': item?.toJson(),
-        'keyPeriod': keyPeriod?.toJson(),
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['kind'] = kind;
+    if (tag != null) json['tag'] = tag?.toJson();
+    if (item != null) json['item'] = item?.toJson();
+    if (keyPeriod != null) json['keyPeriod'] = keyPeriod?.toJson();
+    return json;
+  }
 }
 
 class UploadGrant {
@@ -1257,10 +1339,12 @@ class UploadGrant {
         expiresAt: json['expiresAt'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'uploadUrl': uploadUrl,
-        'expiresAt': expiresAt,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['uploadUrl'] = uploadUrl;
+    json['expiresAt'] = expiresAt;
+    return json;
+  }
 }
 
 class UsageSummary {
@@ -1292,14 +1376,16 @@ class UsageSummary {
         pauseReason: json['pauseReason'] == null ? null : json['pauseReason'] as String,
       );
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'softLimitCents': softLimitCents,
-        'hardLimitCents': hardLimitCents,
-        'reservedCents': reservedCents,
-        'spentCents': spentCents,
-        'killSwitch': killSwitch.toJson(),
-        'softLimitExceeded': softLimitExceeded,
-        'pauseReason': pauseReason,
-      };
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['softLimitCents'] = softLimitCents;
+    json['hardLimitCents'] = hardLimitCents;
+    json['reservedCents'] = reservedCents;
+    json['spentCents'] = spentCents;
+    json['killSwitch'] = killSwitch.toJson();
+    if (softLimitExceeded != null) json['softLimitExceeded'] = softLimitExceeded;
+    if (pauseReason != null) json['pauseReason'] = pauseReason;
+    return json;
+  }
 }
 

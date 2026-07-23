@@ -13,7 +13,8 @@ class ItemsRepository {
 
   final ApiClient _client;
 
-  /// `GET /items` — optional [status] filter (server-side; not a browse UI).
+  /// `GET /items` — optional [status] filter (server-side coarse filter).
+  /// Client library table owns sort / text filter / pagination.
   Future<List<Item>> listItems({ProcessingStatus? status}) async {
     final response = await _client.get(
       '/items',
