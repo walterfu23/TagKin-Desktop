@@ -24,7 +24,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-      'folder ingest → pre-pass → upload records analysisRef without bytes to api',
+      'folder ingest auto-runs pre-pass → upload and records analysisRef without bytes to api',
       (WidgetTester tester) async {
     final dir = await Directory.systemTemp.createTemp('d5_integration_test_');
     addTearDown(() => dir.deleteSync(recursive: true));
@@ -35,6 +35,22 @@ void main() {
 
     final repo = FakeItemsRepository();
     final putUrls = <String>[];
+
+    final upload = UploadController(
+      itemsRepository: repo,
+      putBytes: ({
+        required uploadUrl,
+        required bytes,
+        required mimeType,
+        httpClient,
+      }) async {
+        putUrls.add(uploadUrl);
+        return const ModelHostUploadResult(
+          analysisRef: 'files/integration-ref',
+          rawBody: '{}',
+        );
+      },
+    );
 
     await tester.pumpWidget(
       ProviderScope(
@@ -54,24 +70,8 @@ void main() {
           jobsRepositoryProvider.overrideWithValue(FakeJobsRepository()),
           folderPickerProvider.overrideWithValue(() async => dir.path),
           uploadControllerProvider.overrideWith((ref) {
-            final controller = UploadController(
-              itemsRepository: repo,
-              putBytes: ({
-                required uploadUrl,
-                required bytes,
-                required mimeType,
-                httpClient,
-              }) async {
-                putUrls.add(uploadUrl);
-                expect(uploadUrl.contains('/items'), isFalse);
-                return const ModelHostUploadResult(
-                  analysisRef: 'files/integration-ref',
-                  rawBody: '{}',
-                );
-              },
-            );
-            ref.onDispose(controller.dispose);
-            return controller;
+            ref.onDispose(upload.dispose);
+            return upload;
           }),
         ],
         child: const TagKinDesktopApp(),
@@ -89,26 +89,21 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('ingest-done')), findsOneWidget);
-    expect(find.byKey(const Key('run-prepass-button')), findsOneWidget);
-
-    await tester.tap(find.byKey(const Key('run-prepass-button')));
-    await tester.pumpAndSettle();
-
+    expect(find.byKey(const Key('run-prepass-button')), findsNothing);
+    expect(find.byKey(const Key('run-upload-button')), findsNothing);
     expect(find.byKey(const Key('prepass-done-summary')), findsOneWidget);
-    expect(find.byKey(const Key('run-upload-button')), findsOneWidget);
+    expect(find.text('Uploaded 1 item(s) for analysis.'), findsOneWidget);
+    expect(find.byKey(const Key('analyze-done-summary')), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('run-upload-button')));
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const Key('upload-done-summary')), findsOneWidget);
+    expect(putUrls, hasLength(1));
+    expect(putUrls.single.contains('/items'), isFalse);
+    expect(putUrls.single.contains('stub.tagkin.test'), isTrue);
     expect(repo.grantsMinted, hasLength(1));
     expect(repo.analysisRefRecorded, hasLength(1));
     expect(
       repo.analysisRefRecorded.single.input.analysisRef,
       'files/integration-ref',
     );
-    expect(putUrls, hasLength(1));
-    expect(putUrls.single.contains('stub.tagkin.test'), isTrue);
 
     final grantJson = repo.grantsMinted.single.input.toJson();
     expect(grantJson.containsKey('ownerUserId'), isFalse);

@@ -22,7 +22,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-      'folder ingest then client pre-pass records metadata-only payload',
+      'folder ingest auto-runs client pre-pass (metadata-only payload)',
       (WidgetTester tester) async {
     final dir = await Directory.systemTemp.createTemp('d4_integration_test_');
     addTearDown(() => dir.deleteSync(recursive: true));
@@ -66,11 +66,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('ingest-done')), findsOneWidget);
-    expect(find.byKey(const Key('run-prepass-button')), findsOneWidget);
-
-    await tester.tap(find.byKey(const Key('run-prepass-button')));
-    await tester.pumpAndSettle();
-
+    expect(find.byKey(const Key('run-prepass-button')), findsNothing);
     expect(find.byKey(const Key('prepass-done-summary')), findsOneWidget);
     expect(repo.prePassRecorded, hasLength(1));
     final payload = repo.prePassRecorded.single.input;

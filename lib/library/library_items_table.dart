@@ -307,114 +307,127 @@ class _DataRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final item = row.item;
     final zebra = index.isOdd;
+    final expanded = controller.expandedWho.contains(item.id) ||
+        controller.expandedWhere.contains(item.id) ||
+        controller.expandedComments.contains(item.id);
     return Material(
       color: zebra ? _kZebraRow : Colors.transparent,
       child: InkWell(
         key: Key('item-row-${item.id}'),
         onTap: () => onOpenDetail(item),
-        child: SizedBox(
-          height: 72,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              SizedBox(
-                width: _kColThumb,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: _Thumb(row: row),
-                ),
-              ),
-              SizedBox(
-                width: _kColWho,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: _ExpandableValues(
-                    keyPrefix: 'who',
-                    itemId: item.id,
-                    values: row.who,
-                    expanded: controller.expandedWho.contains(item.id),
-                    loading: !row.knowledgeLoaded,
-                    onToggle: () => controller.toggleExpandWho(item.id),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 72),
+          child: SizedBox(
+            height: expanded ? null : 72,
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: expanded ? 8 : 0),
+              child: Row(
+                crossAxisAlignment: expanded
+                    ? CrossAxisAlignment.start
+                    : CrossAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: _kColThumb,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: _Thumb(row: row),
+                    ),
                   ),
-                ),
-              ),
-              SizedBox(
-                width: _kColWhat,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: _WhatCell(
-                    item: item,
-                    values: row.what,
-                    loading: !row.knowledgeLoaded,
-                    onOpenDetail: onOpenDetail,
+                  SizedBox(
+                    width: _kColWho,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: _ExpandableValues(
+                        keyPrefix: 'who',
+                        itemId: item.id,
+                        values: row.who,
+                        expanded: controller.expandedWho.contains(item.id),
+                        loading: !row.knowledgeLoaded,
+                        onToggle: () => controller.toggleExpandWho(item.id),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              SizedBox(
-                width: _kColWhere,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: _ExpandableValues(
-                    keyPrefix: 'where',
-                    itemId: item.id,
-                    values: row.where,
-                    expanded: controller.expandedWhere.contains(item.id),
-                    loading: !row.knowledgeLoaded,
-                    onToggle: () => controller.toggleExpandWhere(item.id),
+                  SizedBox(
+                    width: _kColWhat,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: _WhatCell(
+                        item: item,
+                        values: row.what,
+                        loading: !row.knowledgeLoaded,
+                        onOpenDetail: onOpenDetail,
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              SizedBox(
-                width: _kColSource,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: _SourceLink(
-                    item: item,
-                    label: row.sourceLabel,
-                    onReveal: () => onRevealSource(item),
+                  SizedBox(
+                    width: _kColWhere,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: _ExpandableValues(
+                        keyPrefix: 'where',
+                        itemId: item.id,
+                        values: row.where,
+                        expanded: controller.expandedWhere.contains(item.id),
+                        loading: !row.knowledgeLoaded,
+                        onToggle: () => controller.toggleExpandWhere(item.id),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              SizedBox(
-                width: _kColComment,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: _ExpandableValues(
-                    keyPrefix: 'comment',
-                    itemId: item.id,
-                    values: row.comments,
-                    expanded: controller.expandedComments.contains(item.id),
-                    loading: !row.commentsLoaded,
-                    onToggle: () => controller.toggleExpandComments(item.id),
+                  SizedBox(
+                    width: _kColSource,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: _SourceLink(
+                        item: item,
+                        label: row.sourceLabel,
+                        onReveal: () => onRevealSource(item),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              SizedBox(
-                width: _kColActions,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerLeft,
-                          child: ProcessingStatusBadge(
-                            status: item.processingStatus,
+                  SizedBox(
+                    width: _kColComment,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: _ExpandableValues(
+                        keyPrefix: 'comment',
+                        itemId: item.id,
+                        values: row.comments,
+                        expanded:
+                            controller.expandedComments.contains(item.id),
+                        loading: !row.commentsLoaded,
+                        onToggle: () =>
+                            controller.toggleExpandComments(item.id),
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: _kColActions,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: ProcessingStatusBadge(
+                                status: item.processingStatus,
+                              ),
+                            ),
                           ),
-                        ),
+                          IconButton(
+                            key: Key('item-list-delete-${item.id}'),
+                            tooltip: 'Delete item',
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () => onDelete(item),
+                          ),
+                        ],
                       ),
-                      IconButton(
-                        key: Key('item-list-delete-${item.id}'),
-                        tooltip: 'Delete item',
-                        icon: const Icon(Icons.delete_outline),
-                        onPressed: () => onDelete(item),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -508,39 +521,43 @@ class _ExpandableValues extends StatelessWidget {
     }
     final shown = expanded ? values : values.take(1).toList();
     final more = values.length - 1;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          shown.join(', '),
-          key: Key('item-$keyPrefix-$itemId'),
-          maxLines: expanded ? 4 : 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        if (!expanded && more > 0)
-          TextButton(
-            key: Key('item-$keyPrefix-more-$itemId'),
-            style: TextButton.styleFrom(
-              padding: EdgeInsets.zero,
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            onPressed: onToggle,
-            child: Text('+$more more'),
+    return ClipRect(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            shown.join(', '),
+            key: Key('item-$keyPrefix-$itemId'),
+            // Collapsed: one line so text + "+N more" fit in the 72px row.
+            maxLines: expanded ? 4 : 1,
+            overflow: TextOverflow.ellipsis,
           ),
-        if (expanded && more > 0)
-          TextButton(
-            key: Key('item-$keyPrefix-less-$itemId'),
-            style: TextButton.styleFrom(
-              padding: EdgeInsets.zero,
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          if (!expanded && more > 0)
+            TextButton(
+              key: Key('item-$keyPrefix-more-$itemId'),
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: onToggle,
+              child: Text('+$more more'),
             ),
-            onPressed: onToggle,
-            child: const Text('Show less'),
-          ),
-      ],
+          if (expanded && more > 0)
+            TextButton(
+              key: Key('item-$keyPrefix-less-$itemId'),
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: onToggle,
+              child: const Text('Show less'),
+            ),
+        ],
+      ),
     );
   }
 }

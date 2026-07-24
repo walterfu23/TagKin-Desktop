@@ -2,5 +2,10 @@
 table columns: path, file name, vid/photo, len, tags, ingestion date, status
 might want to consider path hiearchy.
 
-
+2. direct edit any entry in the table
+3. does not seem to work. what about manual linking
+4. no square box associating person with the box. 
+5. where: should show city, state, and country (if different than the current country)
+6. where: restaurant. should also show city, state.
+7. when add from folder is used to add items, should automatically run client pre-pass, upload for analysis, done, and analyze for all items. the user should not have to explicitly initiate these tasks
 

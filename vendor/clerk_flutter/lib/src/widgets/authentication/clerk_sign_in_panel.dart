@@ -68,8 +68,11 @@ class _ClerkSignInPanelState extends State<ClerkSignInPanel>
     String? code,
   }) async {
     if (_strategy.isUnknown) {
-      // By this stage, if we don't know a strategy assume password
-      _strategy = clerk.Strategy.password;
+      // TagKin: prefer email code over password when Clerk allows it, so
+      // Enter after the email field sends a code instead of assuming password.
+      _strategy = authState.env.supportsEmailCode
+          ? clerk.Strategy.emailCode
+          : clerk.Strategy.password;
     }
 
     strategy ??= _strategy;
@@ -127,8 +130,21 @@ class _ClerkSignInPanelState extends State<ClerkSignInPanel>
                   context,
                   clerk.Strategy.enterpriseSSO,
                 );
-              } else if (signIn.needsFactor && factors.length == 1) {
-                await authState.attemptSignIn(strategy: factors.first.strategy);
+              } else if (signIn.needsFactor) {
+                // TagKin: prefer emailCode when present so Enter after email
+                // sends the code without an extra strategy-button tap.
+                clerk.Factor? chosen;
+                for (final f in factors) {
+                  if (f.strategy == clerk.Strategy.emailCode) {
+                    chosen = f;
+                    break;
+                  }
+                }
+                chosen ??= factors.length == 1 ? factors.first : null;
+                if (chosen != null) {
+                  await authState.attemptSignIn(strategy: chosen.strategy);
+                  _strategy = chosen.strategy;
+                }
               }
               if (authState.signIn case clerk.SignIn signIn
                   when signIn.needsFactor && signIn.factors.length == 1) {

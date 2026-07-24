@@ -1,19 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/batch_ingest_controller.dart';
 import 'package:tagkin_desktop/ingest/dedup.dart';
+import 'package:tagkin_desktop/ingest/post_ingest_pipeline_controller.dart';
 import 'package:tagkin_desktop/ingest/upload_controller.dart';
 import 'package:tagkin_desktop/prepass/prepass_controller.dart';
 import 'package:tagkin_desktop/usage/usage_banner.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
 import 'package:tagkin_desktop/usage/usage_gate.dart';
 
-/// D3 Local Folder Ingest & Batch + D4 Client Pre-pass + D5 Upload & Grants:
-/// pick a folder → review deduped candidates → batch `POST /items`
-/// (refs/hashes only) → optional classic pre-pass → optional direct
-/// model-host upload + `analysisRef` recording.
+/// D3 Local Folder Ingest & Batch + D4 Client Pre-pass + D5 Upload & Grants +
+/// D7 analyze: pick a folder → review deduped candidates → batch `POST /items`
+/// (refs/hashes only) → automatic classic pre-pass → direct model-host upload
+/// + `analysisRef` recording → photo analyze (R9).
 ///
-/// D6 gates the folder-pick and upload buttons on [UsageGate.blocked].
+/// D6 gates the folder-pick and the post-ingest upload/analyze stages on
+/// [UsageGate.blocked].
 ///
 /// Pops `true` when at least one item was created, so the caller can
 /// refresh the library list; pops `false`/`null` otherwise.
@@ -25,6 +28,10 @@ class FolderIngestPage extends ConsumerStatefulWidget {
 }
 
 class _FolderIngestPageState extends ConsumerState<FolderIngestPage> {
+  /// Ensures the post-ingest pipeline starts at most once per confirm session
+  /// (DoneView remounts must not kick off a second chain).
+  bool _pipelineArmed = false;
+
   @override
   void initState() {
     super.initState();
@@ -33,16 +40,45 @@ class _FolderIngestPageState extends ConsumerState<FolderIngestPage> {
     });
   }
 
+  /// Called from [_DoneView] once when the done screen appears.
+  void tryStartPipeline({
+    required BatchIngestController controller,
+    required PostIngestPipelineController pipeline,
+    required UsageGate gate,
+  }) {
+    if (_pipelineArmed) return;
+    if (controller.phase != BatchIngestPhase.done) return;
+    final succeeded =
+        controller.outcomes.where((o) => o.succeeded).length;
+    if (succeeded == 0) return;
+    _pipelineArmed = true;
+    pipeline.start(
+      ingestOutcomes: controller.outcomes,
+      usageBlocked: gate.blocked,
+    );
+  }
+
+  void _resetPipelineArm() {
+    _pipelineArmed = false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = ref.watch(batchIngestControllerProvider);
     final prePass = ref.watch(prePassControllerProvider);
     final upload = ref.watch(uploadControllerProvider);
+    final pipeline = ref.watch(postIngestPipelineControllerProvider);
     final usage = ref.watch(usageControllerProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Add from folder')),
       body: ListenableBuilder(
-        listenable: Listenable.merge([controller, prePass, upload, usage]),
+        listenable: Listenable.merge([
+          controller,
+          prePass,
+          upload,
+          pipeline,
+          usage,
+        ]),
         builder: (context, _) => Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -52,7 +88,14 @@ class _FolderIngestPageState extends ConsumerState<FolderIngestPage> {
                 controller: controller,
                 prePass: prePass,
                 upload: upload,
+                pipeline: pipeline,
                 gate: usage.gate,
+                onTryStartPipeline: () => tryStartPipeline(
+                  controller: controller,
+                  pipeline: pipeline,
+                  gate: usage.gate,
+                ),
+                onIngestAnotherFolder: _resetPipelineArm,
               ),
             ),
           ],
@@ -67,13 +110,19 @@ class _FolderIngestBody extends StatelessWidget {
     required this.controller,
     required this.prePass,
     required this.upload,
+    required this.pipeline,
     required this.gate,
+    required this.onTryStartPipeline,
+    required this.onIngestAnotherFolder,
   });
 
   final BatchIngestController controller;
   final PrePassController prePass;
   final UploadController upload;
+  final PostIngestPipelineController pipeline;
   final UsageGate gate;
+  final VoidCallback onTryStartPipeline;
+  final VoidCallback onIngestAnotherFolder;
 
   @override
   Widget build(BuildContext context) {
@@ -91,7 +140,10 @@ class _FolderIngestBody extends StatelessWidget {
           controller: controller,
           prePass: prePass,
           upload: upload,
+          pipeline: pipeline,
           gate: gate,
+          onTryStartPipeline: onTryStartPipeline,
+          onIngestAnotherFolder: onIngestAnotherFolder,
         );
       case BatchIngestPhase.error:
         return _ErrorView(controller: controller);
@@ -251,33 +303,83 @@ class _IngestingView extends StatelessWidget {
   }
 }
 
-class _DoneView extends StatelessWidget {
+class _DoneView extends StatefulWidget {
   const _DoneView({
     required this.controller,
     required this.prePass,
     required this.upload,
+    required this.pipeline,
     required this.gate,
+    required this.onTryStartPipeline,
+    required this.onIngestAnotherFolder,
   });
 
   final BatchIngestController controller;
   final PrePassController prePass;
   final UploadController upload;
+  final PostIngestPipelineController pipeline;
   final UsageGate gate;
+  final VoidCallback onTryStartPipeline;
+  final VoidCallback onIngestAnotherFolder;
+
+  @override
+  State<_DoneView> createState() => _DoneViewState();
+}
+
+class _DoneViewState extends State<_DoneView> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.onTryStartPipeline();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final controller = widget.controller;
+    final prePass = widget.prePass;
+    final upload = widget.upload;
+    final pipeline = widget.pipeline;
+    final gate = widget.gate;
+    final onIngestAnotherFolder = widget.onIngestAnotherFolder;
+
     final succeeded = controller.outcomes.where((o) => o.succeeded).length;
     final failed = controller.outcomes.length - succeeded;
-    final prePassRunning = prePass.phase == PrePassPhase.running;
+    final prePassRunning =
+        pipeline.phase == PostIngestPipelinePhase.runningPrePass ||
+            prePass.phase == PrePassPhase.running;
     final prePassDone = prePass.phase == PrePassPhase.done;
-    final prePassOk =
-        prePass.outcomes.where((o) => o.succeeded).length;
+    final prePassOk = prePass.outcomes.where((o) => o.succeeded).length;
     final prePassFail = prePass.outcomes.length - prePassOk;
-    final uploadRunning = upload.phase == UploadPhase.running;
+    final uploadRunning =
+        pipeline.phase == PostIngestPipelinePhase.runningUpload ||
+            upload.phase == UploadPhase.running;
     final uploadDone = upload.phase == UploadPhase.done;
     final uploadOk = upload.outcomes.where((o) => o.succeeded).length;
     final uploadFail = upload.outcomes.length - uploadOk;
-    final busy = prePassRunning || uploadRunning;
+    final analyzeRunning =
+        pipeline.phase == PostIngestPipelinePhase.runningAnalyze;
+    final analyzeDone = pipeline.phase == PostIngestPipelinePhase.done ||
+        pipeline.phase == PostIngestPipelinePhase.skippedUpload ||
+        pipeline.phase == PostIngestPipelinePhase.error;
+    final analyzeOk =
+        pipeline.analyzeOutcomes.where((o) => o.succeeded).length;
+    final analyzeFail = pipeline.analyzeOutcomes.length - analyzeOk;
+    final typeById = <String, ItemType>{
+      for (final o in controller.outcomes)
+        if (o.item != null) o.item!.id: o.item!.type,
+    };
+    final photoUploadCount = upload.outcomes
+        .where(
+          (o) => o.succeeded && typeById[o.itemId] == ItemType.photo,
+        )
+        .length;
+    final skippedUpload =
+        pipeline.phase == PostIngestPipelinePhase.skippedUpload;
+    final busy = pipeline.isBusy;
+    final showRetry = pipeline.canRetry;
 
     return Center(
       child: Padding(
@@ -315,12 +417,14 @@ class _DoneView extends StatelessWidget {
               if (prePassFail > 0) ...[
                 const SizedBox(height: 8),
                 ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 480, maxHeight: 160),
+                  constraints:
+                      const BoxConstraints(maxWidth: 480, maxHeight: 160),
                   child: ListView(
                     key: const Key('prepass-failures'),
                     shrinkWrap: true,
                     children: [
-                      for (final o in prePass.outcomes.where((o) => !o.succeeded))
+                      for (final o
+                          in prePass.outcomes.where((o) => !o.succeeded))
                         Padding(
                           padding: const EdgeInsets.only(bottom: 4),
                           child: Text(
@@ -355,35 +459,57 @@ class _DoneView extends StatelessWidget {
                 textAlign: TextAlign.center,
               ),
             ],
+            if (skippedUpload) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Upload and analyze skipped — usage limit or kill switch.',
+                key: const Key('pipeline-skipped-upload'),
+                textAlign: TextAlign.center,
+              ),
+            ],
+            if (analyzeRunning) ...[
+              const SizedBox(height: 16),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 8),
+              Text(
+                'Analyzing… '
+                '${pipeline.analyzeOutcomes.length} of $photoUploadCount',
+                key: const Key('analyze-progress'),
+              ),
+            ],
+            if (analyzeDone &&
+                pipeline.phase == PostIngestPipelinePhase.done) ...[
+              const SizedBox(height: 12),
+              Text(
+                analyzeFail == 0
+                    ? 'Analyzed $analyzeOk photo(s).'
+                    : 'Analyze: $analyzeOk ok; $analyzeFail failed.',
+                key: const Key('analyze-done-summary'),
+                textAlign: TextAlign.center,
+              ),
+            ],
+            if (pipeline.phase == PostIngestPipelinePhase.error) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Pipeline error: ${pipeline.error}',
+                key: const Key('pipeline-error'),
+                textAlign: TextAlign.center,
+              ),
+            ],
+            if (showRetry) ...[
+              const SizedBox(height: 12),
+              FilledButton.tonal(
+                key: const Key('pipeline-retry-button'),
+                onPressed: busy
+                    ? null
+                    : () => pipeline.retryFailed(
+                          ingestOutcomes: controller.outcomes,
+                          usageBlocked: gate.blocked,
+                        ),
+                child: const Text('Retry failed'),
+              ),
+            ],
             const SizedBox(height: 16),
-            if (succeeded > 0 &&
-                prePass.phase == PrePassPhase.idle &&
-                !prePassRunning)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: FilledButton.tonal(
-                  key: const Key('run-prepass-button'),
-                  onPressed: busy ? null : () => prePass.run(controller.outcomes),
-                  child: const Text('Run client pre-pass'),
-                ),
-              ),
-            if (prePassDone &&
-                prePassOk > 0 &&
-                upload.phase == UploadPhase.idle &&
-                !uploadRunning)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: FilledButton.tonal(
-                  key: const Key('run-upload-button'),
-                  onPressed: gate.blocked || busy
-                      ? null
-                      : () => upload.run(
-                            prePass.outcomes,
-                            prePass.frameSamplesByItemId,
-                          ),
-                  child: const Text('Upload for analysis'),
-                ),
-              ),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -392,6 +518,8 @@ class _DoneView extends StatelessWidget {
                   onPressed: busy
                       ? null
                       : () {
+                          onIngestAnotherFolder();
+                          pipeline.reset();
                           upload.reset();
                           prePass.reset();
                           controller.reset();

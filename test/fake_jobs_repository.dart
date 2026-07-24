@@ -69,11 +69,10 @@ class FakeJobsRepository implements JobsRepository {
       await Future<void>.delayed(analyzeDelay!);
     }
     if (analyzeError != null) throw analyzeError!;
-    if (id != itemId) {
-      throw ApiException(statusCode: 404, message: 'Not found');
-    }
+    // Accept any item id so batch post-ingest analyze can cover multiple
+    // photos created in one folder session.
     final tagged = Item(
-      id: item.id,
+      id: id,
       type: item.type,
       sourceType: item.sourceType,
       sourceRef: item.sourceRef,
@@ -87,7 +86,9 @@ class FakeJobsRepository implements JobsRepository {
       schemaVersion: item.schemaVersion,
       createdAt: item.createdAt,
     );
-    item = tagged;
+    if (id == itemId) {
+      item = tagged;
+    }
     final job = fixtureJob(
       id: 'job_analyze_$analyzeCallCount',
       itemId: id,

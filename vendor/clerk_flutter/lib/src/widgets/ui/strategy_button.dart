@@ -76,10 +76,11 @@ class StrategyButton extends StatelessWidget {
     }
 
     final localizations = ClerkAuth.localizationsOf(context);
-    // TagKin: filled accent primary (same language as stock Clerk "dark"
-    // Material button) so 2FA choices like “Email code to …” outrank Back.
+    // TagKin: light (outlined) strategy rows so the email address is not on
+    // filled accent; Continue stays the dark/primary action.
     return ClerkMaterialButton(
       onPressed: onClick,
+      style: ClerkMaterialButtonStyle.light,
       elevation: 2.0,
       height: 48,
       label: Row(

@@ -7,6 +7,8 @@ import 'package:tagkin_desktop/ingest/batch_ingest_controller.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_page.dart';
 import 'package:tagkin_desktop/ingest/folder_picker.dart';
 import 'package:tagkin_desktop/ingest/media_enumerator.dart';
+import 'package:tagkin_desktop/ingest/model_host_uploader.dart';
+import 'package:tagkin_desktop/ingest/upload_controller.dart';
 import 'package:tagkin_desktop/prepass/prepass_controller.dart';
 import 'package:tagkin_desktop/prepass/prepass_payload_builder.dart';
 
@@ -30,10 +32,63 @@ MediaCandidate _fixtureCandidate(String path, {ItemType type = ItemType.photo}) 
   );
 }
 
+Override _stubPrePassOverride(FakeItemsRepository repo) {
+  return prePassControllerProvider.overrideWith((ref) {
+    final controller = PrePassController(
+      itemsRepository: repo,
+      buildPayload: ({
+        required path,
+        required type,
+        faceEmbedder,
+        skipFaces = false,
+        maxFrames = 20,
+      }) async {
+        return PrePassBuildResult(
+          payload: PrePassResult(
+            contentHash: 'hash',
+            appearances: [
+              PrePassAppearanceInput(
+                embedding: List<double>.filled(512, 0.0),
+                embeddingModelId: 'stub-face-embed-v1',
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    ref.onDispose(controller.dispose);
+    return controller;
+  });
+}
+
+Override _stubUploadOverride(FakeItemsRepository repo) {
+  return uploadControllerProvider.overrideWith((ref) {
+    final controller = UploadController(
+      itemsRepository: repo,
+      readBytes: (path) async => [0xFF, 0xD8, 0xFF],
+      putBytes: ({
+        required uploadUrl,
+        required bytes,
+        required mimeType,
+        httpClient,
+      }) async {
+        return const ModelHostUploadResult(
+          analysisRef: 'files/widget-ref',
+          rawBody: '{}',
+        );
+      },
+    );
+    ref.onDispose(controller.dispose);
+    return controller;
+  });
+}
+
 Future<void> _pushFolderIngestPage(
   WidgetTester tester, {
   required FolderPicker folderPicker,
   required FakeItemsRepository repository,
+  FakeUsageRepository? usage,
+  FakeJobsRepository? jobs,
   Future<List<MediaCandidate>> Function(String)? enumerate,
   Future<String> Function(String)? contentHasher,
 }) async {
@@ -42,14 +97,20 @@ Future<void> _pushFolderIngestPage(
       overrides: [
         folderPickerProvider.overrideWithValue(folderPicker),
         itemsRepositoryProvider.overrideWithValue(repository),
-        usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
-          jobsRepositoryProvider.overrideWithValue(FakeJobsRepository()),
+        usageRepositoryProvider.overrideWithValue(
+          usage ?? FakeUsageRepository(),
+        ),
+        jobsRepositoryProvider.overrideWithValue(
+          jobs ?? FakeJobsRepository(),
+        ),
         if (enumerate != null) mediaEnumeratorProvider.overrideWithValue(enumerate),
         // No real file bytes to decode/hash in these widget fixtures.
         contentHasherProvider.overrideWithValue(
           contentHasher ?? (path) async => 'fixture-hash-$path',
         ),
         perceptualHasherProvider.overrideWithValue((path) async => null),
+        _stubPrePassOverride(repository),
+        _stubUploadOverride(repository),
       ],
       child: MaterialApp(
         home: Scaffold(
@@ -73,15 +134,17 @@ Future<void> _pushFolderIngestPage(
 
 void main() {
   testWidgets(
-      'pick → review → confirm shows a done summary and closes on Done',
+      'pick → review → confirm auto-runs pipeline and closes on Done',
       (tester) async {
     const folderPath = '/fixtures/d3-folder';
     final repo = FakeItemsRepository();
+    final jobs = FakeJobsRepository();
 
     await _pushFolderIngestPage(
       tester,
       folderPicker: () async => folderPath,
       repository: repo,
+      jobs: jobs,
       enumerate: (path) async => [
         _fixtureCandidate('$path/a.jpg'),
         _fixtureCandidate('$path/b.mp4', type: ItemType.video),
@@ -102,6 +165,13 @@ void main() {
     expect(find.byKey(const Key('ingest-done')), findsOneWidget);
     expect(find.text('Added 2 item(s).'), findsOneWidget);
     expect(repo.created, hasLength(2));
+    expect(find.byKey(const Key('run-prepass-button')), findsNothing);
+    expect(find.byKey(const Key('run-upload-button')), findsNothing);
+    expect(find.byKey(const Key('prepass-done-summary')), findsOneWidget);
+    expect(find.byKey(const Key('upload-done-summary')), findsOneWidget);
+    expect(find.byKey(const Key('analyze-done-summary')), findsOneWidget);
+    expect(repo.prePassRecorded, hasLength(2));
+    expect(jobs.analyzedItemIds, ['item_1']);
 
     await tester.tap(find.byKey(const Key('ingest-done-close')));
     await tester.pumpAndSettle();
@@ -180,10 +250,11 @@ void main() {
   });
 
   testWidgets(
-      'kill-switch disables Upload for analysis after pre-pass (D5/D6)',
+      'kill-switch auto-runs pre-pass then skips upload and analyze (D5/D6)',
       (tester) async {
     const folderPath = '/fixtures/d5-blocked';
     final repo = FakeItemsRepository();
+    final jobs = FakeJobsRepository();
 
     await tester.pumpWidget(
       ProviderScope(
@@ -199,7 +270,7 @@ void main() {
               ),
             ),
           ),
-          jobsRepositoryProvider.overrideWithValue(FakeJobsRepository()),
+          jobsRepositoryProvider.overrideWithValue(jobs),
           mediaEnumeratorProvider.overrideWithValue(
             (path) async => [_fixtureCandidate('$path/a.jpg')],
           ),
@@ -207,32 +278,8 @@ void main() {
             (path) async => 'fixture-hash-$path',
           ),
           perceptualHasherProvider.overrideWithValue((path) async => null),
-          prePassControllerProvider.overrideWith((ref) {
-            final controller = PrePassController(
-              itemsRepository: repo,
-              buildPayload: ({
-                required path,
-                required type,
-                faceEmbedder,
-                skipFaces = false,
-                maxFrames = 20,
-              }) async {
-                return PrePassBuildResult(
-                  payload: PrePassResult(
-                    contentHash: 'hash',
-                    appearances: [
-                      PrePassAppearanceInput(
-                        embedding: List<double>.filled(512, 0.0),
-                        embeddingModelId: 'stub-face-embed-v1',
-                      ),
-                    ],
-                  ),
-                );
-              },
-            );
-            ref.onDispose(controller.dispose);
-            return controller;
-          }),
+          _stubPrePassOverride(repo),
+          _stubUploadOverride(repo),
         ],
         child: MaterialApp(
           home: Scaffold(
@@ -254,7 +301,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Folder pick is also blocked by kill-switch — force scan via controller
-    // to reach the done view with upload button gated.
+    // to reach the done view with upload gated.
     final container = ProviderScope.containerOf(
       tester.element(find.byType(FolderIngestPage)),
     );
@@ -265,13 +312,12 @@ void main() {
     await tester.tap(find.byKey(const Key('confirm-ingest-button')));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('run-prepass-button')));
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const Key('run-upload-button')), findsOneWidget);
-    final uploadBtn = tester.widget<FilledButton>(
-      find.byKey(const Key('run-upload-button')),
-    );
-    expect(uploadBtn.onPressed, isNull);
+    expect(find.byKey(const Key('prepass-done-summary')), findsOneWidget);
+    expect(find.byKey(const Key('pipeline-skipped-upload')), findsOneWidget);
+    expect(find.byKey(const Key('run-prepass-button')), findsNothing);
+    expect(find.byKey(const Key('run-upload-button')), findsNothing);
+    expect(find.byKey(const Key('pipeline-retry-button')), findsOneWidget);
+    expect(repo.grantsMinted, isEmpty);
+    expect(jobs.analyzeCallCount, 0);
   });
 }

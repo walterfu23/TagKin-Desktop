@@ -161,6 +161,9 @@ class UploadController extends ChangeNotifier {
   }
 
   /// One fresh-grant retry on model-host failure / expired grant, then fail.
+  ///
+  /// Only [ModelHostUploadException] triggers a retry — other errors (I/O,
+  /// test failures, programming bugs) propagate without minting a second grant.
   Future<String?> _putWithExpiryRetry({
     required String itemId,
     required UploadGrant grant,
@@ -180,7 +183,7 @@ class UploadController extends ChangeNotifier {
         mimeType: mimeType,
       );
       return result.analysisRef;
-    } catch (_) {
+    } on ModelHostUploadException {
       // Fresh grant once, then fail.
       final fresh = await itemsRepository.createUploadGrant(
         itemId,
