@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 import 'package:tagkin_desktop/api/comments_repository.dart';
 import 'package:tagkin_desktop/api/items_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart'
@@ -23,6 +24,49 @@ class LibrarySortKey {
   final bool ascending;
 
   LibrarySortKey toggled() => LibrarySortKey(column, ascending: !ascending);
+}
+
+/// One row in the library list after path grouping (header or item).
+sealed class LibraryVisibleEntry {
+  const LibraryVisibleEntry();
+}
+
+/// Collapse/expand header for a shared parent directory (2+ items).
+class LibraryPathGroupHeader extends LibraryVisibleEntry {
+  const LibraryPathGroupHeader({
+    required this.dir,
+    required this.label,
+    required this.count,
+    required this.collapsed,
+    this.depth = 0,
+  });
+
+  /// Absolute directory path (toggle / identity key).
+  final String dir;
+
+  /// Display label (absolute at top level, relative when nested).
+  final String label;
+  final int count;
+  final bool collapsed;
+  final int depth;
+}
+
+/// An item row under the path tree.
+class LibraryItemEntry extends LibraryVisibleEntry {
+  const LibraryItemEntry({
+    required this.row,
+    required this.sourceDisplay,
+    this.depth = 0,
+  });
+
+  final LibraryTableRow row;
+
+  /// Source column text (full path, relative path, or basename).
+  final String sourceDisplay;
+  final int depth;
+
+  /// True when [sourceDisplay] is not the full [LibraryTableRow.sourceLabel].
+  bool get showBasenameOnly => sourceDisplay != row.sourceLabel;
 }
 
 /// View-model for one library table row.
@@ -58,6 +102,22 @@ class LibraryTableRow {
     if (ref == null || ref.isEmpty) return '';
     final path = localPathFromSourceRef(ref);
     return path ?? ref;
+  }
+
+  /// Parent directory of [sourceLabel], or '' when missing / not a path.
+  String get sourceDir {
+    final label = sourceLabel;
+    if (label.isEmpty) return '';
+    final dir = p.dirname(label);
+    // dirname of a bare filename is '.' — treat as no shared folder key.
+    if (dir.isEmpty || dir == '.') return '';
+    return dir;
+  }
+
+  String get sourceFileName {
+    final label = sourceLabel;
+    if (label.isEmpty) return '';
+    return p.basename(label);
   }
 
   LibraryTableRow copyWith({
@@ -119,6 +179,9 @@ class LibraryTableController extends ChangeNotifier {
   final Set<String> expandedWhere = {};
   final Set<String> expandedComments = {};
 
+  /// Parent dirs the user has expanded (multi-item groups default collapsed).
+  final Set<String> expandedSourceDirs = {};
+
   int? _loadGeneration;
 
   List<LibraryTableRow> get allRows => _rows;
@@ -153,7 +216,16 @@ class LibraryTableController extends ChangeNotifier {
     return list;
   }
 
-  int get totalFiltered => filteredSorted.length;
+  /// Visible list rows after nested path grouping (headers + shown item rows).
+  List<LibraryVisibleEntry> get visibleEntries {
+    return _buildPathGroupedEntries(
+      items: filteredSorted,
+      expandedSourceDirs: expandedSourceDirs,
+    );
+  }
+
+  /// Visible entry count (used for pagination).
+  int get totalFiltered => visibleEntries.length;
 
   int get pageCount {
     final n = totalFiltered;
@@ -161,13 +233,21 @@ class LibraryTableController extends ChangeNotifier {
     return ((n - 1) ~/ pageSize) + 1;
   }
 
-  List<LibraryTableRow> get pageRows {
-    final all = filteredSorted;
+  List<LibraryVisibleEntry> get visiblePageEntries {
+    final all = visibleEntries;
     if (all.isEmpty) return const [];
     final start = pageIndex * pageSize;
     if (start >= all.length) return const [];
     final end = (start + pageSize).clamp(0, all.length);
     return all.sublist(start, end);
+  }
+
+  /// Item rows on the current visible page (excludes path group headers).
+  List<LibraryTableRow> get pageRows {
+    return [
+      for (final e in visiblePageEntries)
+        if (e is LibraryItemEntry) e.row,
+    ];
   }
 
   Future<void> load() async {
@@ -184,6 +264,7 @@ class LibraryTableController extends ChangeNotifier {
       expandedWho.clear();
       expandedWhere.clear();
       expandedComments.clear();
+      expandedSourceDirs.clear();
       _rows = items.map((item) => LibraryTableRow(item: item)).toList();
       pageIndex = 0;
       loading = false;
@@ -282,6 +363,12 @@ class LibraryTableController extends ChangeNotifier {
 
   void toggleExpandComments(String itemId) {
     if (!expandedComments.add(itemId)) expandedComments.remove(itemId);
+    notifyListeners();
+  }
+
+  /// Expand or collapse a multi-item source directory group.
+  void toggleCollapseSourceDir(String dir) {
+    if (!expandedSourceDirs.add(dir)) expandedSourceDirs.remove(dir);
     notifyListeners();
   }
 
@@ -429,3 +516,268 @@ final libraryTableControllerProvider =
     whereLabelResolverProvider,
   ],
 );
+
+/// Builds a compressed directory trie and flattens it to visible library rows.
+List<LibraryVisibleEntry> _buildPathGroupedEntries({
+  required List<LibraryTableRow> items,
+  required Set<String> expandedSourceDirs,
+  p.Context? pathContext,
+}) {
+  final ctx = pathContext ?? p.context;
+  if (items.isEmpty) return const [];
+
+  final indexOf = <String, int>{
+    for (var i = 0; i < items.length; i++) items[i].item.id: i,
+  };
+
+  final root = _PathNode(segment: '', absolutePath: '');
+  final noPath = <LibraryTableRow>[];
+  for (final row in items) {
+    final dir = row.sourceDir;
+    if (dir.isEmpty) {
+      noPath.add(row);
+      continue;
+    }
+    root.insert(row, dir, ctx);
+  }
+
+  final out = <LibraryVisibleEntry>[];
+  final tops = <_TopEmit>[];
+
+  for (final child in root.children.values) {
+    for (final topNode in _collectTopNodes(child)) {
+      tops.add(
+        _TopEmit(
+          firstIndex: topNode.firstIndex(indexOf),
+          emit: (list) => _emitPathNode(
+            node: topNode,
+            depth: 0,
+            parentAbs: null,
+            expandedSourceDirs: expandedSourceDirs,
+            indexOf: indexOf,
+            ctx: ctx,
+            out: list,
+          ),
+        ),
+      );
+    }
+  }
+  for (final row in noPath) {
+    tops.add(
+      _TopEmit(
+        firstIndex: indexOf[row.item.id] ?? 0,
+        emit: (list) => list.add(
+          LibraryItemEntry(
+            row: row,
+            depth: 0,
+            sourceDisplay: row.sourceLabel,
+          ),
+        ),
+      ),
+    );
+  }
+  tops.sort((a, b) => a.firstIndex.compareTo(b.firstIndex));
+  for (final top in tops) {
+    top.emit(out);
+  }
+  return out;
+}
+
+class _TopEmit {
+  _TopEmit({required this.firstIndex, required this.emit});
+
+  final int firstIndex;
+  final void Function(List<LibraryVisibleEntry>) emit;
+}
+
+/// True for `/` or a Windows drive root — never a useful library group header.
+bool _isFsRoot(String path) {
+  if (path == '/' || path == r'\') return true;
+  return RegExp(r'^[A-Za-z]:\\?$').hasMatch(path);
+}
+
+/// Top-level forest nodes: skip bare filesystem roots so unrelated trees
+/// (e.g. /fixture_a vs /fixture_b) stay separate.
+List<_PathNode> _collectTopNodes(_PathNode node) {
+  if (_isFsRoot(node.absolutePath) &&
+      node.files.isEmpty &&
+      node.children.isNotEmpty) {
+    return [
+      for (final child in node.children.values) ..._collectTopNodes(child),
+    ];
+  }
+  return [node.compressed];
+}
+
+class _PathNode {
+  _PathNode({required this.segment, required this.absolutePath});
+
+  final String segment;
+  final String absolutePath;
+  final Map<String, _PathNode> children = {};
+  final List<LibraryTableRow> files = [];
+
+  int get itemCount {
+    var n = files.length;
+    for (final c in children.values) {
+      n += c.itemCount;
+    }
+    return n;
+  }
+
+  /// Collapse unary directory chains (single child, no files).
+  _PathNode get compressed {
+    var n = this;
+    while (n.children.length == 1 && n.files.isEmpty) {
+      n = n.children.values.single;
+    }
+    return n;
+  }
+
+  void insert(LibraryTableRow row, String dir, p.Context ctx) {
+    final parts = ctx.split(ctx.normalize(dir));
+    var node = this;
+    for (final part in parts) {
+      if (part.isEmpty) continue;
+      node = node.children.putIfAbsent(part, () {
+        final abs = node.absolutePath.isEmpty
+            ? part
+            : ctx.join(node.absolutePath, part);
+        return _PathNode(segment: part, absolutePath: abs);
+      });
+    }
+    node.files.add(row);
+  }
+
+  int firstIndex(Map<String, int> indexOf) {
+    var best = 1 << 30;
+    for (final f in files) {
+      final i = indexOf[f.item.id];
+      if (i != null && i < best) best = i;
+    }
+    for (final c in children.values) {
+      final i = c.firstIndex(indexOf);
+      if (i < best) best = i;
+    }
+    return best;
+  }
+
+  List<LibraryTableRow> allFilesOrdered(Map<String, int> indexOf) {
+    final all = <LibraryTableRow>[...files];
+    for (final c in children.values) {
+      all.addAll(c.allFilesOrdered(indexOf));
+    }
+    all.sort(
+      (a, b) => (indexOf[a.item.id] ?? 0).compareTo(indexOf[b.item.id] ?? 0),
+    );
+    return all;
+  }
+}
+
+void _emitPathNode({
+  required _PathNode node,
+  required int depth,
+  required String? parentAbs,
+  required Set<String> expandedSourceDirs,
+  required Map<String, int> indexOf,
+  required p.Context ctx,
+  required List<LibraryVisibleEntry> out,
+}) {
+  final count = node.itemCount;
+  if (count < 2) {
+    _emitSingletonFiles(
+      node: node,
+      depth: depth,
+      parentAbs: parentAbs,
+      indexOf: indexOf,
+      ctx: ctx,
+      out: out,
+    );
+    return;
+  }
+
+  final label = parentAbs == null || parentAbs.isEmpty
+      ? node.absolutePath
+      : ctx.relative(node.absolutePath, from: parentAbs);
+  final collapsed = !expandedSourceDirs.contains(node.absolutePath);
+  out.add(
+    LibraryPathGroupHeader(
+      dir: node.absolutePath,
+      label: label,
+      count: count,
+      collapsed: collapsed,
+      depth: depth,
+    ),
+  );
+  if (collapsed) return;
+
+  _emitPathChildren(
+    parent: node,
+    depth: depth + 1,
+    parentAbs: node.absolutePath,
+    expandedSourceDirs: expandedSourceDirs,
+    indexOf: indexOf,
+    ctx: ctx,
+    out: out,
+  );
+}
+
+void _emitPathChildren({
+  required _PathNode parent,
+  required int depth,
+  required String parentAbs,
+  required Set<String> expandedSourceDirs,
+  required Map<String, int> indexOf,
+  required p.Context ctx,
+  required List<LibraryVisibleEntry> out,
+}) {
+  final kids = parent.children.values.toList()
+    ..sort((a, b) => a.firstIndex(indexOf).compareTo(b.firstIndex(indexOf)));
+  for (final child in kids) {
+    _emitPathNode(
+      node: child.compressed,
+      depth: depth,
+      parentAbs: parentAbs,
+      expandedSourceDirs: expandedSourceDirs,
+      indexOf: indexOf,
+      ctx: ctx,
+      out: out,
+    );
+  }
+
+  final direct = List<LibraryTableRow>.from(parent.files)
+    ..sort(
+      (a, b) => (indexOf[a.item.id] ?? 0).compareTo(indexOf[b.item.id] ?? 0),
+    );
+  for (final row in direct) {
+    out.add(
+      LibraryItemEntry(
+        row: row,
+        depth: depth,
+        sourceDisplay: ctx.relative(row.sourceLabel, from: parentAbs),
+      ),
+    );
+  }
+}
+
+void _emitSingletonFiles({
+  required _PathNode node,
+  required int depth,
+  required String? parentAbs,
+  required Map<String, int> indexOf,
+  required p.Context ctx,
+  required List<LibraryVisibleEntry> out,
+}) {
+  for (final row in node.allFilesOrdered(indexOf)) {
+    final display = parentAbs == null || parentAbs.isEmpty
+        ? row.sourceLabel
+        : ctx.relative(row.sourceLabel, from: parentAbs);
+    out.add(
+      LibraryItemEntry(
+        row: row,
+        depth: depth,
+        sourceDisplay: display,
+      ),
+    );
+  }
+}

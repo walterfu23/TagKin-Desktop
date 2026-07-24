@@ -219,6 +219,95 @@ void main() {
     expect(find.byKey(const Key('item-row-a')), findsNothing);
   });
 
+  testWidgets('shared source path group collapses and expands', (tester) async {
+    const shared = '/users/w/test';
+    final a = fixtureItem(
+      id: 'a',
+      sourceRef: 'file://$shared/a.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final b = fixtureItem(
+      id: 'b',
+      sourceRef: 'file://$shared/b.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(items: [a, b]),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('source-group-$shared')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-a')), findsNothing);
+    expect(find.byKey(const Key('item-row-b')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('source-group-toggle-$shared')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('item-row-a')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-b')), findsOneWidget);
+    expect(find.byKey(const Key('item-source-a')), findsOneWidget);
+    expect(find.byKey(const Key('item-source-b')), findsOneWidget);
+    expect(find.text('a.jpg'), findsNothing);
+    expect(find.text('b.jpg'), findsNothing);
+  });
+
+  testWidgets('nested date folders collapse under shared parent', (tester) async {
+    const root = '/users/w/test';
+    final a = fixtureItem(
+      id: 'a',
+      sourceRef: 'file://$root/20260508/a.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final b = fixtureItem(
+      id: 'b',
+      sourceRef: 'file://$root/20260508/b.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final c = fixtureItem(
+      id: 'c',
+      sourceRef: 'file://$root/20260506/c.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(items: [a, b, c]),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('source-group-$root')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-a')), findsNothing);
+    expect(find.byKey(const Key('source-group-$root/20260508')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('source-group-toggle-$root')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('source-group-$root/20260508')),
+      findsOneWidget,
+    );
+    expect(find.text('20260506/c.jpg'), findsNothing);
+    expect(find.byKey(const Key('item-source-c')), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const Key('source-group-toggle-$root/20260508')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('item-row-a')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-b')), findsOneWidget);
+    expect(find.byKey(const Key('item-source-a')), findsOneWidget);
+  });
+
+  testWidgets('File column header is shown', (tester) async {
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(items: [fixtureItem(id: 'f')]),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('File'), findsOneWidget);
+    expect(find.text('Source'), findsNothing);
+  });
+
   testWidgets('sort header reorders by who', (tester) async {
     final a = fixtureItem(id: 'a', processingStatus: ProcessingStatus.tagged);
     final b = fixtureItem(id: 'b', processingStatus: ProcessingStatus.tagged);

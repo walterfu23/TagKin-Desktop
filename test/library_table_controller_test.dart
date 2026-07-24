@@ -282,4 +282,191 @@ void main() {
     controller.setPage(1);
     expect(controller.pageRows, hasLength(1));
   });
+
+  test('shared source dir collapses; toggle expands basename rows', () async {
+    final shared = '/users/w/test';
+    final a = fixtureItem(
+      id: 'a',
+      sourceRef: 'file://$shared/a.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final b = fixtureItem(
+      id: 'b',
+      sourceRef: 'file://$shared/b.mp4',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final c = fixtureItem(
+      id: 'c',
+      sourceRef: 'file:///users/w/other/c.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final controller = LibraryTableController(
+      itemsRepository: FakeItemsRepository(items: [a, b, c]),
+      commentsRepository: FakeCommentsRepository(),
+      thumbCache: LocalThumbCache(),
+      knowledgeConcurrency: 3,
+    );
+    await controller.load();
+
+    // Common ancestor /users/w groups test + other.
+    final collapsed = controller.visibleEntries;
+    expect(collapsed, hasLength(1));
+    expect(
+      collapsed.single,
+      isA<LibraryPathGroupHeader>()
+          .having((h) => h.dir, 'dir', '/users/w')
+          .having((h) => h.count, 'count', 3)
+          .having((h) => h.collapsed, 'collapsed', isTrue),
+    );
+
+    controller.toggleCollapseSourceDir('/users/w');
+    final mid = controller.visibleEntries;
+    expect(mid, hasLength(3)); // header + test group + other singleton
+    expect(
+      mid[1],
+      isA<LibraryPathGroupHeader>()
+          .having((h) => h.dir, 'dir', shared)
+          .having((h) => h.label, 'label', 'test')
+          .having((h) => h.count, 'count', 2)
+          .having((h) => h.collapsed, 'collapsed', isTrue),
+    );
+    expect(
+      mid[2],
+      isA<LibraryItemEntry>()
+          .having((e) => e.row.item.id, 'id', 'c')
+          .having((e) => e.sourceDisplay, 'display', 'other/c.jpg'),
+    );
+
+    controller.toggleCollapseSourceDir(shared);
+    final expanded = controller.visibleEntries;
+    expect(expanded, hasLength(5)); // /users/w + test header + a + b + c
+    expect(
+      expanded[2],
+      isA<LibraryItemEntry>()
+          .having((e) => e.row.item.id, 'id', 'a')
+          .having((e) => e.sourceDisplay, 'display', 'a.jpg'),
+    );
+    expect(
+      expanded[3],
+      isA<LibraryItemEntry>()
+          .having((e) => e.row.item.id, 'id', 'b')
+          .having((e) => e.sourceDisplay, 'display', 'b.mp4'),
+    );
+  });
+
+  test('date folders under shared parent collapse into one tree', () async {
+    const root = '/users/w/test';
+    final a = fixtureItem(
+      id: 'a',
+      sourceRef: 'file://$root/20260508/a.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final b = fixtureItem(
+      id: 'b',
+      sourceRef: 'file://$root/20260508/b.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final c = fixtureItem(
+      id: 'c',
+      sourceRef: 'file://$root/20260506/c.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final controller = LibraryTableController(
+      itemsRepository: FakeItemsRepository(items: [a, b, c]),
+      commentsRepository: FakeCommentsRepository(),
+      thumbCache: LocalThumbCache(),
+      knowledgeConcurrency: 3,
+    );
+    await controller.load();
+
+    expect(controller.visibleEntries, hasLength(1));
+    expect(
+      controller.visibleEntries.single,
+      isA<LibraryPathGroupHeader>()
+          .having((h) => h.dir, 'dir', root)
+          .having((h) => h.count, 'count', 3)
+          .having((h) => h.collapsed, 'collapsed', isTrue),
+    );
+
+    controller.toggleCollapseSourceDir(root);
+    final mid = controller.visibleEntries;
+    expect(mid, hasLength(3)); // root header + 20260508 group + singleton c
+    expect(
+      mid[1],
+      isA<LibraryPathGroupHeader>()
+          .having((h) => h.dir, 'dir', '$root/20260508')
+          .having((h) => h.label, 'label', '20260508')
+          .having((h) => h.count, 'count', 2),
+    );
+    expect(
+      mid[2],
+      isA<LibraryItemEntry>()
+          .having((e) => e.row.item.id, 'id', 'c')
+          .having((e) => e.sourceDisplay, 'display', '20260506/c.jpg'),
+    );
+
+    controller.toggleCollapseSourceDir('$root/20260508');
+    final open = controller.visibleEntries;
+    expect(open, hasLength(5));
+    expect(
+      open[2],
+      isA<LibraryItemEntry>()
+          .having((e) => e.sourceDisplay, 'display', 'a.jpg'),
+    );
+    expect(
+      open[3],
+      isA<LibraryItemEntry>()
+          .having((e) => e.sourceDisplay, 'display', 'b.jpg'),
+    );
+  });
+
+  test('filter that leaves one file in a group becomes a singleton', () async {
+    const shared = '/users/w/test';
+    final a = fixtureItem(
+      id: 'a',
+      sourceRef: 'file://$shared/alpha.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final b = fixtureItem(
+      id: 'b',
+      sourceRef: 'file://$shared/beta.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final controller = LibraryTableController(
+      itemsRepository: FakeItemsRepository(
+        items: [a, b],
+        knowledgeByItemId: {
+          'a': fixtureKnowledge(
+            item: a,
+            tags: [
+              fixtureTag(id: 'wa', itemId: 'a', dimension: 'who', value: 'Sam'),
+            ],
+          ),
+          'b': fixtureKnowledge(
+            item: b,
+            tags: [
+              fixtureTag(id: 'wb', itemId: 'b', dimension: 'who', value: 'Ada'),
+            ],
+          ),
+        },
+      ),
+      commentsRepository: FakeCommentsRepository(),
+      thumbCache: LocalThumbCache(),
+      knowledgeConcurrency: 2,
+    );
+    await controller.load();
+    await _awaitKnowledge(controller);
+
+    expect(controller.visibleEntries.single, isA<LibraryPathGroupHeader>());
+
+    controller.setFilterQuery('Ada');
+    final visible = controller.visibleEntries;
+    expect(visible, hasLength(1));
+    expect(
+      visible.single,
+      isA<LibraryItemEntry>()
+          .having((e) => e.row.item.id, 'id', 'b')
+          .having((e) => e.sourceDisplay, 'display', '/users/w/test/beta.jpg'),
+    );
+  });
 }

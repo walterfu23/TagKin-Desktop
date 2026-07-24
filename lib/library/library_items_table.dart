@@ -13,14 +13,17 @@ const double _kColThumb = 72;
 const double _kColWho = 160;
 const double _kColWhat = 180;
 const double _kColWhere = 160;
-const double _kColSource = 220;
 const double _kColComment = 200;
+/// Narrow first column: reveal icon (+ small tree indent).
+const double _kColFile = 44;
 const double _kColActions = 200;
-const double _kTableMinWidth = _kColThumb +
+/// Per-depth indent for path-group chevrons and file icons.
+const double _kPathIndent = 8;
+const double _kTableMinWidth = _kColFile +
+    _kColThumb +
     _kColWho +
     _kColWhat +
     _kColWhere +
-    _kColSource +
     _kColComment +
     _kColActions;
 
@@ -48,7 +51,7 @@ class LibraryItemsTable extends ConsumerWidget {
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
-        final rows = controller.pageRows;
+        final entries = controller.visiblePageEntries;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -73,7 +76,7 @@ class LibraryItemsTable extends ConsumerWidget {
                           ),
                           const Divider(height: 1),
                           Expanded(
-                            child: rows.isEmpty
+                            child: entries.isEmpty
                                 ? const Center(
                                     child: Text(
                                       'No matching items',
@@ -82,19 +85,41 @@ class LibraryItemsTable extends ConsumerWidget {
                                   )
                                 : ListView.separated(
                                     key: const Key('items-list'),
-                                    itemCount: rows.length,
+                                    itemCount: entries.length,
                                     separatorBuilder: (_, _) =>
                                         const Divider(height: 1),
                                     itemBuilder: (context, index) {
-                                      final row = rows[index];
-                                      return _DataRow(
-                                        index: index,
-                                        row: row,
-                                        controller: controller,
-                                        onOpenDetail: onOpenDetail,
-                                        onDelete: onDelete,
-                                        onRevealSource: onRevealSource,
-                                      );
+                                      final entry = entries[index];
+                                      return switch (entry) {
+                                        LibraryPathGroupHeader(
+                                          :final dir,
+                                          :final label,
+                                          :final count,
+                                          :final collapsed,
+                                          :final depth,
+                                        ) =>
+                                          _PathGroupHeader(
+                                            index: index,
+                                            dir: dir,
+                                            label: label,
+                                            count: count,
+                                            collapsed: collapsed,
+                                            depth: depth,
+                                            onToggle: () => controller
+                                                .toggleCollapseSourceDir(dir),
+                                          ),
+                                        LibraryItemEntry(
+                                          :final row,
+                                        ) =>
+                                          _DataRow(
+                                            index: index,
+                                            row: row,
+                                            controller: controller,
+                                            onOpenDetail: onOpenDetail,
+                                            onDelete: onDelete,
+                                            onRevealSource: onRevealSource,
+                                          ),
+                                      };
                                     },
                                   ),
                           ),
@@ -186,6 +211,13 @@ class _HeaderRow extends StatelessWidget {
         height: 40,
         child: Row(
           children: [
+            _SortHeader(
+              label: 'File',
+              width: _kColFile,
+              column: LibrarySortColumn.source,
+              controller: controller,
+              multiColumnSort: multiColumnSort,
+            ),
             const SizedBox(
               width: _kColThumb,
               child: Padding(
@@ -214,13 +246,6 @@ class _HeaderRow extends StatelessWidget {
               label: 'Where',
               width: _kColWhere,
               column: LibrarySortColumn.where,
-              controller: controller,
-              multiColumnSort: multiColumnSort,
-            ),
-            _SortHeader(
-              label: 'Source',
-              width: _kColSource,
-              column: LibrarySortColumn.source,
               controller: controller,
               multiColumnSort: multiColumnSort,
             ),
@@ -280,10 +305,17 @@ class _SortHeader extends StatelessWidget {
           controller.toggleSort(column, multiColumn: multiColumnSort);
         },
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 4),
           child: Row(
             children: [
-              Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+              Flexible(
+                child: Text(
+                  label,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
               if (icon != null) ...[
                 const SizedBox(width: 4),
                 Icon(icon, size: 14),
@@ -294,6 +326,65 @@ class _SortHeader extends StatelessWidget {
                   ),
               ],
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PathGroupHeader extends StatelessWidget {
+  const _PathGroupHeader({
+    required this.index,
+    required this.dir,
+    required this.label,
+    required this.count,
+    required this.collapsed,
+    required this.depth,
+    required this.onToggle,
+  });
+
+  final int index;
+  final String dir;
+  final String label;
+  final int count;
+  final bool collapsed;
+  final int depth;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final zebra = index.isOdd;
+    return Material(
+      color: zebra ? _kZebraRow : Colors.transparent,
+      child: InkWell(
+        key: Key('source-group-$dir'),
+        onTap: onToggle,
+        child: SizedBox(
+          height: 40,
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: 4 + depth * _kPathIndent,
+              right: 8,
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  key: Key('source-group-toggle-$dir'),
+                  collapsed ? Icons.chevron_right : Icons.expand_more,
+                  size: 18,
+                ),
+                const SizedBox(width: 2),
+                Expanded(
+                  child: Text(
+                    '$label ($count)',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -342,6 +433,14 @@ class _DataRow extends StatelessWidget {
                     : CrossAxisAlignment.center,
                 children: [
                   SizedBox(
+                    width: _kColFile,
+                    child: _FileReveal(
+                      item: item,
+                      path: row.sourceLabel,
+                      onReveal: () => onRevealSource(item),
+                    ),
+                  ),
+                  SizedBox(
                     width: _kColThumb,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -385,17 +484,6 @@ class _DataRow extends StatelessWidget {
                         expanded: controller.expandedWhere.contains(item.id),
                         loading: !row.knowledgeLoaded,
                         onToggle: () => controller.toggleExpandWhere(item.id),
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    width: _kColSource,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: _SourceLink(
-                        item: item,
-                        label: row.sourceLabel,
-                        onReveal: () => onRevealSource(item),
                       ),
                     ),
                   ),
@@ -619,47 +707,36 @@ class _WhatCell extends StatelessWidget {
   }
 }
 
-class _SourceLink extends StatelessWidget {
-  const _SourceLink({
+class _FileReveal extends StatelessWidget {
+  const _FileReveal({
     required this.item,
-    required this.label,
+    required this.path,
     required this.onReveal,
   });
 
   final Item item;
-  final String label;
+  final String path;
   final VoidCallback onReveal;
 
   @override
   Widget build(BuildContext context) {
-    if (label.isEmpty) {
-      return Text(
-        '—',
-        key: Key('item-source-empty-${item.id}'),
-        style: Theme.of(context).textTheme.bodySmall,
+    if (path.isEmpty) {
+      return Center(
+        child: Text(
+          '—',
+          key: Key('item-source-empty-${item.id}'),
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
       );
     }
-    return Tooltip(
-      message: label,
-      child: TextButton(
-        key: Key('item-source-${item.id}'),
-        style: TextButton.styleFrom(
-          padding: EdgeInsets.zero,
-          alignment: Alignment.centerLeft,
-          minimumSize: Size.zero,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
-        onPressed: onReveal,
-        child: Text(
-          label,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.primary,
-            decoration: TextDecoration.underline,
-          ),
-        ),
-      ),
+    return IconButton(
+      key: Key('item-source-${item.id}'),
+      tooltip: path,
+      icon: const Icon(Icons.folder_open, size: 18),
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+      visualDensity: VisualDensity.compact,
+      onPressed: onReveal,
     );
   }
 }
@@ -684,7 +761,7 @@ class _PaginationBar extends StatelessWidget {
               total == 0
                   ? '0 items'
                   : '${page * controller.pageSize + 1}–'
-                      '${page * controller.pageSize + controller.pageRows.length} '
+                      '${page * controller.pageSize + controller.visiblePageEntries.length} '
                       'of $total',
               key: const Key('library-page-label'),
             ),

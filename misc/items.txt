@@ -8,4 +8,6 @@ might want to consider path hiearchy.
 5. where: should show city, state, and country (if different than the current country)
 6. where: restaurant. should also show city, state.
 7. when add from folder is used to add items, should automatically run client pre-pass, upload for analysis, done, and analyze for all items. the user should not have to explicitly initiate these tasks
+8. The number of lines per-page: needs to be a setting 
+9. include user first ane last names from clerk
 

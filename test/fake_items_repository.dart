@@ -228,7 +228,7 @@ Item fixtureItem({
     id: id,
     type: type,
     sourceType: SourceType.local,
-    sourceRef: sourceRef ?? 'file:///tmp/$id.jpg',
+    sourceRef: sourceRef ?? 'file:///fixture_$id/$id.jpg',
     analysisRef: analysisRef,
     analysisRefState: analysisRefState,
     contentHash: contentHash == '__default__' ? 'hash_$id' : contentHash,
