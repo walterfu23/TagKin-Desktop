@@ -14,8 +14,8 @@ const double _kColWho = 160;
 const double _kColWhat = 180;
 const double _kColWhere = 160;
 const double _kColComment = 200;
-/// Narrow first column: reveal icon (+ small tree indent).
-const double _kColFile = 44;
+/// Narrow first column: reveal icon; wide enough for "File" + sort arrow.
+const double _kColFile = 72;
 const double _kColActions = 200;
 /// Per-depth indent for path-group chevrons and file icons.
 const double _kPathIndent = 8;
@@ -355,6 +355,12 @@ class _PathGroupHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final zebra = index.isOdd;
+    const labelStyle = TextStyle(fontWeight: FontWeight.w600);
+    final countText = Text(
+      '($count)',
+      key: Key('source-group-count-$dir'),
+      style: labelStyle,
+    );
     return Material(
       color: zebra ? _kZebraRow : Colors.transparent,
       child: InkWell(
@@ -375,12 +381,58 @@ class _PathGroupHeader extends StatelessWidget {
                   size: 18,
                 ),
                 const SizedBox(width: 2),
+                // Full-width row; path + (count) clustered on the left.
                 Expanded(
-                  child: Text(
-                    '$label ($count)',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      // Reserve space so (count) never ellipsizes away.
+                      const countReserve = 48.0;
+                      final pathMax = (constraints.maxWidth - countReserve)
+                          .clamp(0.0, constraints.maxWidth);
+                      final path = Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: labelStyle,
+                      );
+                      final pathChild = depth > 0
+                          ? Stack(
+                              alignment: Alignment.centerLeft,
+                              children: [
+                                path,
+                                Positioned(
+                                  left: 0,
+                                  top: 0,
+                                  bottom: 0,
+                                  width: pathMax.clamp(0.0, 220.0),
+                                  child: Tooltip(
+                                    message: dir,
+                                    preferBelow: true,
+                                    verticalOffset: 4,
+                                    waitDuration: Duration.zero,
+                                    child: const ColoredBox(
+                                      color: Colors.transparent,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            )
+                          : path;
+                      return Align(
+                        alignment: Alignment.centerLeft,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ConstrainedBox(
+                              constraints: BoxConstraints(maxWidth: pathMax),
+                              child: pathChild,
+                            ),
+                            const SizedBox(width: 8),
+                            countText,
+                          ],
+                        ),
+                      );
+                    },
                   ),
                 ),
               ],
@@ -729,14 +781,19 @@ class _FileReveal extends StatelessWidget {
         ),
       );
     }
-    return IconButton(
-      key: Key('item-source-${item.id}'),
-      tooltip: path,
-      icon: const Icon(Icons.folder_open, size: 18),
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-      visualDensity: VisualDensity.compact,
-      onPressed: onReveal,
+    return Tooltip(
+      message: path,
+      preferBelow: true,
+      verticalOffset: 4,
+      waitDuration: Duration.zero,
+      child: IconButton(
+        key: Key('item-source-${item.id}'),
+        icon: const Icon(Icons.insert_drive_file_outlined, size: 18),
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        visualDensity: VisualDensity.compact,
+        onPressed: onReveal,
+      ),
     );
   }
 }

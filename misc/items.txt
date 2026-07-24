@@ -9,5 +9,5 @@ might want to consider path hiearchy.
 6. where: restaurant. should also show city, state.
 7. when add from folder is used to add items, should automatically run client pre-pass, upload for analysis, done, and analyze for all items. the user should not have to explicitly initiate these tasks
 8. The number of lines per-page: needs to be a setting 
-9. include user first ane last names from clerk
-
+9. include user first name, last name from clerk
+10. add tagging of videos. add settings about sample duration.
