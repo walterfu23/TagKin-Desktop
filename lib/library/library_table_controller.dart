@@ -10,6 +10,7 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/local_thumb_cache.dart';
 import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
+import 'package:tagkin_desktop/where/where_label_resolver.dart';
 
 /// Columns that support header sorting on the library table.
 enum LibrarySortColumn { who, what, where, source, comment, type, status }
@@ -31,6 +32,7 @@ class LibraryTableRow {
     this.who = const [],
     this.what = const [],
     this.where = const [],
+    this.whereRaw = const [],
     this.comments = const [],
     this.knowledgeLoaded = false,
     this.commentsLoaded = false,
@@ -40,7 +42,12 @@ class LibraryTableRow {
   final Item item;
   final List<String> who;
   final List<String> what;
+
+  /// Display where labels (GPS reverse-geocoded when applicable).
   final List<String> where;
+
+  /// Raw where tag values (for re-resolving after prefs change).
+  final List<String> whereRaw;
   final List<String> comments;
   final bool knowledgeLoaded;
   final bool commentsLoaded;
@@ -58,6 +65,7 @@ class LibraryTableRow {
     List<String>? who,
     List<String>? what,
     List<String>? where,
+    List<String>? whereRaw,
     List<String>? comments,
     bool? knowledgeLoaded,
     bool? commentsLoaded,
@@ -68,6 +76,7 @@ class LibraryTableRow {
       who: who ?? this.who,
       what: what ?? this.what,
       where: where ?? this.where,
+      whereRaw: whereRaw ?? this.whereRaw,
       comments: comments ?? this.comments,
       knowledgeLoaded: knowledgeLoaded ?? this.knowledgeLoaded,
       commentsLoaded: commentsLoaded ?? this.commentsLoaded,
@@ -82,13 +91,16 @@ class LibraryTableController extends ChangeNotifier {
     required this.itemsRepository,
     required this.commentsRepository,
     LocalThumbCache? thumbCache,
+    WhereLabelResolver? whereLabelResolver,
     this.pageSize = 50,
     this.knowledgeConcurrency = 6,
-  }) : _thumbCache = thumbCache ?? LocalThumbCache();
+  })  : _thumbCache = thumbCache ?? LocalThumbCache(),
+        _whereLabels = whereLabelResolver ?? WhereLabelResolver();
 
   final ItemsRepository itemsRepository;
   final CommentsRepository commentsRepository;
   final LocalThumbCache _thumbCache;
+  final WhereLabelResolver _whereLabels;
   final int pageSize;
   final int knowledgeConcurrency;
 
@@ -199,12 +211,12 @@ class LibraryTableController extends ChangeNotifier {
     await load();
   }
 
-  /// Click a column header.
+  /// Click a column header (Cliptorium-style).
   ///
-  /// Plain click: cycle primary asc → desc → none (clears stack).
-  /// Shift+click: append as next key, or cycle that key asc → desc → remove.
-  void toggleSort(LibrarySortColumn column, {bool additive = false}) {
-    if (!additive) {
+  /// [multiColumn] false: cycle primary asc → desc → none (single key).
+  /// [multiColumn] true: append as next key, or cycle that key asc → desc → remove.
+  void toggleSort(LibrarySortColumn column, {bool multiColumn = false}) {
+    if (!multiColumn) {
       if (sortKeys.isNotEmpty && sortKeys.first.column == column) {
         final primary = sortKeys.first;
         if (primary.ascending) {
@@ -233,6 +245,24 @@ class LibraryTableController extends ChangeNotifier {
     }
     pageIndex = 0;
     notifyListeners();
+  }
+
+  /// When multi-column sort is disabled, keep only the primary sort column.
+  void enforceSingleColumn() {
+    if (sortKeys.length <= 1) return;
+    sortKeys = [sortKeys.first];
+    pageIndex = 0;
+    notifyListeners();
+  }
+
+  /// Re-resolve display where labels from [LibraryTableRow.whereRaw] (prefs change).
+  Future<void> refreshWhereLabels() async {
+    final snapshot = List<LibraryTableRow>.from(_rows);
+    for (final row in snapshot) {
+      if (!row.knowledgeLoaded || row.whereRaw.isEmpty) continue;
+      final labels = await _whereLabels.resolveAll(row.whereRaw);
+      _replaceRow(row.item.id, (r) => r.copyWith(where: labels));
+    }
   }
 
   void setPage(int index) {
@@ -280,12 +310,16 @@ class LibraryTableController extends ChangeNotifier {
           final knowledge = await itemsRepository.getKnowledge(id);
           if (_loadGeneration != gen) return;
           final grouped = groupItemLevelTagsByDimension(knowledge.tags);
+          final whereRaw = grouped['where']!.map((t) => t.value).toList();
+          final whereLabels = await _whereLabels.resolveAll(whereRaw);
+          if (_loadGeneration != gen) return;
           _replaceRow(
             id,
             (r) => r.copyWith(
               who: grouped['who']!.map((t) => t.value).toList(),
               what: grouped['what']!.map((t) => t.value).toList(),
-              where: grouped['where']!.map((t) => t.value).toList(),
+              where: whereLabels,
+              whereRaw: whereRaw,
               knowledgeLoaded: true,
             ),
           );
@@ -386,7 +420,12 @@ final libraryTableControllerProvider =
     return LibraryTableController(
       itemsRepository: ref.watch(itemsRepositoryProvider),
       commentsRepository: ref.watch(commentsRepositoryProvider),
+      whereLabelResolver: ref.watch(whereLabelResolverProvider),
     );
   },
-  dependencies: [itemsRepositoryProvider, commentsRepositoryProvider],
+  dependencies: [
+    itemsRepositoryProvider,
+    commentsRepositoryProvider,
+    whereLabelResolverProvider,
+  ],
 );

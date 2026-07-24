@@ -14,7 +14,9 @@ class ExifExtract {
   /// is present and parseable; otherwise null.
   final String? capturedAt;
 
-  /// GPS lat/lng when present; otherwise null. No reverse-geocode in v1.
+  /// GPS lat/lng when present; otherwise null.
+  ///
+  /// Place names (city/state) are derived at display time from these coords.
   final PrePassWhere? where;
 }
 

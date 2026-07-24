@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # 11_dev.sh — run the desktop app on macOS (foreground, live console). Band 11-49 = ops.
+# Always clears the D1 secure store first (clean Clerk session each run).
 # Loads CLERK_PUBLISHABLE_KEY / TAGKIN_API_URL from .env and passes them via
 # --dart-define (App Sandbox cannot read the repo .env from inside the .app).
 set -euo pipefail
+MAC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=_env.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_env.sh"
+source "${MAC_DIR}/_env.sh"
+
+"${MAC_DIR}/111_clear_secure_store.sh"
 
 ENV_FILE="${TAGKIN_DESKTOP_ROOT}/.env"
 if [[ -f "${ENV_FILE}" ]]; then

@@ -1,10 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/processing_status_view.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 
 const double _kThumbSize = 56;
@@ -27,7 +28,7 @@ const double _kTableMinWidth = _kColThumb +
 const Color _kZebraRow = Color(0xFFF3F4F6);
 
 /// Wide multi-column library table (D2 post-v1).
-class LibraryItemsTable extends StatelessWidget {
+class LibraryItemsTable extends ConsumerWidget {
   const LibraryItemsTable({
     super.key,
     required this.controller,
@@ -42,7 +43,8 @@ class LibraryItemsTable extends StatelessWidget {
   final void Function(Item item) onRevealSource;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final multiColumnSort = ref.watch(multiColumnSortProvider);
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
@@ -65,7 +67,10 @@ class LibraryItemsTable extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _HeaderRow(controller: controller),
+                          _HeaderRow(
+                            controller: controller,
+                            multiColumnSort: multiColumnSort,
+                          ),
                           const Divider(height: 1),
                           Expanded(
                             child: rows.isEmpty
@@ -165,9 +170,13 @@ class _FilterBar extends StatelessWidget {
 }
 
 class _HeaderRow extends StatelessWidget {
-  const _HeaderRow({required this.controller});
+  const _HeaderRow({
+    required this.controller,
+    required this.multiColumnSort,
+  });
 
   final LibraryTableController controller;
+  final bool multiColumnSort;
 
   @override
   Widget build(BuildContext context) {
@@ -192,30 +201,35 @@ class _HeaderRow extends StatelessWidget {
               width: _kColWho,
               column: LibrarySortColumn.who,
               controller: controller,
+              multiColumnSort: multiColumnSort,
             ),
             _SortHeader(
               label: 'What',
               width: _kColWhat,
               column: LibrarySortColumn.what,
               controller: controller,
+              multiColumnSort: multiColumnSort,
             ),
             _SortHeader(
               label: 'Where',
               width: _kColWhere,
               column: LibrarySortColumn.where,
               controller: controller,
+              multiColumnSort: multiColumnSort,
             ),
             _SortHeader(
               label: 'Source',
               width: _kColSource,
               column: LibrarySortColumn.source,
               controller: controller,
+              multiColumnSort: multiColumnSort,
             ),
             _SortHeader(
               label: 'Comment',
               width: _kColComment,
               column: LibrarySortColumn.comment,
               controller: controller,
+              multiColumnSort: multiColumnSort,
             ),
             const SizedBox(
               width: _kColActions,
@@ -240,12 +254,14 @@ class _SortHeader extends StatelessWidget {
     required this.width,
     required this.column,
     required this.controller,
+    required this.multiColumnSort,
   });
 
   final String label;
   final double width;
   final LibrarySortColumn column;
   final LibraryTableController controller;
+  final bool multiColumnSort;
 
   @override
   Widget build(BuildContext context) {
@@ -261,8 +277,7 @@ class _SortHeader extends StatelessWidget {
       child: InkWell(
         key: Key('sort-header-${column.name}'),
         onTap: () {
-          final additive = HardwareKeyboard.instance.isShiftPressed;
-          controller.toggleSort(column, additive: additive);
+          controller.toggleSort(column, multiColumn: multiColumnSort);
         },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -272,7 +287,7 @@ class _SortHeader extends StatelessWidget {
               if (icon != null) ...[
                 const SizedBox(width: 4),
                 Icon(icon, size: 14),
-                if (keys.length > 1)
+                if (multiColumnSort && keys.length > 1)
                   Text(
                     '${idx + 1}',
                     style: Theme.of(context).textTheme.labelSmall,

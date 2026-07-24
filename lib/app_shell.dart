@@ -1,5 +1,8 @@
+import 'dart:io' show Platform;
+
 import 'package:clerk_auth/clerk_auth.dart' show RetryOptions;
 import 'package:clerk_flutter/clerk_flutter.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
@@ -14,6 +17,7 @@ import 'package:tagkin_desktop/auth/secure_persistor.dart';
 import 'package:tagkin_desktop/config/app_config.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/persons_list_page.dart';
+import 'package:tagkin_desktop/prefs/settings_navigation.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
 /// App-wide config (overridable in tests).
@@ -439,7 +443,7 @@ class _AccountBootstrapState extends State<AccountBootstrap> {
   }
 }
 
-class _SignedInScaffold extends StatelessWidget {
+class _SignedInScaffold extends ConsumerStatefulWidget {
   const _SignedInScaffold({
     required this.account,
     required this.child,
@@ -450,7 +454,17 @@ class _SignedInScaffold extends StatelessWidget {
   final Widget child;
   final Future<void> Function()? onSignOut;
 
-  Future<void> _openPersons(BuildContext context) async {
+  @override
+  ConsumerState<_SignedInScaffold> createState() => _SignedInScaffoldState();
+}
+
+class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold> {
+  /// In-app gear is Windows-only; macOS uses TagKin → Settings… in the menu bar.
+  bool get _showSettingsGear => !kIsWeb && Platform.isWindows;
+
+  bool _settingsOpen = false;
+
+  Future<void> _openPersons() async {
     final container = ProviderScope.containerOf(context);
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
@@ -464,37 +478,60 @@ class _SignedInScaffold extends StatelessWidget {
     );
   }
 
+  Future<void> _openSettings() async {
+    if (_settingsOpen) return;
+    _settingsOpen = true;
+    try {
+      await pushSettingsPage(context);
+    } finally {
+      _settingsOpen = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    ref.listen<int>(openSettingsTickProvider, (previous, next) {
+      if (previous == null || previous == next) return;
+      if (!mounted) return;
+      _openSettings();
+    });
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('TagKin'),
         actions: [
+          if (_showSettingsGear)
+            IconButton(
+              key: const Key('nav-settings'),
+              tooltip: 'Settings',
+              onPressed: _openSettings,
+              icon: const Icon(Icons.settings_outlined),
+            ),
           IconButton(
             key: const Key('nav-persons'),
             tooltip: 'Persons',
-            onPressed: () => _openPersons(context),
+            onPressed: _openPersons,
             icon: const Icon(Icons.people_outline),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Center(
               child: Text(
-                account.email ?? account.id,
+                widget.account.email ?? widget.account.id,
                 key: const Key('account-label'),
               ),
             ),
           ),
-          if (onSignOut != null)
+          if (widget.onSignOut != null)
             IconButton(
               key: const Key('sign-out'),
               tooltip: 'Sign out',
-              onPressed: () => onSignOut!(),
+              onPressed: () => widget.onSignOut!(),
               icon: const Icon(Icons.logout),
             ),
         ],
       ),
-      body: child,
+      body: widget.child,
     );
   }
 }

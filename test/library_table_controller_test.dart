@@ -2,6 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/local_thumb_cache.dart';
+import 'package:tagkin_desktop/where/reverse_geocoder.dart';
+import 'package:tagkin_desktop/where/where_label_resolver.dart';
+import 'package:tagkin_desktop/where/where_place_label.dart';
 
 import 'fake_comments_repository.dart';
 import 'fake_items_repository.dart';
@@ -75,7 +78,55 @@ void main() {
     expect(rowA.commentsLoaded, isTrue);
   });
 
-  test('sort cycles asc → desc → none; Shift appends tie-break keys', () async {
+  test('GPS where tags become city/state labels', () async {
+    final item = fixtureItem(id: 'g', processingStatus: ProcessingStatus.tagged);
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {
+        'g': fixtureKnowledge(
+          item: item,
+          tags: [
+            fixtureTag(
+              id: 'gps',
+              itemId: 'g',
+              dimension: 'where',
+              value: '37.77,-122.42',
+            ),
+            fixtureTag(
+              id: 'scene',
+              itemId: 'g',
+              dimension: 'where',
+              value: 'restaurant',
+            ),
+          ],
+        ),
+      },
+    );
+    final controller = LibraryTableController(
+      itemsRepository: items,
+      commentsRepository: FakeCommentsRepository(),
+      thumbCache: LocalThumbCache(),
+      whereLabelResolver: WhereLabelResolver(
+        geocoder: FakeReverseGeocoder({
+          FakeReverseGeocoder.key(37.77, -122.42): const PlaceParts(
+            locality: 'San Francisco',
+            administrativeArea: 'CA',
+            country: 'United States',
+            isoCountryCode: 'US',
+          ),
+        }),
+        deviceCountryCodeProvider: () => 'US',
+      ),
+    );
+    await controller.load();
+    await _awaitKnowledge(controller);
+
+    final row = controller.allRows.single;
+    expect(row.where, ['San Francisco, CA', 'restaurant']);
+  });
+
+  test('sort cycles asc → desc → none; multiColumn appends tie-break keys',
+      () async {
     final items = <Item>[];
     final knowledge = <String, ItemKnowledge>{};
     for (var i = 0; i < 4; i++) {
@@ -127,7 +178,7 @@ void main() {
     expect(controller.sortKeys, isEmpty);
 
     controller.toggleSort(LibrarySortColumn.who);
-    controller.toggleSort(LibrarySortColumn.what, additive: true);
+    controller.toggleSort(LibrarySortColumn.what, multiColumn: true);
     expect(controller.sortKeys, hasLength(2));
     // Within Ada (asc), apple before zoo.
     final adaRows =
@@ -135,11 +186,60 @@ void main() {
     expect(adaRows.first.what.first, 'apple');
     expect(adaRows.last.what.first, 'zoo');
 
-    // Shift-cycle secondary: desc then remove.
-    controller.toggleSort(LibrarySortColumn.what, additive: true);
+    // Multi-cycle secondary: desc then remove.
+    controller.toggleSort(LibrarySortColumn.what, multiColumn: true);
     expect(controller.sortKeys.last.ascending, isFalse);
-    controller.toggleSort(LibrarySortColumn.what, additive: true);
+    controller.toggleSort(LibrarySortColumn.what, multiColumn: true);
     expect(controller.sortKeys, hasLength(1));
+
+    // Stack two keys then collapse when multi-column is turned off.
+    controller.toggleSort(LibrarySortColumn.what, multiColumn: true);
+    expect(controller.sortKeys, hasLength(2));
+    controller.enforceSingleColumn();
+    expect(controller.sortKeys, hasLength(1));
+    expect(controller.sortKeys.first.column, LibrarySortColumn.who);
+  });
+
+  test('who sort is case-insensitive', () async {
+    final names = ['sam', 'Bob', 'ada'];
+    final items = <Item>[];
+    final knowledge = <String, ItemKnowledge>{};
+    for (var i = 0; i < names.length; i++) {
+      final id = 'item_$i';
+      final item = fixtureItem(
+        id: id,
+        processingStatus: ProcessingStatus.tagged,
+      );
+      items.add(item);
+      knowledge[id] = fixtureKnowledge(
+        item: item,
+        tags: [
+          fixtureTag(
+            id: 'who_$i',
+            itemId: id,
+            dimension: 'who',
+            value: names[i],
+          ),
+        ],
+      );
+    }
+    final controller = LibraryTableController(
+      itemsRepository: FakeItemsRepository(
+        items: items,
+        knowledgeByItemId: knowledge,
+      ),
+      commentsRepository: FakeCommentsRepository(),
+      thumbCache: LocalThumbCache(),
+      knowledgeConcurrency: 3,
+    );
+    await controller.load();
+    await _awaitKnowledge(controller);
+
+    controller.toggleSort(LibrarySortColumn.who);
+    expect(
+      controller.filteredSorted.map((r) => r.who.first).toList(),
+      ['ada', 'Bob', 'sam'],
+    );
   });
 
   test('filter and pagination', () async {

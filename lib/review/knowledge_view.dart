@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/review/knowledge_grouping.dart';
+import 'package:tagkin_desktop/where/where_value_text.dart';
 
 /// Renders approved who/what/when/where from [ItemKnowledge] (D8 + D10).
 ///
@@ -175,10 +176,15 @@ class _DimensionSection extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      child: Text(
-                        tag.value,
-                        key: Key('tag-value-${tag.id}'),
-                      ),
+                      child: dimension == 'where'
+                          ? WhereValueText(
+                              key: Key('tag-value-${tag.id}'),
+                              value: tag.value,
+                            )
+                          : Text(
+                              tag.value,
+                              key: Key('tag-value-${tag.id}'),
+                            ),
                     ),
                     const SizedBox(width: 8),
                     Flexible(

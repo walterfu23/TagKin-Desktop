@@ -35,7 +35,7 @@ Do **not** reuse the API `sN` ids (those are the `tagkin` repo's `TagKin/mac/`);
 | [`104_analyze.sh`](./104_analyze.sh) | Static analysis bar (`flutter analyze`). |
 | [`105_fetch_ffmpeg.sh`](./105_fetch_ffmpeg.sh) | Download/copy ffmpeg+ffprobe into `third_party/ffmpeg/macos/` for embedding in the `.app` (D4; end users never install ffmpeg). |
 | [`111_clear_secure_store.sh`](./111_clear_secure_store.sh) | Wipe Keychain items for `tagkin.desktop.secure` (D1; force clean sign-in / stop repeat access prompts). |
-| [`11_dev.sh`](./11_dev.sh) | Run the app on macOS (`flutter run -d macos`). |
+| [`11_dev.sh`](./11_dev.sh) | Clear secure store, then run the app on macOS (`flutter run -d macos`). |
 | [`51_test_all.sh`](./51_test_all.sh) | All completed desktop subsystem bars in order (`106_test_d0`, `107_test_d1`, `108_test_d2`, …). Before a PR. |
 | [`106_test_d0.sh`](./106_test_d0.sh) | D0 Foundation regression bar alone. |
 | [`107_test_d1.sh`](./107_test_d1.sh) | D1 Auth & Account regression bar alone. |
