@@ -11,3 +11,4 @@ might want to consider path hiearchy.
 8. The number of lines per-page: needs to be a setting 
 9. include user first name, last name from clerk
 10. add tagging of videos. add settings about sample duration.
+11. after removing an item, everything collapses

@@ -47,6 +47,22 @@ class JobsController extends ChangeNotifier {
 
   bool get canCancel => isBusy && !deleted;
 
+  /// Surfaces an error from a sibling flow (e.g. re-upload) on this controller.
+  void surfaceError(Object e) {
+    if (_disposed || deleted) return;
+    error = e;
+    phase = JobsPhase.error;
+    _stopPolling();
+    notifyListeners();
+  }
+
+  /// Adopts a refreshed [Item] (e.g. after re-upload recorded a new analysisRef).
+  void adoptItem(Item refreshed) {
+    if (_disposed || deleted) return;
+    item = refreshed;
+    notifyListeners();
+  }
+
   /// Loads the latest job once; starts polling when non-terminal.
   Future<void> refreshJobs() async {
     if (deleted) return;

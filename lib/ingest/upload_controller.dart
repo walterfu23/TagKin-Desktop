@@ -10,20 +10,23 @@ import 'package:tagkin_desktop/ingest/model_host_uploader.dart';
 import 'package:tagkin_desktop/ingest/upload_mime.dart';
 import 'package:tagkin_desktop/prepass/frame_sampler.dart';
 import 'package:tagkin_desktop/prepass/prepass_controller.dart';
+import 'package:tagkin_desktop/review/local_media_resolver.dart';
 
 /// Lifecycle phase of a D5 upload run.
 enum UploadPhase { idle, running, done, error }
 
-/// One item's outcome after [UploadController.run].
+/// One item's outcome after [UploadController.run] / [uploadItemFromLocal].
 class UploadOutcome {
   const UploadOutcome({
     required this.itemId,
     this.analysisRef,
+    this.item,
     this.error,
   });
 
   final String itemId;
   final String? analysisRef;
+  final Item? item;
   final Object? error;
 
   bool get succeeded => analysisRef != null && error == null;
@@ -67,6 +70,103 @@ class UploadController extends ChangeNotifier {
     final override = readBytes;
     if (override != null) return override(path);
     return File(path).readAsBytes();
+  }
+
+  /// Uploads one existing library photo from its local `sourceRef` to the
+  /// model host and records a fresh `analysisRef` (no new item / no re-import).
+  ///
+  /// Used for re-analyze after Gemini Files TTL and for expired refs.
+  Future<UploadOutcome> uploadItemFromLocal(
+    Item item, {
+    Future<LocalMediaResolution> Function(Item item)? resolveMedia,
+  }) async {
+    if (item.type != ItemType.photo) {
+      return UploadOutcome(
+        itemId: item.id,
+        error: StateError(
+          'Re-upload is photo-only in v1 (sample-frame tagging).',
+        ),
+      );
+    }
+
+    phase = UploadPhase.running;
+    error = null;
+    notifyListeners();
+
+    try {
+      final resolution =
+          await (resolveMedia ?? resolveLocalMedia)(item);
+      if (!resolution.isAvailable || resolution.file == null) {
+        final message = switch (resolution.status) {
+          LocalMediaStatus.missing =>
+            'Local media not found at sourceRef.',
+          LocalMediaStatus.accessDenied =>
+            'macOS blocked access to this file. Re-select the folder (bookmark).',
+          LocalMediaStatus.hashMismatch =>
+            'Local file contentHash does not match the item record.',
+          _ => 'Local media is not available for re-upload.',
+        };
+        final outcome = UploadOutcome(
+          itemId: item.id,
+          error: StateError(message),
+        );
+        outcomes = [outcome];
+        phase = UploadPhase.error;
+        error = outcome.error;
+        notifyListeners();
+        return outcome;
+      }
+
+      final path = resolution.file!.path;
+      final mimeType = mimeTypeForPath(path, item.type);
+      final bytes = await _read(path);
+
+      final grant = await itemsRepository.createUploadGrant(
+        item.id,
+        CreateUploadGrant(mimeType: mimeType),
+      );
+
+      String? analysisRef;
+      try {
+        analysisRef = await _putWithExpiryRetry(
+          itemId: item.id,
+          grant: grant,
+          bytes: bytes,
+          mimeType: mimeType,
+        );
+      } catch (e) {
+        final outcome = UploadOutcome(itemId: item.id, error: e);
+        outcomes = [outcome];
+        phase = UploadPhase.error;
+        error = e;
+        notifyListeners();
+        return outcome;
+      }
+
+      analysisRef ??= _synthesizeAnalysisRef(item.id, grant.uploadUrl);
+
+      final recorded = await itemsRepository.recordAnalysisRef(
+        item.id,
+        RecordAnalysisRef(analysisRef: analysisRef),
+      );
+
+      final outcome = UploadOutcome(
+        itemId: item.id,
+        analysisRef: recorded.analysisRef ?? analysisRef,
+        item: recorded,
+      );
+      outcomes = [outcome];
+      phase = UploadPhase.done;
+      notifyListeners();
+      return outcome;
+    } catch (e) {
+      final outcome = UploadOutcome(itemId: item.id, error: e);
+      outcomes = [outcome];
+      phase = UploadPhase.error;
+      error = e;
+      notifyListeners();
+      return outcome;
+    }
   }
 
   /// Runs upload for every succeeded pre-pass outcome. Continues past

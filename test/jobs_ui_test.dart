@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/ingest/upload_controller.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/main.dart';
 
@@ -10,6 +11,7 @@ import 'fake_comments_repository.dart';
 import 'fake_corrections_repository.dart';
 import 'fake_items_repository.dart';
 import 'fake_jobs_repository.dart';
+import 'fake_upload_controller.dart';
 import 'fake_usage_repository.dart';
 
 Account _account(String id) => Account(
@@ -22,6 +24,7 @@ List<Override> _overrides({
   required FakeItemsRepository items,
   required FakeJobsRepository jobs,
   FakeUsageRepository? usage,
+  FakeUploadController? upload,
 }) {
   return [
     testSessionProvider.overrideWithValue(
@@ -36,6 +39,8 @@ List<Override> _overrides({
       usage ?? FakeUsageRepository(),
     ),
     jobsRepositoryProvider.overrideWithValue(jobs),
+    if (upload != null)
+      uploadControllerProvider.overrideWithValue(upload),
   ];
 }
 
@@ -187,5 +192,103 @@ void main() {
 
     expect(jobs.cancelCallCount, 1);
     expect(find.byKey(const Key('job-state-cancelled')), findsOneWidget);
+  });
+
+  testWidgets('Re-analyze on tagged item warns; cancel skips analyze',
+      (tester) async {
+    final item = fixtureItem(
+      id: 'item_tagged',
+      analysisRef: 'ref_1',
+      analysisRefState: AnalysisRefState.ready,
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final jobs = FakeJobsRepository(itemId: 'item_tagged', item: item);
+    final upload = FakeUploadController();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: _overrides(
+          items: FakeItemsRepository(items: [item]),
+          jobs: jobs,
+          upload: upload,
+        ),
+        child: const MaterialApp(
+          home: ItemDetailPage(itemId: 'item_tagged'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('item-analyze')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('reanalyze-warning-dialog')), findsOneWidget);
+    expect(
+      find.textContaining('Previous analyze tags will be overwritten'),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const Key('reanalyze-cancel')));
+    await tester.pumpAndSettle();
+
+    expect(jobs.analyzeCallCount, 0);
+    expect(upload.uploadCallCount, 0);
+    expect(find.byKey(const Key('reanalyze-warning-dialog')), findsNothing);
+  });
+
+  testWidgets('Re-analyze confirm re-uploads then analyzes', (tester) async {
+    final item = fixtureItem(
+      id: 'item_tagged2',
+      analysisRef: 'ref_1',
+      analysisRefState: AnalysisRefState.ready,
+      processingStatus: ProcessingStatus.tagged,
+      sourceRef: 'file:///tmp/photo.jpg',
+    );
+    final jobs = FakeJobsRepository(itemId: 'item_tagged2', item: item);
+    final upload = FakeUploadController();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: _overrides(
+          items: FakeItemsRepository(items: [item]),
+          jobs: jobs,
+          upload: upload,
+        ),
+        child: const MaterialApp(
+          home: ItemDetailPage(itemId: 'item_tagged2'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('item-analyze')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('reanalyze-confirm')));
+    await tester.pumpAndSettle();
+
+    expect(upload.uploadCallCount, 1);
+    expect(jobs.analyzeCallCount, 1);
+  });
+
+  testWidgets('Expired analysisRef shows Re-upload button', (tester) async {
+    final item = fixtureItem(
+      id: 'item_exp',
+      analysisRef: 'files/old',
+      analysisRefState: AnalysisRefState.expired,
+      processingStatus: ProcessingStatus.tagged,
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: _overrides(
+          items: FakeItemsRepository(items: [item]),
+          jobs: FakeJobsRepository(itemId: 'item_exp', item: item),
+          upload: FakeUploadController(),
+        ),
+        child: const MaterialApp(
+          home: ItemDetailPage(itemId: 'item_exp'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('item-reupload')), findsOneWidget);
+    expect(find.byKey(const Key('reupload-hint')), findsOneWidget);
   });
 }

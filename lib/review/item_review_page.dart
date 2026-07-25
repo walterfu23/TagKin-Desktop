@@ -11,6 +11,7 @@ import 'package:tagkin_desktop/knowledge/corrections_history_view.dart';
 import 'package:tagkin_desktop/knowledge/tag_edit_dialog.dart';
 import 'package:tagkin_desktop/persons/person_detail_page.dart';
 import 'package:tagkin_desktop/persons/person_name_dialog.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/review/key_period_scrubber.dart';
 import 'package:tagkin_desktop/review/knowledge_view.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
@@ -239,6 +240,8 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
   @override
   Widget build(BuildContext context) {
     final review = ref.watch(reviewControllerProvider(widget.itemId));
+    final showFaceOverlays =
+        ref.watch(desktopPrefsProvider).showFaceOverlays;
 
     return ListenableBuilder(
       listenable: review,
@@ -286,6 +289,16 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
                 resolution: media,
                 player: _player,
                 videoController: _videoController,
+                whoOverlays: showFaceOverlays
+                    ? knowledge.tags
+                        .where(
+                          (t) =>
+                              t.dimension == 'who' &&
+                              t.status == TagStatus.active &&
+                              t.region != null,
+                        )
+                        .toList()
+                    : const [],
               ),
               const SizedBox(height: 16),
               Row(

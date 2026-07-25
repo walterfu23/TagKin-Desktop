@@ -1169,6 +1169,34 @@ class SplitPerson {
   }
 }
 
+class TagRegion {
+  const TagRegion({
+    required this.yMin,
+    required this.xMin,
+    required this.yMax,
+    required this.xMax,
+  });
+
+  final double yMin;
+  final double xMin;
+  final double yMax;
+  final double xMax;
+
+  factory TagRegion.fromJson(Map<String, dynamic> json) => TagRegion(
+        yMin: (json['yMin'] as num).toDouble(),
+        xMin: (json['xMin'] as num).toDouble(),
+        yMax: (json['yMax'] as num).toDouble(),
+        xMax: (json['xMax'] as num).toDouble(),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'yMin': yMin,
+        'xMin': xMin,
+        'yMax': yMax,
+        'xMax': xMax,
+      };
+}
+
 class Tag {
   const Tag({
     required this.id,
@@ -1182,6 +1210,7 @@ class Tag {
     this.confidence,
     this.provider,
     this.modelId,
+    this.region,
     required this.schemaVersion,
     required this.createdAt,
   });
@@ -1197,6 +1226,7 @@ class Tag {
   final double? confidence;
   final String? provider;
   final String? modelId;
+  final TagRegion? region;
   final int schemaVersion;
   final String createdAt;
 
@@ -1212,6 +1242,9 @@ class Tag {
         confidence: json['confidence'] == null ? null : (json['confidence'] as num).toDouble(),
         provider: json['provider'] == null ? null : json['provider'] as String,
         modelId: json['modelId'] == null ? null : json['modelId'] as String,
+        region: json['region'] == null
+            ? null
+            : TagRegion.fromJson(json['region'] as Map<String, dynamic>),
         schemaVersion: (json['schemaVersion'] as num).toInt(),
         createdAt: json['createdAt'] as String,
       );
@@ -1229,6 +1262,7 @@ class Tag {
     if (confidence != null) json['confidence'] = confidence;
     if (provider != null) json['provider'] = provider;
     if (modelId != null) json['modelId'] = modelId;
+    if (region != null) json['region'] = region!.toJson();
     json['schemaVersion'] = schemaVersion;
     json['createdAt'] = createdAt;
     return json;

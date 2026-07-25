@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/ingest/upload_controller.dart';
 import 'package:tagkin_desktop/jobs/job_state_view.dart';
 import 'package:tagkin_desktop/jobs/jobs_controller.dart';
 import 'package:tagkin_desktop/library/processing_status_view.dart';
@@ -72,13 +73,79 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
     }
   }
 
+  /// First analyze runs immediately; re-analyze on a tagged item warns, then
+  /// re-uploads the local file to Gemini before analyze (no re-import).
+  Future<void> _onAnalyzePressed(JobsController jobs, Item item) async {
+    final needsReupload =
+        item.processingStatus == ProcessingStatus.tagged ||
+            item.analysisRefState == AnalysisRefState.expired ||
+            item.analysisRefState == AnalysisRefState.unavailable;
+
+    if (item.processingStatus == ProcessingStatus.tagged) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          key: const Key('reanalyze-warning-dialog'),
+          title: const Text('Analyze again?'),
+          content: const Text(
+            'Previous analyze tags will be overwritten. '
+            'Your manual tags will be kept. '
+            'The local file will be re-uploaded to the model host first.',
+          ),
+          actions: [
+            TextButton(
+              key: const Key('reanalyze-cancel'),
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              key: const Key('reanalyze-confirm'),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Analyze'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+
+    if (needsReupload) {
+      final ok = await _reuploadLocal(jobs, item);
+      if (!ok || !mounted) return;
+    }
+    await jobs.analyze(itemType: item.type);
+  }
+
+  Future<bool> _reuploadLocal(JobsController jobs, Item item) async {
+    final upload = ref.read(uploadControllerProvider);
+    final outcome = await upload.uploadItemFromLocal(item);
+    if (!mounted) return false;
+    if (!outcome.succeeded) {
+      jobs.surfaceError(outcome.error ?? StateError('Re-upload failed'));
+      return false;
+    }
+    if (outcome.item != null) {
+      jobs.adoptItem(outcome.item!);
+    }
+    setState(() {
+      _future = Future.value(outcome.item ?? item);
+    });
+    return true;
+  }
+
+  Future<void> _onReuploadPressed(JobsController jobs, Item item) async {
+    final ok = await _reuploadLocal(jobs, item);
+    if (!ok || !mounted) return;
+  }
+
   @override
   Widget build(BuildContext context) {
     final jobs = ref.watch(jobsControllerProvider(widget.itemId));
     final usage = ref.watch(usageControllerProvider);
+    final upload = ref.watch(uploadControllerProvider);
 
     return ListenableBuilder(
-      listenable: Listenable.merge([jobs, usage]),
+      listenable: Listenable.merge([jobs, usage, upload]),
       builder: (context, _) {
         return Scaffold(
           appBar: AppBar(
@@ -142,11 +209,25 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
 
               final blocked = usage.gate.blocked;
               final isPhoto = item.type == ItemType.photo;
+              final uploading = upload.phase == UploadPhase.running;
               final canAnalyze = isPhoto &&
                   !blocked &&
                   !jobs.isBusy &&
                   !jobs.deleted &&
+                  !uploading &&
                   item.processingStatus != ProcessingStatus.processing;
+              final needsReuploadButton =
+                  isPhoto &&
+                      !blocked &&
+                      !jobs.isBusy &&
+                      !jobs.deleted &&
+                      !uploading &&
+                      (item.analysisRefState == AnalysisRefState.expired ||
+                          item.analysisRefState ==
+                              AnalysisRefState.unavailable ||
+                          (jobs.error is ApiException &&
+                              (jobs.error as ApiException).code ==
+                                  'analysis_ref_expired'));
 
               return ListView(
                 key: const Key('item-detail'),
@@ -254,10 +335,18 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
                       FilledButton(
                         key: const Key('item-analyze'),
                         onPressed: canAnalyze
-                            ? () => jobs.analyze(itemType: item.type)
+                            ? () => _onAnalyzePressed(jobs, item)
                             : null,
-                        child: const Text('Analyze'),
+                        child: Text(
+                          uploading ? 'Re-uploading…' : 'Analyze',
+                        ),
                       ),
+                      if (needsReuploadButton)
+                        OutlinedButton(
+                          key: const Key('item-reupload'),
+                          onPressed: () => _onReuploadPressed(jobs, item),
+                          child: const Text('Re-upload'),
+                        ),
                       if (jobs.canCancel)
                         OutlinedButton(
                           key: const Key('item-cancel-job'),
@@ -273,6 +362,14 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
                         ),
                     ],
                   ),
+                  if (needsReuploadButton)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Text(
+                        'Model-host file expired. Re-upload the local file, then Analyze.',
+                        key: Key('reupload-hint'),
+                      ),
+                    ),
                   if (!isPhoto)
                     const Padding(
                       padding: EdgeInsets.only(top: 8),

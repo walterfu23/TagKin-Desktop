@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
@@ -14,6 +17,9 @@ import 'package:tagkin_desktop/review/local_media_resolver.dart';
 /// key-period scrubber can seek the same instance. When [player] is null and
 /// the item is a video, a banner is shown instead of opening native playback
 /// (widget tests avoid media_kit init this way).
+///
+/// [whoOverlays] draws one labeled square per who-tag that has a [TagRegion]
+/// (VLM face box), mapped through [BoxFit.contain].
 class MediaViewer extends StatelessWidget {
   const MediaViewer({
     super.key,
@@ -21,6 +27,7 @@ class MediaViewer extends StatelessWidget {
     required this.resolution,
     this.player,
     this.videoController,
+    this.whoOverlays = const [],
   });
 
   final ItemType itemType;
@@ -31,6 +38,9 @@ class MediaViewer extends StatelessWidget {
 
   /// Matching [VideoController] for [player].
   final VideoController? videoController;
+
+  /// Who tags with regions to draw as face overlays on photos.
+  final List<Tag> whoOverlays;
 
   @override
   Widget build(BuildContext context) {
@@ -65,14 +75,12 @@ class MediaViewer extends StatelessWidget {
     if (itemType == ItemType.photo) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(8),
-        child: Image.file(
-          resolution.file!,
-          key: const Key('media-photo'),
-          fit: BoxFit.contain,
+        child: SizedBox(
           height: 320,
-          errorBuilder: (context, error, stack) => const _MediaBanner(
-            key: Key('media-photo-error'),
-            message: 'Could not decode local photo.',
+          width: double.infinity,
+          child: _PhotoWithWhoOverlays(
+            file: resolution.file!,
+            whoOverlays: whoOverlays,
           ),
         ),
       );
@@ -90,6 +98,199 @@ class MediaViewer extends StatelessWidget {
       key: const Key('media-video'),
       height: 240,
       child: Video(controller: controller),
+    );
+  }
+}
+
+class _PhotoWithWhoOverlays extends StatefulWidget {
+  const _PhotoWithWhoOverlays({
+    required this.file,
+    required this.whoOverlays,
+  });
+
+  final File file;
+  final List<Tag> whoOverlays;
+
+  @override
+  State<_PhotoWithWhoOverlays> createState() => _PhotoWithWhoOverlaysState();
+}
+
+class _PhotoWithWhoOverlaysState extends State<_PhotoWithWhoOverlays> {
+  Size? _imageSize;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_resolveImageSize());
+  }
+
+  @override
+  void didUpdateWidget(covariant _PhotoWithWhoOverlays oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.file.path != widget.file.path) {
+      _imageSize = null;
+      unawaited(_resolveImageSize());
+    }
+  }
+
+  Future<void> _resolveImageSize() async {
+    try {
+      final bytes = await widget.file.readAsBytes();
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      final image = frame.image;
+      if (!mounted) {
+        image.dispose();
+        return;
+      }
+      setState(() {
+        _imageSize = Size(image.width.toDouble(), image.height.toDouble());
+      });
+      image.dispose();
+    } catch (_) {
+      // Overlay alignment falls back when decode fails; Image.file shows error.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final viewport = Size(constraints.maxWidth, constraints.maxHeight);
+        final imageSize = _imageSize ?? viewport;
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.file(
+              widget.file,
+              key: const Key('media-photo'),
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stack) => const _MediaBanner(
+                key: Key('media-photo-error'),
+                message: 'Could not decode local photo.',
+              ),
+            ),
+            WhoFaceOverlayLayer(
+              whoOverlays: widget.whoOverlays,
+              viewport: viewport,
+              imageSize: imageSize,
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Face squares for who-tags with [TagRegion], mapped through [BoxFit.contain].
+@visibleForTesting
+class WhoFaceOverlayLayer extends StatelessWidget {
+  const WhoFaceOverlayLayer({
+    super.key,
+    required this.whoOverlays,
+    required this.viewport,
+    required this.imageSize,
+  });
+
+  final List<Tag> whoOverlays;
+  final Size viewport;
+  final Size imageSize;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        for (final tag in whoOverlays)
+          if (tag.region != null)
+            _WhoFaceOverlay(
+              key: Key('who-face-overlay-${tag.id}'),
+              tag: tag,
+              viewport: viewport,
+              imageSize: imageSize,
+            ),
+      ],
+    );
+  }
+}
+
+/// Maps a normalized [TagRegion] into a [BoxFit.contain] image rect.
+@visibleForTesting
+Rect containMappedRegion({
+  required TagRegion region,
+  required Size viewport,
+  required Size imageSize,
+}) {
+  if (viewport.isEmpty || imageSize.isEmpty) return Rect.zero;
+  final scale = math.min(
+    viewport.width / imageSize.width,
+    viewport.height / imageSize.height,
+  );
+  final drawnW = imageSize.width * scale;
+  final drawnH = imageSize.height * scale;
+  final left = (viewport.width - drawnW) / 2;
+  final top = (viewport.height - drawnH) / 2;
+  return Rect.fromLTRB(
+    left + region.xMin * drawnW,
+    top + region.yMin * drawnH,
+    left + region.xMax * drawnW,
+    top + region.yMax * drawnH,
+  );
+}
+
+class _WhoFaceOverlay extends StatelessWidget {
+  const _WhoFaceOverlay({
+    super.key,
+    required this.tag,
+    required this.viewport,
+    required this.imageSize,
+  });
+
+  final Tag tag;
+  final Size viewport;
+  final Size imageSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final region = tag.region!;
+    final rect = containMappedRegion(
+      region: region,
+      viewport: viewport,
+      imageSize: imageSize,
+    );
+    if (rect.isEmpty) return const SizedBox.shrink();
+
+    final scheme = Theme.of(context).colorScheme;
+    return Positioned(
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+      child: IgnorePointer(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border.all(color: scheme.primary, width: 2),
+          ),
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: ColoredBox(
+              color: scheme.primary.withValues(alpha: 0.85),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                child: Text(
+                  tag.value,
+                  style: TextStyle(
+                    color: scheme.onPrimary,
+                    fontSize: 11,
+                    height: 1.1,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

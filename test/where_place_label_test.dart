@@ -99,14 +99,15 @@ void main() {
   });
 
   group('DesktopPrefs', () {
-    test('defaults are all false / empty home', () {
+    test('defaults: where flags off; face overlays on', () {
       expect(DesktopPrefs.defaults.showCountryWhenSameCountry, isFalse);
       expect(DesktopPrefs.defaults.showStateWhenSameState, isFalse);
       expect(DesktopPrefs.defaults.multiColumnSort, isFalse);
+      expect(DesktopPrefs.defaults.showFaceOverlays, isTrue);
       expect(DesktopPrefs.defaults.homeState, '');
     });
 
-    test('round-trips through JSON', () async {
+    test('round-trips through JSON including showFaceOverlays', () async {
       final dir = await Directory.systemTemp.createTemp('tagkin_prefs_');
       addTearDown(() => dir.delete(recursive: true));
       final store = DesktopPrefsStore(supportDir: dir);
@@ -114,10 +115,19 @@ void main() {
         showCountryWhenSameCountry: true,
         showStateWhenSameState: true,
         multiColumnSort: true,
+        showFaceOverlays: false,
         homeState: 'CA',
       );
       await store.save(prefs);
       expect(await store.load(), prefs);
+    });
+
+    test('fromJson defaults showFaceOverlays to true when missing', () {
+      final prefs = DesktopPrefs.fromJson({
+        'where.showCountryWhenSameCountry': false,
+        'ui.multiColumnSort': false,
+      });
+      expect(prefs.showFaceOverlays, isTrue);
     });
   });
 

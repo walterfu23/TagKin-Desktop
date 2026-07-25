@@ -251,6 +251,7 @@ Tag fixtureTag({
   double? confidence = 0.9,
   String? provider = 'stub',
   String? modelId = 'stub-model',
+  TagRegion? region,
 }) {
   return Tag(
     id: id,
@@ -263,6 +264,7 @@ Tag fixtureTag({
     confidence: confidence,
     provider: provider,
     modelId: modelId,
+    region: region,
     schemaVersion: 1,
     createdAt: '2026-07-19T00:00:00.000Z',
   );

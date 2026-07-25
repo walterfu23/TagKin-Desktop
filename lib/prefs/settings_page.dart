@@ -18,6 +18,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   late bool _showCountryWhenSameCountry;
   late bool _showStateWhenSameState;
   late bool _multiColumnSort;
+  late bool _showFaceOverlays;
   late TextEditingController _homeState;
 
   @override
@@ -27,6 +28,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _showCountryWhenSameCountry = prefs.showCountryWhenSameCountry;
     _showStateWhenSameState = prefs.showStateWhenSameState;
     _multiColumnSort = prefs.multiColumnSort;
+    _showFaceOverlays = prefs.showFaceOverlays;
     _homeState = TextEditingController(text: prefs.homeState);
   }
 
@@ -42,6 +44,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       showCountryWhenSameCountry: _showCountryWhenSameCountry,
       showStateWhenSameState: _showStateWhenSameState,
       multiColumnSort: _multiColumnSort,
+      showFaceOverlays: _showFaceOverlays,
       homeState: _homeState.text.trim(),
     );
     await ref.read(desktopPrefsControllerProvider).update(next);
@@ -135,6 +138,22 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ),
               value: _multiColumnSort,
               onChanged: (v) => setState(() => _multiColumnSort = v),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Review',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              key: const Key('pref-show-face-overlays'),
+              title: const Text('Show face boxes on photos'),
+              subtitle: const Text(
+                'On (default): draw a labeled square for each who tag '
+                'that has a face region from analysis.',
+              ),
+              value: _showFaceOverlays,
+              onChanged: (v) => setState(() => _showFaceOverlays = v),
             ),
           ],
         ),

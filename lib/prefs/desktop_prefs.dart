@@ -4,6 +4,7 @@ class DesktopPrefs {
     this.showCountryWhenSameCountry = false,
     this.showStateWhenSameState = false,
     this.multiColumnSort = false,
+    this.showFaceOverlays = true,
     this.homeState = '',
   });
 
@@ -16,6 +17,9 @@ class DesktopPrefs {
   /// When true, header clicks build a multi-key sort stack (Cliptorium-style).
   final bool multiColumnSort;
 
+  /// When true (default), draw who-face boxes on the review photo.
+  final bool showFaceOverlays;
+
   /// User home state/province for same-state where-label comparison.
   final String homeState;
 
@@ -25,6 +29,7 @@ class DesktopPrefs {
     bool? showCountryWhenSameCountry,
     bool? showStateWhenSameState,
     bool? multiColumnSort,
+    bool? showFaceOverlays,
     String? homeState,
   }) {
     return DesktopPrefs(
@@ -33,6 +38,7 @@ class DesktopPrefs {
       showStateWhenSameState:
           showStateWhenSameState ?? this.showStateWhenSameState,
       multiColumnSort: multiColumnSort ?? this.multiColumnSort,
+      showFaceOverlays: showFaceOverlays ?? this.showFaceOverlays,
       homeState: homeState ?? this.homeState,
     );
   }
@@ -41,6 +47,7 @@ class DesktopPrefs {
         'where.showCountryWhenSameCountry': showCountryWhenSameCountry,
         'where.showStateWhenSameState': showStateWhenSameState,
         'ui.multiColumnSort': multiColumnSort,
+        'ui.showFaceOverlays': showFaceOverlays,
         'where.homeState': homeState,
       };
 
@@ -63,6 +70,7 @@ class DesktopPrefs {
         fallback: false,
       ),
       multiColumnSort: flag('ui.multiColumnSort', fallback: false),
+      showFaceOverlays: flag('ui.showFaceOverlays', fallback: true),
       homeState: home is String ? home : '',
     );
   }
@@ -73,6 +81,7 @@ class DesktopPrefs {
       other.showCountryWhenSameCountry == showCountryWhenSameCountry &&
       other.showStateWhenSameState == showStateWhenSameState &&
       other.multiColumnSort == multiColumnSort &&
+      other.showFaceOverlays == showFaceOverlays &&
       other.homeState == homeState;
 
   @override
@@ -80,6 +89,7 @@ class DesktopPrefs {
         showCountryWhenSameCountry,
         showStateWhenSameState,
         multiColumnSort,
+        showFaceOverlays,
         homeState,
       );
 }
