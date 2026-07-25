@@ -211,6 +211,34 @@ class FakeItemsRepository implements ItemsRepository {
     }
     return LinkPeopleResponse(appearances: List.from(linkPeopleResult));
   }
+
+  final List<WhoAppearancesRequest> whoAppearancesRecorded =
+      <WhoAppearancesRequest>[];
+
+  @override
+  Future<WhoAppearancesResponse> recordWhoAppearances(
+    String itemId,
+    WhoAppearancesRequest input,
+  ) async {
+    await getItem(itemId);
+    whoAppearancesRecorded.add(input);
+    final appearances = input.appearances
+        .map(
+          (a) => PersonAppearance(
+            id: 'app_${a.tagId}',
+            personId: 'person_auto',
+            itemId: itemId,
+            tagId: a.tagId,
+            linkState: LinkState.suggested,
+            createdAt: '2026-07-25T00:00:00.000Z',
+          ),
+        )
+        .toList();
+    return WhoAppearancesResponse(
+      appearanceIds: appearances.map((a) => a.id).toList(),
+      appearances: appearances,
+    );
+  }
 }
 
 /// Fixture [Item] for tests.

@@ -4,6 +4,7 @@ import 'package:tagkin_desktop/ingest/batch_ingest_controller.dart';
 import 'package:tagkin_desktop/ingest/model_host_uploader.dart';
 import 'package:tagkin_desktop/ingest/post_ingest_pipeline_controller.dart';
 import 'package:tagkin_desktop/ingest/upload_controller.dart';
+import 'package:tagkin_desktop/persons/who_face_linker.dart';
 import 'package:tagkin_desktop/prepass/prepass_controller.dart';
 import 'package:tagkin_desktop/prepass/prepass_payload_builder.dart';
 
@@ -73,6 +74,7 @@ void main() {
         prePass: prePass,
         upload: upload,
         jobsRepository: jobs,
+        whoFaceLinker: WhoFaceLinker(items: items),
       );
 
       await pipeline.start(
@@ -105,6 +107,7 @@ void main() {
         prePass: prePass,
         upload: upload,
         jobsRepository: jobs,
+        whoFaceLinker: WhoFaceLinker(items: items),
       );
 
       await pipeline.start(
@@ -143,6 +146,7 @@ void main() {
         prePass: prePass,
         upload: upload,
         jobsRepository: jobs,
+        whoFaceLinker: WhoFaceLinker(items: items),
       );
 
       await pipeline.start(
@@ -169,6 +173,7 @@ void main() {
         prePass: _stubPrePass(items),
         upload: _stubUpload(items),
         jobsRepository: jobs,
+        whoFaceLinker: WhoFaceLinker(items: items),
       );
       final outcomes = [_ingest(item: photo, path: '/a.jpg')];
 

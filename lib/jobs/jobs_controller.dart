@@ -3,9 +3,11 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/api/jobs_repository.dart';
-import 'package:tagkin_desktop/app_shell.dart' show jobsRepositoryProvider;
+import 'package:tagkin_desktop/app_shell.dart'
+    show itemsRepositoryProvider, jobsRepositoryProvider;
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/jobs/job_state_view.dart';
+import 'package:tagkin_desktop/persons/who_face_linker.dart';
 
 /// Lifecycle phase of a per-item jobs controller (D7).
 enum JobsPhase { idle, analyzing, polling, terminal, error }
@@ -17,12 +19,17 @@ class JobsController extends ChangeNotifier {
   JobsController({
     required this.itemId,
     required this.jobsRepository,
+    this.whoFaceLinker,
     this.pollInterval = const Duration(seconds: 2),
     this.ticker,
   });
 
   final String itemId;
   final JobsRepository jobsRepository;
+
+  /// When set, after a successful photo analyze posts who-face embeddings
+  /// so the API auto-suggests cross-item person links.
+  final WhoFaceLinker? whoFaceLinker;
 
   /// Interval between `GET /jobs` polls while non-terminal.
   final Duration pollInterval;
@@ -119,6 +126,7 @@ class JobsController extends ChangeNotifier {
       // User may have cancelled while the analyze HTTP call was in flight.
       if (phase != JobsPhase.analyzing) return;
       item = result.item;
+      await _linkWhoFacesBestEffort(result.item);
       // After a sync analyze, poll once (and keep polling if somehow still open).
       await _pollOnce();
     } catch (e) {
@@ -242,6 +250,16 @@ class JobsController extends ChangeNotifier {
     _pollTimer = null;
   }
 
+  Future<void> _linkWhoFacesBestEffort(Item analyzed) async {
+    final linker = whoFaceLinker;
+    if (linker == null) return;
+    try {
+      await linker.linkWhoFacesForItem(analyzed);
+    } catch (_) {
+      // Linking is best-effort; analyze already succeeded.
+    }
+  }
+
   @override
   void dispose() {
     _disposed = true;
@@ -257,9 +275,12 @@ final jobsControllerProvider =
     final controller = JobsController(
       itemId: itemId,
       jobsRepository: ref.watch(jobsRepositoryProvider),
+      whoFaceLinker: WhoFaceLinker(
+        items: ref.watch(itemsRepositoryProvider),
+      ),
     );
     ref.onDispose(controller.dispose);
     return controller;
   },
-  dependencies: [jobsRepositoryProvider],
+  dependencies: [jobsRepositoryProvider, itemsRepositoryProvider],
 );

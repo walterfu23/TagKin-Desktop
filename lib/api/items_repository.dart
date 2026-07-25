@@ -154,4 +154,24 @@ class ItemsRepository {
     }
     return LinkPeopleResponse.fromJson(json);
   }
+
+  /// `POST /items/{id}/who-appearances` — face-crop embeddings for who tags,
+  /// then server auto-runs suggested linking (R1/R6).
+  Future<WhoAppearancesResponse> recordWhoAppearances(
+    String itemId,
+    WhoAppearancesRequest input,
+  ) async {
+    final response = await _client.post(
+      '/items/$itemId/who-appearances',
+      body: input.toJson(),
+    );
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected who-appearances response shape',
+      );
+    }
+    return WhoAppearancesResponse.fromJson(json);
+  }
 }

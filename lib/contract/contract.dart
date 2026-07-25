@@ -856,6 +856,7 @@ class PersonAppearance {
     this.personId,
     this.itemId,
     this.keyPeriodId,
+    this.tagId,
     required this.linkState,
     required this.createdAt,
   });
@@ -864,6 +865,7 @@ class PersonAppearance {
   final String? personId;
   final String? itemId;
   final String? keyPeriodId;
+  final String? tagId;
   final LinkState linkState;
   final String createdAt;
 
@@ -872,6 +874,7 @@ class PersonAppearance {
         personId: json['personId'] == null ? null : json['personId'] as String,
         itemId: json['itemId'] == null ? null : json['itemId'] as String,
         keyPeriodId: json['keyPeriodId'] == null ? null : json['keyPeriodId'] as String,
+        tagId: json['tagId'] == null ? null : json['tagId'] as String,
         linkState: LinkState.fromWire(json['linkState'] as String),
         createdAt: json['createdAt'] as String,
       );
@@ -882,6 +885,7 @@ class PersonAppearance {
     if (personId != null) json['personId'] = personId;
     if (itemId != null) json['itemId'] = itemId;
     if (keyPeriodId != null) json['keyPeriodId'] = keyPeriodId;
+    if (tagId != null) json['tagId'] = tagId;
     json['linkState'] = linkState.wire;
     json['createdAt'] = createdAt;
     return json;
@@ -1169,34 +1173,6 @@ class SplitPerson {
   }
 }
 
-class TagRegion {
-  const TagRegion({
-    required this.yMin,
-    required this.xMin,
-    required this.yMax,
-    required this.xMax,
-  });
-
-  final double yMin;
-  final double xMin;
-  final double yMax;
-  final double xMax;
-
-  factory TagRegion.fromJson(Map<String, dynamic> json) => TagRegion(
-        yMin: (json['yMin'] as num).toDouble(),
-        xMin: (json['xMin'] as num).toDouble(),
-        yMax: (json['yMax'] as num).toDouble(),
-        xMax: (json['xMax'] as num).toDouble(),
-      );
-
-  Map<String, dynamic> toJson() => {
-        'yMin': yMin,
-        'xMin': xMin,
-        'yMax': yMax,
-        'xMax': xMax,
-      };
-}
-
 class Tag {
   const Tag({
     required this.id,
@@ -1242,9 +1218,7 @@ class Tag {
         confidence: json['confidence'] == null ? null : (json['confidence'] as num).toDouble(),
         provider: json['provider'] == null ? null : json['provider'] as String,
         modelId: json['modelId'] == null ? null : json['modelId'] as String,
-        region: json['region'] == null
-            ? null
-            : TagRegion.fromJson(json['region'] as Map<String, dynamic>),
+        region: json['region'] == null ? null : TagRegion.fromJson(json['region'] as Map<String, dynamic>),
         schemaVersion: (json['schemaVersion'] as num).toInt(),
         createdAt: json['createdAt'] as String,
       );
@@ -1262,7 +1236,7 @@ class Tag {
     if (confidence != null) json['confidence'] = confidence;
     if (provider != null) json['provider'] = provider;
     if (modelId != null) json['modelId'] = modelId;
-    if (region != null) json['region'] = region!.toJson();
+    if (region != null) json['region'] = region?.toJson();
     json['schemaVersion'] = schemaVersion;
     json['createdAt'] = createdAt;
     return json;
@@ -1287,6 +1261,36 @@ class TagMutationResult {
     final json = <String, dynamic>{};
     json['tag'] = tag.toJson();
     json['correction'] = correction.toJson();
+    return json;
+  }
+}
+
+class TagRegion {
+  const TagRegion({
+    required this.yMin,
+    required this.xMin,
+    required this.yMax,
+    required this.xMax,
+  });
+
+  final double yMin;
+  final double xMin;
+  final double yMax;
+  final double xMax;
+
+  factory TagRegion.fromJson(Map<String, dynamic> json) => TagRegion(
+        yMin: (json['yMin'] as num).toDouble(),
+        xMin: (json['xMin'] as num).toDouble(),
+        yMax: (json['yMax'] as num).toDouble(),
+        xMax: (json['xMax'] as num).toDouble(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['yMin'] = yMin;
+    json['xMin'] = xMin;
+    json['yMax'] = yMax;
+    json['xMax'] = xMax;
     return json;
   }
 }
@@ -1419,6 +1423,72 @@ class UsageSummary {
     json['killSwitch'] = killSwitch.toJson();
     if (softLimitExceeded != null) json['softLimitExceeded'] = softLimitExceeded;
     if (pauseReason != null) json['pauseReason'] = pauseReason;
+    return json;
+  }
+}
+
+class WhoAppearanceInput {
+  const WhoAppearanceInput({
+    required this.tagId,
+    required this.embedding,
+    required this.embeddingModelId,
+  });
+
+  final String tagId;
+  final List<double> embedding;
+  final String embeddingModelId;
+
+  factory WhoAppearanceInput.fromJson(Map<String, dynamic> json) => WhoAppearanceInput(
+        tagId: json['tagId'] as String,
+        embedding: (json['embedding'] as List<dynamic>).map((e) => (e as num).toDouble()).toList(),
+        embeddingModelId: json['embeddingModelId'] as String,
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['tagId'] = tagId;
+    json['embedding'] = embedding.map((e) => e).toList();
+    json['embeddingModelId'] = embeddingModelId;
+    return json;
+  }
+}
+
+class WhoAppearancesRequest {
+  const WhoAppearancesRequest({
+    required this.appearances,
+  });
+
+  final List<WhoAppearanceInput> appearances;
+
+  factory WhoAppearancesRequest.fromJson(Map<String, dynamic> json) => WhoAppearancesRequest(
+        appearances: (json['appearances'] as List<dynamic>).map((e) => WhoAppearanceInput.fromJson(e as Map<String, dynamic>)).toList(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['appearances'] = appearances.map((e) => e.toJson()).toList();
+    return json;
+  }
+}
+
+class WhoAppearancesResponse {
+  const WhoAppearancesResponse({
+    required this.appearanceIds,
+    required this.appearances,
+  });
+
+  final List<String> appearanceIds;
+  final List<PersonAppearance> appearances;
+
+  factory WhoAppearancesResponse.fromJson(Map<String, dynamic> json) => WhoAppearancesResponse(
+        appearanceIds: (json['appearanceIds'] as List<dynamic>).map((e) => e as String).toList(),
+        appearances: (json['appearances'] as List<dynamic>).map((e) => PersonAppearance.fromJson(e as Map<String, dynamic>)).toList(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['appearanceIds'] = appearanceIds.map((e) => e).toList();
+    json['appearances'] = appearances.map((e) => e.toJson()).toList();
     return json;
   }
 }

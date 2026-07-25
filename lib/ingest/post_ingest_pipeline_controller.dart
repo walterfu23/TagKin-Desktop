@@ -1,10 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/api/jobs_repository.dart';
-import 'package:tagkin_desktop/app_shell.dart' show jobsRepositoryProvider;
+import 'package:tagkin_desktop/app_shell.dart'
+    show itemsRepositoryProvider, jobsRepositoryProvider;
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/batch_ingest_controller.dart';
 import 'package:tagkin_desktop/ingest/upload_controller.dart';
+import 'package:tagkin_desktop/persons/who_face_linker.dart';
 import 'package:tagkin_desktop/prepass/prepass_controller.dart';
 
 /// High-level phases of the automatic D4 → D5 → D7 chain after folder ingest.
@@ -42,11 +44,13 @@ class PostIngestPipelineController extends ChangeNotifier {
     required this.prePass,
     required this.upload,
     required this.jobsRepository,
+    required this.whoFaceLinker,
   });
 
   final PrePassController prePass;
   final UploadController upload;
   final JobsRepository jobsRepository;
+  final WhoFaceLinker whoFaceLinker;
 
   PostIngestPipelinePhase phase = PostIngestPipelinePhase.idle;
   List<AnalyzeOutcome> analyzeOutcomes = const [];
@@ -161,6 +165,11 @@ class PostIngestPipelineController extends ChangeNotifier {
       try {
         final result =
             await jobsRepository.analyzeItem(uploadOutcome.itemId);
+        try {
+          await whoFaceLinker.linkWhoFacesForItem(result.item);
+        } catch (_) {
+          // Best-effort; analyze already succeeded.
+        }
         newOutcomes.add(
           AnalyzeOutcome(
             itemId: uploadOutcome.itemId,
@@ -196,6 +205,9 @@ final postIngestPipelineControllerProvider =
       prePass: ref.watch(prePassControllerProvider),
       upload: ref.watch(uploadControllerProvider),
       jobsRepository: ref.watch(jobsRepositoryProvider),
+      whoFaceLinker: WhoFaceLinker(
+        items: ref.watch(itemsRepositoryProvider),
+      ),
     );
     ref.onDispose(controller.dispose);
     return controller;
@@ -204,5 +216,6 @@ final postIngestPipelineControllerProvider =
     prePassControllerProvider,
     uploadControllerProvider,
     jobsRepositoryProvider,
+    itemsRepositoryProvider,
   ],
 );
