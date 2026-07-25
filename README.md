@@ -9,7 +9,7 @@ TagKin is a multi-user orchestration service for family photos and videos that a
 Product specs, hard rules, tech choices, and system architecture live in the **`tagkin`** repo under `Docs/` (single source of truth):
 
 - Rules (hard constraints) — `tagkin/Docs/Rules.md`
-- Product specs — `tagkin/Docs/Specs_Initial.md`
+- Product specs — `tagkin/Docs/Specs.md`
 - Tech solutions — `tagkin/Docs/Tech_Solutions.md`
 - System design (projects, repos, client strategy, data flow) — `tagkin/Docs/System_Design.md`
 
