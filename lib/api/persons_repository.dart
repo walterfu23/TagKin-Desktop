@@ -109,6 +109,50 @@ class PersonsRepository {
     return PersonAppearance.fromJson(json);
   }
 
+  /// `GET /persons/appearances/unassigned` — Unassigned tray (R1: no embeddings).
+  Future<UnassignedAppearancesPage> listUnassignedAppearances({
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final response = await _client.get(
+      '/persons/appearances/unassigned',
+      query: {
+        'limit': '$limit',
+        'offset': '$offset',
+      },
+    );
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected unassigned-appearances response shape',
+      );
+    }
+    return UnassignedAppearancesPage.fromJson(json);
+  }
+
+  /// `GET /persons/exclusions` — Excluded tray across all items.
+  Future<AccountWhoExclusionsPage> listAccountWhoExclusions({
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final response = await _client.get(
+      '/persons/exclusions',
+      query: {
+        'limit': '$limit',
+        'offset': '$offset',
+      },
+    );
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected account-exclusions response shape',
+      );
+    }
+    return AccountWhoExclusionsPage.fromJson(json);
+  }
+
   /// `DELETE /persons/{id}` — remove a suggested person + appearances (R6).
   Future<void> deletePerson(String personId) async {
     await _client.delete('/persons/$personId');

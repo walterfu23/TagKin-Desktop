@@ -39,6 +39,12 @@ void main() {
     expect(find.byKey(const Key('items-empty')), findsOneWidget);
     expect(find.byKey(const Key('account-label')), findsOneWidget);
     expect(find.text('acc_1@example.com'), findsOneWidget);
+    expect(find.byKey(const Key('nav-face-crops')), findsOneWidget);
+    expect(find.byKey(const Key('nav-persons')), findsOneWidget);
+    // Face crops comes before Persons in the AppBar actions.
+    final faceCrops = tester.getTopLeft(find.byKey(const Key('nav-face-crops')));
+    final persons = tester.getTopLeft(find.byKey(const Key('nav-persons')));
+    expect(faceCrops.dx, lessThan(persons.dx));
   });
 
   testWidgets('401 on /me surfaces unauthorized — no crash, no retry loop',

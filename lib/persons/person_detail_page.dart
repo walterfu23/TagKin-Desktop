@@ -4,6 +4,7 @@ import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
+import 'package:tagkin_desktop/persons/face_crop_trays_page.dart';
 import 'package:tagkin_desktop/persons/link_state_view.dart';
 import 'package:tagkin_desktop/persons/person_detail_controller.dart';
 import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
@@ -82,6 +83,14 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
                   onPressed: () => controller.confirm(),
                   child: const Text('Save'),
                 ),
+              TextButton(
+                key: const Key('person-open-trays'),
+                onPressed: () => openFaceCropTrays(
+                  context,
+                  personId: widget.personId,
+                ),
+                child: const Text('Face crops'),
+              ),
             ],
           ),
           body: _buildBody(controller),
@@ -371,6 +380,7 @@ class _AppearanceCard extends StatelessWidget {
                   child: WhoFaceCropThumb(
                     itemId: appearance.itemId!,
                     tagId: appearance.tagId!,
+                    region: appearance.region,
                     size: 72,
                   ),
                 ),

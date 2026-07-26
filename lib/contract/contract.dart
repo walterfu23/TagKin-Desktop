@@ -579,6 +579,48 @@ class WhoExclusion {
   }
 }
 
+class UnassignedAppearancesPage {
+  const UnassignedAppearancesPage({
+    required this.appearances,
+    required this.limit,
+    required this.offset,
+  });
+
+  final List<PersonAppearance> appearances;
+  final int limit;
+  final int offset;
+
+  factory UnassignedAppearancesPage.fromJson(Map<String, dynamic> json) =>
+      UnassignedAppearancesPage(
+        appearances: (json['appearances'] as List<dynamic>)
+            .map((e) => PersonAppearance.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        limit: (json['limit'] as num).toInt(),
+        offset: (json['offset'] as num).toInt(),
+      );
+}
+
+class AccountWhoExclusionsPage {
+  const AccountWhoExclusionsPage({
+    required this.exclusions,
+    required this.limit,
+    required this.offset,
+  });
+
+  final List<WhoExclusion> exclusions;
+  final int limit;
+  final int offset;
+
+  factory AccountWhoExclusionsPage.fromJson(Map<String, dynamic> json) =>
+      AccountWhoExclusionsPage(
+        exclusions: (json['exclusions'] as List<dynamic>)
+            .map((e) => WhoExclusion.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        limit: (json['limit'] as num).toInt(),
+        offset: (json['offset'] as num).toInt(),
+      );
+}
+
 class CreateWhoExclusionResult {
   const CreateWhoExclusionResult({
     required this.exclusion,
@@ -929,6 +971,7 @@ class PersonAppearance {
     this.itemId,
     this.keyPeriodId,
     this.tagId,
+    this.region,
     required this.linkState,
     required this.createdAt,
   });
@@ -938,15 +981,21 @@ class PersonAppearance {
   final String? itemId;
   final String? keyPeriodId;
   final String? tagId;
+  final TagRegion? region;
   final LinkState linkState;
   final String createdAt;
 
-  factory PersonAppearance.fromJson(Map<String, dynamic> json) => PersonAppearance(
+  factory PersonAppearance.fromJson(Map<String, dynamic> json) =>
+      PersonAppearance(
         id: json['id'] as String,
         personId: json['personId'] == null ? null : json['personId'] as String,
         itemId: json['itemId'] == null ? null : json['itemId'] as String,
-        keyPeriodId: json['keyPeriodId'] == null ? null : json['keyPeriodId'] as String,
+        keyPeriodId:
+            json['keyPeriodId'] == null ? null : json['keyPeriodId'] as String,
         tagId: json['tagId'] == null ? null : json['tagId'] as String,
+        region: json['region'] == null
+            ? null
+            : TagRegion.fromJson(json['region'] as Map<String, dynamic>),
         linkState: LinkState.fromWire(json['linkState'] as String),
         createdAt: json['createdAt'] as String,
       );
@@ -958,6 +1007,7 @@ class PersonAppearance {
     if (itemId != null) json['itemId'] = itemId;
     if (keyPeriodId != null) json['keyPeriodId'] = keyPeriodId;
     if (tagId != null) json['tagId'] = tagId;
+    if (region != null) json['region'] = region!.toJson();
     json['linkState'] = linkState.wire;
     json['createdAt'] = createdAt;
     return json;

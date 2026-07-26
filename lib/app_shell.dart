@@ -17,6 +17,7 @@ import 'package:tagkin_desktop/api/usage_repository.dart';
 import 'package:tagkin_desktop/auth/secure_persistor.dart';
 import 'package:tagkin_desktop/config/app_config.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/persons/face_crop_trays_page.dart';
 import 'package:tagkin_desktop/persons/persons_list_page.dart';
 import 'package:tagkin_desktop/prefs/settings_navigation.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
@@ -476,6 +477,10 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold> {
 
   bool _settingsOpen = false;
 
+  Future<void> _openFaceCrops() async {
+    await openFaceCropTrays(context);
+  }
+
   Future<void> _openPersons() async {
     final container = ProviderScope.containerOf(context);
     await Navigator.of(context).push<void>(
@@ -555,6 +560,12 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold> {
               onPressed: _openSettings,
               icon: const Icon(Icons.settings_outlined),
             ),
+          IconButton(
+            key: const Key('nav-face-crops'),
+            tooltip: 'Face crops',
+            onPressed: _openFaceCrops,
+            icon: const Icon(Icons.face_retouching_natural_outlined),
+          ),
           IconButton(
             key: const Key('nav-persons'),
             tooltip: 'Persons',

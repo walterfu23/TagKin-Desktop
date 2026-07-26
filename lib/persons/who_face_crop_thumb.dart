@@ -18,7 +18,9 @@ class WhoFaceCropThumb extends ConsumerStatefulWidget {
     required this.itemId,
     required this.tagId,
     this.knowledge,
+    this.region,
     this.size = 56,
+    this.fill = false,
     this.borderRadius = 6,
   });
 
@@ -28,7 +30,11 @@ class WhoFaceCropThumb extends ConsumerStatefulWidget {
   /// When set (e.g. item review), skip an extra knowledge fetch.
   final ItemKnowledge? knowledge;
 
+  /// When set (e.g. appearance.region from API), crop without a knowledge fetch.
+  final TagRegion? region;
+
   final double size;
+  final bool fill;
   final double borderRadius;
 
   @override
@@ -49,59 +55,70 @@ class _WhoFaceCropThumbState extends ConsumerState<WhoFaceCropThumb> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.itemId != widget.itemId ||
         oldWidget.tagId != widget.tagId ||
-        oldWidget.knowledge != widget.knowledge) {
+        oldWidget.knowledge != widget.knowledge ||
+        !_sameRegion(oldWidget.region, widget.region)) {
       _future = _load();
     }
   }
 
   Future<_CropLoad> _load() async {
     final items = ref.read(itemsRepositoryProvider);
-    final knowledge =
-        widget.knowledge ?? await items.getKnowledge(widget.itemId);
-    Tag? tag;
-    for (final t in knowledge.tags) {
-      if (t.id == widget.tagId) {
-        tag = t;
-        break;
+    TagRegion? region = widget.region;
+    String? whoLabel;
+    if (region == null) {
+      final knowledge =
+          widget.knowledge ?? await items.getKnowledge(widget.itemId);
+      Tag? tag;
+      for (final t in knowledge.tags) {
+        if (t.id == widget.tagId) {
+          tag = t;
+          break;
+        }
       }
+      if (tag == null || tag.region == null) {
+        return const _CropLoad(bytes: null, whoLabel: null);
+      }
+      region = tag.region;
+      whoLabel = tag.value.trim().isEmpty ? null : tag.value.trim();
     }
-    if (tag == null || tag.region == null) {
-      return const _CropLoad(bytes: null, whoLabel: null);
-    }
-    final whoLabel = tag.value.trim().isEmpty ? null : tag.value.trim();
     final item = await items.getItem(widget.itemId);
     final media = await resolveLocalMedia(item);
     if (!media.isAvailable || media.file == null) {
       return _CropLoad(bytes: null, whoLabel: whoLabel);
     }
     final fileBytes = await media.file!.readAsBytes();
-    final crop = cropWhoFaceJpeg(fileBytes, tag.region!);
+    final crop = cropWhoFaceJpeg(fileBytes, region!);
     return _CropLoad(bytes: crop, whoLabel: whoLabel);
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final dim = widget.fill ? null : widget.size;
     return FutureBuilder<_CropLoad>(
       future: _future,
       builder: (context, snapshot) {
         final load = snapshot.data;
+        final spinnerSide = widget.fill ? 24.0 : widget.size * 0.35;
+        final iconSide = widget.fill ? 28.0 : widget.size * 0.45;
         final child = switch (snapshot.connectionState) {
           ConnectionState.waiting => Center(
               child: SizedBox(
-                width: widget.size * 0.35,
-                height: widget.size * 0.35,
+                width: spinnerSide,
+                height: spinnerSide,
                 child: const CircularProgressIndicator(strokeWidth: 2),
               ),
             ),
           _ when load?.bytes != null => Image.memory(
               load!.bytes!,
               fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
               gaplessPlayback: true,
             ),
           _ => Icon(
               Icons.person_outline,
-              size: widget.size * 0.45,
+              size: iconSide,
               color: scheme.onSurfaceVariant,
             ),
         };
@@ -111,10 +128,11 @@ class _WhoFaceCropThumbState extends ConsumerState<WhoFaceCropThumb> {
             borderRadius: BorderRadius.circular(widget.borderRadius),
             child: Container(
               key: Key('who-face-thumb-${widget.tagId}'),
-              width: widget.size,
-              height: widget.size,
+              width: dim,
+              height: dim,
               color: scheme.surfaceContainerHighest,
-              child: child,
+              alignment: Alignment.center,
+              child: widget.fill ? SizedBox.expand(child: child) : child,
             ),
           ),
         );
@@ -176,6 +194,7 @@ class _PersonListFaceThumbState extends ConsumerState<PersonListFaceThumb> {
             key: Key('person-list-thumb-${widget.personId}'),
             itemId: a!.itemId!,
             tagId: a.tagId!,
+            region: a.region,
             size: widget.size,
           );
         }
@@ -202,4 +221,13 @@ class _CropLoad {
 
   final Uint8List? bytes;
   final String? whoLabel;
+}
+
+bool _sameRegion(TagRegion? a, TagRegion? b) {
+  if (identical(a, b)) return true;
+  if (a == null || b == null) return a == b;
+  return a.yMin == b.yMin &&
+      a.xMin == b.xMin &&
+      a.yMax == b.yMax &&
+      a.xMax == b.xMax;
 }

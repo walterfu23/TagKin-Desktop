@@ -96,6 +96,8 @@ class FakePersonsRepository implements PersonsRepository {
               personId: a.personId,
               itemId: a.itemId,
               keyPeriodId: a.keyPeriodId,
+              tagId: a.tagId,
+              region: a.region,
               linkState: LinkState.confirmed,
               createdAt: a.createdAt,
             ),
@@ -128,6 +130,8 @@ class FakePersonsRepository implements PersonsRepository {
         personId: null,
         itemId: appearance.itemId,
         keyPeriodId: appearance.keyPeriodId,
+        tagId: appearance.tagId,
+        region: appearance.region,
         linkState: LinkState.suggested,
         createdAt: appearance.createdAt,
       );
@@ -187,6 +191,8 @@ class FakePersonsRepository implements PersonsRepository {
       personId: targetPersonId,
       itemId: found.itemId,
       keyPeriodId: found.keyPeriodId,
+      tagId: found.tagId,
+      region: found.region,
       linkState: LinkState.confirmed,
       createdAt: found.createdAt,
     );
@@ -216,6 +222,35 @@ class FakePersonsRepository implements PersonsRepository {
     }
     _persons.removeAt(index);
   }
+
+  final List<PersonAppearance> unassignedAppearances = <PersonAppearance>[];
+  final List<WhoExclusion> accountExclusions = <WhoExclusion>[];
+
+  @override
+  Future<UnassignedAppearancesPage> listUnassignedAppearances({
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final slice = unassignedAppearances.skip(offset).take(limit).toList();
+    return UnassignedAppearancesPage(
+      appearances: slice,
+      limit: limit,
+      offset: offset,
+    );
+  }
+
+  @override
+  Future<AccountWhoExclusionsPage> listAccountWhoExclusions({
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final slice = accountExclusions.skip(offset).take(limit).toList();
+    return AccountWhoExclusionsPage(
+      exclusions: slice,
+      limit: limit,
+      offset: offset,
+    );
+  }
 }
 
 /// Fixture [PersonAppearance] for D9 tests.
@@ -225,6 +260,7 @@ PersonAppearance fixtureAppearance({
   String? itemId = 'item_1',
   String? keyPeriodId,
   String? tagId,
+  TagRegion? region,
   LinkState linkState = LinkState.suggested,
 }) {
   return PersonAppearance(
@@ -233,6 +269,7 @@ PersonAppearance fixtureAppearance({
     itemId: itemId,
     keyPeriodId: keyPeriodId,
     tagId: tagId,
+    region: region,
     linkState: linkState,
     createdAt: '2026-07-20T00:00:00.000Z',
   );
