@@ -169,6 +169,59 @@ class ReviewController extends ChangeNotifier {
     }
   }
 
+  /// Durable exclude who face from this photo (survives re-analyze).
+  Future<void> excludeWhoFace(String tagId) async {
+    if (!canMutate) return;
+    final snapshot = knowledge!;
+    knowledge = _withoutTag(snapshot, tagId);
+    phase = ReviewPhase.busy;
+    mutationError = null;
+    notifyListeners();
+
+    try {
+      await itemsRepository.createWhoExclusion(itemId, tagId);
+      if (_disposed) return;
+      await _reconcileKnowledge();
+    } catch (e) {
+      if (_disposed) return;
+      knowledge = snapshot;
+      mutationError = e;
+      phase = ReviewPhase.ready;
+      notifyListeners();
+    }
+  }
+
+  /// Undo a who-face exclusion (R6). Re-analyze may recreate the box later.
+  Future<void> undoWhoExclusion(String exclusionId) async {
+    if (!canMutate) return;
+    final snapshot = knowledge!;
+    knowledge = ItemKnowledge(
+      item: snapshot.item,
+      tags: snapshot.tags,
+      keyPeriods: snapshot.keyPeriods,
+      appearances: snapshot.appearances,
+      corrections: snapshot.corrections,
+      whoExclusions: snapshot.whoExclusions
+          .where((e) => e.id != exclusionId)
+          .toList(),
+    );
+    phase = ReviewPhase.busy;
+    mutationError = null;
+    notifyListeners();
+
+    try {
+      await itemsRepository.undoWhoExclusion(itemId, exclusionId);
+      if (_disposed) return;
+      await _reconcileKnowledge();
+    } catch (e) {
+      if (_disposed) return;
+      knowledge = snapshot;
+      mutationError = e;
+      phase = ReviewPhase.ready;
+      notifyListeners();
+    }
+  }
+
   /// Correct [Item.capturedAt]; optimistic update then reconcile.
   Future<void> correctCapturedAt(String? capturedAt) async {
     if (!canMutate) return;

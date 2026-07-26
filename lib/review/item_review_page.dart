@@ -326,6 +326,8 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
                 onAddTag: (d) => _addTag(review, d),
                 onEditTag: (t) => _editTag(review, t),
                 onRemoveTag: (t) => review.removeTag(t.id),
+                onExcludeWho: (t) => review.excludeWhoFace(t.id),
+                onUndoWhoExclusion: (e) => review.undoWhoExclusion(e.id),
                 correctionsEnabled: !review.isBusy,
               ),
               if (review.mutationError != null) ...[

@@ -239,6 +239,65 @@ class FakeItemsRepository implements ItemsRepository {
       appearances: appearances,
     );
   }
+
+  @override
+  Future<CreateWhoExclusionResult> createWhoExclusion(
+    String itemId,
+    String tagId,
+  ) async {
+    await getItem(itemId);
+    final exclusion = WhoExclusion(
+      id: 'excl_$tagId',
+      itemId: itemId,
+      region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.5, xMax: 0.5),
+      createdFromTagId: tagId,
+      createdAt: '2026-07-26T00:00:00.000Z',
+    );
+    final existing = _knowledgeByItemId[itemId];
+    if (existing != null) {
+      _knowledgeByItemId[itemId] = ItemKnowledge(
+        item: existing.item,
+        tags: existing.tags.where((t) => t.id != tagId).toList(),
+        keyPeriods: existing.keyPeriods,
+        appearances:
+            existing.appearances.where((a) => a.tagId != tagId).toList(),
+        corrections: existing.corrections,
+        whoExclusions: [...existing.whoExclusions, exclusion],
+      );
+    }
+    return CreateWhoExclusionResult(
+      exclusion: exclusion,
+      removedTagId: tagId,
+    );
+  }
+
+  @override
+  Future<WhoExclusion> undoWhoExclusion(
+    String itemId,
+    String exclusionId,
+  ) async {
+    await getItem(itemId);
+    final existing = _knowledgeByItemId[itemId];
+    WhoExclusion? found;
+    if (existing != null) {
+      for (final e in existing.whoExclusions) {
+        if (e.id == exclusionId) found = e;
+      }
+      _knowledgeByItemId[itemId] = ItemKnowledge(
+        item: existing.item,
+        tags: existing.tags,
+        keyPeriods: existing.keyPeriods,
+        appearances: existing.appearances,
+        corrections: existing.corrections,
+        whoExclusions:
+            existing.whoExclusions.where((e) => e.id != exclusionId).toList(),
+      );
+    }
+    if (found == null) {
+      throw ApiException(statusCode: 404, message: 'Not found');
+    }
+    return found;
+  }
 }
 
 /// Fixture [Item] for tests.

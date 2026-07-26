@@ -174,4 +174,48 @@ class ItemsRepository {
     }
     return WhoAppearancesResponse.fromJson(json);
   }
+
+  /// `POST /items/{id}/who-exclusions` — durable exclude face from this photo.
+  Future<CreateWhoExclusionResult> createWhoExclusion(
+    String itemId,
+    String tagId,
+  ) async {
+    final response = await _client.post(
+      '/items/$itemId/who-exclusions',
+      body: {'tagId': tagId},
+    );
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected who-exclusion response shape',
+      );
+    }
+    return CreateWhoExclusionResult.fromJson(json);
+  }
+
+  /// `DELETE /items/{id}/who-exclusions/{exclusionId}` — undo exclude (R6).
+  Future<WhoExclusion> undoWhoExclusion(
+    String itemId,
+    String exclusionId,
+  ) async {
+    final response = await _client.delete(
+      '/items/$itemId/who-exclusions/$exclusionId',
+    );
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected undo who-exclusion response shape',
+      );
+    }
+    final exclusion = json['exclusion'];
+    if (exclusion is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected undo who-exclusion response shape',
+      );
+    }
+    return WhoExclusion.fromJson(exclusion);
+  }
 }

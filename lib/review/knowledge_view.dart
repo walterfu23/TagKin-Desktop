@@ -17,6 +17,8 @@ class KnowledgeView extends StatelessWidget {
     this.onAddTag,
     this.onEditTag,
     this.onRemoveTag,
+    this.onExcludeWho,
+    this.onUndoWhoExclusion,
     this.correctionsEnabled = true,
   });
 
@@ -28,7 +30,6 @@ class KnowledgeView extends StatelessWidget {
   /// Opens person detail for a linked appearance (D9).
   final void Function(String personId)? onPersonTap;
 
-
   /// Add a tag for [dimension] (D10).
   final void Function(String dimension)? onAddTag;
 
@@ -38,11 +39,20 @@ class KnowledgeView extends StatelessWidget {
   /// Remove an existing tag (D10).
   final void Function(Tag tag)? onRemoveTag;
 
+  /// Durable exclude who face from this photo (survives re-analyze).
+  final void Function(Tag tag)? onExcludeWho;
+
+  /// Undo a who-face exclusion (R6).
+  final void Function(WhoExclusion exclusion)? onUndoWhoExclusion;
+
   final bool correctionsEnabled;
 
   bool get _canCorrect =>
       correctionsEnabled &&
-      (onAddTag != null || onEditTag != null || onRemoveTag != null);
+      (onAddTag != null ||
+          onEditTag != null ||
+          onRemoveTag != null ||
+          onExcludeWho != null);
 
   @override
   Widget build(BuildContext context) {
@@ -71,8 +81,38 @@ class KnowledgeView extends StatelessWidget {
               onAddTag: onAddTag,
               onEditTag: onEditTag,
               onRemoveTag: onRemoveTag,
+              onExcludeWho: dimension == 'who' ? onExcludeWho : null,
               enabled: correctionsEnabled,
             ),
+        if (knowledge.whoExclusions.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(
+            'Excluded faces',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 4),
+          for (final exclusion in knowledge.whoExclusions)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                key: Key('who-exclusion-${exclusion.id}'),
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Excluded face (${exclusion.id.substring(0, 8)}…)',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  if (onUndoWhoExclusion != null && correctionsEnabled)
+                    TextButton(
+                      key: Key('who-exclusion-undo-${exclusion.id}'),
+                      onPressed: () => onUndoWhoExclusion!(exclusion),
+                      child: const Text('Undo'),
+                    ),
+                ],
+              ),
+            ),
+        ],
         if (knowledge.appearances.isNotEmpty) ...[
           const SizedBox(height: 12),
           Text(
@@ -172,6 +212,7 @@ class _DimensionSection extends StatelessWidget {
     this.onAddTag,
     this.onEditTag,
     this.onRemoveTag,
+    this.onExcludeWho,
     this.enabled = true,
   });
 
@@ -180,6 +221,7 @@ class _DimensionSection extends StatelessWidget {
   final void Function(String dimension)? onAddTag;
   final void Function(Tag tag)? onEditTag;
   final void Function(Tag tag)? onRemoveTag;
+  final void Function(Tag tag)? onExcludeWho;
   final bool enabled;
 
   @override
@@ -258,6 +300,14 @@ class _DimensionSection extends StatelessWidget {
                         iconSize: 18,
                         onPressed: enabled ? () => onRemoveTag!(tag) : null,
                         icon: const Icon(Icons.close),
+                      ),
+                    if (onExcludeWho != null && tag.region != null)
+                      IconButton(
+                        key: Key('tag-exclude-${tag.id}'),
+                        tooltip: 'Exclude from this photo',
+                        iconSize: 18,
+                        onPressed: enabled ? () => onExcludeWho!(tag) : null,
+                        icon: const Icon(Icons.person_off_outlined),
                       ),
                   ],
                 ),

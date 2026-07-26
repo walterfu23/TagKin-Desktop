@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
+import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/persons/link_state_view.dart';
 import 'package:tagkin_desktop/persons/person_detail_controller.dart';
 import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
+import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
 /// Person detail + confirm / split / unlink / reassign / rename (D9).
 ///
@@ -257,6 +260,15 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
               },
               onUnlink: () => controller.unlink(appearance.id),
               onSplit: () => controller.split([appearance.id]),
+              onOpenItem: appearance.itemId == null
+                  ? null
+                  : () => _openItem(appearance.itemId!),
+              onExclude: appearance.itemId == null || appearance.tagId == null
+                  ? null
+                  : () => _excludeAppearance(
+                        appearance.itemId!,
+                        appearance.tagId!,
+                      ),
               onReassign: () {
                 final target = _reassignTarget[appearance.id];
                 if (target == null || target.isEmpty) return;
@@ -266,8 +278,52 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
       ],
     );
   }
-}
 
+  Future<void> _openItem(String itemId) async {
+    final container = ProviderScope.containerOf(context);
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => SelectableScope(
+          child: UncontrolledProviderScope(
+            container: container,
+            child: ItemDetailPage(itemId: itemId),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _excludeAppearance(String itemId, String tagId) async {
+    final controller =
+        ref.read(personDetailControllerProvider(widget.personId));
+    try {
+      await ref.read(itemsRepositoryProvider).createWhoExclusion(itemId, tagId);
+      if (!mounted) return;
+      await controller.load();
+      if (!mounted) return;
+      if (controller.detail == null) {
+        Navigator.of(context).pop();
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          key: Key('person-exclude-done'),
+          content: Text(
+            'Excluded from this photo — will stay out on re-analyze',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          key: const Key('person-exclude-error'),
+          content: Text('Exclude failed: $e'),
+        ),
+      );
+    }
+  }
+}
 class _AppearanceCard extends StatelessWidget {
   const _AppearanceCard({
     required this.appearance,
@@ -278,6 +334,8 @@ class _AppearanceCard extends StatelessWidget {
     required this.onUnlink,
     required this.onSplit,
     required this.onReassign,
+    this.onOpenItem,
+    this.onExclude,
   });
 
   final PersonAppearance appearance;
@@ -288,6 +346,8 @@ class _AppearanceCard extends StatelessWidget {
   final VoidCallback onUnlink;
   final VoidCallback onSplit;
   final VoidCallback onReassign;
+  final VoidCallback? onOpenItem;
+  final VoidCallback? onExclude;
 
   @override
   Widget build(BuildContext context) {
@@ -301,10 +361,14 @@ class _AppearanceCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (appearance.itemId != null && appearance.tagId != null) ...[
-                WhoFaceCropThumb(
-                  itemId: appearance.itemId!,
-                  tagId: appearance.tagId!,
-                  size: 72,
+                InkWell(
+                  key: Key('appearance-open-item-${appearance.id}'),
+                  onTap: busy ? null : onOpenItem,
+                  child: WhoFaceCropThumb(
+                    itemId: appearance.itemId!,
+                    tagId: appearance.tagId!,
+                    size: 72,
+                  ),
                 ),
                 const SizedBox(width: 12),
               ],
@@ -351,6 +415,18 @@ class _AppearanceCard extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
+              if (onOpenItem != null)
+                OutlinedButton(
+                  key: Key('appearance-open-photo-${appearance.id}'),
+                  onPressed: busy ? null : onOpenItem,
+                  child: const Text('Open photo'),
+                ),
+              if (onExclude != null)
+                OutlinedButton(
+                  key: Key('appearance-exclude-${appearance.id}'),
+                  onPressed: busy ? null : onExclude,
+                  child: const Text('Exclude from photo'),
+                ),
               OutlinedButton(
                 key: Key('appearance-unlink-${appearance.id}'),
                 onPressed: busy ? null : onUnlink,

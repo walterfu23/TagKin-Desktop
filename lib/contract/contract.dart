@@ -502,6 +502,7 @@ class ItemKnowledge {
     required this.keyPeriods,
     required this.appearances,
     required this.corrections,
+    this.whoExclusions = const [],
   });
 
   final Item item;
@@ -509,13 +510,27 @@ class ItemKnowledge {
   final List<KeyPeriodKnowledge> keyPeriods;
   final List<PersonAppearance> appearances;
   final List<Correction> corrections;
+  final List<WhoExclusion> whoExclusions;
 
   factory ItemKnowledge.fromJson(Map<String, dynamic> json) => ItemKnowledge(
         item: Item.fromJson(json['item'] as Map<String, dynamic>),
-        tags: (json['tags'] as List<dynamic>).map((e) => Tag.fromJson(e as Map<String, dynamic>)).toList(),
-        keyPeriods: (json['keyPeriods'] as List<dynamic>).map((e) => KeyPeriodKnowledge.fromJson(e as Map<String, dynamic>)).toList(),
-        appearances: (json['appearances'] as List<dynamic>).map((e) => PersonAppearance.fromJson(e as Map<String, dynamic>)).toList(),
-        corrections: (json['corrections'] as List<dynamic>).map((e) => Correction.fromJson(e as Map<String, dynamic>)).toList(),
+        tags: (json['tags'] as List<dynamic>)
+            .map((e) => Tag.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        keyPeriods: (json['keyPeriods'] as List<dynamic>)
+            .map((e) => KeyPeriodKnowledge.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        appearances: (json['appearances'] as List<dynamic>)
+            .map((e) => PersonAppearance.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        corrections: (json['corrections'] as List<dynamic>)
+            .map((e) => Correction.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        whoExclusions: json['whoExclusions'] == null
+            ? const []
+            : (json['whoExclusions'] as List<dynamic>)
+                .map((e) => WhoExclusion.fromJson(e as Map<String, dynamic>))
+                .toList(),
       );
 
   Map<String, dynamic> toJson() {
@@ -525,8 +540,65 @@ class ItemKnowledge {
     json['keyPeriods'] = keyPeriods.map((e) => e.toJson()).toList();
     json['appearances'] = appearances.map((e) => e.toJson()).toList();
     json['corrections'] = corrections.map((e) => e.toJson()).toList();
+    json['whoExclusions'] = whoExclusions.map((e) => e.toJson()).toList();
     return json;
   }
+}
+
+class WhoExclusion {
+  const WhoExclusion({
+    required this.id,
+    required this.itemId,
+    required this.region,
+    this.createdFromTagId,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String itemId;
+  final TagRegion region;
+  final String? createdFromTagId;
+  final String createdAt;
+
+  factory WhoExclusion.fromJson(Map<String, dynamic> json) => WhoExclusion(
+        id: json['id'] as String,
+        itemId: json['itemId'] as String,
+        region: TagRegion.fromJson(json['region'] as Map<String, dynamic>),
+        createdFromTagId: json['createdFromTagId'] as String?,
+        createdAt: json['createdAt'] as String,
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['id'] = id;
+    json['itemId'] = itemId;
+    json['region'] = region.toJson();
+    if (createdFromTagId != null) json['createdFromTagId'] = createdFromTagId;
+    json['createdAt'] = createdAt;
+    return json;
+  }
+}
+
+class CreateWhoExclusionResult {
+  const CreateWhoExclusionResult({
+    required this.exclusion,
+    required this.removedTagId,
+  });
+
+  final WhoExclusion exclusion;
+  final String removedTagId;
+
+  factory CreateWhoExclusionResult.fromJson(Map<String, dynamic> json) =>
+      CreateWhoExclusionResult(
+        exclusion:
+            WhoExclusion.fromJson(json['exclusion'] as Map<String, dynamic>),
+        removedTagId: json['removedTagId'] as String,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'exclusion': exclusion.toJson(),
+        'removedTagId': removedTagId,
+      };
 }
 
 enum ItemType {
