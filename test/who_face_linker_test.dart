@@ -1,9 +1,35 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
+import 'package:tagkin_desktop/prepass/face_embedder.dart';
+
+import 'fake_items_repository.dart';
+
+Uint8List _solidJpeg() {
+  final image = img.Image(width: 80, height: 80);
+  img.fill(image, color: img.ColorRgb8(180, 90, 40));
+  return Uint8List.fromList(img.encodeJpg(image));
+}
+
+class _FixedModelEmbedder implements FaceEmbedder {
+  _FixedModelEmbedder(this.modelId);
+
+  final String modelId;
+
+  @override
+  Future<List<FaceAppearance>> embed(Uint8List bytes) async {
+    return [
+      FaceAppearance(
+        embedding: List<double>.filled(kFaceEmbeddingDim, 0.01),
+        embeddingModelId: modelId,
+      ),
+    ];
+  }
+}
 
 void main() {
   test('refineWhoRegionForEmbed insets large boxes', () {
@@ -31,5 +57,101 @@ void main() {
     expect(crop, isNotNull);
     expect(crop!.length, greaterThan(50));
     expect(img.decodeImage(crop), isNotNull);
+  });
+
+  test('WhoFaceLinker skips posting when embedder is stub', () async {
+    debugResetFaceEmbedderStubNotice();
+    final dir = await Directory.systemTemp.createTemp('who_stub_');
+    final file = File('${dir.path}/face.jpg');
+    await file.writeAsBytes(_solidJpeg());
+
+    final item = fixtureItem(
+      id: 'item_1',
+      type: ItemType.photo,
+      sourceRef: 'file://${file.path}',
+      processingStatus: ProcessingStatus.tagged,
+      contentHash: null,
+    );
+    final items = FakeItemsRepository(items: [item]);
+    items.setKnowledge(
+      item.id,
+      fixtureKnowledge(
+        item: item,
+        tags: [
+          fixtureTag(
+            id: '00000000-0000-4000-8000-000000000001',
+            itemId: item.id,
+            dimension: 'who',
+            value: 'Someone',
+            region: const TagRegion(
+              yMin: 0.2,
+              xMin: 0.2,
+              yMax: 0.6,
+              xMax: 0.6,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final linker = WhoFaceLinker(
+      items: items,
+      embedder: StubFaceEmbedder(),
+    );
+    final result = await linker.linkWhoFacesForItem(item);
+    expect(result, isNull);
+    expect(items.whoAppearancesRecorded, isEmpty);
+    expect(consumeFaceEmbedderStubNotice(), isTrue);
+
+    await dir.delete(recursive: true);
+  });
+
+  test('WhoFaceLinker posts when embedder is a real model id', () async {
+    final dir = await Directory.systemTemp.createTemp('who_onnx_');
+    final file = File('${dir.path}/face.jpg');
+    await file.writeAsBytes(_solidJpeg());
+
+    final item = fixtureItem(
+      id: 'item_1',
+      type: ItemType.photo,
+      sourceRef: 'file://${file.path}',
+      processingStatus: ProcessingStatus.tagged,
+      contentHash: null,
+    );
+    final items = FakeItemsRepository(items: [item]);
+    items.setKnowledge(
+      item.id,
+      fixtureKnowledge(
+        item: item,
+        tags: [
+          fixtureTag(
+            id: '00000000-0000-4000-8000-000000000002',
+            itemId: item.id,
+            dimension: 'who',
+            value: 'Someone',
+            region: const TagRegion(
+              yMin: 0.2,
+              xMin: 0.2,
+              yMax: 0.6,
+              xMax: 0.6,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final linker = WhoFaceLinker(
+      items: items,
+      embedder: _FixedModelEmbedder('onnx-arcface-w600k-r50-v5'),
+    );
+    final result = await linker.linkWhoFacesForItem(item);
+    expect(result, isNotNull);
+    expect(items.whoAppearancesRecorded, hasLength(1));
+    expect(
+      items.whoAppearancesRecorded.single.appearances.single.embeddingModelId,
+      'onnx-arcface-w600k-r50-v5',
+    );
+
+    await dir.delete(recursive: true);
   });
 }

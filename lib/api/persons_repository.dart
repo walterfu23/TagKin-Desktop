@@ -126,4 +126,9 @@ class PersonsRepository {
     }
     return PersonAppearance.fromJson(json);
   }
+
+  /// `DELETE /persons/{id}` — remove a suggested person + appearances (R6).
+  Future<void> deletePerson(String personId) async {
+    await _client.delete('/persons/$personId');
+  }
 }

@@ -129,6 +129,59 @@ void main() {
     expect(persons.renameCalls.single.name, 'Samantha');
   });
 
+  testWidgets('person detail: delete suggested person pops page',
+      (tester) async {
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: null,
+          linkState: LinkState.suggested,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+        ],
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                key: const Key('open-person'),
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const PersonDetailPage(
+                        personId: 'person_1',
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('open-person')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('person-delete')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('person-delete')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('person-delete-confirm')));
+    await tester.pumpAndSettle();
+
+    expect(persons.deleteCalls, ['person_1']);
+    expect(find.byKey(const Key('person-detail')), findsNothing);
+    expect(find.byKey(const Key('open-person')), findsOneWidget);
+  });
+
   testWidgets('person detail: unnamed shows name field by default',
       (tester) async {
     final persons = FakePersonsRepository(

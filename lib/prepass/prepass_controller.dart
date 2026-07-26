@@ -87,7 +87,9 @@ class PrePassController extends ChangeNotifier {
           path: ingest.path,
           type: item.type,
           faceEmbedder: faceEmbedder,
-          skipFaces: false,
+          // Who-face crops (WhoFaceLinker) own identity linking — not
+          // full-image pre-pass embeddings (avoids duplicate suggested persons).
+          skipFaces: true,
           maxFrames: kDefaultMaxFramesPerItem,
         );
         final response = await itemsRepository.recordPrePassResult(

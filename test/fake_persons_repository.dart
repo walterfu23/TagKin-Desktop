@@ -22,6 +22,7 @@ class FakePersonsRepository implements PersonsRepository {
       <({String appearanceId, String personId})>[];
   final List<({String personId, String? name})> renameCalls =
       <({String personId, String? name})>[];
+  final List<String> deleteCalls = <String>[];
 
   int _splitCounter = 0;
 
@@ -236,6 +237,23 @@ class FakePersonsRepository implements PersonsRepository {
     );
     return moved;
   }
+
+  @override
+  Future<void> deletePerson(String personId) async {
+    deleteCalls.add(personId);
+    final index = _persons.indexWhere((p) => p.id == personId);
+    if (index < 0) {
+      throw ApiException(statusCode: 404, message: 'Not found');
+    }
+    final person = _persons[index];
+    if (person.linkState != LinkState.suggested) {
+      throw ApiException(
+        statusCode: 400,
+        message: 'Only suggested persons can be deleted',
+      );
+    }
+    _persons.removeAt(index);
+  }
 }
 
 /// Fixture [PersonAppearance] for D9 tests.
@@ -244,6 +262,7 @@ PersonAppearance fixtureAppearance({
   String? personId = 'person_1',
   String? itemId = 'item_1',
   String? keyPeriodId,
+  String? tagId,
   LinkState linkState = LinkState.suggested,
 }) {
   return PersonAppearance(
@@ -251,6 +270,7 @@ PersonAppearance fixtureAppearance({
     personId: personId,
     itemId: itemId,
     keyPeriodId: keyPeriodId,
+    tagId: tagId,
     linkState: linkState,
     createdAt: '2026-07-20T00:00:00.000Z',
   );

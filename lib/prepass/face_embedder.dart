@@ -2,6 +2,8 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
+import 'package:tagkin_desktop/prepass/onnx_face_embedder.dart';
 
 /// Contract face embedding dimension (`PrePassAppearanceInput.embedding`
 /// minItems/maxItems = 512).
@@ -18,8 +20,8 @@ class FaceAppearance {
   final String embeddingModelId;
 }
 
-/// Pluggable face detect + embed. Real adapters (MediaPipe / InsightFace)
-/// can swap in later; CI and v1 use [StubFaceEmbedder].
+/// Pluggable face detect + embed. Real adapters (ONNX ArcFace) swap in via
+/// [getFaceEmbedder]; CI uses [StubFaceEmbedder].
 abstract class FaceEmbedder {
   Future<List<FaceAppearance>> embed(Uint8List bytes);
 }
@@ -28,6 +30,7 @@ abstract class FaceEmbedder {
 ///
 /// Mirrors `@tagkin/prepass` `StubFaceEmbedder` (`stub-face-embed-v1`) so
 /// desktop and web stay conceptually aligned for contract shape tests.
+/// Does **not** match the same person across different photos.
 class StubFaceEmbedder implements FaceEmbedder {
   static const modelId = 'stub-face-embed-v1';
 
@@ -54,4 +57,43 @@ class StubFaceEmbedder implements FaceEmbedder {
   }
 }
 
-FaceEmbedder getFaceEmbedder() => StubFaceEmbedder();
+/// Test/CI override. When set, [getFaceEmbedder] returns this instance.
+FaceEmbedder? debugFaceEmbedderOverride;
+
+/// Set when production falls back to [StubFaceEmbedder] (missing ONNX weights).
+bool _faceEmbedderStubNoticePending = false;
+
+@visibleForTesting
+void debugResetFaceEmbedderStubNotice() {
+  _faceEmbedderStubNoticePending = false;
+}
+
+/// Marks that the user should be told matching will be weak (stub in use).
+void markFaceEmbedderStubFallback() {
+  _faceEmbedderStubNoticePending = true;
+}
+
+/// Returns true once after stub fallback was marked (clears the flag).
+bool consumeFaceEmbedderStubNotice() {
+  if (!_faceEmbedderStubNoticePending) return false;
+  _faceEmbedderStubNoticePending = false;
+  return true;
+}
+
+/// Tiny helper so tests don't need to import foundation internals.
+class PlatformEnvironment {
+  static bool isFlutterTest =
+      const bool.fromEnvironment('FLUTTER_TEST', defaultValue: false);
+}
+
+/// Production: ONNX when models are on disk; stub otherwise (tests inject stub).
+FaceEmbedder getFaceEmbedder() {
+  if (debugFaceEmbedderOverride != null) {
+    return debugFaceEmbedderOverride!;
+  }
+  // Unit tests must not load native ORT / missing weights.
+  if (PlatformEnvironment.isFlutterTest) {
+    return StubFaceEmbedder();
+  }
+  return LazyOnnxOrStubFaceEmbedder();
+}

@@ -1,10 +1,10 @@
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 import 'package:tagkin_desktop/api/items_repository.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/prepass/face_embedder.dart';
+import 'package:tagkin_desktop/prepass/onnx_face_embedder.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 
 /// Insets a who box toward its center when the VLM region is still large
@@ -14,8 +14,8 @@ TagRegion refineWhoRegionForEmbed(TagRegion region) {
   final w = region.xMax - region.xMin;
   final area = h * w;
   if (area <= 0 || !area.isFinite) return region;
-  // Large boxes get a stronger inset toward a face-sized crop.
-  final inset = area > 0.12 ? 0.22 : (area > 0.06 ? 0.12 : 0.05);
+  // Light inset only — SCRFD aligns inside the crop; heavy inset starved landmarks.
+  final inset = area > 0.12 ? 0.10 : (area > 0.06 ? 0.05 : 0.02);
   final yMin = (region.yMin + h * inset).clamp(0.0, 1.0);
   final yMax = (region.yMax - h * inset).clamp(0.0, 1.0);
   final xMin = (region.xMin + w * inset).clamp(0.0, 1.0);
@@ -57,6 +57,9 @@ Uint8List? cropWhoFaceJpeg(Uint8List imageBytes, TagRegion region) {
 
 /// After analyze: embed each who-tag face crop and POST who-appearances so the
 /// API auto-runs suggested cross-item linking (R6).
+///
+/// Skips posting when the embedder is the content-hash stub — those vectors
+/// never match across photos and would mint one Person per face.
 class WhoFaceLinker {
   WhoFaceLinker({
     required ItemsRepository items,
@@ -67,14 +70,22 @@ class WhoFaceLinker {
   final ItemsRepository _items;
   final FaceEmbedder _embedder;
 
-  /// Returns linked appearances, or empty if nothing to post.
+  /// Returns linked appearances, or null if nothing to post / stub skipped.
   Future<WhoAppearancesResponse?> linkWhoFacesForItem(Item item) async {
     if (item.type != ItemType.photo) return null;
 
-    final path = localPathFromSourceRef(item.sourceRef);
-    if (path == null) return null;
-    final file = File(path);
-    if (!await file.exists()) return null;
+    // Start security-scoped bookmark when present (macOS App Sandbox).
+    final media = await resolveLocalMedia(item);
+    if (media.status == LocalMediaStatus.accessDenied) {
+      throw StateError(
+        'macOS sandbox blocked ${media.path}. Re-open that folder once in the '
+        'main TagKin app (Add from folder) so the security-scoped bookmark is '
+        'saved, then re-run the loop.',
+      );
+    }
+    if (!media.isAvailable || media.file == null) {
+      return null;
+    }
 
     final knowledge = await _items.getKnowledge(item.id);
     final whoWithRegion = knowledge.tags
@@ -87,14 +98,29 @@ class WhoFaceLinker {
         .toList();
     if (whoWithRegion.isEmpty) return null;
 
-    final bytes = await file.readAsBytes();
+    final bytes = await media.file!.readAsBytes();
     final inputs = <WhoAppearanceInput>[];
+    var embedder = _embedder;
+    if (embedder is LazyOnnxOrStubFaceEmbedder) {
+      embedder = await embedder.ensureLoaded();
+    }
+    final onnx = embedder is OnnxFaceEmbedder ? embedder : null;
     for (final tag in whoWithRegion) {
-      final crop = cropWhoFaceJpeg(bytes, tag.region!);
-      if (crop == null) continue;
-      final faces = await _embedder.embed(crop);
+      final region = refineWhoRegionForEmbed(tag.region!);
+      final List<FaceAppearance> faces;
+      if (onnx != null) {
+        faces = await onnx.embedWhoRegion(bytes, region);
+      } else {
+        final crop = cropWhoFaceJpeg(bytes, tag.region!);
+        if (crop == null) continue;
+        faces = await embedder.embed(crop);
+      }
       if (faces.isEmpty) continue;
       final face = faces.first;
+      if (face.embeddingModelId == StubFaceEmbedder.modelId) {
+        markFaceEmbedderStubFallback();
+        return null;
+      }
       inputs.add(
         WhoAppearanceInput(
           tagId: tag.id,

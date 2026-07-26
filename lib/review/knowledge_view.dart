@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
 import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 import 'package:tagkin_desktop/where/where_value_text.dart';
 
@@ -11,6 +12,7 @@ class KnowledgeView extends StatelessWidget {
   const KnowledgeView({
     super.key,
     required this.knowledge,
+    this.itemId,
     this.onPersonTap,
     this.onAddTag,
     this.onEditTag,
@@ -20,8 +22,12 @@ class KnowledgeView extends StatelessWidget {
 
   final ItemKnowledge knowledge;
 
+  /// Host item id — enables who-face crop thumbs on appearance rows.
+  final String? itemId;
+
   /// Opens person detail for a linked appearance (D9).
   final void Function(String personId)? onPersonTap;
+
 
   /// Add a tag for [dimension] (D10).
   final void Function(String dimension)? onAddTag;
@@ -77,6 +83,8 @@ class KnowledgeView extends StatelessWidget {
           for (final appearance in knowledge.appearances)
             _AppearanceRow(
               appearance: appearance,
+              knowledge: knowledge,
+              itemId: itemId,
               onPersonTap: onPersonTap,
             ),
         ],
@@ -88,35 +96,71 @@ class KnowledgeView extends StatelessWidget {
 class _AppearanceRow extends StatelessWidget {
   const _AppearanceRow({
     required this.appearance,
+    required this.knowledge,
+    this.itemId,
     this.onPersonTap,
   });
 
   final PersonAppearance appearance;
+  final ItemKnowledge knowledge;
+  final String? itemId;
   final void Function(String personId)? onPersonTap;
 
   @override
   Widget build(BuildContext context) {
     final personId = appearance.personId;
-    final label = 'appearance ${appearance.id}'
-        '${personId != null ? ' → person $personId' : ''}'
-        ' (${appearance.linkState.wire})';
+    Tag? whoTag;
+    if (appearance.tagId != null) {
+      for (final t in knowledge.tags) {
+        if (t.id == appearance.tagId) {
+          whoTag = t;
+          break;
+        }
+      }
+    }
+    final whoLabel =
+        (whoTag != null && whoTag.value.trim().isNotEmpty)
+            ? whoTag.value.trim()
+            : null;
+    final label = [
+      if (whoLabel != null) whoLabel,
+      'appearance ${appearance.id}',
+      if (personId != null) '→ person $personId',
+      '(${appearance.linkState.wire})',
+    ].join(' ');
     final text = Text(
       label,
       key: Key('appearance-${appearance.id}'),
     );
+    final cropItemId = appearance.itemId ?? itemId;
+    final row = Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        if (cropItemId != null && appearance.tagId != null) ...[
+          WhoFaceCropThumb(
+            itemId: cropItemId,
+            tagId: appearance.tagId!,
+            knowledge: knowledge,
+            size: 40,
+          ),
+          const SizedBox(width: 8),
+        ],
+        Expanded(child: text),
+      ],
+    );
     if (personId != null && onPersonTap != null) {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
+        padding: const EdgeInsets.symmetric(vertical: 4),
         child: InkWell(
           key: Key('appearance-person-link-${appearance.id}'),
           onTap: () => onPersonTap!(personId),
-          child: text,
+          child: row,
         ),
       );
     }
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: text,
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: row,
     );
   }
 }

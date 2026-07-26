@@ -2,8 +2,9 @@ import 'dart:io' show Platform;
 
 import 'package:clerk_auth/clerk_auth.dart' show RetryOptions;
 import 'package:clerk_flutter/clerk_flutter.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/api/comments_repository.dart';
@@ -313,6 +314,11 @@ class _ClerkSignedInHostState extends State<_ClerkSignedInHost> {
         // hides the real failure (often CLERK_AUTHORIZED_PARTIES / azp mismatch).
         onUnauthorized: () {},
         onSignOut: _signOut,
+        // Debug-only: copy Clerk session JWT for local scripts (e.g. person link loop).
+        fetchApiToken: () async {
+          final token = await widget.authState.sessionToken();
+          return token.jwt;
+        },
         signedInHome: widget.signedInHome,
       ),
     );
@@ -327,10 +333,13 @@ class AccountBootstrap extends StatefulWidget {
     required this.onUnauthorized,
     required this.signedInHome,
     this.onSignOut,
+    this.fetchApiToken,
   });
 
   final Future<Account> Function() loadAccount;
   final Future<void> Function()? onSignOut;
+  /// Debug helper for local scripts — returns current Clerk session JWT.
+  final Future<String?> Function()? fetchApiToken;
   final VoidCallback onUnauthorized;
   final Widget signedInHome;
 
@@ -436,6 +445,7 @@ class _AccountBootstrapState extends State<AccountBootstrap> {
         return _SignedInScaffold(
           account: account,
           onSignOut: widget.onSignOut,
+          fetchApiToken: widget.fetchApiToken,
           child: widget.signedInHome,
         );
       },
@@ -448,11 +458,13 @@ class _SignedInScaffold extends ConsumerStatefulWidget {
     required this.account,
     required this.child,
     this.onSignOut,
+    this.fetchApiToken,
   });
 
   final Account account;
   final Widget child;
   final Future<void> Function()? onSignOut;
+  final Future<String?> Function()? fetchApiToken;
 
   @override
   ConsumerState<_SignedInScaffold> createState() => _SignedInScaffoldState();
@@ -478,6 +490,35 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold> {
     );
   }
 
+  Future<void> _copyApiToken() async {
+    final fetch = widget.fetchApiToken;
+    if (fetch == null) return;
+    try {
+      final jwt = await fetch();
+      if (!mounted) return;
+      if (jwt == null || jwt.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No API token (signed out?)')),
+        );
+        return;
+      }
+      await Clipboard.setData(ClipboardData(text: jwt));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'API token copied — expires quickly; paste into TAGKIN_API_TOKEN now',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not copy token: $e')),
+      );
+    }
+  }
+
   Future<void> _openSettings() async {
     if (_settingsOpen) return;
     _settingsOpen = true;
@@ -500,6 +541,13 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold> {
       appBar: AppBar(
         title: const Text('TagKin'),
         actions: [
+          if (kDebugMode && widget.fetchApiToken != null)
+            IconButton(
+              key: const Key('nav-copy-api-token'),
+              tooltip: 'Copy API token (debug)',
+              onPressed: _copyApiToken,
+              icon: const Icon(Icons.key_outlined),
+            ),
           if (_showSettingsGear)
             IconButton(
               key: const Key('nav-settings'),

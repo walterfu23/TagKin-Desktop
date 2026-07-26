@@ -175,6 +175,34 @@ class PersonDetailController extends ChangeNotifier {
     }
   }
 
+  bool get canDelete =>
+      detail != null &&
+      detail!.linkState == LinkState.suggested &&
+      !isBusy;
+
+  /// Deletes this suggested person and its appearances. Returns true on success.
+  Future<bool> delete() async {
+    if (!canDelete) return false;
+    phase = PersonDetailPhase.busy;
+    error = null;
+    notifyListeners();
+
+    try {
+      await personsRepository.deletePerson(personId);
+      if (_disposed) return false;
+      // Keep [detail] until the page pops so the last frame does not null-check.
+      phase = PersonDetailPhase.ready;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      if (_disposed) return false;
+      error = e;
+      phase = PersonDetailPhase.error;
+      notifyListeners();
+      return false;
+    }
+  }
+
   bool _disposed = false;
 
   @override

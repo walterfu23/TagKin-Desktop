@@ -105,6 +105,28 @@ void main() {
       controller.dispose();
     });
 
+    test('delete removes suggested person', () async {
+      final repo = FakePersonsRepository(
+        persons: [
+          fixturePersonDetail(
+            id: 'person_1',
+            name: null,
+            linkState: LinkState.suggested,
+          ),
+        ],
+      );
+      final controller = PersonDetailController(
+        personId: 'person_1',
+        personsRepository: repo,
+      );
+      await controller.load();
+      expect(controller.canDelete, isTrue);
+      final ok = await controller.delete();
+      expect(ok, isTrue);
+      expect(repo.deleteCalls, ['person_1']);
+      controller.dispose();
+    });
+
     test('foreign person id surfaces error (R10)', () async {
       final repo = FakePersonsRepository(persons: const []);
       final controller = PersonDetailController(

@@ -5,6 +5,9 @@ import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/link_state_view.dart';
 import 'package:tagkin_desktop/persons/person_detail_page.dart';
+import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
+import 'package:tagkin_desktop/prepass/face_embedder.dart';
+import 'package:tagkin_desktop/prepass/onnx_face_embedder.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
 /// Library-wide persons list (D9): suggested vs confirmed sections.
@@ -19,11 +22,28 @@ class PersonsListPage extends ConsumerStatefulWidget {
 
 class _PersonsListPageState extends ConsumerState<PersonsListPage> {
   late Future<List<Person>> _future;
+  bool _modelsMissing = false;
 
   @override
   void initState() {
     super.initState();
     _future = _load();
+    _modelsMissing = !FaceModelPaths.recogModelAvailable();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (consumeFaceEmbedderStubNotice()) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            key: Key('face-embedder-stub-notice'),
+            content: Text(
+              'Face models missing — likeness linking skipped. '
+              'Run mac/117_fetch_face_models.sh, restart the app, then re-analyze.',
+            ),
+            duration: Duration(seconds: 8),
+          ),
+        );
+      }
+    });
   }
 
   Future<List<Person>> _load() {
@@ -32,6 +52,7 @@ class _PersonsListPageState extends ConsumerState<PersonsListPage> {
 
   void _retry() {
     setState(() {
+      _modelsMissing = !FaceModelPaths.recogModelAvailable();
       _future = _load();
     });
   }
@@ -57,94 +78,125 @@ class _PersonsListPageState extends ConsumerState<PersonsListPage> {
       appBar: AppBar(
         title: const Text('Persons'),
       ),
-      body: FutureBuilder<List<Person>>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(
-              child: CircularProgressIndicator(key: Key('persons-loading')),
-            );
-          }
-          if (snapshot.hasError) {
-            final error = snapshot.error!;
-            final isNotFound =
-                error is ApiException && error.statusCode == 404;
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      isNotFound
-                          ? 'Persons not found'
-                          : 'Could not load persons: $error',
-                      key: isNotFound
-                          ? const Key('persons-not-found')
-                          : const Key('persons-error'),
-                      textAlign: TextAlign.center,
+      body: Column(
+        children: [
+          if (_modelsMissing)
+            MaterialBanner(
+              key: const Key('persons-models-missing-banner'),
+              content: const Text(
+                'Face models not found — cross-photo person linking is off. '
+                'Run mac/117_fetch_face_models.sh (or win equivalent), restart, '
+                'then re-analyze photos.',
+              ),
+              actions: [
+                TextButton(
+                  key: const Key('persons-models-missing-dismiss'),
+                  onPressed: () => setState(() => _modelsMissing = false),
+                  child: const Text('Dismiss'),
+                ),
+              ],
+            ),
+          Expanded(
+            child: FutureBuilder<List<Person>>(
+              future: _future,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const Center(
+                    child: CircularProgressIndicator(
+                      key: Key('persons-loading'),
                     ),
-                    if (!isNotFound) ...[
-                      const SizedBox(height: 16),
-                      FilledButton(
-                        key: const Key('persons-retry'),
-                        onPressed: _retry,
-                        child: const Text('Retry'),
+                  );
+                }
+                if (snapshot.hasError) {
+                  final error = snapshot.error!;
+                  final isNotFound =
+                      error is ApiException && error.statusCode == 404;
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            isNotFound
+                                ? 'Persons not found'
+                                : 'Could not load persons: $error',
+                            key: isNotFound
+                                ? const Key('persons-not-found')
+                                : const Key('persons-error'),
+                            textAlign: TextAlign.center,
+                          ),
+                          if (!isNotFound) ...[
+                            const SizedBox(height: 16),
+                            FilledButton(
+                              key: const Key('persons-retry'),
+                              onPressed: _retry,
+                              child: const Text('Retry'),
+                            ),
+                          ],
+                        ],
                       ),
+                    ),
+                  );
+                }
+
+                final persons = snapshot.data!;
+                final suggested = persons
+                    .where((p) => p.linkState == LinkState.suggested)
+                    .toList();
+                final confirmed = persons
+                    .where((p) => p.linkState == LinkState.confirmed)
+                    .toList();
+
+                if (persons.isEmpty) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        _modelsMissing
+                            ? 'No persons yet — install face models, restart, '
+                                'and re-analyze photos that have who face boxes.'
+                            : 'No persons yet — analyze photos with who face '
+                                'boxes so likeness can link across items.',
+                        key: const Key('persons-empty'),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  );
+                }
+
+                return ListView(
+                  key: const Key('persons-list'),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  children: [
+                    if (suggested.isNotEmpty) ...[
+                      const _SectionHeader(
+                        title: 'Suggested',
+                        sectionKey: Key('persons-section-suggested'),
+                      ),
+                      for (final person in suggested)
+                        _PersonTile(
+                          person: person,
+                          onTap: () => _openDetail(person),
+                        ),
+                    ],
+                    if (confirmed.isNotEmpty) ...[
+                      const _SectionHeader(
+                        title: 'Confirmed',
+                        sectionKey: Key('persons-section-confirmed'),
+                      ),
+                      for (final person in confirmed)
+                        _PersonTile(
+                          person: person,
+                          onTap: () => _openDetail(person),
+                        ),
                     ],
                   ],
-                ),
-              ),
-            );
-          }
-
-          final persons = snapshot.data!;
-          final suggested = persons
-              .where((p) => p.linkState == LinkState.suggested)
-              .toList();
-          final confirmed = persons
-              .where((p) => p.linkState == LinkState.confirmed)
-              .toList();
-
-          if (persons.isEmpty) {
-            return const Center(
-              child: Text(
-                'No persons yet — run Find person matches on an item.',
-                key: Key('persons-empty'),
-                textAlign: TextAlign.center,
-              ),
-            );
-          }
-
-          return ListView(
-            key: const Key('persons-list'),
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            children: [
-              if (suggested.isNotEmpty) ...[
-                const _SectionHeader(
-                  title: 'Suggested',
-                  sectionKey: Key('persons-section-suggested'),
-                ),
-                for (final person in suggested)
-                  _PersonTile(
-                    person: person,
-                    onTap: () => _openDetail(person),
-                  ),
-              ],
-              if (confirmed.isNotEmpty) ...[
-                const _SectionHeader(
-                  title: 'Confirmed',
-                  sectionKey: Key('persons-section-confirmed'),
-                ),
-                for (final person in confirmed)
-                  _PersonTile(
-                    person: person,
-                    onTap: () => _openDetail(person),
-                  ),
-              ],
-            ],
-          );
-        },
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -181,6 +233,7 @@ class _PersonTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       key: Key('person-row-${person.id}'),
+      leading: PersonListFaceThumb(personId: person.id),
       title: Text(
         person.name ?? '(unnamed)',
         key: Key('person-name-${person.id}'),

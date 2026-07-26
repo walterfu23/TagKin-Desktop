@@ -469,4 +469,48 @@ void main() {
           .having((e) => e.sourceDisplay, 'display', '/users/w/test/beta.jpg'),
     );
   });
+
+  test('expanded source folder stays open after reload removes an item', () async {
+    const shared = '/users/w/photos';
+    final a = fixtureItem(
+      id: 'a',
+      sourceRef: 'file://$shared/a.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final b = fixtureItem(
+      id: 'b',
+      sourceRef: 'file://$shared/b.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final items = FakeItemsRepository(items: [a, b]);
+    final controller = LibraryTableController(
+      itemsRepository: items,
+      commentsRepository: FakeCommentsRepository(),
+      thumbCache: LocalThumbCache(),
+      knowledgeConcurrency: 2,
+    );
+    await controller.load();
+
+    final header = controller.visibleEntries
+        .whereType<LibraryPathGroupHeader>()
+        .single;
+    expect(header.collapsed, isTrue);
+    controller.toggleCollapseSourceDir(header.dir);
+    expect(controller.expandedSourceDirs.contains(header.dir), isTrue);
+    expect(
+      controller.visibleEntries.whereType<LibraryItemEntry>(),
+      hasLength(2),
+    );
+
+    // Simulate delete of one item then list reload (same as UI _retry).
+    items.removeItem('a');
+    await controller.load();
+
+    expect(controller.expandedSourceDirs.contains(header.dir), isTrue);
+    expect(controller.allRows, hasLength(1));
+    expect(
+      controller.visibleEntries.whereType<LibraryItemEntry>(),
+      hasLength(1),
+    );
+  });
 }

@@ -26,6 +26,7 @@ void main() {
           bool skipFaces = false,
           int maxFrames = kDefaultMaxFramesPerItem,
         }) async {
+          expect(skipFaces, isTrue);
           return PrePassBuildResult(
             payload: PrePassResult(
               contentHash: 'abc',

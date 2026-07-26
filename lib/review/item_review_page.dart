@@ -321,6 +321,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
               const SizedBox(height: 12),
               KnowledgeView(
                 knowledge: knowledge,
+                itemId: knowledge.item.id,
                 onPersonTap: _openPerson,
                 onAddTag: (d) => _addTag(review, d),
                 onEditTag: (t) => _editTag(review, t),

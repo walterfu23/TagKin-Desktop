@@ -264,8 +264,9 @@ class LibraryTableController extends ChangeNotifier {
       expandedWho.clear();
       expandedWhere.clear();
       expandedComments.clear();
-      expandedSourceDirs.clear();
+      // Keep folder expand/collapse across reload (e.g. after delete).
       _rows = items.map((item) => LibraryTableRow(item: item)).toList();
+      _pruneExpandedSourceDirs();
       pageIndex = 0;
       loading = false;
       notifyListeners();
@@ -370,6 +371,24 @@ class LibraryTableController extends ChangeNotifier {
   void toggleCollapseSourceDir(String dir) {
     if (!expandedSourceDirs.add(dir)) expandedSourceDirs.remove(dir);
     notifyListeners();
+  }
+
+  /// Drop expanded folder keys that no longer appear in the loaded rows
+  /// (or as ancestors of those paths).
+  void _pruneExpandedSourceDirs() {
+    if (expandedSourceDirs.isEmpty) return;
+    final valid = <String>{};
+    final ctx = p.context;
+    for (final row in _rows) {
+      var dir = row.sourceDir;
+      while (dir.isNotEmpty && dir != '.') {
+        valid.add(dir);
+        final parent = ctx.dirname(dir);
+        if (parent == dir) break;
+        dir = parent;
+      }
+    }
+    expandedSourceDirs.removeWhere((d) => !valid.contains(d));
   }
 
   Future<void> _warmThumbs(int gen) async {

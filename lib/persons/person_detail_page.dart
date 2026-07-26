@@ -4,6 +4,7 @@ import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/link_state_view.dart';
 import 'package:tagkin_desktop/persons/person_detail_controller.dart';
+import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
 
 /// Person detail + confirm / split / unlink / reassign / rename (D9).
 ///
@@ -66,6 +67,12 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
           appBar: AppBar(
             title: const Text('Person'),
             actions: [
+              if (controller.canDelete)
+                TextButton(
+                  key: const Key('person-delete'),
+                  onPressed: () => _confirmDelete(controller),
+                  child: const Text('Delete'),
+                ),
               if (controller.canConfirm)
                 TextButton(
                   key: const Key('person-confirm'),
@@ -78,6 +85,35 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
         );
       },
     );
+  }
+
+  Future<void> _confirmDelete(PersonDetailController controller) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete person?'),
+        content: const Text(
+          'Removes this suggested person and its face links. '
+          'You can re-analyze photos later to recreate matches.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('person-delete-confirm'),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final ok = await controller.delete();
+    if (ok && mounted) {
+      Navigator.of(context).pop();
+    }
   }
 
   Widget _buildBody(PersonDetailController controller) {
@@ -262,28 +298,54 @@ class _AppearanceCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (appearance.itemId != null && appearance.tagId != null) ...[
+                WhoFaceCropThumb(
+                  itemId: appearance.itemId!,
+                  tagId: appearance.tagId!,
+                  size: 72,
+                ),
+                const SizedBox(width: 12),
+              ],
               Expanded(
-                child: Text(
-                  'appearance ${appearance.id}',
-                  key: Key('appearance-id-${appearance.id}'),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'appearance ${appearance.id}',
+                            key: Key('appearance-id-${appearance.id}'),
+                          ),
+                        ),
+                        LinkStateBadge(linkState: appearance.linkState),
+                      ],
+                    ),
+                    if (appearance.itemId != null)
+                      Text(
+                        'item ${appearance.itemId}',
+                        key: Key('appearance-item-${appearance.id}'),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    if (appearance.tagId != null)
+                      Text(
+                        'who tag ${appearance.tagId}',
+                        key: Key('appearance-tag-${appearance.id}'),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    if (appearance.keyPeriodId != null)
+                      Text(
+                        'key period ${appearance.keyPeriodId}',
+                        key: Key('appearance-key-period-${appearance.id}'),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                  ],
                 ),
               ),
-              LinkStateBadge(linkState: appearance.linkState),
             ],
           ),
-          if (appearance.itemId != null)
-            Text(
-              'item ${appearance.itemId}',
-              key: Key('appearance-item-${appearance.id}'),
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          if (appearance.keyPeriodId != null)
-            Text(
-              'key period ${appearance.keyPeriodId}',
-              key: Key('appearance-key-period-${appearance.id}'),
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,

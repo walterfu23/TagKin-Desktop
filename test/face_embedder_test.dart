@@ -42,4 +42,12 @@ void main() {
     expect(StubFaceEmbedder.modelId, 'stub-face-embed-v1');
     expect(Platform.isMacOS || Platform.isWindows || Platform.isLinux, isTrue);
   });
+
+  test('stub fallback notice can be marked and consumed once', () {
+    debugResetFaceEmbedderStubNotice();
+    expect(consumeFaceEmbedderStubNotice(), isFalse);
+    markFaceEmbedderStubFallback();
+    expect(consumeFaceEmbedderStubNotice(), isTrue);
+    expect(consumeFaceEmbedderStubNotice(), isFalse);
+  });
 }
