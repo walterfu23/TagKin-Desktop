@@ -53,7 +53,7 @@ void main() {
     expect(find.byKey(const Key('person-row-person_c')), findsOneWidget);
   });
 
-  testWidgets('person detail: confirm then disables Confirm button',
+  testWidgets('person detail: Save then disables Save button',
       (tester) async {
     final persons = FakePersonsRepository(
       persons: [
@@ -80,12 +80,12 @@ void main() {
     expect(find.byKey(const Key('person-detail')), findsOneWidget);
     expect(find.byKey(const Key('person-detail-name')), findsOneWidget);
     expect(find.text('Sam'), findsOneWidget);
-    expect(find.byKey(const Key('person-confirm')), findsOneWidget);
+    expect(find.byKey(const Key('person-save')), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('person-confirm')));
+    await tester.tap(find.byKey(const Key('person-save')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('person-confirm')), findsNothing);
+    expect(find.byKey(const Key('person-save')), findsNothing);
     expect(find.byKey(const Key('link-state-confirmed')), findsWidgets);
     expect(persons.confirmCalls, ['person_1']);
   });
@@ -113,8 +113,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Already confirmed — no Confirm button.
-    expect(find.byKey(const Key('person-confirm')), findsNothing);
+    // Already confirmed — no Save button.
+    expect(find.byKey(const Key('person-save')), findsNothing);
 
     await tester.tap(find.byKey(const Key('person-rename')));
     await tester.pumpAndSettle();
@@ -122,7 +122,7 @@ void main() {
       find.byKey(const Key('person-rename-field')),
       'Samantha',
     );
-    await tester.tap(find.byKey(const Key('person-rename-save')));
+    await tester.tap(find.byKey(const Key('person-rename-done')));
     await tester.pumpAndSettle();
 
     expect(find.text('Samantha'), findsOneWidget);
@@ -215,7 +215,7 @@ void main() {
       find.byKey(const Key('person-rename-field')),
       'Alex',
     );
-    await tester.tap(find.byKey(const Key('person-rename-save')));
+    await tester.tap(find.byKey(const Key('person-rename-done')));
     await tester.pumpAndSettle();
 
     expect(find.text('Alex'), findsOneWidget);
@@ -255,7 +255,7 @@ void main() {
     expect(result, 'Jordan');
   });
 
-  testWidgets('person detail: unlink / split controls present (R6)',
+  testWidgets('person detail: unassign / reassign controls present (R6)',
       (tester) async {
     final persons = FakePersonsRepository(
       persons: [
@@ -289,15 +289,22 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('appearance-unlink-ap_1')), findsOneWidget);
-    expect(find.byKey(const Key('appearance-split-ap_1')), findsOneWidget);
+    expect(find.byKey(const Key('appearance-unassign-ap_1')), findsOneWidget);
+    expect(find.byKey(const Key('appearance-split-ap_1')), findsNothing);
     expect(
       find.byKey(const Key('appearance-reassign-ap_1')),
       findsOneWidget,
     );
 
-    await tester.tap(find.byKey(const Key('appearance-split-ap_2')));
+    // Reassign ap_2 to new person via dropdown + button.
+    await tester.tap(find.byKey(const Key('appearance-reassign-select-ap_2')));
     await tester.pumpAndSettle();
-    expect(persons.splitCalls.single.appearanceIds, ['ap_2']);
+    expect(find.text('New person'), findsWidgets);
+    await tester.tap(find.text('New person').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('appearance-reassign-ap_2')));
+    await tester.pumpAndSettle();
+    expect(persons.reassignCalls.single.appearanceId, 'ap_2');
+    expect(persons.reassignCalls.single.personId, isNull);
   });
 }

@@ -9,10 +9,10 @@ import 'package:tagkin_desktop/persons/person_detail_controller.dart';
 import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
-/// Person detail + confirm / split / unlink / reassign / rename (D9).
+/// Person detail + Save / unassign / reassign / rename (D9).
 ///
 /// Never displays likeness vectors (R1). Every merge has a visible undo path
-/// via unlink / split / reassign (R6).
+/// via unassign / reassign (R6).
 class PersonDetailPage extends ConsumerStatefulWidget {
   const PersonDetailPage({super.key, required this.personId});
 
@@ -78,9 +78,9 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
                 ),
               if (controller.canConfirm)
                 TextButton(
-                  key: const Key('person-confirm'),
+                  key: const Key('person-save'),
                   onPressed: () => controller.confirm(),
-                  child: const Text('Confirm'),
+                  child: const Text('Save'),
                 ),
             ],
           ),
@@ -96,7 +96,7 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
       builder: (ctx) => AlertDialog(
         title: const Text('Delete person?'),
         content: const Text(
-          'Removes this suggested person and its face links. '
+          'Removes this suggested person and its face assignments. '
           'You can re-analyze photos later to recreate matches.',
         ),
         actions: [
@@ -206,11 +206,11 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
               ),
               const SizedBox(width: 8),
               FilledButton(
-                key: const Key('person-rename-save'),
+                key: const Key('person-rename-done'),
                 onPressed: controller.isBusy
                     ? null
                     : () => _saveRename(controller),
-                child: const Text('Save'),
+                child: const Text('Done'),
               ),
               if (!_isUnnamed(detail))
                 TextButton(
@@ -258,8 +258,7 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
               onReassignTargetChanged: (value) {
                 setState(() => _reassignTarget[appearance.id] = value);
               },
-              onUnlink: () => controller.unlink(appearance.id),
-              onSplit: () => controller.split([appearance.id]),
+              onUnassign: () => controller.unlink(appearance.id),
               onOpenItem: appearance.itemId == null
                   ? null
                   : () => _openItem(appearance.itemId!),
@@ -272,7 +271,11 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
               onReassign: () {
                 final target = _reassignTarget[appearance.id];
                 if (target == null || target.isEmpty) return;
-                controller.reassign(appearance.id, target);
+                if (target == _AppearanceCard.newPersonSentinel) {
+                  controller.reassign(appearance.id, null);
+                } else {
+                  controller.reassign(appearance.id, target);
+                }
               },
             ),
       ],
@@ -331,20 +334,21 @@ class _AppearanceCard extends StatelessWidget {
     required this.busy,
     required this.reassignTarget,
     required this.onReassignTargetChanged,
-    required this.onUnlink,
-    required this.onSplit,
+    required this.onUnassign,
     required this.onReassign,
     this.onOpenItem,
     this.onExclude,
   });
+
+  /// Sentinel dropdown value: create a new person, then assign.
+  static const newPersonSentinel = '__new_person__';
 
   final PersonAppearance appearance;
   final List<Person> otherPersons;
   final bool busy;
   final String reassignTarget;
   final ValueChanged<String> onReassignTargetChanged;
-  final VoidCallback onUnlink;
-  final VoidCallback onSplit;
+  final VoidCallback onUnassign;
   final VoidCallback onReassign;
   final VoidCallback? onOpenItem;
   final VoidCallback? onExclude;
@@ -428,14 +432,9 @@ class _AppearanceCard extends StatelessWidget {
                   child: const Text('Exclude from photo'),
                 ),
               OutlinedButton(
-                key: Key('appearance-unlink-${appearance.id}'),
-                onPressed: busy ? null : onUnlink,
-                child: const Text('Unlink'),
-              ),
-              OutlinedButton(
-                key: Key('appearance-split-${appearance.id}'),
-                onPressed: busy ? null : onSplit,
-                child: const Text('Split'),
+                key: Key('appearance-unassign-${appearance.id}'),
+                onPressed: busy ? null : onUnassign,
+                child: const Text('Unassign'),
               ),
             ],
           ),
@@ -453,6 +452,10 @@ class _AppearanceCard extends StatelessWidget {
                     isDense: true,
                   ),
                   items: [
+                    const DropdownMenuItem(
+                      value: newPersonSentinel,
+                      child: Text('New person'),
+                    ),
                     for (final person in otherPersons)
                       DropdownMenuItem(
                         value: person.id,

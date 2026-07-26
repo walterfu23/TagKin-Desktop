@@ -1161,13 +1161,15 @@ enum ProcessingStatus {
 
 class ReassignAppearance {
   const ReassignAppearance({
-    required this.personId,
+    this.personId,
   });
 
-  final String personId;
+  /// Existing person, or null to create a new person then assign.
+  final String? personId;
 
-  factory ReassignAppearance.fromJson(Map<String, dynamic> json) => ReassignAppearance(
-        personId: json['personId'] as String,
+  factory ReassignAppearance.fromJson(Map<String, dynamic> json) =>
+      ReassignAppearance(
+        personId: json['personId'] as String?,
       );
 
   Map<String, dynamic> toJson() {

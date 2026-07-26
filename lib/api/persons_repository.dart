@@ -61,7 +61,7 @@ class PersonsRepository {
     return Person.fromJson(json);
   }
 
-  /// `POST /persons/{id}/confirm` — move suggested → confirmed (R6).
+  /// `POST /persons/{id}/confirm` — move suggested → confirmed (R6). Save in UI.
   Future<PersonDetail> confirmPerson(String personId) async {
     final response = await _client.post('/persons/$personId/confirm');
     final json = jsonDecode(response.body);
@@ -74,26 +74,7 @@ class PersonsRepository {
     return PersonDetail.fromJson(json);
   }
 
-  /// `POST /persons/{id}/split` — move appearances onto a new person (R6).
-  Future<PersonDetail> splitPerson(
-    String personId,
-    List<String> appearanceIds,
-  ) async {
-    final response = await _client.post(
-      '/persons/$personId/split',
-      body: SplitPerson(appearanceIds: appearanceIds).toJson(),
-    );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected split-person response shape',
-      );
-    }
-    return PersonDetail.fromJson(json);
-  }
-
-  /// `POST /persons/appearances/{id}/unlink` — clear personId (R6).
+  /// `POST /persons/appearances/{id}/unlink` — clear personId / unassign (R6).
   Future<PersonAppearance> unlinkAppearance(String appearanceId) async {
     final response = await _client.post(
       '/persons/appearances/$appearanceId/unlink',
@@ -109,9 +90,10 @@ class PersonsRepository {
   }
 
   /// `POST /persons/appearances/{id}/reassign` — move to another person (R6).
+  /// Pass [personId] null to create a new person then assign.
   Future<PersonAppearance> reassignAppearance(
     String appearanceId,
-    String personId,
+    String? personId,
   ) async {
     final response = await _client.post(
       '/persons/appearances/$appearanceId/reassign',

@@ -15,16 +15,14 @@ class FakePersonsRepository implements PersonsRepository {
   final Object? getError;
 
   final List<String> confirmCalls = <String>[];
-  final List<({String personId, List<String> appearanceIds})> splitCalls =
-      <({String personId, List<String> appearanceIds})>[];
   final List<String> unlinkCalls = <String>[];
-  final List<({String appearanceId, String personId})> reassignCalls =
-      <({String appearanceId, String personId})>[];
+  final List<({String appearanceId, String? personId})> reassignCalls =
+      <({String appearanceId, String? personId})>[];
   final List<({String personId, String? name})> renameCalls =
       <({String personId, String? name})>[];
   final List<String> deleteCalls = <String>[];
 
-  int _splitCounter = 0;
+  int _newPersonCounter = 0;
 
   @override
   Future<List<Person>> listPersons({LinkState? linkState}) async {
@@ -109,58 +107,6 @@ class FakePersonsRepository implements PersonsRepository {
   }
 
   @override
-  Future<PersonDetail> splitPerson(
-    String personId,
-    List<String> appearanceIds,
-  ) async {
-    splitCalls.add((personId: personId, appearanceIds: appearanceIds));
-    final index = _persons.indexWhere((p) => p.id == personId);
-    if (index < 0) {
-      throw ApiException(statusCode: 404, message: 'Not found');
-    }
-    final prev = _persons[index];
-    final moving = prev.appearances
-        .where((a) => appearanceIds.contains(a.id))
-        .toList();
-    if (moving.isEmpty) {
-      throw ApiException(statusCode: 400, message: 'No appearances to split');
-    }
-    final remaining = prev.appearances
-        .where((a) => !appearanceIds.contains(a.id))
-        .toList();
-    _persons[index] = PersonDetail(
-      id: prev.id,
-      name: prev.name,
-      linkState: prev.linkState,
-      createdAt: prev.createdAt,
-      appearances: remaining,
-    );
-
-    _splitCounter += 1;
-    final newId = 'person_split_$_splitCounter';
-    final created = PersonDetail(
-      id: newId,
-      name: null,
-      linkState: LinkState.suggested,
-      createdAt: '2026-07-20T00:00:00.000Z',
-      appearances: moving
-          .map(
-            (a) => PersonAppearance(
-              id: a.id,
-              personId: newId,
-              itemId: a.itemId,
-              keyPeriodId: a.keyPeriodId,
-              linkState: LinkState.suggested,
-              createdAt: a.createdAt,
-            ),
-          )
-          .toList(),
-    );
-    _persons.add(created);
-    return created;
-  }
-
-  @override
   Future<PersonAppearance> unlinkAppearance(String appearanceId) async {
     unlinkCalls.add(appearanceId);
     for (var i = 0; i < _persons.length; i++) {
@@ -192,7 +138,7 @@ class FakePersonsRepository implements PersonsRepository {
   @override
   Future<PersonAppearance> reassignAppearance(
     String appearanceId,
-    String personId,
+    String? personId,
   ) async {
     reassignCalls.add((appearanceId: appearanceId, personId: personId));
     PersonAppearance? found;
@@ -215,14 +161,30 @@ class FakePersonsRepository implements PersonsRepository {
     if (found == null) {
       throw ApiException(statusCode: 404, message: 'Not found');
     }
-    final targetIndex = _persons.indexWhere((p) => p.id == personId);
+
+    var targetPersonId = personId;
+    if (targetPersonId == null) {
+      _newPersonCounter += 1;
+      targetPersonId = 'person_new_$_newPersonCounter';
+      _persons.add(
+        PersonDetail(
+          id: targetPersonId,
+          name: null,
+          linkState: LinkState.confirmed,
+          createdAt: '2026-07-20T00:00:00.000Z',
+          appearances: const [],
+        ),
+      );
+    }
+
+    final targetIndex = _persons.indexWhere((p) => p.id == targetPersonId);
     if (targetIndex < 0) {
       throw ApiException(statusCode: 404, message: 'Target person not found');
     }
     final target = _persons[targetIndex];
     final moved = PersonAppearance(
       id: found.id,
-      personId: personId,
+      personId: targetPersonId,
       itemId: found.itemId,
       keyPeriodId: found.keyPeriodId,
       linkState: LinkState.confirmed,

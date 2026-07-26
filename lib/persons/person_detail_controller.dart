@@ -7,7 +7,7 @@ import 'package:tagkin_desktop/contract/contract.dart';
 /// Lifecycle of a per-person detail controller (D9).
 enum PersonDetailPhase { idle, loading, ready, busy, error }
 
-/// Owns load + confirm / split / unlink / reassign / rename for one person.
+/// Owns load + confirm (Save) / unassign / reassign / rename for one person.
 ///
 /// Never sends `ownerUserId` (R10). Never handles likeness vectors or pixels
 /// (R1). Similarity matching stays server-side (R8/§4).
@@ -55,7 +55,7 @@ class PersonDetailController extends ChangeNotifier {
     }
   }
 
-  /// Confirms this person's suggested appearance-links (R6).
+  /// Saves this person (suggested → confirmed) (R6).
   Future<void> confirm() async {
     if (!canConfirm) return;
     phase = PersonDetailPhase.busy;
@@ -76,34 +76,7 @@ class PersonDetailController extends ChangeNotifier {
     }
   }
 
-  /// Moves [appearanceIds] onto a newly created person (R6).
-  ///
-  /// Reloads this person afterward so the split appearances disappear here.
-  Future<PersonDetail?> split(List<String> appearanceIds) async {
-    if (detail == null || isBusy || appearanceIds.isEmpty) return null;
-    phase = PersonDetailPhase.busy;
-    error = null;
-    notifyListeners();
-
-    try {
-      final created = await personsRepository.splitPerson(
-        personId,
-        appearanceIds,
-      );
-      if (_disposed) return null;
-      // Refresh this person + other-persons list (new person is a reassign target).
-      await load();
-      return created;
-    } catch (e) {
-      if (_disposed) return null;
-      error = e;
-      phase = PersonDetailPhase.error;
-      notifyListeners();
-      return null;
-    }
-  }
-
-  /// Clears [appearanceId]'s personId (R6 — always reversible).
+  /// Clears [appearanceId]'s personId — unassign (R6 — always reversible).
   Future<void> unlink(String appearanceId) async {
     if (detail == null || isBusy) return;
     phase = PersonDetailPhase.busy;
@@ -122,8 +95,9 @@ class PersonDetailController extends ChangeNotifier {
     }
   }
 
-  /// Moves [appearanceId] onto [targetPersonId] as confirmed (R6).
-  Future<void> reassign(String appearanceId, String targetPersonId) async {
+  /// Moves [appearanceId] onto [targetPersonId], or creates a new person when
+  /// [targetPersonId] is null (R6).
+  Future<void> reassign(String appearanceId, String? targetPersonId) async {
     if (detail == null || isBusy) return;
     phase = PersonDetailPhase.busy;
     error = null;

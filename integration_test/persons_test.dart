@@ -1,4 +1,4 @@
-// D9 Person Linking UI integration: suggested → confirm, split, unlink
+// D9 Person Linking UI integration: suggested → Save, reassign new, unassign
 // against mocked API (§5).
 //   flutter test integration_test/persons_test.dart -d macos
 //   flutter test integration_test/persons_test.dart -d windows
@@ -20,7 +20,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-      'persons: confirm suggested → confirmed; split; unlink',
+      'persons: Save suggested → confirmed; reassign new; unassign',
       (WidgetTester tester) async {
     final item = fixtureItem(
       id: 'item_p',
@@ -74,28 +74,33 @@ void main() {
     expect(find.byKey(const Key('persons-section-suggested')), findsOneWidget);
     expect(find.text('Sam'), findsOneWidget);
 
-    // Open person detail and confirm.
+    // Open person detail and Save.
     await tester.tap(find.byKey(const Key('person-row-person_1')));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('person-detail')), findsOneWidget);
-    expect(find.byKey(const Key('person-confirm')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('person-confirm')));
+    expect(find.byKey(const Key('person-save')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('person-save')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('person-confirm')), findsNothing);
+    expect(find.byKey(const Key('person-save')), findsNothing);
     expect(persons.confirmCalls, ['person_1']);
 
-    // Split an appearance off.
-    await tester.tap(find.byKey(const Key('appearance-split-ap_2')));
+    // Reassign an appearance onto a new person.
+    await tester.tap(find.byKey(const Key('appearance-reassign-select-ap_2')));
     await tester.pumpAndSettle();
-    expect(persons.splitCalls.single.appearanceIds, ['ap_2']);
+    await tester.tap(find.text('New person').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('appearance-reassign-ap_2')));
+    await tester.pumpAndSettle();
+    expect(persons.reassignCalls.single.appearanceId, 'ap_2');
+    expect(persons.reassignCalls.single.personId, isNull);
 
-    // Unlink the remaining appearance (undo path).
-    await tester.tap(find.byKey(const Key('appearance-unlink-ap_1')));
+    // Unassign the remaining appearance (undo path).
+    await tester.tap(find.byKey(const Key('appearance-unassign-ap_1')));
     await tester.pumpAndSettle();
     expect(persons.unlinkCalls, ['ap_1']);
 
-    // Back to list — confirmed section should include Sam; split person too.
+    // Back to list — confirmed section should include Sam.
     await tester.pageBack();
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('persons-section-confirmed')), findsOneWidget);

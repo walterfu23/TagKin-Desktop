@@ -162,57 +162,6 @@ void main() {
       client.close();
     });
 
-    test('splitPerson posts appearanceIds only — no owner (R10)', () async {
-      final mock = MockClient((request) async {
-        expect(request.method, 'POST');
-        expect(request.url.path, '/persons/person_1/split');
-        final body = jsonDecode(request.body) as Map<String, dynamic>;
-        expect(body.keys.toSet(), {'appearanceIds'});
-        expect(body['appearanceIds'], ['ap_1']);
-        expect(body.containsKey('ownerUserId'), isFalse);
-        return http.Response(
-          jsonEncode(_personDetailJson(id: 'person_new')),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      });
-      final client = ApiClient(
-        baseUrl: 'http://api.test',
-        tokenProvider: () => 'tok',
-        httpClient: mock,
-      )..recordRequests = true;
-      final created = await PersonsRepository(client).splitPerson(
-        'person_1',
-        ['ap_1'],
-      );
-      expect(created.id, 'person_new');
-      for (final r in client.recordedRequests) {
-        expect(r.bodyContainsOwnerField, isFalse);
-      }
-      client.close();
-    });
-
-    test('unlinkAppearance posts to appearances/{id}/unlink', () async {
-      final mock = MockClient((request) async {
-        expect(request.method, 'POST');
-        expect(request.url.path, '/persons/appearances/ap_1/unlink');
-        return http.Response(
-          jsonEncode(_appearanceJson(id: 'ap_1', personId: null)),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      });
-      final client = ApiClient(
-        baseUrl: 'http://api.test',
-        tokenProvider: () => 'tok',
-        httpClient: mock,
-      );
-      final appearance =
-          await PersonsRepository(client).unlinkAppearance('ap_1');
-      expect(appearance.personId, isNull);
-      client.close();
-    });
-
     test('reassignAppearance posts personId only — no owner (R10)', () async {
       final mock = MockClient((request) async {
         expect(request.method, 'POST');
@@ -247,6 +196,61 @@ void main() {
       for (final r in client.recordedRequests) {
         expect(r.bodyContainsOwnerField, isFalse);
       }
+      client.close();
+    });
+
+    test('reassignAppearance with null personId creates then assigns (R6)',
+        () async {
+      final mock = MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/persons/appearances/ap_1/reassign');
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body.keys.toSet(), {'personId'});
+        expect(body['personId'], isNull);
+        return http.Response(
+          jsonEncode(
+            _appearanceJson(
+              id: 'ap_1',
+              personId: 'person_new',
+              linkState: 'confirmed',
+            ),
+          ),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      final client = ApiClient(
+        baseUrl: 'http://api.test',
+        tokenProvider: () => 'tok',
+        httpClient: mock,
+      );
+      final appearance = await PersonsRepository(client).reassignAppearance(
+        'ap_1',
+        null,
+      );
+      expect(appearance.personId, 'person_new');
+      expect(appearance.linkState, LinkState.confirmed);
+      client.close();
+    });
+
+    test('unlinkAppearance posts to appearances/{id}/unlink', () async {
+      final mock = MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/persons/appearances/ap_1/unlink');
+        return http.Response(
+          jsonEncode(_appearanceJson(id: 'ap_1', personId: null)),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      final client = ApiClient(
+        baseUrl: 'http://api.test',
+        tokenProvider: () => 'tok',
+        httpClient: mock,
+      );
+      final appearance =
+          await PersonsRepository(client).unlinkAppearance('ap_1');
+      expect(appearance.personId, isNull);
       client.close();
     });
 
