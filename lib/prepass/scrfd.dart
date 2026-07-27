@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
@@ -29,7 +28,6 @@ class ScrfdFace {
 ///
 /// Flutter ONNX may return outputs alphabetically by name (`448`,`451`,…) which
 /// interleaves score/bbox/kps and breaks decode. Classify by trailing dim instead.
-@visibleForTesting
 List<Float32List>? orderScrfdOutputsByShape(
   List<({Float32List data, List<int> shape})> raw, {
   int detSize = 640,
@@ -107,7 +105,6 @@ double maxScrfdScore(List<Float32List> orderedScores3) {
 /// Decode InsightFace buffalo_l `det_10g` outputs (9 tensors, strides 8/16/32).
 ///
 /// [netOuts] must be in order: score×3, bbox×3, kps×3 (see [orderScrfdOutputsByShape]).
-@visibleForTesting
 List<ScrfdFace> decodeScrfdOutputs({
   required List<Float32List> netOuts,
   required int inputHeight,
@@ -211,7 +208,6 @@ List<ScrfdFace> decodeScrfdOutputs({
 
 /// Letterbox [src] into [detSize]² (top-left), return pad image + scale
 /// (resized_h / src_h). Matches InsightFace SCRFD preprocess.
-@visibleForTesting
 ({img.Image detImg, double detScale, int newW, int newH}) letterboxForScrfd(
   img.Image src, {
   int detSize = 640,

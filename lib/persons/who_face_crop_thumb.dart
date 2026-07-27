@@ -62,78 +62,109 @@ class _WhoFaceCropThumbState extends ConsumerState<WhoFaceCropThumb> {
   }
 
   Future<_CropLoad> _load() async {
-    final items = ref.read(itemsRepositoryProvider);
-    TagRegion? region = widget.region;
-    String? whoLabel;
-    if (region == null) {
-      final knowledge =
-          widget.knowledge ?? await items.getKnowledge(widget.itemId);
-      Tag? tag;
-      for (final t in knowledge.tags) {
-        if (t.id == widget.tagId) {
-          tag = t;
-          break;
+    try {
+      final items = ref.read(itemsRepositoryProvider);
+      TagRegion? region = widget.region;
+      String? whoLabel;
+      if (region == null) {
+        final knowledge =
+            widget.knowledge ?? await items.getKnowledge(widget.itemId);
+        Tag? tag;
+        for (final t in knowledge.tags) {
+          if (t.id == widget.tagId) {
+            tag = t;
+            break;
+          }
         }
+        if (tag == null || tag.region == null) {
+          return const _CropLoad(bytes: null, whoLabel: null);
+        }
+        region = tag.region;
+        whoLabel = tag.value.trim().isEmpty ? null : tag.value.trim();
       }
-      if (tag == null || tag.region == null) {
-        return const _CropLoad(bytes: null, whoLabel: null);
+      final item = await items.getItem(widget.itemId);
+      final media = await resolveLocalMedia(item);
+      if (!canCropLocalMediaForDisplay(media)) {
+        debugPrint(
+          'WhoFaceCropThumb ${widget.itemId}/${widget.tagId}: media '
+          '${media.status.name} path=${media.path}',
+        );
+        return _CropLoad(bytes: null, whoLabel: whoLabel);
       }
-      region = tag.region;
-      whoLabel = tag.value.trim().isEmpty ? null : tag.value.trim();
+      final fileBytes = await media.file!.readAsBytes();
+      final crop = await cropWhoFaceJpegAsync(fileBytes, region!);
+      if (crop == null) {
+        debugPrint(
+          'WhoFaceCropThumb ${widget.itemId}/${widget.tagId}: crop decode '
+          'failed (${fileBytes.length} bytes)',
+        );
+      }
+      return _CropLoad(bytes: crop, whoLabel: whoLabel);
+    } catch (e, st) {
+      debugPrint('WhoFaceCropThumb ${widget.itemId}/${widget.tagId}: $e\n$st');
+      return const _CropLoad(bytes: null, whoLabel: null);
     }
-    final item = await items.getItem(widget.itemId);
-    final media = await resolveLocalMedia(item);
-    if (!media.isAvailable || media.file == null) {
-      return _CropLoad(bytes: null, whoLabel: whoLabel);
-    }
-    final fileBytes = await media.file!.readAsBytes();
-    final crop = cropWhoFaceJpeg(fileBytes, region!);
-    return _CropLoad(bytes: crop, whoLabel: whoLabel);
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final dim = widget.fill ? null : widget.size;
     return FutureBuilder<_CropLoad>(
       future: _future,
       builder: (context, snapshot) {
         final load = snapshot.data;
-        final spinnerSide = widget.fill ? 24.0 : widget.size * 0.35;
-        final iconSide = widget.fill ? 28.0 : widget.size * 0.45;
-        final child = switch (snapshot.connectionState) {
-          ConnectionState.waiting => Center(
-              child: SizedBox(
-                width: spinnerSide,
-                height: spinnerSide,
-                child: const CircularProgressIndicator(strokeWidth: 2),
+        Widget body(double side) {
+          final spinnerSide = side * 0.35;
+          final iconSide = side * 0.45;
+          final child = switch (snapshot.connectionState) {
+            ConnectionState.waiting => Center(
+                child: SizedBox(
+                  width: spinnerSide.clamp(12, 24),
+                  height: spinnerSide.clamp(12, 24),
+                  child: const CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            _ when load?.bytes != null => SelectionContainer.disabled(
+                child: Image.memory(
+                  load!.bytes!,
+                  fit: BoxFit.cover,
+                  width: side,
+                  height: side,
+                  gaplessPlayback: true,
+                ),
+              ),
+            _ => Icon(
+                Icons.person_outline,
+                size: iconSide.clamp(14, 28),
+                color: scheme.onSurfaceVariant,
+              ),
+          };
+          return Tooltip(
+            message: load?.whoLabel ?? 'Who face',
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(widget.borderRadius),
+              child: Container(
+                key: Key('who-face-thumb-${widget.tagId}'),
+                width: side,
+                height: side,
+                color: scheme.surfaceContainerHighest,
+                alignment: Alignment.center,
+                child: child,
               ),
             ),
-          _ when load?.bytes != null => Image.memory(
-              load!.bytes!,
-              fit: BoxFit.cover,
-              width: double.infinity,
-              height: double.infinity,
-              gaplessPlayback: true,
-            ),
-          _ => Icon(
-              Icons.person_outline,
-              size: iconSide,
-              color: scheme.onSurfaceVariant,
-            ),
-        };
-        return Tooltip(
-          message: load?.whoLabel ?? 'Who face',
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(widget.borderRadius),
-            child: Container(
-              key: Key('who-face-thumb-${widget.tagId}'),
-              width: dim,
-              height: dim,
-              color: scheme.surfaceContainerHighest,
-              alignment: Alignment.center,
-              child: widget.fill ? SizedBox.expand(child: child) : child,
-            ),
+          );
+        }
+
+        if (!widget.fill) return body(widget.size);
+        return SizedBox.expand(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final side = constraints.biggest.shortestSide;
+              if (!side.isFinite || side <= 0) {
+                return body(widget.size);
+              }
+              return body(side);
+            },
           ),
         );
       },

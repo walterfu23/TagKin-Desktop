@@ -80,6 +80,20 @@ void main() {
     final root = Directory('lib/persons');
     for (final entity in root.listSync(recursive: true)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
+      // WhoFaceLinker POSTs likeness vectors only (R1 allows vectors; forbids
+      // media bytes). It is not a display surface — assert no byte upload here.
+      if (entity.path.endsWith('who_face_linker.dart')) {
+        final linker = entity.readAsStringSync();
+        expect(linker.contains('multipart'), isFalse, reason: entity.path);
+        expect(linker.contains('FormData'), isFalse, reason: entity.path);
+        expect(linker.contains('putBytes'), isFalse, reason: entity.path);
+        expect(
+          linker.toLowerCase().contains('imagedata'),
+          isFalse,
+          reason: entity.path,
+        );
+        continue;
+      }
       final source = entity.readAsStringSync();
       expect(
         source.toLowerCase().contains('embedding'),

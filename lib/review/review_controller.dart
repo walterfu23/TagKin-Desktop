@@ -247,6 +247,7 @@ class ReviewController extends ChangeNotifier {
       keyPeriods: snapshot.keyPeriods,
       appearances: snapshot.appearances,
       corrections: snapshot.corrections,
+      whoExclusions: snapshot.whoExclusions,
     );
     phase = ReviewPhase.busy;
     mutationError = null;
@@ -294,6 +295,7 @@ class ReviewController extends ChangeNotifier {
       ],
       appearances: snapshot.appearances,
       corrections: snapshot.corrections,
+      whoExclusions: snapshot.whoExclusions,
     );
     phase = ReviewPhase.busy;
     mutationError = null;
@@ -514,6 +516,7 @@ class ReviewController extends ChangeNotifier {
         keyPeriods: base.keyPeriods,
         appearances: base.appearances,
         corrections: base.corrections,
+        whoExclusions: base.whoExclusions,
       );
     }
     return ItemKnowledge(
@@ -534,6 +537,7 @@ class ReviewController extends ChangeNotifier {
       ],
       appearances: base.appearances,
       corrections: base.corrections,
+      whoExclusions: base.whoExclusions,
     );
   }
 
@@ -574,6 +578,7 @@ class ReviewController extends ChangeNotifier {
       ],
       appearances: base.appearances,
       corrections: base.corrections,
+      whoExclusions: base.whoExclusions,
     );
   }
 
@@ -593,6 +598,7 @@ class ReviewController extends ChangeNotifier {
       ],
       appearances: base.appearances,
       corrections: base.corrections,
+      whoExclusions: base.whoExclusions,
     );
   }
 

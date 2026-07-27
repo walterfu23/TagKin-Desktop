@@ -90,6 +90,7 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
           keyPeriods: knowledge.keyPeriods,
           appearances: knowledge.appearances,
           corrections: [...knowledge.corrections, correction],
+          whoExclusions: knowledge.whoExclusions,
         ),
       );
     } else {
@@ -113,6 +114,7 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
           ],
           appearances: knowledge.appearances,
           corrections: [...knowledge.corrections, correction],
+          whoExclusions: knowledge.whoExclusions,
         ),
       );
     }
@@ -203,6 +205,7 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
           ],
           appearances: knowledge.appearances,
           corrections: [...knowledge.corrections, correction],
+          whoExclusions: knowledge.whoExclusions,
         ),
       );
       return TagMutationResult(tag: removed, correction: correction);
@@ -248,6 +251,7 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
         keyPeriods: knowledge.keyPeriods,
         appearances: knowledge.appearances,
         corrections: [...knowledge.corrections, correction],
+        whoExclusions: knowledge.whoExclusions,
       ),
     );
     return CapturedAtMutationResult(item: updated, correction: correction);
@@ -289,6 +293,7 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
           keyPeriods: keyPeriods,
           appearances: knowledge.appearances,
           corrections: [...knowledge.corrections, correction],
+          whoExclusions: knowledge.whoExclusions,
         ),
       );
       return KeyPeriodMutationResult(
@@ -405,6 +410,7 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
           keyPeriods: restoredKeyPeriods,
           appearances: knowledge.appearances,
           corrections: remaining,
+          whoExclusions: knowledge.whoExclusions,
         ),
       );
       return UndoCorrectionResult(
@@ -467,6 +473,7 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
       ],
       appearances: knowledge.appearances,
       corrections: [...knowledge.corrections, correction],
+      whoExclusions: knowledge.whoExclusions,
     );
   }
 }

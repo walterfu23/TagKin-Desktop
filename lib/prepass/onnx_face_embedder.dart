@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
@@ -264,11 +263,10 @@ class FaceModelPaths {
 /// ONNX Runtime face recognizer + optional SCRFD detector. Outputs 512-d L2 vectors.
 class OnnxFaceEmbedder implements FaceEmbedder {
   OnnxFaceEmbedder._({
-    required OrtSession recog,
-    OrtSession? det,
+    required this._recog,
+    this._det,
     required this.modelId,
-  })  : _recog = recog,
-        _det = det;
+  });
 
   final OrtSession _recog;
   final OrtSession? _det;
@@ -285,13 +283,12 @@ class OnnxFaceEmbedder implements FaceEmbedder {
   /// Falls back to on-disk paths when assets are not bundled.
   static Future<OnnxFaceEmbedder?> tryCreate() async {
     if (kIsWeb) return null;
-
-    final fromAsset = await _tryCreateFromAsset();
-    if (fromAsset != null) return fromAsset;
-
-    final paths = await FaceModelPaths.resolveForOrtSession();
-    if (!paths.hasRecog) return null;
     try {
+      final fromAsset = await _tryCreateFromAsset();
+      if (fromAsset != null) return fromAsset;
+
+      final paths = await FaceModelPaths.resolveForOrtSession();
+      if (!paths.hasRecog) return null;
       final ort = OnnxRuntime();
       final recog = await ort.createSession(paths.recogPath!);
       OrtSession? det;
@@ -310,9 +307,7 @@ class OnnxFaceEmbedder implements FaceEmbedder {
         modelId: kOnnxArcfaceEmbeddingModelId,
       );
     } catch (e, st) {
-      debugPrint(
-        'OnnxFaceEmbedder: failed to load models from ${paths.recogPath}: $e\n$st',
-      );
+      debugPrint('OnnxFaceEmbedder: tryCreate failed: $e\n$st');
       return null;
     }
   }
@@ -691,15 +686,21 @@ class LazyOnnxOrStubFaceEmbedder implements FaceEmbedder {
   Future<FaceEmbedder> _ensure() {
     if (_inner != null) return Future.value(_inner!);
     return _loading ??= () async {
-      final onnx = await OnnxFaceEmbedder.tryCreate();
-      _inner = onnx ?? StubFaceEmbedder();
-      if (onnx == null) {
+      try {
+        final onnx = await OnnxFaceEmbedder.tryCreate();
+        _inner = onnx ?? StubFaceEmbedder();
+        if (onnx == null) {
+          markFaceEmbedderStubFallback();
+          debugPrint(
+            'FaceEmbedder: ONNX unavailable (missing models or sandbox load '
+            'failed) — using stub. Run mac/117_fetch_face_models.sh, fully '
+            'restart the app, then re-analyze.',
+          );
+        }
+      } catch (e, st) {
+        debugPrint('FaceEmbedder: ONNX init failed, using stub: $e\n$st');
         markFaceEmbedderStubFallback();
-        debugPrint(
-          'FaceEmbedder: ONNX unavailable (missing models or sandbox load '
-          'failed) — using stub. Run mac/117_fetch_face_models.sh, fully '
-          'restart the app, then re-analyze.',
-        );
+        _inner = StubFaceEmbedder();
       }
       return _inner!;
     }();

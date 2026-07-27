@@ -6,6 +6,7 @@ import 'package:image/image.dart' as img;
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
 import 'package:tagkin_desktop/prepass/face_embedder.dart';
+import 'package:tagkin_desktop/review/local_media_resolver.dart';
 
 import 'fake_items_repository.dart';
 
@@ -57,6 +58,46 @@ void main() {
     expect(crop, isNotNull);
     expect(crop!.length, greaterThan(50));
     expect(img.decodeImage(crop), isNotNull);
+  });
+
+  test('cropWhoFaceJpegAsync returns a non-empty jpeg for a valid region',
+      () async {
+    final image = img.Image(width: 100, height: 100);
+    img.fill(image, color: img.ColorRgb8(200, 100, 50));
+    final bytes = Uint8List.fromList(img.encodeJpg(image));
+    const region = TagRegion(yMin: 0.2, xMin: 0.2, yMax: 0.6, xMax: 0.6);
+    final crop = await cropWhoFaceJpegAsync(bytes, region);
+    expect(crop, isNotNull);
+    expect(crop!.length, greaterThan(50));
+    expect(img.decodeImage(crop), isNotNull);
+  });
+
+  test('canCropLocalMediaForDisplay allows available and hashMismatch', () {
+    final file = File('/tmp/unused');
+    expect(
+      canCropLocalMediaForDisplay(
+        LocalMediaResolution(
+          status: LocalMediaStatus.available,
+          file: file,
+        ),
+      ),
+      isTrue,
+    );
+    expect(
+      canCropLocalMediaForDisplay(
+        LocalMediaResolution(
+          status: LocalMediaStatus.hashMismatch,
+          file: file,
+        ),
+      ),
+      isTrue,
+    );
+    expect(
+      canCropLocalMediaForDisplay(
+        const LocalMediaResolution(status: LocalMediaStatus.accessDenied),
+      ),
+      isFalse,
+    );
   });
 
   test('WhoFaceLinker skips posting when embedder is stub', () async {

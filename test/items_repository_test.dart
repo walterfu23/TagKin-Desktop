@@ -122,6 +122,7 @@ void main() {
             'keyPeriods': [],
             'appearances': [],
             'corrections': [],
+            'whoExclusions': [],
           }),
           200,
           headers: {'content-type': 'application/json'},

@@ -26,6 +26,7 @@ class FaceCropTraysPage extends ConsumerStatefulWidget {
 
 class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   String? _personId;
+  PersonDetailController? _assignedController;
   List<Person> _persons = const [];
   List<PersonAppearance> _unassigned = const [];
   List<WhoExclusion> _excluded = const [];
@@ -42,17 +43,26 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     _personId = widget.initialPersonId;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _reload();
-      final pid = _personId;
-      if (pid != null) {
-        ref.read(personDetailControllerProvider(pid)).load();
-      }
     });
   }
 
   @override
   void dispose() {
+    _assignedController?.dispose();
     _renameController.dispose();
     super.dispose();
+  }
+
+  PersonDetailController _controllerFor(String personId) {
+    final existing = _assignedController;
+    if (existing != null && existing.personId == personId) return existing;
+    existing?.dispose();
+    final next = PersonDetailController(
+      personId: personId,
+      personsRepository: ref.read(personsRepositoryProvider),
+    );
+    _assignedController = next;
+    return next;
   }
 
   Future<void> _reload() async {
@@ -65,12 +75,24 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       final persons = await personsRepo.listPersons();
       final unPage = await personsRepo.listUnassignedAppearances();
       final exPage = await personsRepo.listAccountWhoExclusions();
-      final pid = _personId;
-      if (pid != null) {
-        await ref.read(personDetailControllerProvider(pid)).load();
+
+      // Exclude / unlink can prune the selected person server-side; clear the
+      // dropdown value before rebuild or DropdownButton asserts.
+      var pid = _personId;
+      final stillListed =
+          pid != null && persons.any((p) => p.id == pid);
+      if (pid != null && !stillListed) {
+        _assignedController?.dispose();
+        _assignedController = null;
+        pid = null;
+      } else if (pid != null) {
+        await _controllerFor(pid).load();
       }
+
       if (!mounted) return;
       setState(() {
+        _personId = pid;
+        _renaming = pid == null ? false : _renaming;
         _persons = persons;
         _unassigned = unPage.appearances;
         _excluded = exPage.exclusions;
@@ -86,13 +108,21 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   }
 
   Future<void> _selectPerson(String? id) async {
+    if (id == null) {
+      setState(() {
+        _personId = null;
+        _renaming = false;
+        _assignedController?.dispose();
+        _assignedController = null;
+      });
+      return;
+    }
+    final controller = _controllerFor(id);
     setState(() {
       _personId = id;
       _renaming = false;
     });
-    if (id != null) {
-      await ref.read(personDetailControllerProvider(id)).load();
-    }
+    await controller.load();
     if (mounted) setState(() {});
   }
 
@@ -200,11 +230,10 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Keep the person detail controller alive across tray reloads (autoDispose).
-    final pid = _personId;
-    if (pid != null) {
-      ref.watch(personDetailControllerProvider(pid));
-    }
+    // Local [_assignedController] — do not watch autoDispose
+    // personDetailControllerProvider here (UncontrolledProviderScope + dispose
+    // mid-build asserts "Only one task can be scheduled at a time").
+    final controller = _assignedController;
 
     return Scaffold(
       appBar: AppBar(
@@ -250,7 +279,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Expanded(child: _buildAssignedColumn()),
+                      Expanded(child: _buildAssignedColumn(controller)),
                       const SizedBox(width: 8),
                       Expanded(
                         child: _TrayColumn(
@@ -286,12 +315,14 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     );
   }
 
-  Widget _buildAssignedColumn() {
+  Widget _buildAssignedColumn(PersonDetailController? controller) {
     final pid = _personId;
+    final selectedId =
+        pid != null && _persons.any((p) => p.id == pid) ? pid : null;
     final personSelect = DropdownButtonFormField<String>(
       key: const Key('face-crop-person-select'),
       // ignore: deprecated_member_use
-      value: pid,
+      value: selectedId,
       isExpanded: true,
       decoration: const InputDecoration(
         labelText: 'Person',
@@ -312,7 +343,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
             },
     );
 
-    if (pid == null) {
+    if (selectedId == null || controller == null) {
       return _TrayColumn(
         key: const Key('face-crop-tray-assigned'),
         title: 'Assigned',
@@ -328,7 +359,6 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       );
     }
 
-    final controller = ref.watch(personDetailControllerProvider(pid));
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
@@ -336,7 +366,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         final subtitle = detail?.name ??
             (controller.phase == PersonDetailPhase.loading
                 ? 'Loading…'
-                : pid);
+                : selectedId);
         return _TrayColumn(
           key: const Key('face-crop-tray-assigned'),
           title: 'Assigned',
@@ -627,21 +657,23 @@ class _AppearanceGrid extends StatelessWidget {
         final itemId = a.itemId;
         final tagId = a.tagId;
         final canDrag = !busy && itemId != null && tagId != null;
-        final thumb = _appearanceThumb(a, fill: true);
+        // Fixed size (same as person detail) — fill+expand inside Material/InkWell
+        // often got zero constraints and painted only the grey placeholder.
+        final thumb = _appearanceThumb(a, size: 72);
         final tile = Material(
           key: Key('face-crop-appearance-${a.id}'),
           color: Colors.transparent,
           child: InkWell(
             onTap: busy || itemId == null ? null : () => onOpenItem(itemId),
-            child: thumb,
+            child: Center(child: thumb),
           ),
         );
         if (!canDrag) return tile;
         final data = FaceCropDragData.appearance(
           source: source,
           appearanceId: a.id,
-          itemId: itemId!,
-          tagId: tagId!,
+          itemId: itemId,
+          tagId: tagId,
           personId: a.personId,
           region: a.region,
         );
@@ -652,7 +684,7 @@ class _AppearanceGrid extends StatelessWidget {
             child: SizedBox(
               width: 72,
               height: 72,
-              child: _appearanceThumb(a, fill: true, size: 72),
+              child: _appearanceThumb(a, size: 72),
             ),
           ),
           childWhenDragging: Opacity(opacity: 0.35, child: tile),
@@ -693,14 +725,14 @@ class _ExclusionGrid extends StatelessWidget {
         final thumb = WhoExclusionCropThumb(
           itemId: e.itemId,
           region: e.region,
-          fill: true,
+          size: 72,
         );
         final tile = Material(
           key: Key('face-crop-exclusion-${e.id}'),
           color: Colors.transparent,
           child: InkWell(
             onTap: busy ? null : () => onOpenItem(e.itemId),
-            child: thumb,
+            child: Center(child: thumb),
           ),
         );
         if (busy) return tile;
@@ -721,7 +753,7 @@ class _ExclusionGrid extends StatelessWidget {
               child: WhoExclusionCropThumb(
                 itemId: e.itemId,
                 region: e.region,
-                fill: true,
+                size: 72,
               ),
             ),
           ),

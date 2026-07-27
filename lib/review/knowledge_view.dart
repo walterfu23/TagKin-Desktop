@@ -163,7 +163,7 @@ class _AppearanceRow extends StatelessWidget {
             ? whoTag.value.trim()
             : null;
     final label = [
-      if (whoLabel != null) whoLabel,
+      ?whoLabel,
       'appearance ${appearance.id}',
       if (personId != null) '→ person $personId',
       '(${appearance.linkState.wire})',

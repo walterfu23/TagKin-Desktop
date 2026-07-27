@@ -1,5 +1,5 @@
+import 'dart:io' show Platform;
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
@@ -82,8 +82,12 @@ bool consumeFaceEmbedderStubNotice() {
 
 /// Tiny helper so tests don't need to import foundation internals.
 class PlatformEnvironment {
-  static bool isFlutterTest =
-      const bool.fromEnvironment('FLUTTER_TEST', defaultValue: false);
+  /// True under `flutter test` (process env and/or `--dart-define=FLUTTER_TEST`).
+  static bool get isFlutterTest {
+    if (const bool.fromEnvironment('FLUTTER_TEST')) return true;
+    if (kIsWeb) return false;
+    return Platform.environment['FLUTTER_TEST'] == 'true';
+  }
 }
 
 /// Production: ONNX when models are on disk; stub otherwise (tests inject stub).

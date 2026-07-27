@@ -205,8 +205,10 @@ void main() {
         expect(request.method, 'POST');
         expect(request.url.path, '/persons/appearances/ap_1/reassign');
         final body = jsonDecode(request.body) as Map<String, dynamic>;
-        expect(body.keys.toSet(), {'personId'});
+        // Omit or null personId both mean "create then assign" (OpenAPI / R6).
+        expect(body.keys.toSet().difference({'personId'}), isEmpty);
         expect(body['personId'], isNull);
+        expect(body.containsKey('ownerUserId'), isFalse);
         return http.Response(
           jsonEncode(
             _appearanceJson(

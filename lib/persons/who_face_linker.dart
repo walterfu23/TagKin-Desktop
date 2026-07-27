@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:image/image.dart' as img;
 import 'package:tagkin_desktop/api/items_repository.dart';
@@ -24,10 +25,40 @@ TagRegion refineWhoRegionForEmbed(TagRegion region) {
   return TagRegion(yMin: yMin, xMin: xMin, yMax: yMax, xMax: xMax);
 }
 
+/// True when local file bytes are present for a display crop.
+///
+/// Allows [LocalMediaStatus.hashMismatch] (file is on disk; review surfaces the
+/// mismatch separately). Skips accessDenied / missing / unsupported.
+bool canCropLocalMediaForDisplay(LocalMediaResolution media) {
+  if (media.file == null) return false;
+  return media.status == LocalMediaStatus.available ||
+      media.status == LocalMediaStatus.hashMismatch;
+}
+
 /// JPEG bytes for the refined who face crop, or null if undecodable / empty.
+///
+/// Uses [package:image] only — fine for JPEG/PNG. Prefer
+/// [cropWhoFaceJpegAsync] for UI thumbs (HEIC via Flutter codec on macOS).
 Uint8List? cropWhoFaceJpeg(Uint8List imageBytes, TagRegion region) {
   final decoded = img.decodeImage(imageBytes);
   if (decoded == null) return null;
+  return _cropDecodedToJpeg(decoded, region);
+}
+
+/// Like [cropWhoFaceJpeg], but falls back to Flutter's platform decoder when
+/// `package:image` cannot decode (e.g. HEIC on macOS).
+Future<Uint8List?> cropWhoFaceJpegAsync(
+  Uint8List imageBytes,
+  TagRegion region,
+) async {
+  final sync = cropWhoFaceJpeg(imageBytes, region);
+  if (sync != null) return sync;
+  final decoded = await _decodeWithFlutterCodec(imageBytes);
+  if (decoded == null) return null;
+  return _cropDecodedToJpeg(decoded, region);
+}
+
+Uint8List? _cropDecodedToJpeg(img.Image decoded, TagRegion region) {
   final refined = refineWhoRegionForEmbed(region);
   final w = decoded.width;
   final h = decoded.height;
@@ -55,6 +86,37 @@ Uint8List? cropWhoFaceJpeg(Uint8List imageBytes, TagRegion region) {
   return Uint8List.fromList(img.encodeJpg(cropped, quality: 92));
 }
 
+/// Decode via Flutter engine (HEIC/JPEG/PNG on platforms that support them).
+Future<img.Image?> _decodeWithFlutterCodec(Uint8List imageBytes) async {
+  ui.Codec? codec;
+  ui.Image? frameImage;
+  try {
+    codec = await ui.instantiateImageCodec(imageBytes);
+    final frame = await codec.getNextFrame();
+    frameImage = frame.image;
+    final byteData =
+        await frameImage.toByteData(format: ui.ImageByteFormat.rawRgba);
+    if (byteData == null) return null;
+    final rgba = byteData.buffer.asUint8List(
+      byteData.offsetInBytes,
+      byteData.lengthInBytes,
+    );
+    return img.Image.fromBytes(
+      width: frameImage.width,
+      height: frameImage.height,
+      bytes: rgba.buffer,
+      bytesOffset: rgba.offsetInBytes,
+      rowStride: frameImage.width * 4,
+      order: img.ChannelOrder.rgba,
+    );
+  } catch (_) {
+    return null;
+  } finally {
+    frameImage?.dispose();
+    codec?.dispose();
+  }
+}
+
 /// After analyze: embed each who-tag face crop and POST who-appearances so the
 /// API auto-runs suggested cross-item linking (R6).
 ///
@@ -62,10 +124,9 @@ Uint8List? cropWhoFaceJpeg(Uint8List imageBytes, TagRegion region) {
 /// never match across photos and would mint one Person per face.
 class WhoFaceLinker {
   WhoFaceLinker({
-    required ItemsRepository items,
+    required this._items,
     FaceEmbedder? embedder,
-  })  : _items = items,
-        _embedder = embedder ?? getFaceEmbedder();
+  }) : _embedder = embedder ?? getFaceEmbedder();
 
   final ItemsRepository _items;
   final FaceEmbedder _embedder;

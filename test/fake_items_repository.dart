@@ -102,6 +102,7 @@ class FakeItemsRepository implements ItemsRepository {
       keyPeriods: const [],
       appearances: const [],
       corrections: const [],
+      whoExclusions: const [],
     );
   }
 
@@ -207,6 +208,7 @@ class FakeItemsRepository implements ItemsRepository {
         keyPeriods: existing.keyPeriods,
         appearances: linkPeopleResult,
         corrections: existing.corrections,
+        whoExclusions: existing.whoExclusions,
       );
     }
     return LinkPeopleResponse(appearances: List.from(linkPeopleResult));
@@ -364,6 +366,7 @@ ItemKnowledge fixtureKnowledge({
   List<KeyPeriodKnowledge>? keyPeriods,
   List<PersonAppearance>? appearances,
   List<Correction>? corrections,
+  List<WhoExclusion>? whoExclusions,
 }) {
   final resolved = item ?? fixtureItem(processingStatus: ProcessingStatus.tagged);
   return ItemKnowledge(
@@ -378,5 +381,6 @@ ItemKnowledge fixtureKnowledge({
     keyPeriods: keyPeriods ?? const [],
     appearances: appearances ?? const [],
     corrections: corrections ?? const [],
+    whoExclusions: whoExclusions ?? const [],
   );
 }

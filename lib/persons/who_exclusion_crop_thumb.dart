@@ -10,7 +10,7 @@ import 'package:tagkin_desktop/review/local_media_resolver.dart';
 /// Face crop thumb from a known [TagRegion] (excluded crops, or region on wire).
 ///
 /// Crops locally from [region] (R1: never uploads bytes). When [fill] is true,
-/// expands to the parent (tray grid cell).
+/// expands to the parent (tray grid cell) via [LayoutBuilder].
 class WhoExclusionCropThumb extends ConsumerStatefulWidget {
   const WhoExclusionCropThumb({
     super.key,
@@ -56,57 +56,90 @@ class _WhoExclusionCropThumbState extends ConsumerState<WhoExclusionCropThumb> {
   }
 
   Future<Uint8List?> _load() async {
-    final items = ref.read(itemsRepositoryProvider);
-    final item = await items.getItem(widget.itemId);
-    final media = await resolveLocalMedia(item);
-    if (!media.isAvailable || media.file == null) return null;
-    final fileBytes = await media.file!.readAsBytes();
-    return cropWhoFaceJpeg(fileBytes, widget.region);
+    try {
+      final items = ref.read(itemsRepositoryProvider);
+      final item = await items.getItem(widget.itemId);
+      final media = await resolveLocalMedia(item);
+      if (!canCropLocalMediaForDisplay(media)) {
+        debugPrint(
+          'WhoExclusionCropThumb ${widget.itemId}: media '
+          '${media.status.name} path=${media.path}',
+        );
+        return null;
+      }
+      final fileBytes = await media.file!.readAsBytes();
+      final crop = await cropWhoFaceJpegAsync(fileBytes, widget.region);
+      if (crop == null) {
+        debugPrint(
+          'WhoExclusionCropThumb ${widget.itemId}: crop decode failed '
+          '(${fileBytes.length} bytes)',
+        );
+      }
+      return crop;
+    } catch (e, st) {
+      debugPrint('WhoExclusionCropThumb ${widget.itemId}: $e\n$st');
+      return null;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final dim = widget.fill ? null : widget.size;
     return FutureBuilder<Uint8List?>(
       future: _future,
       builder: (context, snapshot) {
-        final spinnerSide =
-            widget.fill ? 24.0 : widget.size * 0.35;
-        final iconSide = widget.fill ? 28.0 : widget.size * 0.45;
-        final child = switch (snapshot.connectionState) {
-          ConnectionState.waiting => Center(
-              child: SizedBox(
-                width: spinnerSide,
-                height: spinnerSide,
-                child: const CircularProgressIndicator(strokeWidth: 2),
+        Widget body(double side) {
+          final spinnerSide = side * 0.35;
+          final iconSide = side * 0.45;
+          final child = switch (snapshot.connectionState) {
+            ConnectionState.waiting => Center(
+                child: SizedBox(
+                  width: spinnerSide.clamp(12, 24),
+                  height: spinnerSide.clamp(12, 24),
+                  child: const CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            _ when snapshot.data != null => SelectionContainer.disabled(
+                child: Image.memory(
+                  snapshot.data!,
+                  fit: BoxFit.cover,
+                  width: side,
+                  height: side,
+                  gaplessPlayback: true,
+                ),
+              ),
+            _ => Icon(
+                Icons.person_off_outlined,
+                size: iconSide.clamp(14, 28),
+                color: scheme.onSurfaceVariant,
+              ),
+          };
+          return Tooltip(
+            message: widget.tooltip,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(widget.borderRadius),
+              child: Container(
+                key: Key('who-exclusion-thumb-${widget.itemId}'),
+                width: side,
+                height: side,
+                color: scheme.surfaceContainerHighest,
+                alignment: Alignment.center,
+                child: child,
               ),
             ),
-          _ when snapshot.data != null => Image.memory(
-              snapshot.data!,
-              fit: BoxFit.cover,
-              width: double.infinity,
-              height: double.infinity,
-              gaplessPlayback: true,
-            ),
-          _ => Icon(
-              Icons.person_off_outlined,
-              size: iconSide,
-              color: scheme.onSurfaceVariant,
-            ),
-        };
-        return Tooltip(
-          message: widget.tooltip,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(widget.borderRadius),
-            child: Container(
-              key: Key('who-exclusion-thumb-${widget.itemId}'),
-              width: dim,
-              height: dim,
-              color: scheme.surfaceContainerHighest,
-              alignment: Alignment.center,
-              child: widget.fill ? SizedBox.expand(child: child) : child,
-            ),
+          );
+        }
+
+        if (!widget.fill) return body(widget.size);
+        return SizedBox.expand(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final side = constraints.biggest.shortestSide;
+              if (!side.isFinite || side <= 0) {
+                return body(widget.size);
+              }
+              return body(side);
+            },
           ),
         );
       },
