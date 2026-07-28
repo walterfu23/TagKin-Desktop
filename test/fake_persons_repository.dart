@@ -193,6 +193,7 @@ class FakePersonsRepository implements PersonsRepository {
   }
 
   final List<PersonAppearance> unassignedAppearances = <PersonAppearance>[];
+  final List<PersonAppearance> assignedAppearances = <PersonAppearance>[];
   final List<WhoExclusion> accountExclusions = <WhoExclusion>[];
 
   @override
@@ -202,6 +203,27 @@ class FakePersonsRepository implements PersonsRepository {
   }) async {
     final slice = unassignedAppearances.skip(offset).take(limit).toList();
     return UnassignedAppearancesPage(
+      appearances: slice,
+      limit: limit,
+      offset: offset,
+    );
+  }
+
+  @override
+  Future<AssignedAppearancesPage> listAssignedAppearances({
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    // Prefer explicit list; otherwise flatten person details.
+    final source = assignedAppearances.isNotEmpty
+        ? assignedAppearances
+        : [
+            for (final p in _persons)
+              for (final a in p.appearances)
+                if (a.personId != null) a,
+          ];
+    final slice = source.skip(offset).take(limit).toList();
+    return AssignedAppearancesPage(
       appearances: slice,
       limit: limit,
       offset: offset,

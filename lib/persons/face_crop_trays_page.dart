@@ -4,6 +4,7 @@ import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/persons/face_crop_drag.dart';
+import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/persons/person_detail_controller.dart';
 import 'package:tagkin_desktop/persons/who_exclusion_crop_thumb.dart';
 import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
@@ -11,14 +12,24 @@ import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
 /// Side-by-side face-crop trays: Assigned | Unassigned | Excluded.
 ///
+/// Work is scoped to one **leaf folder** at a time (picker in the app bar).
+/// Persons stay library-wide; trays only show crops from the selected folder.
+///
 /// Drag between columns to change crop state. Selecting a person shows rename /
 /// Unassign chrome in the Assigned column (same controller as person detail).
 /// Unassign dissolves the person and moves its crops to Unassigned.
 class FaceCropTraysPage extends ConsumerStatefulWidget {
-  const FaceCropTraysPage({super.key, this.initialPersonId});
+  const FaceCropTraysPage({
+    super.key,
+    this.initialPersonId,
+    this.initialLeafFolder,
+  });
 
   /// When set, load this person into the Assigned column.
   final String? initialPersonId;
+
+  /// When set (and still present in the library), select this leaf folder.
+  final String? initialLeafFolder;
 
   @override
   ConsumerState<FaceCropTraysPage> createState() => _FaceCropTraysPageState();
@@ -28,8 +39,12 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   String? _personId;
   PersonDetailController? _assignedController;
   List<Person> _persons = const [];
+  List<PersonAppearance> _assignedOverview = const [];
   List<PersonAppearance> _unassigned = const [];
   List<WhoExclusion> _excluded = const [];
+  List<String> _leafFolders = const [];
+  String? _leafFolder;
+  Set<String> _scopedItemIds = const {};
   bool _loading = true;
   bool _busy = false;
   Object? _error;
@@ -37,10 +52,13 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   final _renameController = TextEditingController();
   bool _renaming = false;
 
+  static const _trayPageLimit = 500;
+
   @override
   void initState() {
     super.initState();
     _personId = widget.initialPersonId;
+    _leafFolder = widget.initialLeafFolder ?? faceCropLastLeafFolder;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _reload();
     });
@@ -72,9 +90,37 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     });
     try {
       final personsRepo = ref.read(personsRepositoryProvider);
+      final itemsRepo = ref.read(itemsRepositoryProvider);
+      final items = await itemsRepo.listItems();
+      final folders = distinctLeafFolders(items);
+      final folder = resolveLeafFolderSelection(
+        folders: folders,
+        preferred: _leafFolder ?? faceCropLastLeafFolder,
+      );
+      faceCropLastLeafFolder = folder;
+      final scopedIds =
+          folder == null ? <String>{} : itemIdsInLeafFolder(items, folder);
+
       final persons = await personsRepo.listPersons();
-      final unPage = await personsRepo.listUnassignedAppearances();
-      final exPage = await personsRepo.listAccountWhoExclusions();
+      final assignedPage = await personsRepo.listAssignedAppearances(
+        limit: _trayPageLimit,
+      );
+      final unPage = await personsRepo.listUnassignedAppearances(
+        limit: _trayPageLimit,
+      );
+      final exPage = await personsRepo.listAccountWhoExclusions(
+        limit: _trayPageLimit,
+      );
+
+      final assignedOverview = assignedPage.appearances
+          .where((a) => a.itemId != null && scopedIds.contains(a.itemId))
+          .toList();
+      final unassigned = unPage.appearances
+          .where((a) => a.itemId != null && scopedIds.contains(a.itemId))
+          .toList();
+      final excluded = exPage.exclusions
+          .where((e) => scopedIds.contains(e.itemId))
+          .toList();
 
       // Exclude / unlink can prune the selected person server-side; clear the
       // dropdown value before rebuild or DropdownButton asserts.
@@ -97,8 +143,12 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         _personId = pid;
         _renaming = pid == null ? false : _renaming;
         _persons = persons;
-        _unassigned = unPage.appearances;
-        _excluded = exPage.exclusions;
+        _leafFolders = folders;
+        _leafFolder = folder;
+        _scopedItemIds = scopedIds;
+        _assignedOverview = assignedOverview;
+        _unassigned = unassigned;
+        _excluded = excluded;
         _loading = false;
       });
     } catch (e) {
@@ -108,6 +158,20 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         _loading = false;
       });
     }
+  }
+
+  Future<void> _selectLeafFolder(String? folder) async {
+    if (folder == null || folder == _leafFolder) return;
+    faceCropLastLeafFolder = folder;
+    setState(() => _leafFolder = folder);
+    await _reload();
+  }
+
+  List<PersonAppearance> _scopedAppearances(List<PersonAppearance> all) {
+    if (_scopedItemIds.isEmpty) return const [];
+    return all
+        .where((a) => a.itemId != null && _scopedItemIds.contains(a.itemId))
+        .toList();
   }
 
   Future<void> _selectPerson(String? id) async {
@@ -202,7 +266,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           if (data.isExclusion && data.exclusionId != null) {
             await items.undoWhoExclusion(data.itemId, data.exclusionId!);
             final tagId = data.tagId ?? data.createdFromTagId;
-            final page = await persons.listUnassignedAppearances();
+            final page = await persons.listUnassignedAppearances(
+              limit: _trayPageLimit,
+            );
             PersonAppearance? match;
             for (final a in page.appearances) {
               if (a.tagId == tagId) {
@@ -273,6 +339,44 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       appBar: AppBar(
         title: const Text('Face crops'),
         actions: [
+          if (!_loading && _error == null && _leafFolders.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Center(
+                child: SizedBox(
+                  width: 220,
+                  child: DropdownButtonFormField<String>(
+                    key: const Key('face-crop-folder-select'),
+                    // ignore: deprecated_member_use
+                    value: _leafFolder != null &&
+                            _leafFolders.contains(_leafFolder)
+                        ? _leafFolder
+                        : null,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Folder',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                    ),
+                    items: [
+                      for (final folder in _leafFolders)
+                        DropdownMenuItem(
+                          value: folder,
+                          child: Text(
+                            leafFolderLabel(folder),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: _busy ? null : _selectLeafFolder,
+                  ),
+                ),
+              ),
+            ),
           IconButton(
             key: const Key('face-crop-trays-refresh'),
             tooltip: 'Refresh',
@@ -308,7 +412,16 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                     ),
                   ),
                 )
-              : Padding(
+              : _leafFolders.isEmpty
+                  ? const Center(
+                      child: Text(
+                        'No local folders in the library yet.\n'
+                        'Add photos from a folder, then open Face crops.',
+                        key: Key('face-crop-trays-no-folders'),
+                        textAlign: TextAlign.center,
+                      ),
+                    )
+                  : Padding(
                   padding: const EdgeInsets.all(12),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -379,18 +492,38 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     );
 
     if (selectedId == null || controller == null) {
+      final overview = _scopedAppearances(_assignedOverview);
       return _TrayColumn(
         key: const Key('face-crop-tray-assigned'),
         title: 'Assigned',
-        subtitle: 'Select a person',
+        subtitle: overview.isEmpty
+            ? 'Select a person'
+            : '${overview.length} crops in folder',
         header: personSelect,
         onAccept: (d) => _onDrop(FaceCropTray.assigned, d),
-        child: const Center(
-          child: Text(
-            'Choose a person to see assigned crops',
-            key: Key('face-crop-assigned-empty'),
-          ),
-        ),
+        child: overview.isEmpty
+            ? Center(
+                child: Text(
+                  _unassigned.isEmpty && _excluded.isEmpty
+                      ? 'No crops in this folder yet'
+                      : 'No assigned crops in this folder — '
+                          'select a person or check Unassigned',
+                  key: const Key('face-crop-assigned-empty'),
+                  textAlign: TextAlign.center,
+                ),
+              )
+            : _AppearanceGrid(
+                appearances: overview,
+                source: FaceCropTray.assigned,
+                busy: _busy,
+                onOpenItem: _openItem,
+                onAppearanceTap: (a) {
+                  final id = a.personId;
+                  if (id != null) {
+                    _selectPerson(id);
+                  }
+                },
+              ),
       );
     }
 
@@ -454,7 +587,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                         ),
                 )
               : _AppearanceGrid(
-                  appearances: detail.appearances,
+                  appearances: _scopedAppearances(detail.appearances),
                   source: FaceCropTray.assigned,
                   busy: _busy || controller.isBusy,
                   onOpenItem: _openItem,
@@ -660,6 +793,7 @@ class _AppearanceGrid extends StatelessWidget {
     required this.busy,
     required this.onOpenItem,
     this.onNewPerson,
+    this.onAppearanceTap,
   });
 
   final List<PersonAppearance> appearances;
@@ -668,6 +802,8 @@ class _AppearanceGrid extends StatelessWidget {
   final void Function(String itemId) onOpenItem;
   /// When set (Unassigned tray), shows New person on each thumb.
   final void Function(String appearanceId)? onNewPerson;
+  /// When set, overrides the default open-item tap (e.g. select person).
+  final void Function(PersonAppearance appearance)? onAppearanceTap;
 
   @override
   Widget build(BuildContext context) {
@@ -691,11 +827,18 @@ class _AppearanceGrid extends StatelessWidget {
         // Fixed size (same as person detail) — fill+expand inside Material/InkWell
         // often got zero constraints and painted only the grey placeholder.
         final thumb = _appearanceThumb(a, size: 72);
+        final tapHandler = onAppearanceTap;
         final tile = Material(
           key: Key('face-crop-appearance-${a.id}'),
           color: Colors.transparent,
           child: InkWell(
-            onTap: busy || itemId == null ? null : () => onOpenItem(itemId),
+            onTap: busy
+                ? null
+                : tapHandler != null
+                    ? () => tapHandler(a)
+                    : itemId == null
+                        ? null
+                        : () => onOpenItem(itemId),
             child: Center(child: thumb),
           ),
         );
@@ -720,7 +863,7 @@ class _AppearanceGrid extends StatelessWidget {
             clipBehavior: Clip.none,
             children: [
               tile,
-              if (newPersonButton != null) newPersonButton,
+              ?newPersonButton,
             ],
           );
         }
@@ -749,7 +892,7 @@ class _AppearanceGrid extends StatelessWidget {
               childWhenDragging: Opacity(opacity: 0.35, child: tile),
               child: tile,
             ),
-            if (newPersonButton != null) newPersonButton,
+            ?newPersonButton,
           ],
         );
       },
@@ -827,10 +970,12 @@ class _ExclusionGrid extends StatelessWidget {
   }
 }
 
-/// Navigate to the face-crop trays workspace (optionally focused on a person).
+/// Navigate to the face-crop trays workspace (optionally focused on a person
+/// and/or leaf folder).
 Future<void> openFaceCropTrays(
   BuildContext context, {
   String? personId,
+  String? leafFolder,
 }) async {
   final container = ProviderScope.containerOf(context);
   await Navigator.of(context).push<void>(
@@ -838,7 +983,10 @@ Future<void> openFaceCropTrays(
       builder: (_) => SelectableScope(
         child: UncontrolledProviderScope(
           container: container,
-          child: FaceCropTraysPage(initialPersonId: personId),
+          child: FaceCropTraysPage(
+            initialPersonId: personId,
+            initialLeafFolder: leafFolder,
+          ),
         ),
       ),
     ),

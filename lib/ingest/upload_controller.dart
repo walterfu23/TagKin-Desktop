@@ -7,7 +7,7 @@ import 'package:tagkin_desktop/api/items_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart' show itemsRepositoryProvider;
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/model_host_uploader.dart';
-import 'package:tagkin_desktop/ingest/upload_mime.dart';
+import 'package:tagkin_desktop/ingest/model_upload_image.dart';
 import 'package:tagkin_desktop/prepass/frame_sampler.dart';
 import 'package:tagkin_desktop/prepass/prepass_controller.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
@@ -40,10 +40,17 @@ typedef ModelHostPut = Future<ModelHostUploadResult> Function({
   http.Client? httpClient,
 });
 
+/// Prepares path bytes for model-host PUT (overridable in tests).
+typedef PrepareModelUpload = Future<ModelUploadPayload> Function({
+  required String path,
+  required ItemType type,
+  required List<int> rawBytes,
+});
+
 /// Orchestrates D5: for each succeeded D4 [PrePassOutcome], mint a grant,
 /// PUT primary-frame bytes to the model host, and record `analysisRef`.
 ///
-/// - Photo: uploads the whole original local file.
+/// - Photo: uploads the whole original local file (HEIC/HEIF → JPEG first).
 /// - Video: uploads one D4-sampled representative frame (first sample);
 ///   skips when no samples exist.
 ///
@@ -54,14 +61,15 @@ class UploadController extends ChangeNotifier {
     required this.itemsRepository,
     this.putBytes = putBytesToUploadUrl,
     this.readBytes,
+    this.prepareUpload = prepareModelUploadBytes,
   });
 
   final ItemsRepository itemsRepository;
   final ModelHostPut putBytes;
+  final PrepareModelUpload prepareUpload;
 
   /// Override local file reads in tests (defaults to [File.readAsBytes]).
   final Future<List<int>> Function(String path)? readBytes;
-
   UploadPhase phase = UploadPhase.idle;
   Object? error;
   List<UploadOutcome> outcomes = const [];
@@ -118,12 +126,16 @@ class UploadController extends ChangeNotifier {
       }
 
       final path = resolution.file!.path;
-      final mimeType = mimeTypeForPath(path, item.type);
-      final bytes = await _read(path);
+      final rawBytes = await _read(path);
+      final prepared = await prepareUpload(
+        path: path,
+        type: item.type,
+        rawBytes: rawBytes,
+      );
 
       final grant = await itemsRepository.createUploadGrant(
         item.id,
-        CreateUploadGrant(mimeType: mimeType),
+        CreateUploadGrant(mimeType: prepared.mimeType),
       );
 
       String? analysisRef;
@@ -131,8 +143,8 @@ class UploadController extends ChangeNotifier {
         analysisRef = await _putWithExpiryRetry(
           itemId: item.id,
           grant: grant,
-          bytes: bytes,
-          mimeType: mimeType,
+          bytes: prepared.bytes,
+          mimeType: prepared.mimeType,
         );
       } catch (e) {
         final outcome = UploadOutcome(itemId: item.id, error: e);
@@ -227,12 +239,16 @@ class UploadController extends ChangeNotifier {
       return null;
     }
 
-    final mimeType = mimeTypeForPath(primaryPath, item.type);
-    final bytes = await _read(primaryPath);
+    final rawBytes = await _read(primaryPath);
+    final prepared = await prepareUpload(
+      path: primaryPath,
+      type: item.type,
+      rawBytes: rawBytes,
+    );
 
     final grant = await itemsRepository.createUploadGrant(
       item.id,
-      CreateUploadGrant(mimeType: mimeType),
+      CreateUploadGrant(mimeType: prepared.mimeType),
     );
 
     String? analysisRef;
@@ -240,13 +256,12 @@ class UploadController extends ChangeNotifier {
       analysisRef = await _putWithExpiryRetry(
         itemId: item.id,
         grant: grant,
-        bytes: bytes,
-        mimeType: mimeType,
+        bytes: prepared.bytes,
+        mimeType: prepared.mimeType,
       );
     } catch (e) {
       return UploadOutcome(itemId: item.id, error: e);
     }
-
     analysisRef ??= _synthesizeAnalysisRef(item.id, grant.uploadUrl);
 
     final recorded = await itemsRepository.recordAnalysisRef(

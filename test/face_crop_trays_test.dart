@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/persons/face_crop_trays_page.dart';
 
 import 'fake_items_repository.dart';
@@ -18,7 +19,28 @@ Uint8List _solidJpeg() {
   return Uint8List.fromList(img.encodeJpg(image));
 }
 
+FakeItemsRepository _itemsInAlbum(
+  List<String> itemIds, {
+  String album = 'Trip',
+}) {
+  return FakeItemsRepository(
+    items: [
+      for (final id in itemIds)
+        fixtureItem(
+          id: id,
+          sourceRef: 'file:///albums/$album/$id.jpg',
+          processingStatus: ProcessingStatus.tagged,
+          contentHash: null,
+        ),
+    ],
+  );
+}
+
 void main() {
+  setUp(() {
+    faceCropLastLeafFolder = null;
+  });
+
   testWidgets('face crop trays: loads unassigned + excluded columns',
       (tester) async {
     final persons = FakePersonsRepository(
@@ -71,7 +93,9 @@ void main() {
       ProviderScope(
         overrides: [
           personsRepositoryProvider.overrideWithValue(persons),
-          itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
+          itemsRepositoryProvider.overrideWithValue(
+            _itemsInAlbum(['item_a', 'item_u', 'item_e']),
+          ),
         ],
         child: const MaterialApp(
           home: FaceCropTraysPage(initialPersonId: 'person_1'),
@@ -80,6 +104,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.byKey(const Key('face-crop-folder-select')), findsOneWidget);
     expect(find.byKey(const Key('face-crop-tray-assigned')), findsOneWidget);
     expect(find.byKey(const Key('face-crop-tray-unassigned')), findsOneWidget);
     expect(find.byKey(const Key('face-crop-tray-excluded')), findsOneWidget);
@@ -250,7 +275,9 @@ void main() {
       ProviderScope(
         overrides: [
           personsRepositoryProvider.overrideWithValue(persons),
-          itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
+          itemsRepositoryProvider.overrideWithValue(
+            _itemsInAlbum(['item_a']),
+          ),
         ],
         child: const MaterialApp(
           home: FaceCropTraysPage(initialPersonId: 'person_1'),
@@ -306,7 +333,9 @@ void main() {
       ProviderScope(
         overrides: [
           personsRepositoryProvider.overrideWithValue(persons),
-          itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
+          itemsRepositoryProvider.overrideWithValue(
+            _itemsInAlbum(['item_a', 'item_b']),
+          ),
         ],
         child: const MaterialApp(
           home: FaceCropTraysPage(initialPersonId: 'person_named'),
@@ -381,7 +410,9 @@ void main() {
       ProviderScope(
         overrides: [
           personsRepositoryProvider.overrideWithValue(persons),
-          itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
+          itemsRepositoryProvider.overrideWithValue(
+            _itemsInAlbum(['item_a', 'item_b']),
+          ),
         ],
         child: const MaterialApp(
           home: FaceCropTraysPage(initialPersonId: 'person_named'),
@@ -426,7 +457,9 @@ void main() {
       ProviderScope(
         overrides: [
           personsRepositoryProvider.overrideWithValue(persons),
-          itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
+          itemsRepositoryProvider.overrideWithValue(
+            _itemsInAlbum(['item_u']),
+          ),
         ],
         child: const MaterialApp(
           home: FaceCropTraysPage(),
@@ -477,7 +510,9 @@ void main() {
       ProviderScope(
         overrides: [
           personsRepositoryProvider.overrideWithValue(persons),
-          itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
+          itemsRepositoryProvider.overrideWithValue(
+            _itemsInAlbum(['item_a']),
+          ),
         ],
         child: const MaterialApp(
           home: FaceCropTraysPage(initialPersonId: 'person_1'),
@@ -500,5 +535,132 @@ void main() {
     expect(find.byKey(const Key('face-crop-new-person-ap_a')), findsOneWidget);
     expect(find.byKey(const Key('face-crop-person-chrome')), findsNothing);
     expect(find.byKey(const Key('face-crop-assigned-empty')), findsOneWidget);
+  });
+
+  testWidgets(
+      'face crop trays: folder picker scopes unassigned crops',
+      (tester) async {
+    final persons = FakePersonsRepository(persons: const []);
+    persons.unassignedAppearances.addAll([
+      fixtureAppearance(
+        id: 'ap_paris',
+        personId: null,
+        itemId: 'item_paris',
+        tagId: 'tag_paris',
+      ),
+      fixtureAppearance(
+        id: 'ap_rome',
+        personId: null,
+        itemId: 'item_rome',
+        tagId: 'tag_rome',
+      ),
+    ]);
+    final items = FakeItemsRepository(
+      items: [
+        fixtureItem(
+          id: 'item_paris',
+          sourceRef: 'file:///albums/Paris/a.jpg',
+          processingStatus: ProcessingStatus.tagged,
+          contentHash: null,
+        ),
+        fixtureItem(
+          id: 'item_rome',
+          sourceRef: 'file:///albums/Rome/b.jpg',
+          processingStatus: ProcessingStatus.tagged,
+          contentHash: null,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          itemsRepositoryProvider.overrideWithValue(items),
+        ],
+        child: const MaterialApp(
+          home: FaceCropTraysPage(initialLeafFolder: '/albums/Paris'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('face-crop-appearance-ap_paris')), findsOneWidget);
+    expect(find.byKey(const Key('face-crop-appearance-ap_rome')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('face-crop-folder-select')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rome').last);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('face-crop-appearance-ap_rome')), findsOneWidget);
+    expect(find.byKey(const Key('face-crop-appearance-ap_paris')), findsNothing);
+  });
+
+  testWidgets(
+      'face crop trays: assigned overview shows folder crops without person',
+      (tester) async {
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: 'Sam',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_paris',
+              personId: 'person_1',
+              itemId: 'item_paris',
+              tagId: 'tag_paris',
+            ),
+            fixtureAppearance(
+              id: 'ap_rome',
+              personId: 'person_1',
+              itemId: 'item_rome',
+              tagId: 'tag_rome',
+            ),
+          ],
+        ),
+      ],
+    );
+    final items = FakeItemsRepository(
+      items: [
+        fixtureItem(
+          id: 'item_paris',
+          sourceRef: 'file:///albums/Paris/a.jpg',
+          processingStatus: ProcessingStatus.tagged,
+          contentHash: null,
+        ),
+        fixtureItem(
+          id: 'item_rome',
+          sourceRef: 'file:///albums/Rome/b.jpg',
+          processingStatus: ProcessingStatus.tagged,
+          contentHash: null,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          itemsRepositoryProvider.overrideWithValue(items),
+        ],
+        child: const MaterialApp(
+          home: FaceCropTraysPage(initialLeafFolder: '/albums/Paris'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('face-crop-assigned-empty')), findsNothing);
+    expect(find.byKey(const Key('face-crop-appearance-ap_paris')), findsOneWidget);
+    expect(find.byKey(const Key('face-crop-appearance-ap_rome')), findsNothing);
+    expect(find.byKey(const Key('face-crop-person-chrome')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('face-crop-appearance-ap_paris')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('face-crop-person-chrome')), findsOneWidget);
+    expect(find.byKey(const Key('face-crop-person-name')), findsOneWidget);
   });
 }

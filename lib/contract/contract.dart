@@ -133,6 +133,32 @@ class AnalyzeResultResponse {
   }
 }
 
+class AssignedAppearancesPage {
+  const AssignedAppearancesPage({
+    required this.appearances,
+    required this.limit,
+    required this.offset,
+  });
+
+  final List<PersonAppearance> appearances;
+  final int limit;
+  final int offset;
+
+  factory AssignedAppearancesPage.fromJson(Map<String, dynamic> json) => AssignedAppearancesPage(
+        appearances: (json['appearances'] as List<dynamic>).map((e) => PersonAppearance.fromJson(e as Map<String, dynamic>)).toList(),
+        limit: (json['limit'] as num).toInt(),
+        offset: (json['offset'] as num).toInt(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['appearances'] = appearances.map((e) => e.toJson()).toList();
+    json['limit'] = limit;
+    json['offset'] = offset;
+    return json;
+  }
+}
+
 class CancelItemResponse {
   const CancelItemResponse({
     required this.item,

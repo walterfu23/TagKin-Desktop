@@ -115,6 +115,28 @@ class PersonsRepository {
     return UnassignedAppearancesPage.fromJson(json);
   }
 
+  /// `GET /persons/appearances/assigned` — Assigned tray overview (R1: no embeddings).
+  Future<AssignedAppearancesPage> listAssignedAppearances({
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final response = await _client.get(
+      '/persons/appearances/assigned',
+      query: {
+        'limit': '$limit',
+        'offset': '$offset',
+      },
+    );
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected assigned-appearances response shape',
+      );
+    }
+    return AssignedAppearancesPage.fromJson(json);
+  }
+
   /// `GET /persons/exclusions` — Excluded tray across all items.
   Future<AccountWhoExclusionsPage> listAccountWhoExclusions({
     int limit = 100,

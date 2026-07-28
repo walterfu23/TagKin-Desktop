@@ -248,6 +248,51 @@ void main() {
       expect(controller.outcomes.single.succeeded, isTrue);
     });
 
+    test('HEIC path uploads JPEG bytes and mime after prepare', () async {
+      final item = fixtureItem(id: 'photo_heic', type: ItemType.photo);
+      final repo = FakeItemsRepository(items: [item]);
+      List<int>? putBytesCaptured;
+      String? putMime;
+
+      final controller = UploadController(
+        itemsRepository: repo,
+        readBytes: (path) async => [0x00, 0x00, 0x00],
+        prepareUpload: ({
+          required path,
+          required type,
+          required rawBytes,
+        }) async {
+          expect(path, endsWith('.heic'));
+          expect(rawBytes, [0x00, 0x00, 0x00]);
+          return (bytes: [0xFF, 0xD8, 0xFF], mimeType: 'image/jpeg');
+        },
+        putBytes: ({
+          required uploadUrl,
+          required bytes,
+          required mimeType,
+          httpClient,
+        }) async {
+          putBytesCaptured = List<int>.from(bytes);
+          putMime = mimeType;
+          return const ModelHostUploadResult(
+            analysisRef: null,
+            rawBody: 'ok',
+          );
+        },
+      );
+
+      await controller.run(
+        [_prePassOutcome(item: item, path: '/library/shot.heic')],
+        const {},
+      );
+
+      expect(controller.phase, UploadPhase.done);
+      expect(controller.outcomes.single.succeeded, isTrue);
+      expect(putMime, 'image/jpeg');
+      expect(putBytesCaptured, [0xFF, 0xD8, 0xFF]);
+      expect(repo.grantsMinted.single.input.mimeType, 'image/jpeg');
+    });
+
     test('records analysisRef advancing item toward tagging', () async {
       final item = fixtureItem(id: 'photo_ready', type: ItemType.photo);
       final repo = FakeItemsRepository(items: [item]);
