@@ -5,12 +5,11 @@ import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/persons/face_crop_trays_page.dart';
-import 'package:tagkin_desktop/persons/link_state_view.dart';
 import 'package:tagkin_desktop/persons/person_detail_controller.dart';
 import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
-/// Person detail + Save / unassign / reassign / rename (D9).
+/// Person detail + unassign / reassign / rename / delete (D9).
 ///
 /// Never displays likeness vectors (R1). Every merge has a visible undo path
 /// via unassign / reassign (R6).
@@ -71,17 +70,11 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
           appBar: AppBar(
             title: const Text('Person'),
             actions: [
-              if (controller.canDelete)
+              if (controller.canUnassign)
                 TextButton(
-                  key: const Key('person-delete'),
-                  onPressed: () => _confirmDelete(controller),
-                  child: const Text('Delete'),
-                ),
-              if (controller.canConfirm)
-                TextButton(
-                  key: const Key('person-save'),
-                  onPressed: () => controller.confirm(),
-                  child: const Text('Save'),
+                  key: const Key('person-unassign'),
+                  onPressed: () => _confirmUnassign(controller),
+                  child: const Text('Unassign'),
                 ),
               TextButton(
                 key: const Key('person-open-trays'),
@@ -99,14 +92,14 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
     );
   }
 
-  Future<void> _confirmDelete(PersonDetailController controller) async {
+  Future<void> _confirmUnassign(PersonDetailController controller) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete person?'),
+        title: const Text('Unassign person?'),
         content: const Text(
-          'Removes this suggested person and its face assignments. '
-          'You can re-analyze photos later to recreate matches.',
+          'Removes this person. Its face crops move to Unassigned '
+          'so you can assign them again.',
         ),
         actions: [
           TextButton(
@@ -114,15 +107,15 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            key: const Key('person-delete-confirm'),
+            key: const Key('person-unassign-confirm'),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete'),
+            child: const Text('Unassign'),
           ),
         ],
       ),
     );
     if (confirmed != true || !mounted) return;
-    final ok = await controller.delete();
+    final ok = await controller.unassignPerson();
     if (ok && mounted) {
       Navigator.of(context).pop();
     }
@@ -184,7 +177,6 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
             ),
-            LinkStateBadge(linkState: detail.linkState),
           ],
         ),
         const SizedBox(height: 4),
@@ -390,16 +382,9 @@ class _AppearanceCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'appearance ${appearance.id}',
-                            key: Key('appearance-id-${appearance.id}'),
-                          ),
-                        ),
-                        LinkStateBadge(linkState: appearance.linkState),
-                      ],
+                    Text(
+                      'appearance ${appearance.id}',
+                      key: Key('appearance-id-${appearance.id}'),
                     ),
                     if (appearance.itemId != null)
                       Text(

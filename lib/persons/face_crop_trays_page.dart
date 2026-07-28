@@ -4,7 +4,6 @@ import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/persons/face_crop_drag.dart';
-import 'package:tagkin_desktop/persons/link_state_view.dart';
 import 'package:tagkin_desktop/persons/person_detail_controller.dart';
 import 'package:tagkin_desktop/persons/who_exclusion_crop_thumb.dart';
 import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
@@ -13,7 +12,8 @@ import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 /// Side-by-side face-crop trays: Assigned | Unassigned | Excluded.
 ///
 /// Drag between columns to change crop state. Selecting a person shows rename /
-/// Save / Delete chrome in the Assigned column (same controller as person detail).
+/// Unassign chrome in the Assigned column (same controller as person detail).
+/// Unassign dissolves the person and moves its crops to Unassigned.
 class FaceCropTraysPage extends ConsumerStatefulWidget {
   const FaceCropTraysPage({super.key, this.initialPersonId});
 
@@ -84,9 +84,12 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       if (pid != null && !stillListed) {
         _assignedController?.dispose();
         _assignedController = null;
+        _renameController.clear();
         pid = null;
       } else if (pid != null) {
         await _controllerFor(pid).load();
+        _renameController.text =
+            _assignedController?.detail?.name ?? '';
       }
 
       if (!mounted) return;
@@ -112,6 +115,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       setState(() {
         _personId = null;
         _renaming = false;
+        _renameController.clear();
         _assignedController?.dispose();
         _assignedController = null;
       });
@@ -121,9 +125,15 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     setState(() {
       _personId = id;
       _renaming = false;
+      // Clear immediately so an unnamed person never shows the prior name
+      // while load() is in flight.
+      _renameController.clear();
     });
     await controller.load();
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {
+      _renameController.text = controller.detail?.name ?? '';
+    });
   }
 
   Future<void> _openItem(String itemId) async {
@@ -138,6 +148,30 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _createPersonFromAppearance(String appearanceId) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final persons = ref.read(personsRepositoryProvider);
+      final updated = await persons.reassignAppearance(appearanceId, null);
+      final newId = updated.personId;
+      if (newId != null) {
+        _personId = newId;
+      }
+      await _reload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          key: const Key('face-crop-trays-error'),
+          content: Text('New person failed: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _onDrop(FaceCropTray target, FaceCropDragData data) async {
@@ -198,14 +232,14 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     }
   }
 
-  Future<void> _confirmDelete(PersonDetailController controller) async {
+  Future<void> _confirmUnassign(PersonDetailController controller) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete person?'),
+        title: const Text('Unassign person?'),
         content: const Text(
-          'Removes this suggested person and its face assignments. '
-          'You can re-analyze photos later to recreate matches.',
+          'Removes this person. Its face crops move to Unassigned '
+          'so you can assign them again.',
         ),
         actions: [
           TextButton(
@@ -213,15 +247,15 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            key: const Key('face-crop-person-delete-confirm'),
+            key: const Key('face-crop-person-unassign-confirm'),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete'),
+            child: const Text('Unassign'),
           ),
         ],
       ),
     );
     if (confirmed != true || !mounted) return;
-    final ok = await controller.delete();
+    final ok = await controller.unassignPerson();
     if (ok && mounted) {
       await _selectPerson(null);
       await _reload();
@@ -292,6 +326,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                             source: FaceCropTray.unassigned,
                             busy: _busy,
                             onOpenItem: _openItem,
+                            onNewPerson: _createPersonFromAppearance,
                           ),
                         ),
                       ),
@@ -375,9 +410,11 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               personSelect,
-              if (detail != null) ...[
+              if (detail != null &&
+                  controller.phase == PersonDetailPhase.ready) ...[
                 const SizedBox(height: 8),
                 _PersonChrome(
+                  key: ValueKey('face-crop-person-chrome-${detail.id}'),
                   detail: detail,
                   controller: controller,
                   renameController: _renameController,
@@ -399,8 +436,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                     }
                   },
                   onCancelRename: () => setState(() => _renaming = false),
-                  onSave: () => controller.confirm(),
-                  onDelete: () => _confirmDelete(controller),
+                  onUnassign: () => _confirmUnassign(controller),
                 ),
               ],
             ],
@@ -431,6 +467,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
 
 class _PersonChrome extends StatelessWidget {
   const _PersonChrome({
+    super.key,
     required this.detail,
     required this.controller,
     required this.renameController,
@@ -439,8 +476,7 @@ class _PersonChrome extends StatelessWidget {
     required this.onStartRename,
     required this.onDoneRename,
     required this.onCancelRename,
-    required this.onSave,
-    required this.onDelete,
+    required this.onUnassign,
   });
 
   final PersonDetail detail;
@@ -451,8 +487,7 @@ class _PersonChrome extends StatelessWidget {
   final VoidCallback onStartRename;
   final Future<void> Function() onDoneRename;
   final VoidCallback onCancelRename;
-  final VoidCallback onSave;
-  final VoidCallback onDelete;
+  final VoidCallback onUnassign;
 
   bool get _isUnnamed =>
       detail.name == null || detail.name!.trim().isEmpty;
@@ -471,9 +506,10 @@ class _PersonChrome extends StatelessWidget {
                       key: const Key('face-crop-person-rename'),
                       controller: renameController,
                       enabled: !busy,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Name',
-                        border: OutlineInputBorder(),
+                        hintText: _isUnnamed ? 'Enter a name' : null,
+                        border: const OutlineInputBorder(),
                         isDense: true,
                       ),
                       onSubmitted: (_) => onDoneRename(),
@@ -485,8 +521,6 @@ class _PersonChrome extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
             ),
-            const SizedBox(width: 8),
-            LinkStateBadge(linkState: detail.linkState),
           ],
         ),
         const SizedBox(height: 8),
@@ -498,7 +532,7 @@ class _PersonChrome extends StatelessWidget {
               TextButton(
                 key: const Key('face-crop-person-rename-done'),
                 onPressed: busy ? null : onDoneRename,
-                child: const Text('Done'),
+                child: Text(_isUnnamed && !renaming ? 'Set name' : 'Done'),
               )
             else
               TextButton(
@@ -512,17 +546,11 @@ class _PersonChrome extends StatelessWidget {
                 onPressed: busy ? null : onCancelRename,
                 child: const Text('Cancel'),
               ),
-            if (controller.canConfirm)
+            if (controller.canUnassign)
               TextButton(
-                key: const Key('face-crop-person-save'),
-                onPressed: busy ? null : onSave,
-                child: const Text('Save'),
-              ),
-            if (controller.canDelete)
-              TextButton(
-                key: const Key('face-crop-person-delete'),
-                onPressed: busy ? null : onDelete,
-                child: const Text('Delete'),
+                key: const Key('face-crop-person-unassign'),
+                onPressed: busy ? null : onUnassign,
+                child: const Text('Unassign'),
               ),
           ],
         ),
@@ -631,12 +659,15 @@ class _AppearanceGrid extends StatelessWidget {
     required this.source,
     required this.busy,
     required this.onOpenItem,
+    this.onNewPerson,
   });
 
   final List<PersonAppearance> appearances;
   final FaceCropTray source;
   final bool busy;
   final void Function(String itemId) onOpenItem;
+  /// When set (Unassigned tray), shows New person on each thumb.
+  final void Function(String appearanceId)? onNewPerson;
 
   @override
   Widget build(BuildContext context) {
@@ -668,7 +699,31 @@ class _AppearanceGrid extends StatelessWidget {
             child: Center(child: thumb),
           ),
         );
-        if (!canDrag) return tile;
+        final newPersonHandler = onNewPerson;
+        final newPersonButton = newPersonHandler == null
+            ? null
+            : Positioned(
+                top: 0,
+                right: 0,
+                child: IconButton(
+                  key: Key('face-crop-new-person-${a.id}'),
+                  tooltip: 'New person',
+                  icon: const Icon(Icons.person_add, size: 16),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  onPressed: busy ? null : () => newPersonHandler(a.id),
+                ),
+              );
+        if (!canDrag) {
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              tile,
+              if (newPersonButton != null) newPersonButton,
+            ],
+          );
+        }
         final data = FaceCropDragData.appearance(
           source: source,
           appearanceId: a.id,
@@ -677,18 +732,25 @@ class _AppearanceGrid extends StatelessWidget {
           personId: a.personId,
           region: a.region,
         );
-        return Draggable<FaceCropDragData>(
-          data: data,
-          feedback: Material(
-            elevation: 4,
-            child: SizedBox(
-              width: 72,
-              height: 72,
-              child: _appearanceThumb(a, size: 72),
+        // New-person control sits outside Draggable so taps do not start a drag.
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Draggable<FaceCropDragData>(
+              data: data,
+              feedback: Material(
+                elevation: 4,
+                child: SizedBox(
+                  width: 72,
+                  height: 72,
+                  child: _appearanceThumb(a, size: 72),
+                ),
+              ),
+              childWhenDragging: Opacity(opacity: 0.35, child: tile),
+              child: tile,
             ),
-          ),
-          childWhenDragging: Opacity(opacity: 0.35, child: tile),
-          child: tile,
+            if (newPersonButton != null) newPersonButton,
+          ],
         );
       },
     );

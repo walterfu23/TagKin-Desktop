@@ -166,7 +166,6 @@ class _AppearanceRow extends StatelessWidget {
       ?whoLabel,
       'appearance ${appearance.id}',
       if (personId != null) '→ person $personId',
-      '(${appearance.linkState.wire})',
     ].join(' ');
     final text = Text(
       label,

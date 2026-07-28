@@ -6,17 +6,14 @@ import 'package:http/testing.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/api/items_repository.dart';
 import 'package:tagkin_desktop/api/persons_repository.dart';
-import 'package:tagkin_desktop/contract/contract.dart';
 
 Map<String, dynamic> _personJson({
   required String id,
   String? name = 'Sam',
-  String linkState = 'suggested',
 }) =>
     {
       'id': id,
       'name': name,
-      'linkState': linkState,
       'createdAt': '2026-07-20T00:00:00.000Z',
     };
 
@@ -24,26 +21,23 @@ Map<String, dynamic> _appearanceJson({
   required String id,
   String? personId = 'person_1',
   String? itemId = 'item_1',
-  String linkState = 'suggested',
 }) =>
     {
       'id': id,
       'personId': personId,
       'itemId': itemId,
       'keyPeriodId': null,
-      'linkState': linkState,
       'createdAt': '2026-07-20T00:00:00.000Z',
     };
 
 Map<String, dynamic> _personDetailJson({
   required String id,
   String? name = 'Sam',
-  String linkState = 'suggested',
 }) =>
     {
-      ..._personJson(id: id, name: name, linkState: linkState),
+      ..._personJson(id: id, name: name),
       'appearances': [
-        _appearanceJson(id: 'ap_1', personId: id, linkState: linkState),
+        _appearanceJson(id: 'ap_1', personId: id),
       ],
     };
 
@@ -58,7 +52,7 @@ void main() {
         return http.Response(
           jsonEncode([
             _personJson(id: 'person_a1'),
-            _personJson(id: 'person_a2', linkState: 'confirmed'),
+            _personJson(id: 'person_a2'),
           ]),
           200,
           headers: {'content-type': 'application/json'},
@@ -72,22 +66,6 @@ void main() {
       );
       final persons = await PersonsRepository(client).listPersons();
       expect(persons.map((p) => p.id), ['person_a1', 'person_a2']);
-      expect(persons[1].linkState, LinkState.confirmed);
-      client.close();
-    });
-
-    test('listPersons passes optional linkState query', () async {
-      final mock = MockClient((request) async {
-        expect(request.url.queryParameters['linkState'], 'suggested');
-        return http.Response(jsonEncode([]), 200);
-      });
-      final client = ApiClient(
-        baseUrl: 'http://api.test',
-        tokenProvider: () => 'tok',
-        httpClient: mock,
-      );
-      await PersonsRepository(client)
-          .listPersons(linkState: LinkState.suggested);
       client.close();
     });
 
@@ -137,31 +115,6 @@ void main() {
       client.close();
     });
 
-    test('confirmPerson posts to /persons/{id}/confirm', () async {
-      final mock = MockClient((request) async {
-        expect(request.method, 'POST');
-        expect(request.url.path, '/persons/person_1/confirm');
-        expect(request.body.isEmpty || request.body == 'null', isTrue);
-        return http.Response(
-          jsonEncode(_personDetailJson(id: 'person_1', linkState: 'confirmed')),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      });
-      final client = ApiClient(
-        baseUrl: 'http://api.test',
-        tokenProvider: () => 'tok',
-        httpClient: mock,
-      )..recordRequests = true;
-      final detail =
-          await PersonsRepository(client).confirmPerson('person_1');
-      expect(detail.linkState, LinkState.confirmed);
-      for (final r in client.recordedRequests) {
-        expect(r.bodyContainsOwnerField, isFalse);
-      }
-      client.close();
-    });
-
     test('reassignAppearance posts personId only — no owner (R10)', () async {
       final mock = MockClient((request) async {
         expect(request.method, 'POST');
@@ -175,7 +128,6 @@ void main() {
             _appearanceJson(
               id: 'ap_1',
               personId: 'person_2',
-              linkState: 'confirmed',
             ),
           ),
           200,
@@ -192,7 +144,6 @@ void main() {
         'person_2',
       );
       expect(appearance.personId, 'person_2');
-      expect(appearance.linkState, LinkState.confirmed);
       for (final r in client.recordedRequests) {
         expect(r.bodyContainsOwnerField, isFalse);
       }
@@ -214,7 +165,6 @@ void main() {
             _appearanceJson(
               id: 'ap_1',
               personId: 'person_new',
-              linkState: 'confirmed',
             ),
           ),
           200,
@@ -231,7 +181,6 @@ void main() {
         null,
       );
       expect(appearance.personId, 'person_new');
-      expect(appearance.linkState, LinkState.confirmed);
       client.close();
     });
 

@@ -140,7 +140,6 @@ void main() {
         id: 'ap_new',
         personId: 'person_new',
         itemId: 'item_1',
-        linkState: LinkState.suggested,
       ),
     );
     final persons = FakePersonsRepository(
@@ -148,7 +147,6 @@ void main() {
         fixturePersonDetail(
           id: 'person_new',
           name: null,
-          linkState: LinkState.suggested,
           appearances: [
             fixtureAppearance(
               id: 'ap_new',

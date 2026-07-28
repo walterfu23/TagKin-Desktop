@@ -7,7 +7,7 @@ import 'package:tagkin_desktop/contract/contract.dart';
 /// Lifecycle of a per-person detail controller (D9).
 enum PersonDetailPhase { idle, loading, ready, busy, error }
 
-/// Owns load + confirm (Save) / unassign / reassign / rename for one person.
+/// Owns load / unassign / reassign / rename / delete for one person.
 ///
 /// Never sends `ownerUserId` (R10). Never handles likeness vectors or pixels
 /// (R1). Similarity matching stays server-side (R8/§4).
@@ -26,15 +26,14 @@ class PersonDetailController extends ChangeNotifier {
   Object? error;
 
   bool get isBusy => phase == PersonDetailPhase.busy;
-  bool get canConfirm =>
-      detail != null &&
-      detail!.linkState == LinkState.suggested &&
-      !isBusy;
 
   /// Loads person detail + the full persons list (for reassign targets).
   Future<void> load() async {
     phase = PersonDetailPhase.loading;
     error = null;
+    // Drop prior detail immediately so UI never paints the previous person
+    // while a switch/reload is in flight.
+    detail = null;
     notifyListeners();
 
     try {
@@ -50,27 +49,6 @@ class PersonDetailController extends ChangeNotifier {
       if (_disposed) return;
       error = e;
       detail = null;
-      phase = PersonDetailPhase.error;
-      notifyListeners();
-    }
-  }
-
-  /// Saves this person (suggested → confirmed) (R6).
-  Future<void> confirm() async {
-    if (!canConfirm) return;
-    phase = PersonDetailPhase.busy;
-    error = null;
-    notifyListeners();
-
-    try {
-      final updated = await personsRepository.confirmPerson(personId);
-      if (_disposed) return;
-      detail = updated;
-      phase = PersonDetailPhase.ready;
-      notifyListeners();
-    } catch (e) {
-      if (_disposed) return;
-      error = e;
       phase = PersonDetailPhase.error;
       notifyListeners();
     }
@@ -135,7 +113,6 @@ class PersonDetailController extends ChangeNotifier {
       detail = PersonDetail(
         id: updated.id,
         name: updated.name,
-        linkState: updated.linkState,
         createdAt: updated.createdAt,
         appearances: detail!.appearances,
       );
@@ -149,14 +126,12 @@ class PersonDetailController extends ChangeNotifier {
     }
   }
 
-  bool get canDelete =>
-      detail != null &&
-      detail!.linkState == LinkState.suggested &&
-      !isBusy;
+  bool get canUnassign => detail != null && !isBusy;
 
-  /// Deletes this suggested person and its appearances. Returns true on success.
-  Future<bool> delete() async {
-    if (!canDelete) return false;
+  /// Dissolves this person: appearances move to Unassigned, then the person
+  /// row is removed. Returns true on success.
+  Future<bool> unassignPerson() async {
+    if (!canUnassign) return false;
     phase = PersonDetailPhase.busy;
     error = null;
     notifyListeners();

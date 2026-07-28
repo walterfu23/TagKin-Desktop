@@ -231,7 +231,6 @@ class FakeItemsRepository implements ItemsRepository {
             personId: 'person_auto',
             itemId: itemId,
             tagId: a.tagId,
-            linkState: LinkState.suggested,
             createdAt: '2026-07-25T00:00:00.000Z',
           ),
         )

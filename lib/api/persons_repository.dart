@@ -13,12 +13,9 @@ class PersonsRepository {
 
   final ApiClient _client;
 
-  /// `GET /persons` — optional [linkState] filter (owner-scoped, R10).
-  Future<List<Person>> listPersons({LinkState? linkState}) async {
-    final response = await _client.get(
-      '/persons',
-      query: linkState == null ? null : {'linkState': linkState.wire},
-    );
+  /// `GET /persons` — owner-scoped (R10).
+  Future<List<Person>> listPersons() async {
+    final response = await _client.get('/persons');
     final json = jsonDecode(response.body);
     if (json is! List<dynamic>) {
       throw ApiException(
@@ -59,19 +56,6 @@ class PersonsRepository {
       );
     }
     return Person.fromJson(json);
-  }
-
-  /// `POST /persons/{id}/confirm` — move suggested → confirmed (R6). Save in UI.
-  Future<PersonDetail> confirmPerson(String personId) async {
-    final response = await _client.post('/persons/$personId/confirm');
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected confirm-person response shape',
-      );
-    }
-    return PersonDetail.fromJson(json);
   }
 
   /// `POST /persons/appearances/{id}/unlink` — clear personId / unassign (R6).
@@ -153,7 +137,7 @@ class PersonsRepository {
     return AccountWhoExclusionsPage.fromJson(json);
   }
 
-  /// `DELETE /persons/{id}` — remove a suggested person + appearances (R6).
+  /// `DELETE /persons/{id}` — dissolve person; appearances become unassigned (R6).
   Future<void> deletePerson(String personId) async {
     await _client.delete('/persons/$personId');
   }

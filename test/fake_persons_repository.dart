@@ -14,7 +14,6 @@ class FakePersonsRepository implements PersonsRepository {
   final Object? listError;
   final Object? getError;
 
-  final List<String> confirmCalls = <String>[];
   final List<String> unlinkCalls = <String>[];
   final List<({String appearanceId, String? personId})> reassignCalls =
       <({String appearanceId, String? personId})>[];
@@ -25,22 +24,17 @@ class FakePersonsRepository implements PersonsRepository {
   int _newPersonCounter = 0;
 
   @override
-  Future<List<Person>> listPersons({LinkState? linkState}) async {
+  Future<List<Person>> listPersons() async {
     if (listError != null) throw listError!;
-    var list = _persons
+    return _persons
         .map(
           (d) => Person(
             id: d.id,
             name: d.name,
-            linkState: d.linkState,
             createdAt: d.createdAt,
           ),
         )
         .toList();
-    if (linkState != null) {
-      list = list.where((p) => p.linkState == linkState).toList();
-    }
-    return list;
   }
 
   @override
@@ -63,7 +57,6 @@ class FakePersonsRepository implements PersonsRepository {
     final updated = PersonDetail(
       id: prev.id,
       name: name,
-      linkState: prev.linkState,
       createdAt: prev.createdAt,
       appearances: prev.appearances,
     );
@@ -71,41 +64,8 @@ class FakePersonsRepository implements PersonsRepository {
     return Person(
       id: updated.id,
       name: updated.name,
-      linkState: updated.linkState,
       createdAt: updated.createdAt,
     );
-  }
-
-  @override
-  Future<PersonDetail> confirmPerson(String personId) async {
-    confirmCalls.add(personId);
-    final index = _persons.indexWhere((p) => p.id == personId);
-    if (index < 0) {
-      throw ApiException(statusCode: 404, message: 'Not found');
-    }
-    final prev = _persons[index];
-    final updated = PersonDetail(
-      id: prev.id,
-      name: prev.name,
-      linkState: LinkState.confirmed,
-      createdAt: prev.createdAt,
-      appearances: prev.appearances
-          .map(
-            (a) => PersonAppearance(
-              id: a.id,
-              personId: a.personId,
-              itemId: a.itemId,
-              keyPeriodId: a.keyPeriodId,
-              tagId: a.tagId,
-              region: a.region,
-              linkState: LinkState.confirmed,
-              createdAt: a.createdAt,
-            ),
-          )
-          .toList(),
-    );
-    _persons[index] = updated;
-    return updated;
   }
 
   @override
@@ -121,7 +81,6 @@ class FakePersonsRepository implements PersonsRepository {
       _persons[i] = PersonDetail(
         id: person.id,
         name: person.name,
-        linkState: person.linkState,
         createdAt: person.createdAt,
         appearances: remaining,
       );
@@ -132,7 +91,6 @@ class FakePersonsRepository implements PersonsRepository {
         keyPeriodId: appearance.keyPeriodId,
         tagId: appearance.tagId,
         region: appearance.region,
-        linkState: LinkState.suggested,
         createdAt: appearance.createdAt,
       );
     }
@@ -156,25 +114,31 @@ class FakePersonsRepository implements PersonsRepository {
       _persons[i] = PersonDetail(
         id: person.id,
         name: person.name,
-        linkState: person.linkState,
         createdAt: person.createdAt,
         appearances: remaining,
       );
       break;
     }
     if (found == null) {
+      final uIdx =
+          unassignedAppearances.indexWhere((a) => a.id == appearanceId);
+      if (uIdx >= 0) {
+        found = unassignedAppearances.removeAt(uIdx);
+      }
+    }
+    if (found == null) {
       throw ApiException(statusCode: 404, message: 'Not found');
     }
 
     var targetPersonId = personId;
-    if (targetPersonId == null) {
+    final createdNew = targetPersonId == null;
+    if (createdNew) {
       _newPersonCounter += 1;
       targetPersonId = 'person_new_$_newPersonCounter';
       _persons.add(
         PersonDetail(
           id: targetPersonId,
           name: null,
-          linkState: LinkState.confirmed,
           createdAt: '2026-07-20T00:00:00.000Z',
           appearances: const [],
         ),
@@ -193,13 +157,11 @@ class FakePersonsRepository implements PersonsRepository {
       keyPeriodId: found.keyPeriodId,
       tagId: found.tagId,
       region: found.region,
-      linkState: LinkState.confirmed,
       createdAt: found.createdAt,
     );
     _persons[targetIndex] = PersonDetail(
       id: target.id,
       name: target.name,
-      linkState: target.linkState,
       createdAt: target.createdAt,
       appearances: [...target.appearances, moved],
     );
@@ -214,10 +176,17 @@ class FakePersonsRepository implements PersonsRepository {
       throw ApiException(statusCode: 404, message: 'Not found');
     }
     final person = _persons[index];
-    if (person.linkState != LinkState.suggested) {
-      throw ApiException(
-        statusCode: 400,
-        message: 'Only suggested persons can be deleted',
+    for (final a in person.appearances) {
+      unassignedAppearances.add(
+        PersonAppearance(
+          id: a.id,
+          personId: null,
+          itemId: a.itemId,
+          keyPeriodId: a.keyPeriodId,
+          tagId: a.tagId,
+          region: a.region,
+          createdAt: a.createdAt,
+        ),
       );
     }
     _persons.removeAt(index);
@@ -261,7 +230,6 @@ PersonAppearance fixtureAppearance({
   String? keyPeriodId,
   String? tagId,
   TagRegion? region,
-  LinkState linkState = LinkState.suggested,
 }) {
   return PersonAppearance(
     id: id,
@@ -270,7 +238,6 @@ PersonAppearance fixtureAppearance({
     keyPeriodId: keyPeriodId,
     tagId: tagId,
     region: region,
-    linkState: linkState,
     createdAt: '2026-07-20T00:00:00.000Z',
   );
 }
@@ -279,17 +246,15 @@ PersonAppearance fixtureAppearance({
 PersonDetail fixturePersonDetail({
   String id = 'person_1',
   String? name = 'Sam',
-  LinkState linkState = LinkState.suggested,
   List<PersonAppearance>? appearances,
 }) {
   return PersonDetail(
     id: id,
     name: name,
-    linkState: linkState,
     createdAt: '2026-07-20T00:00:00.000Z',
     appearances: appearances ??
         [
-          fixtureAppearance(id: 'ap_1', personId: id, linkState: linkState),
+          fixtureAppearance(id: 'ap_1', personId: id),
         ],
   );
 }

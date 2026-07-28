@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/app_shell.dart';
-import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/person_detail_page.dart';
 import 'package:tagkin_desktop/persons/person_name_dialog.dart';
 import 'package:tagkin_desktop/persons/persons_list_page.dart';
@@ -10,24 +9,21 @@ import 'package:tagkin_desktop/persons/persons_list_page.dart';
 import 'fake_persons_repository.dart';
 
 void main() {
-  testWidgets('persons list renders suggested vs confirmed sections',
+  testWidgets('persons list renders named vs unnamed sections',
       (tester) async {
     final persons = FakePersonsRepository(
       persons: [
         fixturePersonDetail(
           id: 'person_s',
-          name: 'Suggested Sam',
-          linkState: LinkState.suggested,
+          name: null,
         ),
         fixturePersonDetail(
           id: 'person_c',
           name: 'Confirmed Chris',
-          linkState: LinkState.confirmed,
           appearances: [
             fixtureAppearance(
               id: 'ap_c',
               personId: 'person_c',
-              linkState: LinkState.confirmed,
             ),
           ],
         ),
@@ -45,49 +41,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('persons-list')), findsOneWidget);
-    expect(find.byKey(const Key('persons-section-suggested')), findsOneWidget);
-    expect(find.byKey(const Key('persons-section-confirmed')), findsOneWidget);
-    expect(find.text('Suggested Sam'), findsOneWidget);
+    expect(find.byKey(const Key('persons-section-named')), findsOneWidget);
+    expect(find.byKey(const Key('persons-section-unnamed')), findsOneWidget);
     expect(find.text('Confirmed Chris'), findsOneWidget);
     expect(find.byKey(const Key('person-row-person_s')), findsOneWidget);
     expect(find.byKey(const Key('person-row-person_c')), findsOneWidget);
-  });
-
-  testWidgets('person detail: Save then disables Save button',
-      (tester) async {
-    final persons = FakePersonsRepository(
-      persons: [
-        fixturePersonDetail(
-          id: 'person_1',
-          name: 'Sam',
-          linkState: LinkState.suggested,
-        ),
-      ],
-    );
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          personsRepositoryProvider.overrideWithValue(persons),
-        ],
-        child: const MaterialApp(
-          home: PersonDetailPage(personId: 'person_1'),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const Key('person-detail')), findsOneWidget);
-    expect(find.byKey(const Key('person-detail-name')), findsOneWidget);
-    expect(find.text('Sam'), findsOneWidget);
-    expect(find.byKey(const Key('person-save')), findsOneWidget);
-
-    await tester.tap(find.byKey(const Key('person-save')));
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const Key('person-save')), findsNothing);
-    expect(find.byKey(const Key('link-state-confirmed')), findsWidgets);
-    expect(persons.confirmCalls, ['person_1']);
   });
 
   testWidgets('person detail: rename round-trips', (tester) async {
@@ -96,7 +54,6 @@ void main() {
         fixturePersonDetail(
           id: 'person_1',
           name: 'Sam',
-          linkState: LinkState.confirmed,
         ),
       ],
     );
@@ -112,9 +69,6 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-
-    // Already confirmed — no Save button.
-    expect(find.byKey(const Key('person-save')), findsNothing);
 
     await tester.tap(find.byKey(const Key('person-rename')));
     await tester.pumpAndSettle();
@@ -129,14 +83,12 @@ void main() {
     expect(persons.renameCalls.single.name, 'Samantha');
   });
 
-  testWidgets('person detail: delete suggested person pops page',
-      (tester) async {
+  testWidgets('person detail: unassign pops page', (tester) async {
     final persons = FakePersonsRepository(
       persons: [
         fixturePersonDetail(
           id: 'person_1',
           name: null,
-          linkState: LinkState.suggested,
         ),
       ],
     );
@@ -170,11 +122,11 @@ void main() {
 
     await tester.tap(find.byKey(const Key('open-person')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('person-delete')), findsOneWidget);
+    expect(find.byKey(const Key('person-unassign')), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('person-delete')));
+    await tester.tap(find.byKey(const Key('person-unassign')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('person-delete-confirm')));
+    await tester.tap(find.byKey(const Key('person-unassign-confirm')));
     await tester.pumpAndSettle();
 
     expect(persons.deleteCalls, ['person_1']);
@@ -189,7 +141,6 @@ void main() {
         fixturePersonDetail(
           id: 'person_1',
           name: null,
-          linkState: LinkState.suggested,
         ),
       ],
     );
@@ -262,7 +213,6 @@ void main() {
         fixturePersonDetail(
           id: 'person_1',
           name: 'Sam',
-          linkState: LinkState.suggested,
           appearances: [
             fixtureAppearance(id: 'ap_1', personId: 'person_1'),
             fixtureAppearance(id: 'ap_2', personId: 'person_1'),
@@ -271,7 +221,6 @@ void main() {
         fixturePersonDetail(
           id: 'person_2',
           name: 'Alex',
-          linkState: LinkState.confirmed,
           appearances: const [],
         ),
       ],

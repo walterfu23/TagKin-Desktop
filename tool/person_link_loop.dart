@@ -9,7 +9,7 @@
 // Optional:
 //   TAGKIN_API_URL            default http://localhost:8787
 //
-// Success when one suggested person has appearances on every loop item.
+// Success when one person has appearances on every loop item.
 // Prints a line `PERSON_LINK_LOOP_RESULT:ok|fail|error …` for the shell to parse.
 // Never prints the bearer token. Never confirms persons (R6).
 
@@ -103,16 +103,10 @@ Future<PersonLinkIterationResult> runPersonLinkIteration() async {
   final items = ItemsRepository(client);
   final jobs = JobsRepository(client);
 
-  stdout.writeln('==> delete all suggested persons');
-  final existing = await persons.listPersons(linkState: LinkState.suggested);
+  stdout.writeln('==> delete all persons');
+  final existing = await persons.listPersons();
   for (final p in existing) {
     stdout.writeln('    DELETE person ${p.id}');
-    await persons.deletePerson(p.id);
-  }
-  // Also clear any other linkStates that are still suggested-only API allows;
-  // confirmed persons are left alone (R6).
-  final leftover = await persons.listPersons();
-  for (final p in leftover.where((x) => x.linkState == LinkState.suggested)) {
     await persons.deletePerson(p.id);
   }
 
@@ -146,11 +140,11 @@ Future<PersonLinkIterationResult> runPersonLinkIteration() async {
 
   await onnx.dispose();
 
-  // Success = one suggested person spans every loop item (same face across
-  // photos). Extra suggested persons from other people in group shots are OK
-  // — counting total persons==1 fails on multi-who photos even when matching
-  // works (v5 distances ~0.28–0.31 for the shared subject).
-  final after = await persons.listPersons(linkState: LinkState.suggested);
+  // Success = one person spans every loop item (same face across photos).
+  // Extra persons from other people in group shots are OK — counting total
+  // persons==1 fails on multi-who photos even when matching works (v5
+  // distances ~0.28–0.31 for the shared subject).
+  final after = await persons.listPersons();
   final ids = after.map((p) => p.id).toList();
   String? consolidatedId;
   final coverage = <String, Set<String>>{};
@@ -170,9 +164,9 @@ Future<PersonLinkIterationResult> runPersonLinkIteration() async {
   final summary = ok
       ? 'PASS: cross-item person=$consolidatedId '
           'covers ${itemIds.length} items '
-          '(suggested_total=${after.length})'
-      : 'FAIL: no suggested person covers all ${itemIds.length} items '
-          '(suggested_total=${after.length}) '
+          '(persons_total=${after.length})'
+      : 'FAIL: no person covers all ${itemIds.length} items '
+          '(persons_total=${after.length}) '
           'coverage=${coverage.entries.map((e) => '${e.key}:${e.value.length}').join(';')} '
           'ids=${ids.join(',')}';
 

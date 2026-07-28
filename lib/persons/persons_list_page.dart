@@ -3,14 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
-import 'package:tagkin_desktop/persons/link_state_view.dart';
 import 'package:tagkin_desktop/persons/person_detail_page.dart';
 import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
 import 'package:tagkin_desktop/prepass/face_embedder.dart';
 import 'package:tagkin_desktop/prepass/onnx_face_embedder.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
-/// Library-wide persons list (D9): suggested vs confirmed sections.
+/// Library-wide persons list (D9): named vs unnamed sections.
 ///
 /// Never displays likeness vectors (R1). Labels use canonical "person" (R2).
 class PersonsListPage extends ConsumerStatefulWidget {
@@ -141,12 +140,10 @@ class _PersonsListPageState extends ConsumerState<PersonsListPage> {
                 }
 
                 final persons = snapshot.data!;
-                final suggested = persons
-                    .where((p) => p.linkState == LinkState.suggested)
-                    .toList();
-                final confirmed = persons
-                    .where((p) => p.linkState == LinkState.confirmed)
-                    .toList();
+                bool isNamed(Person p) =>
+                    p.name != null && p.name!.trim().isNotEmpty;
+                final named = persons.where(isNamed).toList();
+                final unnamed = persons.where((p) => !isNamed(p)).toList();
 
                 if (persons.isEmpty) {
                   return Center(
@@ -169,23 +166,23 @@ class _PersonsListPageState extends ConsumerState<PersonsListPage> {
                   key: const Key('persons-list'),
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   children: [
-                    if (suggested.isNotEmpty) ...[
+                    if (named.isNotEmpty) ...[
                       const _SectionHeader(
-                        title: 'Suggested',
-                        sectionKey: Key('persons-section-suggested'),
+                        title: 'Named',
+                        sectionKey: Key('persons-section-named'),
                       ),
-                      for (final person in suggested)
+                      for (final person in named)
                         _PersonTile(
                           person: person,
                           onTap: () => _openDetail(person),
                         ),
                     ],
-                    if (confirmed.isNotEmpty) ...[
+                    if (unnamed.isNotEmpty) ...[
                       const _SectionHeader(
-                        title: 'Confirmed',
-                        sectionKey: Key('persons-section-confirmed'),
+                        title: 'Unnamed',
+                        sectionKey: Key('persons-section-unnamed'),
                       ),
-                      for (final person in confirmed)
+                      for (final person in unnamed)
                         _PersonTile(
                           person: person,
                           onTap: () => _openDetail(person),
@@ -243,7 +240,6 @@ class _PersonTile extends StatelessWidget {
         key: Key('person-id-${person.id}'),
         style: Theme.of(context).textTheme.bodySmall,
       ),
-      trailing: LinkStateBadge(linkState: person.linkState),
       onTap: onTap,
     );
   }

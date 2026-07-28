@@ -875,38 +875,20 @@ class LinkPeopleResponse {
   }
 }
 
-enum LinkState {
-  suggested('suggested'),
-  confirmed('confirmed');
-
-  const LinkState(this.wire);
-
-  final String wire;
-
-  static LinkState fromWire(String value) =>
-      values.firstWhere((e) => e.wire == value);
-
-  @override
-  String toString() => wire;
-}
-
 class Person {
   const Person({
     required this.id,
     this.name,
-    required this.linkState,
     required this.createdAt,
   });
 
   final String id;
   final String? name;
-  final LinkState linkState;
   final String createdAt;
 
   factory Person.fromJson(Map<String, dynamic> json) => Person(
         id: json['id'] as String,
         name: json['name'] == null ? null : json['name'] as String,
-        linkState: LinkState.fromWire(json['linkState'] as String),
         createdAt: json['createdAt'] as String,
       );
 
@@ -914,7 +896,6 @@ class Person {
     final json = <String, dynamic>{};
     json['id'] = id;
     if (name != null) json['name'] = name;
-    json['linkState'] = linkState.wire;
     json['createdAt'] = createdAt;
     return json;
   }
@@ -928,7 +909,6 @@ class PersonAppearance {
     this.keyPeriodId,
     this.tagId,
     this.region,
-    required this.linkState,
     required this.createdAt,
   });
 
@@ -938,7 +918,6 @@ class PersonAppearance {
   final String? keyPeriodId;
   final String? tagId;
   final TagRegion? region;
-  final LinkState linkState;
   final String createdAt;
 
   factory PersonAppearance.fromJson(Map<String, dynamic> json) => PersonAppearance(
@@ -948,7 +927,6 @@ class PersonAppearance {
         keyPeriodId: json['keyPeriodId'] == null ? null : json['keyPeriodId'] as String,
         tagId: json['tagId'] == null ? null : json['tagId'] as String,
         region: json['region'] == null ? null : TagRegion.fromJson(json['region'] as Map<String, dynamic>),
-        linkState: LinkState.fromWire(json['linkState'] as String),
         createdAt: json['createdAt'] as String,
       );
 
@@ -960,7 +938,6 @@ class PersonAppearance {
     if (keyPeriodId != null) json['keyPeriodId'] = keyPeriodId;
     if (tagId != null) json['tagId'] = tagId;
     if (region != null) json['region'] = region?.toJson();
-    json['linkState'] = linkState.wire;
     json['createdAt'] = createdAt;
     return json;
   }
@@ -970,21 +947,18 @@ class PersonDetail {
   const PersonDetail({
     required this.id,
     this.name,
-    required this.linkState,
     required this.createdAt,
     required this.appearances,
   });
 
   final String id;
   final String? name;
-  final LinkState linkState;
   final String createdAt;
   final List<PersonAppearance> appearances;
 
   factory PersonDetail.fromJson(Map<String, dynamic> json) => PersonDetail(
         id: json['id'] as String,
         name: json['name'] == null ? null : json['name'] as String,
-        linkState: LinkState.fromWire(json['linkState'] as String),
         createdAt: json['createdAt'] as String,
         appearances: (json['appearances'] as List<dynamic>).map((e) => PersonAppearance.fromJson(e as Map<String, dynamic>)).toList(),
       );
@@ -993,7 +967,6 @@ class PersonDetail {
     final json = <String, dynamic>{};
     json['id'] = id;
     if (name != null) json['name'] = name;
-    json['linkState'] = linkState.wire;
     json['createdAt'] = createdAt;
     json['appearances'] = appearances.map((e) => e.toJson()).toList();
     return json;

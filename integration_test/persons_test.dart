@@ -1,5 +1,5 @@
-// D9 Person Linking UI integration: suggested → Save, reassign new, unassign
-// against mocked API (§5).
+// D9 Person Linking UI integration: named vs unnamed grouping, reassign new,
+// unassign against mocked API (§5).
 //   flutter test integration_test/persons_test.dart -d macos
 //   flutter test integration_test/persons_test.dart -d windows
 
@@ -20,7 +20,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-      'persons: Save suggested → confirmed; reassign new; unassign',
+      'persons: named grouping; reassign new; unassign; delete',
       (WidgetTester tester) async {
     final item = fixtureItem(
       id: 'item_p',
@@ -31,7 +31,6 @@ void main() {
         fixturePersonDetail(
           id: 'person_1',
           name: 'Sam',
-          linkState: LinkState.suggested,
           appearances: [
             fixtureAppearance(id: 'ap_1', personId: 'person_1'),
             fixtureAppearance(id: 'ap_2', personId: 'person_1'),
@@ -71,19 +70,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('persons-list')), findsOneWidget);
-    expect(find.byKey(const Key('persons-section-suggested')), findsOneWidget);
+    expect(find.byKey(const Key('persons-section-named')), findsOneWidget);
     expect(find.text('Sam'), findsOneWidget);
 
-    // Open person detail and Save.
+    // Open person detail.
     await tester.tap(find.byKey(const Key('person-row-person_1')));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('person-detail')), findsOneWidget);
-    expect(find.byKey(const Key('person-save')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('person-save')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('person-save')), findsNothing);
-    expect(persons.confirmCalls, ['person_1']);
 
     // Reassign an appearance onto a new person.
     await tester.tap(find.byKey(const Key('appearance-reassign-select-ap_2')));
@@ -100,10 +94,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(persons.unlinkCalls, ['ap_1']);
 
-    // Back to list — confirmed section should include Sam.
-    await tester.pageBack();
+    // Unassign the (now empty) person.
+    await tester.tap(find.byKey(const Key('person-unassign')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('persons-section-confirmed')), findsOneWidget);
-    expect(find.text('Sam'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('person-unassign-confirm')));
+    await tester.pumpAndSettle();
+    expect(persons.deleteCalls, ['person_1']);
+
+    // Back to the list — the new person from reassignment shows under Unnamed.
+    expect(find.byKey(const Key('persons-list')), findsOneWidget);
+    expect(find.byKey(const Key('persons-section-unnamed')), findsOneWidget);
   });
 }

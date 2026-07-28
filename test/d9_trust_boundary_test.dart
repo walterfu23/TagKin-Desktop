@@ -39,7 +39,6 @@ void main() {
       File('lib/persons/person_detail_controller.dart'),
       File('lib/persons/person_detail_page.dart'),
       File('lib/persons/persons_list_page.dart'),
-      File('lib/persons/link_state_view.dart'),
       File('lib/api/persons_repository.dart'),
     ];
     for (final file in files) {

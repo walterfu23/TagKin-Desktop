@@ -1,20 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/person_detail_controller.dart';
 
 import 'fake_persons_repository.dart';
 
 void main() {
   group('PersonDetailController', () {
-    test('load populates detail; confirm moves suggested → confirmed',
-        () async {
+    test('load populates detail', () async {
       final repo = FakePersonsRepository(
         persons: [
-          fixturePersonDetail(
-            id: 'person_1',
-            name: 'Sam',
-            linkState: LinkState.suggested,
-          ),
+          fixturePersonDetail(id: 'person_1', name: 'Sam'),
         ],
       );
       final controller = PersonDetailController(
@@ -24,15 +18,7 @@ void main() {
 
       await controller.load();
       expect(controller.phase, PersonDetailPhase.ready);
-      expect(controller.detail!.linkState, LinkState.suggested);
-      expect(controller.canConfirm, isTrue);
-
-      await controller.confirm();
-      expect(controller.detail!.linkState, LinkState.confirmed);
-      expect(controller.detail!.appearances.single.linkState,
-          LinkState.confirmed);
-      expect(controller.canConfirm, isFalse);
-      expect(repo.confirmCalls, ['person_1']);
+      expect(controller.detail!.name, 'Sam');
       controller.dispose();
     });
 
@@ -42,7 +28,6 @@ void main() {
           fixturePersonDetail(
             id: 'person_1',
             name: 'Sam',
-            linkState: LinkState.suggested,
             appearances: [
               fixtureAppearance(id: 'ap_1', personId: 'person_1'),
               fixtureAppearance(id: 'ap_2', personId: 'person_1'),
@@ -51,7 +36,6 @@ void main() {
           fixturePersonDetail(
             id: 'person_2',
             name: 'Alex',
-            linkState: LinkState.confirmed,
             appearances: const [],
           ),
         ],
@@ -110,14 +94,10 @@ void main() {
       controller.dispose();
     });
 
-    test('delete removes suggested person', () async {
+    test('unassignPerson dissolves person via deletePerson API', () async {
       final repo = FakePersonsRepository(
         persons: [
-          fixturePersonDetail(
-            id: 'person_1',
-            name: null,
-            linkState: LinkState.suggested,
-          ),
+          fixturePersonDetail(id: 'person_1', name: null),
         ],
       );
       final controller = PersonDetailController(
@@ -125,10 +105,24 @@ void main() {
         personsRepository: repo,
       );
       await controller.load();
-      expect(controller.canDelete, isTrue);
-      final ok = await controller.delete();
+      expect(controller.canUnassign, isTrue);
+      final ok = await controller.unassignPerson();
       expect(ok, isTrue);
       expect(repo.deleteCalls, ['person_1']);
+      controller.dispose();
+    });
+
+    test('canUnassign is false while busy or before detail loads', () async {
+      final repo = FakePersonsRepository(
+        persons: [fixturePersonDetail(id: 'person_1', name: 'Sam')],
+      );
+      final controller = PersonDetailController(
+        personId: 'person_1',
+        personsRepository: repo,
+      );
+      expect(controller.canUnassign, isFalse);
+      await controller.load();
+      expect(controller.canUnassign, isTrue);
       controller.dispose();
     });
 
