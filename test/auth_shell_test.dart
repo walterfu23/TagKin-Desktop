@@ -41,7 +41,7 @@ void main() {
     expect(find.text('acc_1@example.com'), findsOneWidget);
     expect(find.byKey(const Key('nav-face-crops')), findsOneWidget);
     expect(find.byKey(const Key('nav-persons')), findsOneWidget);
-    // Face crops comes before Persons in the AppBar actions.
+    // Faces comes before Persons in the AppBar actions.
     final faceCrops = tester.getTopLeft(find.byKey(const Key('nav-face-crops')));
     final persons = tester.getTopLeft(find.byKey(const Key('nav-persons')));
     expect(faceCrops.dx, lessThan(persons.dx));

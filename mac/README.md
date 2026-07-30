@@ -51,6 +51,17 @@ Do **not** reuse the API `sN` ids (those are the `tagkin` repo's `TagKin/mac/`);
 | [`115_test_d9.sh`](./115_test_d9.sh) | D9 Person Linking UI regression bar alone. |
 | [`116_test_d10.sh`](./116_test_d10.sh) | D10 Knowledge Corrections & Comments UI regression bar alone. |
 
+## Pick up a code change
+
+After an agent or local edit, load the new code before verifying in the UI:
+
+| What changed | What to do |
+|--------------|------------|
+| Dart/UI only, and `./11_dev.sh` is already running | In that Flutter terminal, press **`R`** (hot restart). `r` (hot reload) is often enough for small widget tweaks; prefer **`R`** after controller/navigation/label changes. |
+| App not running, or native / plugin / asset / `.env` change | `./11_dev.sh` (full relaunch). |
+| Shared OpenAPI / `@tagkin/contract` | `./102_codegen.sh`, then hot restart or `./11_dev.sh`. |
+| API / DB (in `tagkin`) | Restart the API stack from `TagKin/mac/` (`./12_dev-stack-stop.sh` → `./11_dev-stack.sh`), then pick up desktop as above. |
+
 ## Example flows
 
 **First clone:** `101_setup.sh` → `103_clerk-env.sh` (live sign-in) → `51_test_all.sh` → `11_dev.sh`.

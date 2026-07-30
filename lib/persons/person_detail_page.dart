@@ -71,10 +71,15 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
             title: const Text('Person'),
             actions: [
               if (controller.canUnassign)
-                TextButton(
-                  key: const Key('person-unassign'),
-                  onPressed: () => _confirmUnassign(controller),
-                  child: const Text('Unassign'),
+                Tooltip(
+                  message:
+                      'Remove this person. Faces move to Unassigned. '
+                      'Use Unassign on a face to detach only that face.',
+                  child: TextButton(
+                    key: const Key('person-unassign'),
+                    onPressed: () => _confirmRemovePerson(controller),
+                    child: const Text('Remove'),
+                  ),
                 ),
               TextButton(
                 key: const Key('person-open-trays'),
@@ -82,7 +87,7 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
                   context,
                   personId: widget.personId,
                 ),
-                child: const Text('Face crops'),
+                child: const Text('Faces'),
               ),
             ],
           ),
@@ -92,14 +97,15 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
     );
   }
 
-  Future<void> _confirmUnassign(PersonDetailController controller) async {
+  Future<void> _confirmRemovePerson(PersonDetailController controller) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Unassign person?'),
+        title: const Text('Remove person?'),
         content: const Text(
-          'Removes this person. Its face crops move to Unassigned '
-          'so you can assign them again.',
+          'Removes this person. Its faces move to Unassigned '
+          'so you can assign them again. To detach one face only, '
+          'use Unassign on that face.',
         ),
         actions: [
           TextButton(
@@ -109,7 +115,7 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
           FilledButton(
             key: const Key('person-unassign-confirm'),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Unassign'),
+            child: const Text('Remove'),
           ),
         ],
       ),
@@ -224,10 +230,13 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
             ],
           )
         else
-          OutlinedButton(
-            key: const Key('person-rename'),
-            onPressed: controller.isBusy ? null : () => _startRename(detail),
-            child: const Text('Rename person'),
+          Tooltip(
+            message: 'Change this person’s name',
+            child: OutlinedButton(
+              key: const Key('person-rename'),
+              onPressed: controller.isBusy ? null : () => _startRename(detail),
+              child: const Text('Rename person'),
+            ),
           ),
         if (controller.error != null &&
             controller.phase == PersonDetailPhase.error) ...[

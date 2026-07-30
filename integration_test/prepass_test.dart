@@ -71,8 +71,9 @@ void main() {
     expect(repo.prePassRecorded, hasLength(1));
     final payload = repo.prePassRecorded.single.input;
     expect(payload.contentHash, isNotNull);
-    expect(payload.appearances, isNotNull);
-    expect(payload.appearances!.single.embedding, hasLength(512));
+    expect(payload.perceptualHash, isNotNull);
+    // Faces are skipped in classic pre-pass (WhoFaceLinker owns linking).
+    expect(payload.appearances ?? const [], isEmpty);
     final json = payload.toJson();
     expect(json.containsKey('ownerUserId'), isFalse);
     expect(json.containsKey('bytes'), isFalse);

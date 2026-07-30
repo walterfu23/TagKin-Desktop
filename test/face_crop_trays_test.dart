@@ -361,7 +361,9 @@ void main() {
     // Switch to the unnamed person (dropdown label is id when name is null).
     await tester.tap(find.byKey(const Key('face-crop-person-select')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('person_unnamed').last);
+    await tester.tap(
+      find.byKey(const Key('face-crop-person-option-in-folder-person_unnamed')),
+    );
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('face-crop-person-rename')), findsOneWidget);
@@ -426,7 +428,9 @@ void main() {
 
     await tester.tap(find.byKey(const Key('face-crop-person-select')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('person_unnamed').last);
+    await tester.tap(
+      find.byKey(const Key('face-crop-person-option-in-folder-person_unnamed')),
+    );
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('face-crop-person-rename-done')), findsOneWidget);
@@ -481,7 +485,7 @@ void main() {
   });
 
   testWidgets(
-      'face crop trays: Unassign moves crops to Unassigned',
+      'face crop trays: Remove person moves faces to Unassigned',
       (tester) async {
     final persons = FakePersonsRepository(
       persons: [
@@ -662,5 +666,82 @@ void main() {
 
     expect(find.byKey(const Key('face-crop-person-chrome')), findsOneWidget);
     expect(find.byKey(const Key('face-crop-person-name')), findsOneWidget);
+  });
+
+  testWidgets(
+      'face crop trays: person dropdown marks people in current folder',
+      (tester) async {
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_rome_only',
+          name: 'Alex',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_rome',
+              personId: 'person_rome_only',
+              itemId: 'item_rome',
+              tagId: 'tag_rome',
+            ),
+          ],
+        ),
+        fixturePersonDetail(
+          id: 'person_paris',
+          name: 'Sam',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_paris',
+              personId: 'person_paris',
+              itemId: 'item_paris',
+              tagId: 'tag_paris',
+            ),
+          ],
+        ),
+      ],
+    );
+    final items = FakeItemsRepository(
+      items: [
+        fixtureItem(
+          id: 'item_paris',
+          sourceRef: 'file:///albums/Paris/a.jpg',
+          processingStatus: ProcessingStatus.tagged,
+          contentHash: null,
+        ),
+        fixtureItem(
+          id: 'item_rome',
+          sourceRef: 'file:///albums/Rome/b.jpg',
+          processingStatus: ProcessingStatus.tagged,
+          contentHash: null,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          itemsRepositoryProvider.overrideWithValue(items),
+        ],
+        child: const MaterialApp(
+          home: FaceCropTraysPage(initialLeafFolder: '/albums/Paris'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('face-crop-person-select')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('face-crop-person-option-in-folder-person_paris')),
+      findsOneWidget,
+    );
+    expect(find.text('Sam · in folder'), findsWidgets);
+    expect(
+      find.byKey(const Key('face-crop-person-option-person_rome_only')),
+      findsOneWidget,
+    );
+    expect(find.text('Alex'), findsOneWidget);
+    expect(find.text('Alex · in folder'), findsNothing);
   });
 }

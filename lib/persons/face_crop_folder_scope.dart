@@ -2,7 +2,7 @@ import 'package:path/path.dart' as p;
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 
-/// Last leaf folder chosen on Face crops (session-scoped).
+/// Last leaf folder chosen on Faces (session-scoped).
 String? faceCropLastLeafFolder;
 
 /// Parent directory of [item]'s local `sourceRef`, or null when unknown.

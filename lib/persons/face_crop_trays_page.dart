@@ -10,14 +10,15 @@ import 'package:tagkin_desktop/persons/who_exclusion_crop_thumb.dart';
 import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
-/// Side-by-side face-crop trays: Assigned | Unassigned | Excluded.
+/// Side-by-side Faces trays: Assigned | Unassigned | Excluded.
 ///
 /// Work is scoped to one **leaf folder** at a time (picker in the app bar).
-/// Persons stay library-wide; trays only show crops from the selected folder.
+/// Persons stay library-wide; trays only show faces from the selected folder.
 ///
-/// Drag between columns to change crop state. Selecting a person shows rename /
-/// Unassign chrome in the Assigned column (same controller as person detail).
-/// Unassign dissolves the person and moves its crops to Unassigned.
+/// Drag between columns to change face assignment. Selecting a person shows rename /
+/// Remove person chrome in the Assigned column (same controller as person detail).
+/// Remove person dissolves the person and moves its faces to Unassigned.
+/// Detach one face by dragging it to Unassigned.
 class FaceCropTraysPage extends ConsumerStatefulWidget {
   const FaceCropTraysPage({
     super.key,
@@ -174,6 +175,35 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         .toList();
   }
 
+  /// Person ids that have at least one assigned face in the selected folder.
+  Set<String> _personIdsInCurrentFolder() {
+    final ids = <String>{};
+    for (final a in _scopedAppearances(_assignedOverview)) {
+      final pid = a.personId;
+      if (pid != null) ids.add(pid);
+    }
+    return ids;
+  }
+
+  /// Library persons with those in the current folder first (then by name/id).
+  List<Person> _personsForDropdown(Set<String> inFolder) {
+    final list = List<Person>.from(_persons);
+    list.sort((a, b) {
+      final ra = inFolder.contains(a.id) ? 0 : 1;
+      final rb = inFolder.contains(b.id) ? 0 : 1;
+      if (ra != rb) return ra.compareTo(rb);
+      final la = (a.name ?? a.id).toLowerCase();
+      final lb = (b.name ?? b.id).toLowerCase();
+      return la.compareTo(lb);
+    });
+    return list;
+  }
+
+  static String _personDropdownLabel(Person p, {required bool inFolder}) {
+    final base = p.name ?? p.id;
+    return inFolder ? '$base · in folder' : base;
+  }
+
   Future<void> _selectPerson(String? id) async {
     if (id == null) {
       setState(() {
@@ -298,14 +328,15 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     }
   }
 
-  Future<void> _confirmUnassign(PersonDetailController controller) async {
+  Future<void> _confirmRemovePerson(PersonDetailController controller) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Unassign person?'),
+        title: const Text('Remove person?'),
         content: const Text(
-          'Removes this person. Its face crops move to Unassigned '
-          'so you can assign them again.',
+          'Removes this person. Its faces move to Unassigned '
+          'so you can assign them again. To detach one face only, '
+          'drag it to Unassigned.',
         ),
         actions: [
           TextButton(
@@ -315,7 +346,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           FilledButton(
             key: const Key('face-crop-person-unassign-confirm'),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Unassign'),
+            child: const Text('Remove'),
           ),
         ],
       ),
@@ -337,7 +368,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Face crops'),
+        title: const Text('Faces'),
         actions: [
           if (!_loading && _error == null && _leafFolders.isNotEmpty)
             Padding(
@@ -416,7 +447,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                   ? const Center(
                       child: Text(
                         'No local folders in the library yet.\n'
-                        'Add photos from a folder, then open Face crops.',
+                        'Add photos from a folder, then open Faces.',
                         key: Key('face-crop-trays-no-folders'),
                         textAlign: TextAlign.center,
                       ),
@@ -432,7 +463,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                         child: _TrayColumn(
                           key: const Key('face-crop-tray-unassigned'),
                           title: 'Unassigned',
-                          subtitle: '${_unassigned.length} crops',
+                          subtitle: '${_unassigned.length} faces',
                           onAccept: (d) => _onDrop(FaceCropTray.unassigned, d),
                           child: _AppearanceGrid(
                             appearances: _unassigned,
@@ -448,7 +479,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                         child: _TrayColumn(
                           key: const Key('face-crop-tray-excluded'),
                           title: 'Excluded',
-                          subtitle: '${_excluded.length} crops',
+                          subtitle: '${_excluded.length} faces',
                           onAccept: (d) => _onDrop(FaceCropTray.excluded, d),
                           child: _ExclusionGrid(
                             exclusions: _excluded,
@@ -467,6 +498,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     final pid = _personId;
     final selectedId =
         pid != null && _persons.any((p) => p.id == pid) ? pid : null;
+    final inFolder = _personIdsInCurrentFolder();
+    final dropdownPersons = _personsForDropdown(inFolder);
+    final scheme = Theme.of(context).colorScheme;
     final personSelect = DropdownButtonFormField<String>(
       key: const Key('face-crop-person-select'),
       // ignore: deprecated_member_use
@@ -477,11 +511,43 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         border: OutlineInputBorder(),
         isDense: true,
       ),
+      selectedItemBuilder: (context) {
+        return [
+          for (final p in dropdownPersons)
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(
+                _personDropdownLabel(p, inFolder: inFolder.contains(p.id)),
+                overflow: TextOverflow.ellipsis,
+                style: inFolder.contains(p.id)
+                    ? TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: scheme.primary,
+                      )
+                    : null,
+              ),
+            ),
+        ];
+      },
       items: [
-        for (final p in _persons)
+        for (final p in dropdownPersons)
           DropdownMenuItem(
             value: p.id,
-            child: Text(p.name ?? p.id),
+            child: Text(
+              _personDropdownLabel(p, inFolder: inFolder.contains(p.id)),
+              key: Key(
+                inFolder.contains(p.id)
+                    ? 'face-crop-person-option-in-folder-${p.id}'
+                    : 'face-crop-person-option-${p.id}',
+              ),
+              overflow: TextOverflow.ellipsis,
+              style: inFolder.contains(p.id)
+                  ? TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: scheme.primary,
+                    )
+                  : TextStyle(color: scheme.onSurfaceVariant),
+            ),
           ),
       ],
       onChanged: _busy
@@ -498,15 +564,15 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         title: 'Assigned',
         subtitle: overview.isEmpty
             ? 'Select a person'
-            : '${overview.length} crops in folder',
+            : '${overview.length} faces in folder',
         header: personSelect,
         onAccept: (d) => _onDrop(FaceCropTray.assigned, d),
         child: overview.isEmpty
             ? Center(
                 child: Text(
                   _unassigned.isEmpty && _excluded.isEmpty
-                      ? 'No crops in this folder yet'
-                      : 'No assigned crops in this folder — '
+                      ? 'No faces in this folder yet'
+                      : 'No assigned faces in this folder — '
                           'select a person or check Unassigned',
                   key: const Key('face-crop-assigned-empty'),
                   textAlign: TextAlign.center,
@@ -569,7 +635,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                     }
                   },
                   onCancelRename: () => setState(() => _renaming = false),
-                  onUnassign: () => _confirmUnassign(controller),
+                  onRemovePerson: () => _confirmRemovePerson(controller),
                 ),
               ],
             ],
@@ -582,7 +648,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                       : Text(
                           controller.error != null
                               ? 'Could not load person'
-                              : 'Choose a person to see assigned crops',
+                              : 'Choose a person to see assigned faces',
                           key: const Key('face-crop-assigned-empty'),
                         ),
                 )
@@ -609,7 +675,7 @@ class _PersonChrome extends StatelessWidget {
     required this.onStartRename,
     required this.onDoneRename,
     required this.onCancelRename,
-    required this.onUnassign,
+    required this.onRemovePerson,
   });
 
   final PersonDetail detail;
@@ -620,7 +686,7 @@ class _PersonChrome extends StatelessWidget {
   final VoidCallback onStartRename;
   final Future<void> Function() onDoneRename;
   final VoidCallback onCancelRename;
-  final VoidCallback onUnassign;
+  final VoidCallback onRemovePerson;
 
   bool get _isUnnamed =>
       detail.name == null || detail.name!.trim().isEmpty;
@@ -668,10 +734,13 @@ class _PersonChrome extends StatelessWidget {
                 child: Text(_isUnnamed && !renaming ? 'Set name' : 'Done'),
               )
             else
-              TextButton(
-                key: const Key('face-crop-person-rename-start'),
-                onPressed: busy ? null : onStartRename,
-                child: const Text('Rename'),
+              Tooltip(
+                message: 'Change this person’s name',
+                child: TextButton(
+                  key: const Key('face-crop-person-rename-start'),
+                  onPressed: busy ? null : onStartRename,
+                  child: const Text('Rename'),
+                ),
               ),
             if (renaming)
               TextButton(
@@ -680,10 +749,15 @@ class _PersonChrome extends StatelessWidget {
                 child: const Text('Cancel'),
               ),
             if (controller.canUnassign)
-              TextButton(
-                key: const Key('face-crop-person-unassign'),
-                onPressed: busy ? null : onUnassign,
-                child: const Text('Unassign'),
+              Tooltip(
+                message:
+                    'Remove this person. Faces move to Unassigned. '
+                    'Drag a face to Unassigned to detach only that face.',
+                child: TextButton(
+                  key: const Key('face-crop-person-unassign'),
+                  onPressed: busy ? null : onRemovePerson,
+                  child: const Text('Remove'),
+                ),
               ),
           ],
         ),
@@ -808,7 +882,7 @@ class _AppearanceGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (appearances.isEmpty) {
-      return const Center(child: Text('No crops'));
+      return const Center(child: Text('No faces'));
     }
     return GridView.builder(
       padding: const EdgeInsets.all(8),
@@ -914,7 +988,7 @@ class _ExclusionGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (exclusions.isEmpty) {
-      return const Center(child: Text('No excluded crops'));
+      return const Center(child: Text('No excluded faces'));
     }
     return GridView.builder(
       padding: const EdgeInsets.all(8),
@@ -970,7 +1044,7 @@ class _ExclusionGrid extends StatelessWidget {
   }
 }
 
-/// Navigate to the face-crop trays workspace (optionally focused on a person
+/// Navigate to the Faces trays workspace (optionally focused on a person
 /// and/or leaf folder).
 Future<void> openFaceCropTrays(
   BuildContext context, {

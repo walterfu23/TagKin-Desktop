@@ -562,7 +562,7 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold> {
             ),
           IconButton(
             key: const Key('nav-face-crops'),
-            tooltip: 'Face crops',
+            tooltip: 'Faces',
             onPressed: _openFaceCrops,
             icon: const Icon(Icons.face_retouching_natural_outlined),
           ),
