@@ -602,7 +602,7 @@ void main() {
   });
 
   testWidgets(
-      'face crop trays: assigned overview shows folder crops without person',
+      'face crop trays: first load selects first in-folder person',
       (tester) async {
     final persons = FakePersonsRepository(
       persons: [
@@ -656,16 +656,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('face-crop-assigned-empty')), findsNothing);
+    expect(find.byKey(const Key('face-crop-person-chrome')), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('face-crop-person-name'))).data,
+      'Sam',
+    );
     expect(find.byKey(const Key('face-crop-appearance-ap_paris')), findsOneWidget);
     expect(find.byKey(const Key('face-crop-appearance-ap_rome')), findsNothing);
-    expect(find.byKey(const Key('face-crop-person-chrome')), findsNothing);
-
-    await tester.tap(find.byKey(const Key('face-crop-appearance-ap_paris')));
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const Key('face-crop-person-chrome')), findsOneWidget);
-    expect(find.byKey(const Key('face-crop-person-name')), findsOneWidget);
   });
 
   testWidgets(
@@ -743,5 +740,98 @@ void main() {
     );
     expect(find.text('Alex'), findsOneWidget);
     expect(find.text('Alex · in folder'), findsNothing);
+  });
+
+  testWidgets(
+      'face crop trays: folder switch selects first in-folder person',
+      (tester) async {
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_paris',
+          name: 'Sam',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_paris',
+              personId: 'person_paris',
+              itemId: 'item_paris',
+              tagId: 'tag_paris',
+            ),
+          ],
+        ),
+        fixturePersonDetail(
+          id: 'person_rome_zoe',
+          name: 'Zoe',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_rome_zoe',
+              personId: 'person_rome_zoe',
+              itemId: 'item_rome',
+              tagId: 'tag_rome_zoe',
+            ),
+          ],
+        ),
+        fixturePersonDetail(
+          id: 'person_rome_alex',
+          name: 'Alex',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_rome_alex',
+              personId: 'person_rome_alex',
+              itemId: 'item_rome',
+              tagId: 'tag_rome_alex',
+            ),
+          ],
+        ),
+      ],
+    );
+    final items = FakeItemsRepository(
+      items: [
+        fixtureItem(
+          id: 'item_paris',
+          sourceRef: 'file:///albums/Paris/a.jpg',
+          processingStatus: ProcessingStatus.tagged,
+          contentHash: null,
+        ),
+        fixtureItem(
+          id: 'item_rome',
+          sourceRef: 'file:///albums/Rome/b.jpg',
+          processingStatus: ProcessingStatus.tagged,
+          contentHash: null,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          itemsRepositoryProvider.overrideWithValue(items),
+        ],
+        child: const MaterialApp(
+          home: FaceCropTraysPage(initialLeafFolder: '/albums/Paris'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // First load: Sam (only Paris in-folder person).
+    expect(find.byKey(const Key('face-crop-person-chrome')), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('face-crop-person-name'))).data,
+      'Sam',
+    );
+
+    await tester.tap(find.byKey(const Key('face-crop-folder-select')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rome').last);
+    await tester.pumpAndSettle();
+
+    // Alex before Zoe by name among Rome in-folder people.
+    expect(find.byKey(const Key('face-crop-person-chrome')), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('face-crop-person-name'))).data,
+      'Alex',
+    );
   });
 }

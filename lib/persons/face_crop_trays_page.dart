@@ -50,6 +50,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   bool _busy = false;
   Object? _error;
 
+  /// One-shot: next [_reload] selects the first person with faces in the folder.
+  bool _autoSelectFirstInFolder = false;
+
   final _renameController = TextEditingController();
   bool _renaming = false;
 
@@ -60,6 +63,11 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     super.initState();
     _personId = widget.initialPersonId;
     _leafFolder = widget.initialLeafFolder ?? faceCropLastLeafFolder;
+    // First open: land on first in-folder person (same as folder switch).
+    // Deep links with initialPersonId keep that selection.
+    if (widget.initialPersonId == null) {
+      _autoSelectFirstInFolder = true;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _reload();
     });
@@ -125,18 +133,33 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
 
       // Exclude / unlink can prune the selected person server-side; clear the
       // dropdown value before rebuild or DropdownButton asserts.
+      // Folder switch: land on the first in-folder person (or overview if none).
       var pid = _personId;
-      final stillListed =
-          pid != null && persons.any((p) => p.id == pid);
-      if (pid != null && !stillListed) {
-        _assignedController?.dispose();
-        _assignedController = null;
-        _renameController.clear();
-        pid = null;
-      } else if (pid != null) {
-        await _controllerFor(pid).load();
-        _renameController.text =
-            _assignedController?.detail?.name ?? '';
+      if (_autoSelectFirstInFolder) {
+        _autoSelectFirstInFolder = false;
+        pid = _firstPersonIdInFolder(persons, assignedOverview);
+        if (pid != _personId) {
+          _assignedController?.dispose();
+          _assignedController = null;
+          _renameController.clear();
+        }
+        if (pid != null) {
+          await _controllerFor(pid).load();
+          _renameController.text = _assignedController?.detail?.name ?? '';
+        }
+      } else {
+        final stillListed =
+            pid != null && persons.any((p) => p.id == pid);
+        if (pid != null && !stillListed) {
+          _assignedController?.dispose();
+          _assignedController = null;
+          _renameController.clear();
+          pid = null;
+        } else if (pid != null) {
+          await _controllerFor(pid).load();
+          _renameController.text =
+              _assignedController?.detail?.name ?? '';
+        }
       }
 
       if (!mounted) return;
@@ -164,6 +187,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   Future<void> _selectLeafFolder(String? folder) async {
     if (folder == null || folder == _leafFolder) return;
     faceCropLastLeafFolder = folder;
+    _autoSelectFirstInFolder = true;
     setState(() => _leafFolder = folder);
     await _reload();
   }
@@ -185,9 +209,24 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     return ids;
   }
 
-  /// Library persons with those in the current folder first (then by name/id).
-  List<Person> _personsForDropdown(Set<String> inFolder) {
-    final list = List<Person>.from(_persons);
+  /// Ids with at least one face in [assignedInFolder].
+  static Set<String> _personIdsFromAppearances(
+    List<PersonAppearance> assignedInFolder,
+  ) {
+    final ids = <String>{};
+    for (final a in assignedInFolder) {
+      final pid = a.personId;
+      if (pid != null) ids.add(pid);
+    }
+    return ids;
+  }
+
+  /// Sort: in-folder first, then by name/id (same order as the Person dropdown).
+  static List<Person> _sortPersonsForDropdown(
+    List<Person> persons,
+    Set<String> inFolder,
+  ) {
+    final list = List<Person>.from(persons);
     list.sort((a, b) {
       final ra = inFolder.contains(a.id) ? 0 : 1;
       final rb = inFolder.contains(b.id) ? 0 : 1;
@@ -197,6 +236,24 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       return la.compareTo(lb);
     });
     return list;
+  }
+
+  /// First person (dropdown order) that has faces in [assignedInFolder], or null.
+  static String? _firstPersonIdInFolder(
+    List<Person> persons,
+    List<PersonAppearance> assignedInFolder,
+  ) {
+    final inFolder = _personIdsFromAppearances(assignedInFolder);
+    if (inFolder.isEmpty) return null;
+    for (final p in _sortPersonsForDropdown(persons, inFolder)) {
+      if (inFolder.contains(p.id)) return p.id;
+    }
+    return null;
+  }
+
+  /// Library persons with those in the current folder first (then by name/id).
+  List<Person> _personsForDropdown(Set<String> inFolder) {
+    return _sortPersonsForDropdown(_persons, inFolder);
   }
 
   static String _personDropdownLabel(Person p, {required bool inFolder}) {

@@ -12,7 +12,8 @@ might want to consider path hiearchy.
 9. include user first name, last name from clerk
 10. add tagging of videos. add settings about sample duration.
 11. after removing an item, everything collapses
-12. faces vs face crops
+12. faces vss face crops
 13. faces from the same folder, they are more likely to be assigned to persons from the same folder as well.
-
+14. all text displayed must be selectable
+15. use google as an auth provider. add other providers as well.s
 
