@@ -170,10 +170,15 @@ class ClerkAuthState extends clerk.Auth with ChangeNotifier {
           useRootNavigator: true,
           routeSettings: const RouteSettings(name: _kSsoRouteName),
           builder: (BuildContext context) {
-            return _SsoWebViewOverlay(
-              strategy: strategy,
-              uri: uri,
-              onError: (error) => _onError(error, onError),
+            // Root-navigator dialog sits above MaterialApp.home; re-provide
+            // this authState so _SsoWebViewOverlay can resolve ClerkAuth.
+            return ClerkAuth(
+              authState: this,
+              child: _SsoWebViewOverlay(
+                strategy: strategy,
+                uri: uri,
+                onError: (error) => _onError(error, onError),
+              ),
             );
           },
         );
@@ -221,10 +226,13 @@ class ClerkAuthState extends clerk.Auth with ChangeNotifier {
           useSafeArea: false,
           useRootNavigator: true,
           routeSettings: const RouteSettings(name: _kSsoRouteName),
-          builder: (context) => _SsoWebViewOverlay(
-            strategy: strategy,
-            uri: uri,
-            onError: (error) => _onError(error, onError),
+          builder: (context) => ClerkAuth(
+            authState: this,
+            child: _SsoWebViewOverlay(
+              strategy: strategy,
+              uri: uri,
+              onError: (error) => _onError(error, onError),
+            ),
           ),
         );
         if (redirectUrl != null && context.mounted) {
@@ -281,10 +289,13 @@ class ClerkAuthState extends clerk.Auth with ChangeNotifier {
           useSafeArea: false,
           useRootNavigator: true,
           routeSettings: const RouteSettings(name: _kSsoRouteName),
-          builder: (context) => _SsoWebViewOverlay(
-            strategy: strategy,
-            uri: uri,
-            onError: (error) => _onError(error, onError),
+          builder: (context) => ClerkAuth(
+            authState: this,
+            child: _SsoWebViewOverlay(
+              strategy: strategy,
+              uri: uri,
+              onError: (error) => _onError(error, onError),
+            ),
           ),
         );
         if (redirectUrl != null && context.mounted) {
@@ -473,37 +484,42 @@ class _SsoWebViewOverlayState extends State<_SsoWebViewOverlay> {
     super.initState();
 
     controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.white)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageFinished: (_) => _updateTitle(),
-          onWebResourceError: (e) {
-            final l10ns = ClerkAuth.localizationsOf(context);
-            widget.onError(
-              clerk.ClerkError.clientAppError(
-                message: l10ns.authenticationServiceError(e.description),
-              ),
-            );
-          },
-          onNavigationRequest: (NavigationRequest request) async {
-            try {
-              if (request.url.startsWith(clerk.ClerkConstants.oauthRedirect)) {
-                scheduleMicrotask(() {
-                  if (mounted) {
-                    Navigator.of(context).pop(request.url);
-                  }
-                });
-                return NavigationDecision.prevent;
-              }
-              return NavigationDecision.navigate;
-            } on clerk.ClerkError catch (error) {
-              widget.onError(error);
-              return NavigationDecision.navigate;
+      ..setJavaScriptMode(JavaScriptMode.unrestricted);
+    // macOS WKWebView throws UnimplementedError on setOpaque / setBackgroundColor.
+    try {
+      controller.setBackgroundColor(Colors.white);
+    } on UnimplementedError {
+      // Keep default background on desktop.
+    }
+    controller.setNavigationDelegate(
+      NavigationDelegate(
+        onPageFinished: (_) => _updateTitle(),
+        onWebResourceError: (e) {
+          final l10ns = ClerkAuth.localizationsOf(context);
+          widget.onError(
+            clerk.ClerkError.clientAppError(
+              message: l10ns.authenticationServiceError(e.description),
+            ),
+          );
+        },
+        onNavigationRequest: (NavigationRequest request) async {
+          try {
+            if (request.url.startsWith(clerk.ClerkConstants.oauthRedirect)) {
+              scheduleMicrotask(() {
+                if (mounted) {
+                  Navigator.of(context).pop(request.url);
+                }
+              });
+              return NavigationDecision.prevent;
             }
-          },
-        ),
-      );
+            return NavigationDecision.navigate;
+          } on clerk.ClerkError catch (error) {
+            widget.onError(error);
+            return NavigationDecision.navigate;
+          }
+        },
+      ),
+    );
 
     // For google authentication we use a custom user-agent
     if (widget.strategy.provider == clerk.Strategy.oauthGoogle.provider) {
