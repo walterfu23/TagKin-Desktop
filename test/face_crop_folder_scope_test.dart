@@ -36,6 +36,26 @@ void main() {
       expect(itemIdsInLeafFolder(items, '/albums/Paris/day2'), {'b'});
     });
 
+    test('itemIdsUnderFolder includes nested descendants', () {
+      final items = [
+        fixtureItem(id: 'a', sourceRef: 'file:///albums/Paris/1.jpg'),
+        fixtureItem(id: 'b', sourceRef: 'file:///albums/Paris/day2/2.jpg'),
+        fixtureItem(id: 'c', sourceRef: 'file:///albums/Rome/3.jpg'),
+        fixtureItem(id: 'd', sourceRef: 'file:///albums/ParisExtra/4.jpg'),
+      ];
+      expect(itemIdsUnderFolder(items, '/albums/Paris'), {'a', 'b'});
+      expect(itemIdsUnderFolder(items, '/albums/Paris/day2'), {'b'});
+      expect(itemIdsUnderFolder(items, '/albums/Rome'), {'c'});
+    });
+
+    test('pathIsUnderFolder rejects sibling prefix names', () {
+      expect(pathIsUnderFolder('/albums/Paris/1.jpg', '/albums/Paris'), isTrue);
+      expect(
+        pathIsUnderFolder('/albums/ParisExtra/1.jpg', '/albums/Paris'),
+        isFalse,
+      );
+    });
+
     test('resolveLeafFolderSelection prefers listed preferred', () {
       expect(
         resolveLeafFolderSelection(

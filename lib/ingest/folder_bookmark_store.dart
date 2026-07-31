@@ -108,6 +108,15 @@ class FolderBookmarkStore {
     await _persist();
   }
 
+  /// Drop the bookmark for [folderPath] if present (exact path only).
+  Future<void> remove(String folderPath) async {
+    await _ensureLoaded();
+    final normalized = p.normalize(folderPath);
+    if (!_cache.containsKey(normalized)) return;
+    _cache.remove(normalized);
+    await _persist();
+  }
+
   /// Longest bookmarked folder prefix of [filePath], if any.
   Future<String?> bookmarkForFile(String filePath) async {
     await _ensureLoaded();

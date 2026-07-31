@@ -157,9 +157,7 @@ class FakeJobsRepository implements JobsRepository {
     deleteCallCount++;
     deletedItemIds.add(id);
     if (deleteError != null) throw deleteError!;
-    if (id != itemId) {
-      throw ApiException(statusCode: 404, message: 'Not found');
-    }
+    // Accept any item id so folder remove can soft-delete a subtree.
     onDelete?.call(id);
   }
 

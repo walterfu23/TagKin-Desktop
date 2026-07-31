@@ -20,6 +20,7 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/face_crop_trays_page.dart';
 import 'package:tagkin_desktop/persons/persons_list_page.dart';
 import 'package:tagkin_desktop/prefs/settings_navigation.dart';
+import 'package:tagkin_desktop/ingest/folder_ingest_status_banner.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
 /// App-wide config (overridable in tests).
@@ -590,7 +591,13 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold> {
             ),
         ],
       ),
-      body: widget.child,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const FolderIngestStatusBanner(),
+          Expanded(child: widget.child),
+        ],
+      ),
     );
   }
 }

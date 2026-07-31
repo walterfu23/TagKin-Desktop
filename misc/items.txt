@@ -16,4 +16,7 @@ might want to consider path hiearchy.
 13. faces from the same folder, they are more likely to be assigned to persons from the same folder as well.
 14. all text displayed must be selectable
 15. use google as an auth provider. add other providers as well.s
+16. On the faces page, In the folder dropdown, it might be a good idea to separate out folders that have been fully processed from other folders. perhaps more a simple dropdown anymore?
+17. Google consent page shows Clerk wants access to the google account. look at it later. somehow it has to do with google cloud console to create/configure oath client + consent screen with app name. 
+18. If several faces are already grouped, because they are alike, there should be a box around them so that actions can be applied to the group, for example making a new person from the group, drag the group between trays 
 

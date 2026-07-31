@@ -84,7 +84,7 @@ class FakePersonsRepository implements PersonsRepository {
         createdAt: person.createdAt,
         appearances: remaining,
       );
-      return PersonAppearance(
+      final unlinked = PersonAppearance(
         id: appearance.id,
         personId: null,
         itemId: appearance.itemId,
@@ -93,6 +93,8 @@ class FakePersonsRepository implements PersonsRepository {
         region: appearance.region,
         createdAt: appearance.createdAt,
       );
+      unassignedAppearances.add(unlinked);
+      return unlinked;
     }
     throw ApiException(statusCode: 404, message: 'Not found');
   }

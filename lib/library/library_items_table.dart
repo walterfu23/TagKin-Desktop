@@ -37,12 +37,14 @@ class LibraryItemsTable extends ConsumerWidget {
     required this.controller,
     required this.onOpenDetail,
     required this.onDelete,
+    required this.onRemoveFolder,
     required this.onRevealSource,
   });
 
   final LibraryTableController controller;
   final void Function(Item item) onOpenDetail;
   final void Function(Item item) onDelete;
+  final void Function(String dir, int count) onRemoveFolder;
   final void Function(Item item) onRevealSource;
 
   @override
@@ -107,6 +109,8 @@ class LibraryItemsTable extends ConsumerWidget {
                                             depth: depth,
                                             onToggle: () => controller
                                                 .toggleCollapseSourceDir(dir),
+                                            onRemoveFolder: () =>
+                                                onRemoveFolder(dir, count),
                                           ),
                                         LibraryItemEntry(
                                           :final row,
@@ -342,6 +346,7 @@ class _PathGroupHeader extends StatelessWidget {
     required this.collapsed,
     required this.depth,
     required this.onToggle,
+    required this.onRemoveFolder,
   });
 
   final int index;
@@ -351,6 +356,7 @@ class _PathGroupHeader extends StatelessWidget {
   final bool collapsed;
   final int depth;
   final VoidCallback onToggle;
+  final VoidCallback onRemoveFolder;
 
   @override
   Widget build(BuildContext context) {
@@ -434,6 +440,18 @@ class _PathGroupHeader extends StatelessWidget {
                       );
                     },
                   ),
+                ),
+                IconButton(
+                  key: Key('source-group-remove-$dir'),
+                  tooltip: 'Remove folder',
+                  icon: const Icon(Icons.folder_off_outlined, size: 18),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                  onPressed: onRemoveFolder,
                 ),
               ],
             ),

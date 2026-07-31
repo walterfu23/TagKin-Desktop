@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
-import 'package:tagkin_desktop/ingest/folder_ingest_page.dart';
+import 'package:tagkin_desktop/ingest/folder_bookmark_store.dart';
+import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
+import 'package:tagkin_desktop/ingest/folder_picker.dart';
 import 'package:tagkin_desktop/jobs/export_controller.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/library/library_items_table.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/source_reveal.dart';
+import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/usage/usage_banner.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
@@ -16,6 +19,8 @@ import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 ///
 /// D6 gates the "Add from folder" FAB on [UsageGate.blocked] and shows a
 /// warn/blocked [UsageBanner] above the table. D7 adds library export.
+/// Folder ingest runs in the background ([FolderIngestQueue]); progress is in
+/// the shell status banner.
 class ItemsListPage extends ConsumerStatefulWidget {
   const ItemsListPage({super.key});
 
@@ -24,13 +29,35 @@ class ItemsListPage extends ConsumerStatefulWidget {
 }
 
 class _ItemsListPageState extends ConsumerState<ItemsListPage> {
+  int _lastIngestRefreshTick = 0;
+  FolderIngestQueue? _ingestQueue;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(usageControllerProvider).load();
       ref.read(libraryTableControllerProvider).load();
+      final queue = ref.read(folderIngestQueueProvider);
+      _ingestQueue = queue;
+      _lastIngestRefreshTick = queue.libraryRefreshTick;
+      queue.addListener(_onIngestQueueChanged);
     });
+  }
+
+  @override
+  void dispose() {
+    _ingestQueue?.removeListener(_onIngestQueueChanged);
+    super.dispose();
+  }
+
+  void _onIngestQueueChanged() {
+    if (!mounted) return;
+    final queue = _ingestQueue;
+    if (queue == null) return;
+    if (queue.libraryRefreshTick == _lastIngestRefreshTick) return;
+    _lastIngestRefreshTick = queue.libraryRefreshTick;
+    ref.read(libraryTableControllerProvider).load();
   }
 
   void _retry() {
@@ -94,6 +121,74 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     }
   }
 
+  Future<void> _confirmRemoveFolder(String dir, int count) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove folder?'),
+        content: Text(
+          'Removes $count item${count == 1 ? '' : 's'} under this folder '
+          'from your TagKin library. Original local media is not deleted.',
+        ),
+        actions: [
+          TextButton(
+            key: const Key('remove-folder-cancel'),
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('remove-folder-confirm'),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final table = ref.read(libraryTableControllerProvider);
+    final ids = itemIdsUnderFolder(
+      table.allRows.map((r) => r.item),
+      dir,
+    ).toList()
+      ..sort();
+    if (ids.isEmpty) return;
+
+    final jobs = ref.read(jobsRepositoryProvider);
+    var failed = 0;
+    Object? lastError;
+    for (final id in ids) {
+      try {
+        await jobs.deleteItem(id);
+      } catch (e) {
+        failed++;
+        lastError = e;
+      }
+    }
+
+    if (!mounted) return;
+    await ref.read(libraryTableControllerProvider).load();
+
+    // After library reload — file IO must not block the UI refresh path.
+    try {
+      await folderBookmarkStore.remove(dir);
+    } catch (_) {
+      // Bookmark cleanup is best-effort for sandbox reopen.
+    }
+
+    if (!mounted) return;
+    if (failed > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          key: const Key('remove-folder-error'),
+          content: Text(
+            'Remove folder failed for $failed of ${ids.length}: $lastError',
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _revealSource(Item item) async {
     final ok = await revealSourceRef(item.sourceRef);
     if (!mounted) return;
@@ -108,19 +203,41 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
   }
 
   Future<void> _openFolderIngest() async {
-    final container = ProviderScope.containerOf(context);
-    final ingested = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
-        builder: (_) => SelectableScope(
-          child: UncontrolledProviderScope(
-            container: container,
-            child: const FolderIngestPage(),
+    final picker = ref.read(folderPickerProvider);
+    String? path;
+    try {
+      path = await picker();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          key: const Key('folder-pick-error'),
+          content: Text('Could not open folder picker: $e'),
+        ),
+      );
+      return;
+    }
+    if (path == null || !mounted) return;
+
+    final queue = ref.read(folderIngestQueueProvider);
+    final result = await queue.enqueue(path);
+    if (!mounted) return;
+    if (result == FolderIngestEnqueueResult.started) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          key: Key('folder-ingest-started'),
+          content: Text('Loading folder in the background…'),
+        ),
+      );
+    } else if (result == FolderIngestEnqueueResult.alreadyActive) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          key: Key('folder-ingest-already-active'),
+          content: Text(
+            'That folder is already loading. Wait until it finishes.',
           ),
         ),
-      ),
-    );
-    if (ingested == true) {
-      _retry();
+      );
     }
   }
 
@@ -236,6 +353,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
       controller: table,
       onOpenDetail: _openDetail,
       onDelete: _confirmDeleteFromList,
+      onRemoveFolder: _confirmRemoveFolder,
       onRevealSource: _revealSource,
     );
   }

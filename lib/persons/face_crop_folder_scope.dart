@@ -43,6 +43,29 @@ Set<String> itemIdsInLeafFolder(Iterable<Item> items, String leafFolder) {
   return ids;
 }
 
+/// Whether [filePath] is [folder] itself or a descendant under it.
+bool pathIsUnderFolder(String filePath, String folder) {
+  final normalizedFile = p.normalize(filePath);
+  final normalizedFolder = p.normalize(folder);
+  if (normalizedFile == normalizedFolder) return true;
+  final prefix = normalizedFolder.endsWith(p.separator)
+      ? normalizedFolder
+      : '$normalizedFolder${p.separator}';
+  return normalizedFile.startsWith(prefix);
+}
+
+/// Item ids whose source file lives in [folder] or any nested subdirectory.
+Set<String> itemIdsUnderFolder(Iterable<Item> items, String folder) {
+  final ids = <String>{};
+  for (final item in items) {
+    final path = localPathFromSourceRef(item.sourceRef);
+    if (path != null && pathIsUnderFolder(path, folder)) {
+      ids.add(item.id);
+    }
+  }
+  return ids;
+}
+
 /// Pick a folder to open: prefer [preferred] if still listed, else first.
 String? resolveLeafFolderSelection({
   required List<String> folders,

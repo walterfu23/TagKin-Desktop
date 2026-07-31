@@ -522,4 +522,47 @@ void main() {
     expect(find.byKey(const Key('item-row-item_list_del')), findsNothing);
     expect(find.byKey(const Key('items-empty')), findsOneWidget);
   });
+
+  testWidgets('remove folder confirms and soft-deletes subtree items',
+      (tester) async {
+    const shared = '/albums/remove_me';
+    final a = fixtureItem(
+      id: 'a',
+      sourceRef: 'file://$shared/a.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final b = fixtureItem(
+      id: 'b',
+      sourceRef: 'file://$shared/nested/b.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final keep = fixtureItem(
+      id: 'keep',
+      sourceRef: 'file:///other_root/c.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final items = FakeItemsRepository(items: [a, b, keep]);
+    final jobs = FakeJobsRepository(onDelete: items.removeItem);
+    await _pumpLibrary(tester, items: items, jobs: jobs);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('source-group-$shared')), findsOneWidget);
+    await tester.ensureVisible(
+      find.byKey(const Key('source-group-remove-$shared')),
+    );
+    await tester.tap(find.byKey(const Key('source-group-remove-$shared')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Remove folder?'), findsOneWidget);
+    expect(
+      find.textContaining('Removes 2 items under this folder'),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const Key('remove-folder-confirm')));
+    await tester.pumpAndSettle();
+
+    expect(jobs.deletedItemIds.toSet(), {'a', 'b'});
+    expect(find.byKey(const Key('source-group-$shared')), findsNothing);
+    expect(find.byKey(const Key('item-row-keep')), findsOneWidget);
+  });
 }
