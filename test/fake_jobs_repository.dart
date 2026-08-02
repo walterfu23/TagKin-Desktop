@@ -36,6 +36,9 @@ class FakeJobsRepository implements JobsRepository {
   /// Optional delay before [analyzeItem] completes (tests race/cancel).
   final Duration? analyzeDelay;
 
+  /// Optional delay before [deleteItem] completes (tests remove progress UI).
+  Duration? deleteDelay;
+
   /// Optional delay before [listItemJobs] completes (tests stale-refresh race).
   Duration? listJobsDelay;
 
@@ -155,6 +158,9 @@ class FakeJobsRepository implements JobsRepository {
   @override
   Future<void> deleteItem(String id) async {
     deleteCallCount++;
+    if (deleteDelay != null) {
+      await Future<void>.delayed(deleteDelay!);
+    }
     deletedItemIds.add(id);
     if (deleteError != null) throw deleteError!;
     // Accept any item id so folder remove can soft-delete a subtree.

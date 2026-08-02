@@ -39,6 +39,7 @@ class LibraryItemsTable extends ConsumerWidget {
     required this.onDelete,
     required this.onRemoveFolder,
     required this.onRevealSource,
+    this.isFolderRemoving,
   });
 
   final LibraryTableController controller;
@@ -46,6 +47,7 @@ class LibraryItemsTable extends ConsumerWidget {
   final void Function(Item item) onDelete;
   final void Function(String dir, int count) onRemoveFolder;
   final void Function(Item item) onRevealSource;
+  final bool Function(String dir)? isFolderRemoving;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -111,6 +113,9 @@ class LibraryItemsTable extends ConsumerWidget {
                                                 .toggleCollapseSourceDir(dir),
                                             onRemoveFolder: () =>
                                                 onRemoveFolder(dir, count),
+                                            removing: isFolderRemoving
+                                                    ?.call(dir) ??
+                                                false,
                                           ),
                                         LibraryItemEntry(
                                           :final row,
@@ -347,6 +352,7 @@ class _PathGroupHeader extends StatelessWidget {
     required this.depth,
     required this.onToggle,
     required this.onRemoveFolder,
+    required this.removing,
   });
 
   final int index;
@@ -357,6 +363,7 @@ class _PathGroupHeader extends StatelessWidget {
   final int depth;
   final VoidCallback onToggle;
   final VoidCallback onRemoveFolder;
+  final bool removing;
 
   @override
   Widget build(BuildContext context) {
@@ -443,15 +450,21 @@ class _PathGroupHeader extends StatelessWidget {
                 ),
                 IconButton(
                   key: Key('source-group-remove-$dir'),
-                  tooltip: 'Remove folder',
-                  icon: const Icon(Icons.folder_off_outlined, size: 18),
+                  tooltip: removing ? 'Removing folder…' : 'Remove folder',
+                  icon: removing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.folder_off_outlined, size: 18),
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(
                     minWidth: 32,
                     minHeight: 32,
                   ),
-                  onPressed: onRemoveFolder,
+                  onPressed: removing ? null : onRemoveFolder,
                 ),
               ],
             ),

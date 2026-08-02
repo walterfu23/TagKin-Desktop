@@ -124,7 +124,8 @@ void main() {
     expect(find.text('party'), findsOneWidget);
   });
 
-  testWidgets('Find person matches prompts to name unnamed persons',
+  testWidgets(
+      'Find person matches reports names for auto-linked appearances',
       (tester) async {
     final item = fixtureItem(
       id: 'item_1',
@@ -135,22 +136,25 @@ void main() {
       items: [item],
       knowledgeByItemId: {'item_1': knowledge},
     );
+    // Auto-likeness matched an existing named person (R2) — never mints an
+    // unnamed Person; unlinked faces stay in FaceGroup FA (personId null)
+    // for a human to name later in the Faces trays.
     items.linkPeopleResult.add(
       fixtureAppearance(
-        id: 'ap_new',
-        personId: 'person_new',
+        id: 'ap_existing',
+        personId: 'person_existing',
         itemId: 'item_1',
       ),
     );
     final persons = FakePersonsRepository(
       persons: [
         fixturePersonDetail(
-          id: 'person_new',
-          name: null,
+          id: 'person_existing',
+          name: 'Jordan',
           appearances: [
             fixtureAppearance(
-              id: 'ap_new',
-              personId: 'person_new',
+              id: 'ap_existing',
+              personId: 'person_existing',
               itemId: 'item_1',
             ),
           ],
@@ -189,16 +193,8 @@ void main() {
     await tester.tap(find.byKey(const Key('item-link-people')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('person-name-dialog')), findsOneWidget);
-    await tester.enterText(
-      find.byKey(const Key('person-name-field')),
-      'Jordan',
-    );
-    await tester.tap(find.byKey(const Key('person-name-save')));
-    await tester.pumpAndSettle();
-
     expect(items.linkPeopleCalls, ['item_1']);
-    expect(persons.renameCalls.single.name, 'Jordan');
+    expect(persons.renameCalls, isEmpty);
     expect(
       find.byKey(const Key('link-people-status')),
       findsOneWidget,

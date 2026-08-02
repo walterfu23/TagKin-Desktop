@@ -1,5 +1,6 @@
-// D9 Person Linking UI integration: named vs unnamed grouping, reassign new,
-// unassign against mocked API (§5).
+// D9 Person Linking UI integration: named-person list, reassign to a new
+// named person, unassign against mocked API (§5). Every Person is always
+// named (R2) — there is no unnamed grouping to test here.
 //   flutter test integration_test/persons_test.dart -d macos
 //   flutter test integration_test/persons_test.dart -d windows
 
@@ -20,7 +21,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-      'persons: named grouping; reassign new; unassign; delete',
+      'persons: named list; reassign to new named person; unassign; delete',
       (WidgetTester tester) async {
     final item = fixtureItem(
       id: 'item_p',
@@ -70,7 +71,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('persons-list')), findsOneWidget);
-    expect(find.byKey(const Key('persons-section-named')), findsOneWidget);
     expect(find.text('Sam'), findsOneWidget);
 
     // Open person detail.
@@ -79,15 +79,25 @@ void main() {
 
     expect(find.byKey(const Key('person-detail')), findsOneWidget);
 
-    // Reassign an appearance onto a new person.
+    // Reassign an appearance onto a brand-new named person — creating a
+    // person always requires a name (R2), so the reassign button opens a
+    // name dialog before calling the API.
     await tester.tap(find.byKey(const Key('appearance-reassign-select-ap_2')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('New person').last);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('appearance-reassign-ap_2')));
     await tester.pumpAndSettle();
+    expect(find.byKey(const Key('person-name-dialog')), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('person-name-field')),
+      'Riley',
+    );
+    await tester.tap(find.byKey(const Key('person-name-save')));
+    await tester.pumpAndSettle();
     expect(persons.reassignCalls.single.appearanceId, 'ap_2');
     expect(persons.reassignCalls.single.personId, isNull);
+    expect(persons.reassignCalls.single.name, 'Riley');
 
     // Unassign the remaining appearance (undo path).
     await tester.tap(find.byKey(const Key('appearance-unassign-ap_1')));
@@ -101,8 +111,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(persons.deleteCalls, ['person_1']);
 
-    // Back to the list — the new person from reassignment shows under Unnamed.
+    // Back to the list — the person created from reassignment is named too.
     expect(find.byKey(const Key('persons-list')), findsOneWidget);
-    expect(find.byKey(const Key('persons-section-unnamed')), findsOneWidget);
+    expect(find.text('Riley'), findsOneWidget);
   });
 }

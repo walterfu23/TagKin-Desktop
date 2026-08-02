@@ -9,7 +9,9 @@ import 'package:tagkin_desktop/prepass/face_embedder.dart';
 import 'package:tagkin_desktop/prepass/onnx_face_embedder.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
-/// Library-wide persons list (D9): named vs unnamed sections.
+/// Library-wide persons list (D9). Every person is always named (R2) — the
+/// old "Unnamed" section is gone; unassigned likeness lives in FaceGroup
+/// FA/FM in the Faces trays instead.
 ///
 /// Never displays likeness vectors (R1). Labels use canonical "person" (R2).
 class PersonsListPage extends ConsumerStatefulWidget {
@@ -140,10 +142,6 @@ class _PersonsListPageState extends ConsumerState<PersonsListPage> {
                 }
 
                 final persons = snapshot.data!;
-                bool isNamed(Person p) =>
-                    p.name != null && p.name!.trim().isNotEmpty;
-                final named = persons.where(isNamed).toList();
-                final unnamed = persons.where((p) => !isNamed(p)).toList();
 
                 if (persons.isEmpty) {
                   return Center(
@@ -166,55 +164,17 @@ class _PersonsListPageState extends ConsumerState<PersonsListPage> {
                   key: const Key('persons-list'),
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   children: [
-                    if (named.isNotEmpty) ...[
-                      const _SectionHeader(
-                        title: 'Named',
-                        sectionKey: Key('persons-section-named'),
+                    for (final person in persons)
+                      _PersonTile(
+                        person: person,
+                        onTap: () => _openDetail(person),
                       ),
-                      for (final person in named)
-                        _PersonTile(
-                          person: person,
-                          onTap: () => _openDetail(person),
-                        ),
-                    ],
-                    if (unnamed.isNotEmpty) ...[
-                      const _SectionHeader(
-                        title: 'Unnamed',
-                        sectionKey: Key('persons-section-unnamed'),
-                      ),
-                      for (final person in unnamed)
-                        _PersonTile(
-                          person: person,
-                          onTap: () => _openDetail(person),
-                        ),
-                    ],
                   ],
                 );
               },
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title, required this.sectionKey});
-
-  final String title;
-  final Key sectionKey;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      child: Text(
-        title,
-        key: sectionKey,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
       ),
     );
   }
@@ -232,7 +192,7 @@ class _PersonTile extends StatelessWidget {
       key: Key('person-row-${person.id}'),
       leading: PersonListFaceThumb(personId: person.id),
       title: Text(
-        person.name ?? '(unnamed)',
+        person.name,
         key: Key('person-name-${person.id}'),
       ),
       subtitle: Text(

@@ -559,10 +559,53 @@ void main() {
       findsOneWidget,
     );
     await tester.tap(find.byKey(const Key('remove-folder-confirm')));
+    await tester.pump(); // enqueue + snackbar
+    expect(find.byKey(const Key('folder-remove-started')), findsOneWidget);
     await tester.pumpAndSettle();
 
     expect(jobs.deletedItemIds.toSet(), {'a', 'b'});
     expect(find.byKey(const Key('source-group-$shared')), findsNothing);
     expect(find.byKey(const Key('item-row-keep')), findsOneWidget);
+  });
+
+  testWidgets('remove folder shows in-progress banner until deletes finish',
+      (tester) async {
+    const shared = '/albums/slow_remove';
+    final a = fixtureItem(
+      id: 'a',
+      sourceRef: 'file://$shared/a.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final b = fixtureItem(
+      id: 'b',
+      sourceRef: 'file://$shared/b.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final items = FakeItemsRepository(items: [a, b]);
+    final jobs = FakeJobsRepository(onDelete: items.removeItem)
+      ..deleteDelay = const Duration(milliseconds: 40);
+    await _pumpLibrary(tester, items: items, jobs: jobs);
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(
+      find.byKey(const Key('source-group-remove-$shared')),
+    );
+    await tester.tap(find.byKey(const Key('source-group-remove-$shared')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('remove-folder-confirm')));
+    await tester.pump();
+
+    expect(find.text('Removing 1 folder…'), findsOneWidget);
+    expect(find.byKey(const Key('folder-ingest-status-banner')), findsOneWidget);
+
+    // Remove button is disabled / shows spinner while active.
+    final removeBtn = tester.widget<IconButton>(
+      find.byKey(const Key('source-group-remove-$shared')),
+    );
+    expect(removeBtn.onPressed, isNull);
+
+    await tester.pumpAndSettle();
+    expect(jobs.deletedItemIds.toSet(), {'a', 'b'});
+    expect(find.text('Folder remove finished'), findsOneWidget);
   });
 }

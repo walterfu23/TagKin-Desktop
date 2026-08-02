@@ -42,8 +42,9 @@ class PersonsRepository {
     return PersonDetail.fromJson(json);
   }
 
-  /// `PATCH /persons/{id}` — rename a person (human-authored; R6).
-  Future<Person> renamePerson(String personId, String? name) async {
+  /// `PATCH /persons/{id}` — rename a person (human-authored; R6). Name must
+  /// be a non-empty string (Person.name is always required, R2).
+  Future<Person> renamePerson(String personId, String name) async {
     final response = await _client.patch(
       '/persons/$personId',
       body: RenamePerson(name: name).toJson(),
@@ -58,7 +59,8 @@ class PersonsRepository {
     return Person.fromJson(json);
   }
 
-  /// `POST /persons/appearances/{id}/unlink` — clear personId / unassign (R6).
+  /// `POST /persons/appearances/{id}/unlink` — clear personId / faceGroupId,
+  /// back to loose Unassigned (R6).
   Future<PersonAppearance> unlinkAppearance(String appearanceId) async {
     final response = await _client.post(
       '/persons/appearances/$appearanceId/unlink',
@@ -74,14 +76,20 @@ class PersonsRepository {
   }
 
   /// `POST /persons/appearances/{id}/reassign` — move to another person (R6).
-  /// Pass [personId] null to create a new person then assign.
+  /// Pass an existing [personId], or [name] to create a new named person then
+  /// assign. Exactly one of [personId] / [name] is required.
   Future<PersonAppearance> reassignAppearance(
-    String appearanceId,
+    String appearanceId, {
     String? personId,
-  ) async {
+    String? name,
+  }) async {
+    assert(
+      personId != null || name != null,
+      'reassignAppearance requires personId or name',
+    );
     final response = await _client.post(
       '/persons/appearances/$appearanceId/reassign',
-      body: ReassignAppearance(personId: personId).toJson(),
+      body: ReassignAppearance(personId: personId, name: name).toJson(),
     );
     final json = jsonDecode(response.body);
     if (json is! Map<String, dynamic>) {
@@ -91,6 +99,51 @@ class PersonsRepository {
       );
     }
     return PersonAppearance.fromJson(json);
+  }
+
+  /// `POST /persons/face-groups/{id}/assign` — promote a GroupFA/GroupFM into
+  /// a named Person (GroupP when ≥2 faces). Prior FaceGroup is deleted (R6).
+  /// Exactly one of [personId] / [name] is required.
+  Future<PersonDetail> assignFaceGroup(
+    String faceGroupId, {
+    String? personId,
+    String? name,
+  }) async {
+    assert(
+      personId != null || name != null,
+      'assignFaceGroup requires personId or name',
+    );
+    final response = await _client.post(
+      '/persons/face-groups/$faceGroupId/assign',
+      body: AssignFaceGroup(personId: personId, name: name).toJson(),
+    );
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected assign-face-group response shape',
+      );
+    }
+    return PersonDetail.fromJson(json);
+  }
+
+  /// `POST /persons/appearances/unassign` — move appearances to Unassigned.
+  /// Two or more become GroupFM; a single face becomes loose (R6).
+  Future<List<PersonAppearance>> unassignAppearances(
+    List<String> appearanceIds,
+  ) async {
+    final response = await _client.post(
+      '/persons/appearances/unassign',
+      body: UnassignAppearances(appearanceIds: appearanceIds).toJson(),
+    );
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected unassign-appearances response shape',
+      );
+    }
+    return UnassignAppearancesResponse.fromJson(json).appearances;
   }
 
   /// `GET /persons/appearances/unassigned` — Unassigned tray (R1: no embeddings).

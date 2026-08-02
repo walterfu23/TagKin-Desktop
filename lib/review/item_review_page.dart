@@ -10,7 +10,6 @@ import 'package:tagkin_desktop/knowledge/comments_view.dart';
 import 'package:tagkin_desktop/knowledge/corrections_history_view.dart';
 import 'package:tagkin_desktop/knowledge/tag_edit_dialog.dart';
 import 'package:tagkin_desktop/persons/person_detail_page.dart';
-import 'package:tagkin_desktop/persons/person_name_dialog.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/review/key_period_scrubber.dart';
 import 'package:tagkin_desktop/review/knowledge_view.dart';
@@ -108,27 +107,18 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
       final result = await items.linkPeopleForItem(widget.itemId);
       if (!mounted) return;
 
+      // Auto-likeness assigns matches to an existing named person, or leaves
+      // the appearance in FaceGroup FA (personId null) for a human to name
+      // later in the Faces trays — never mints an unnamed Person (R2).
       final personIds = result.appearances
           .map((a) => a.personId)
           .whereType<String>()
           .toSet();
       final named = <String>[];
-      var skipped = 0;
       for (final personId in personIds) {
         final detail = await persons.getPerson(personId);
         if (!mounted) return;
-        if (detail.name != null && detail.name!.trim().isNotEmpty) {
-          named.add(detail.name!.trim());
-          continue;
-        }
-        final entered = await showPersonNameDialog(context);
-        if (!mounted) return;
-        if (entered == null || entered.isEmpty) {
-          skipped++;
-          continue;
-        }
-        await persons.renamePerson(personId, entered);
-        named.add(entered);
+        named.add(detail.name);
       }
 
       if (!mounted) return;
@@ -136,9 +126,6 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
       final status = StringBuffer('Found $linkCount appearance link(s)');
       if (named.isNotEmpty) {
         status.write(' — ${named.join(', ')}');
-      }
-      if (skipped > 0) {
-        status.write(' ($skipped unnamed skipped)');
       }
       setState(() => _linkStatus = status.toString());
       await ref.read(reviewControllerProvider(widget.itemId)).load();

@@ -9,14 +9,11 @@ import 'package:tagkin_desktop/persons/persons_list_page.dart';
 import 'fake_persons_repository.dart';
 
 void main() {
-  testWidgets('persons list renders named vs unnamed sections',
+  testWidgets('persons list renders every (always-named) person',
       (tester) async {
     final persons = FakePersonsRepository(
       persons: [
-        fixturePersonDetail(
-          id: 'person_s',
-          name: null,
-        ),
+        fixturePersonDetail(id: 'person_s', name: 'Sam'),
         fixturePersonDetail(
           id: 'person_c',
           name: 'Confirmed Chris',
@@ -41,8 +38,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('persons-list')), findsOneWidget);
-    expect(find.byKey(const Key('persons-section-named')), findsOneWidget);
-    expect(find.byKey(const Key('persons-section-unnamed')), findsOneWidget);
+    expect(find.text('Sam'), findsOneWidget);
     expect(find.text('Confirmed Chris'), findsOneWidget);
     expect(find.byKey(const Key('person-row-person_s')), findsOneWidget);
     expect(find.byKey(const Key('person-row-person_c')), findsOneWidget);
@@ -83,13 +79,45 @@ void main() {
     expect(persons.renameCalls.single.name, 'Samantha');
   });
 
+  testWidgets('person detail: rename requires a non-empty name (R2)',
+      (tester) async {
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(id: 'person_1', name: 'Sam'),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+        ],
+        child: const MaterialApp(
+          home: PersonDetailPage(personId: 'person_1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('person-rename')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('person-rename-field')),
+      '   ',
+    );
+    await tester.tap(find.byKey(const Key('person-rename-done')));
+    await tester.pumpAndSettle();
+
+    // No API call for a blank name; editing stays open with the old name.
+    expect(persons.renameCalls, isEmpty);
+    expect(find.byKey(const Key('person-rename-field')), findsOneWidget);
+    expect(find.byKey(const Key('person-action-error')), findsOneWidget);
+  });
+
   testWidgets('person detail: unassign pops page', (tester) async {
     final persons = FakePersonsRepository(
       persons: [
-        fixturePersonDetail(
-          id: 'person_1',
-          name: null,
-        ),
+        fixturePersonDetail(id: 'person_1', name: 'Sam'),
       ],
     );
 
@@ -132,46 +160,6 @@ void main() {
     expect(persons.deleteCalls, ['person_1']);
     expect(find.byKey(const Key('person-detail')), findsNothing);
     expect(find.byKey(const Key('open-person')), findsOneWidget);
-  });
-
-  testWidgets('person detail: unnamed shows name field by default',
-      (tester) async {
-    final persons = FakePersonsRepository(
-      persons: [
-        fixturePersonDetail(
-          id: 'person_1',
-          name: null,
-        ),
-      ],
-    );
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          personsRepositoryProvider.overrideWithValue(persons),
-        ],
-        child: const MaterialApp(
-          home: PersonDetailPage(personId: 'person_1'),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('(unnamed)'), findsOneWidget);
-    expect(find.byKey(const Key('person-rename')), findsNothing);
-    expect(find.byKey(const Key('person-rename-field')), findsOneWidget);
-    expect(find.byKey(const Key('person-rename-cancel')), findsNothing);
-
-    await tester.enterText(
-      find.byKey(const Key('person-rename-field')),
-      'Alex',
-    );
-    await tester.tap(find.byKey(const Key('person-rename-done')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Alex'), findsOneWidget);
-    expect(persons.renameCalls.single.name, 'Alex');
-    expect(find.byKey(const Key('person-rename')), findsOneWidget);
   });
 
   testWidgets('person name dialog: save returns trimmed name', (tester) async {
@@ -239,13 +227,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('appearance-unassign-ap_1')), findsOneWidget);
-    expect(find.byKey(const Key('appearance-split-ap_1')), findsNothing);
     expect(
       find.byKey(const Key('appearance-reassign-ap_1')),
       findsOneWidget,
     );
 
-    // Reassign ap_2 to new person via dropdown + button.
+    // Reassign ap_2 to a brand-new named person via dropdown + name dialog.
     await tester.tap(find.byKey(const Key('appearance-reassign-select-ap_2')));
     await tester.pumpAndSettle();
     expect(find.text('New person'), findsWidgets);
@@ -253,7 +240,62 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('appearance-reassign-ap_2')));
     await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('person-name-dialog')), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('person-name-field')),
+      'Riley',
+    );
+    await tester.tap(find.byKey(const Key('person-name-save')));
+    await tester.pumpAndSettle();
+
     expect(persons.reassignCalls.single.appearanceId, 'ap_2');
     expect(persons.reassignCalls.single.personId, isNull);
+    expect(persons.reassignCalls.single.name, 'Riley');
+  });
+
+  testWidgets(
+      'person detail: reassign to an existing person needs no name prompt',
+      (tester) async {
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: 'Sam',
+          appearances: [
+            fixtureAppearance(id: 'ap_1', personId: 'person_1'),
+          ],
+        ),
+        fixturePersonDetail(
+          id: 'person_2',
+          name: 'Alex',
+          appearances: const [],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+        ],
+        child: const MaterialApp(
+          home: PersonDetailPage(personId: 'person_1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('appearance-reassign-select-ap_1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Alex').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('appearance-reassign-ap_1')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('person-name-dialog')), findsNothing);
+    expect(persons.reassignCalls.single.appearanceId, 'ap_1');
+    expect(persons.reassignCalls.single.personId, 'person_2');
+    expect(persons.reassignCalls.single.name, isNull);
   });
 }

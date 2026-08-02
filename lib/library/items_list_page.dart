@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
-import 'package:tagkin_desktop/ingest/folder_bookmark_store.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/ingest/folder_picker.dart';
 import 'package:tagkin_desktop/jobs/export_controller.dart';
+import 'package:tagkin_desktop/library/folder_remove_queue.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/library/library_items_table.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
@@ -19,8 +19,8 @@ import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 ///
 /// D6 gates the "Add from folder" FAB on [UsageGate.blocked] and shows a
 /// warn/blocked [UsageBanner] above the table. D7 adds library export.
-/// Folder ingest runs in the background ([FolderIngestQueue]); progress is in
-/// the shell status banner.
+/// Folder ingest and folder remove run in the background; progress is in the
+/// shell status banner ([FolderIngestQueue] / [FolderRemoveQueue]).
 class ItemsListPage extends ConsumerStatefulWidget {
   const ItemsListPage({super.key});
 
@@ -30,7 +30,9 @@ class ItemsListPage extends ConsumerStatefulWidget {
 
 class _ItemsListPageState extends ConsumerState<ItemsListPage> {
   int _lastIngestRefreshTick = 0;
+  int _lastRemoveRefreshTick = 0;
   FolderIngestQueue? _ingestQueue;
+  FolderRemoveQueue? _removeQueue;
 
   @override
   void initState() {
@@ -38,16 +40,21 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(usageControllerProvider).load();
       ref.read(libraryTableControllerProvider).load();
-      final queue = ref.read(folderIngestQueueProvider);
-      _ingestQueue = queue;
-      _lastIngestRefreshTick = queue.libraryRefreshTick;
-      queue.addListener(_onIngestQueueChanged);
+      final ingest = ref.read(folderIngestQueueProvider);
+      _ingestQueue = ingest;
+      _lastIngestRefreshTick = ingest.libraryRefreshTick;
+      ingest.addListener(_onIngestQueueChanged);
+      final remove = ref.read(folderRemoveQueueProvider);
+      _removeQueue = remove;
+      _lastRemoveRefreshTick = remove.libraryRefreshTick;
+      remove.addListener(_onRemoveQueueChanged);
     });
   }
 
   @override
   void dispose() {
     _ingestQueue?.removeListener(_onIngestQueueChanged);
+    _removeQueue?.removeListener(_onRemoveQueueChanged);
     super.dispose();
   }
 
@@ -57,6 +64,15 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     if (queue == null) return;
     if (queue.libraryRefreshTick == _lastIngestRefreshTick) return;
     _lastIngestRefreshTick = queue.libraryRefreshTick;
+    ref.read(libraryTableControllerProvider).load();
+  }
+
+  void _onRemoveQueueChanged() {
+    if (!mounted) return;
+    final queue = _removeQueue;
+    if (queue == null) return;
+    if (queue.libraryRefreshTick == _lastRemoveRefreshTick) return;
+    _lastRemoveRefreshTick = queue.libraryRefreshTick;
     ref.read(libraryTableControllerProvider).load();
   }
 
@@ -122,6 +138,17 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
   }
 
   Future<void> _confirmRemoveFolder(String dir, int count) async {
+    final queue = ref.read(folderRemoveQueueProvider);
+    if (queue.isRemoving(dir)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          key: Key('folder-remove-already-active'),
+          content: Text('That folder is already being removed'),
+        ),
+      );
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -154,36 +181,20 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
       ..sort();
     if (ids.isEmpty) return;
 
-    final jobs = ref.read(jobsRepositoryProvider);
-    var failed = 0;
-    Object? lastError;
-    for (final id in ids) {
-      try {
-        await jobs.deleteItem(id);
-      } catch (e) {
-        failed++;
-        lastError = e;
-      }
-    }
-
+    final result = await queue.enqueue(dir, ids);
     if (!mounted) return;
-    await ref.read(libraryTableControllerProvider).load();
-
-    // After library reload — file IO must not block the UI refresh path.
-    try {
-      await folderBookmarkStore.remove(dir);
-    } catch (_) {
-      // Bookmark cleanup is best-effort for sandbox reopen.
-    }
-
-    if (!mounted) return;
-    if (failed > 0) {
+    if (result == FolderRemoveEnqueueResult.started) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          key: const Key('remove-folder-error'),
-          content: Text(
-            'Remove folder failed for $failed of ${ids.length}: $lastError',
-          ),
+        const SnackBar(
+          key: Key('folder-remove-started'),
+          content: Text('Removing folder in the background…'),
+        ),
+      );
+    } else if (result == FolderRemoveEnqueueResult.alreadyActive) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          key: Key('folder-remove-already-active'),
+          content: Text('That folder is already being removed'),
         ),
       );
     }
@@ -349,12 +360,19 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
       );
     }
 
-    return LibraryItemsTable(
-      controller: table,
-      onOpenDetail: _openDetail,
-      onDelete: _confirmDeleteFromList,
-      onRemoveFolder: _confirmRemoveFolder,
-      onRevealSource: _revealSource,
+    final removeQueue = ref.watch(folderRemoveQueueProvider);
+    return ListenableBuilder(
+      listenable: removeQueue,
+      builder: (context, _) {
+        return LibraryItemsTable(
+          controller: table,
+          onOpenDetail: _openDetail,
+          onDelete: _confirmDeleteFromList,
+          onRemoveFolder: _confirmRemoveFolder,
+          onRevealSource: _revealSource,
+          isFolderRemoving: removeQueue.isRemoving,
+        );
+      },
     );
   }
 }

@@ -1,16 +1,17 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/persons/face_crop_drag.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/persons/person_detail_controller.dart';
+import 'package:tagkin_desktop/persons/person_name_dialog.dart';
 import 'package:tagkin_desktop/persons/who_exclusion_crop_thumb.dart';
 import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
@@ -77,11 +78,12 @@ class FaceCropTapTracker {
 /// Persons stay library-wide; trays only show faces from the selected folder.
 ///
 /// Finder-style face thumbs: single-click selects, Cmd/Ctrl+click multi-selects,
-/// double-click opens the item. Drag a selection between trays. **Assigned** is
-/// only faces linked to a **named** person (boxes when ≥2 faces). **Unassigned**
-/// holds null-personId faces and **Unnamed** auto-linked clusters — **Set name**
-/// moves a cluster to Assigned. **New person** on a loose Unassigned face
-/// creates an Unnamed person (stays in Unassigned until named).
+/// double-click opens the item. Drag a selection between trays. **Assigned**
+/// holds appearances on a named person (boxes when ≥2 faces — GroupP).
+/// **Unassigned** holds loose faces (personId and faceGroupId both null) plus
+/// auto/manual likeness clusters (GroupFA/GroupFM, boxed when ≥2) — **Set
+/// name** promotes a cluster straight to a named person. **New person** on a
+/// loose Unassigned face prompts for a name and creates the person directly.
 class FaceCropTraysPage extends ConsumerStatefulWidget {
   const FaceCropTraysPage({
     super.key,
@@ -100,6 +102,9 @@ class FaceCropTraysPage extends ConsumerStatefulWidget {
 }
 
 class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
+  /// Sentinel dropdown value: next drop onto Assigned names a new person.
+  static const _newPersonSentinel = '__new_person__';
+
   String? _personId;
   PersonDetailController? _assignedController;
   List<Person> _persons = const [];
@@ -116,6 +121,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   /// One-shot: next [_reload] selects the first person with faces in the folder.
   bool _autoSelectFirstInFolder = false;
 
+  /// Person dropdown on "New Person...": drop onto Assigned prompts for a name.
+  bool _assignAsNewPerson = false;
+
   final _renameController = TextEditingController();
   bool _renaming = false;
 
@@ -128,6 +136,10 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   final Map<String, GlobalKey> _clusterKeys = <String, GlobalKey>{};
 
   static const _trayPageLimit = 500;
+
+  int _lastIngestRefreshTick = 0;
+  bool _lastIngestHadActiveJobs = false;
+  FolderIngestQueue? _ingestQueue;
 
   void _clearSelection() {
     _faceTapTracker.clear();
@@ -195,6 +207,18 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     });
   }
 
+  /// Selects every face in a boxed Unassigned FaceGroup (FA/FM) for dragging.
+  void _selectFaceGroupCluster(String faceGroupId, List<PersonAppearance> faces) {
+    if (faces.isEmpty) return;
+    setState(() {
+      _selectedIds
+        ..clear()
+        ..addAll(faces.map((a) => a.id));
+      _selectionTray = FaceCropTray.unassigned;
+      _selectionKind = FaceCropSelectKind.appearance;
+    });
+  }
+
   Set<String> _selectionFor(FaceCropTray tray, FaceCropSelectKind kind) {
     if (_selectionTray == tray && _selectionKind == kind) {
       return Set<String>.from(_selectedIds);
@@ -202,8 +226,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     return const {};
   }
 
-  GlobalKey _clusterKey(String personId) =>
-      _clusterKeys.putIfAbsent(personId, GlobalKey.new);
+  GlobalKey _clusterKey(String id) => _clusterKeys.putIfAbsent(id, GlobalKey.new);
 
   void _scrollToCluster(String personId) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -218,11 +241,6 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     });
   }
 
-  static bool personHasName(Person? p) {
-    final name = p?.name?.trim();
-    return name != null && name.isNotEmpty;
-  }
-
   Person? _lookupPerson(String? id) {
     if (id == null) return null;
     for (final p in _persons) {
@@ -232,11 +250,10 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   }
 
   Person _personForId(String id) {
-    return _lookupPerson(id) ??
-        Person(id: id, name: null, createdAt: '');
+    return _lookupPerson(id) ?? Person(id: id, name: id, createdAt: '');
   }
 
-  /// Group in-folder appearances by personId (dropdown order).
+  /// Group in-folder Assigned appearances by personId (dropdown order).
   List<({Person person, List<PersonAppearance> faces})> _clustersFrom(
     List<PersonAppearance> appearances,
   ) {
@@ -266,44 +283,61 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   List<PersonAppearance> get _linkedInFolder =>
       _scopedAppearances(_assignedOverview);
 
-  /// Named person, ≥2 faces — Assigned cluster boxes.
-  List<({Person person, List<PersonAppearance> faces})> _namedMultiClusters() {
+  /// Person, ≥2 faces in folder — Assigned cluster boxes (GroupP).
+  List<({Person person, List<PersonAppearance> faces})> _assignedMultiClusters() {
     return [
       for (final c in _clustersFrom(_linkedInFolder))
-        if (personHasName(c.person) && c.faces.length >= 2) c,
+        if (c.faces.length >= 2) c,
     ];
   }
 
-  /// Named person, exactly one face — Assigned loose thumbs.
-  List<PersonAppearance> _namedSoloFaces() {
+  /// Person, exactly one face in folder — Assigned loose thumbs.
+  List<PersonAppearance> _assignedSoloFaces() {
     return [
       for (final c in _clustersFrom(_linkedInFolder))
-        if (personHasName(c.person) && c.faces.length == 1) c.faces.first,
+        if (c.faces.length == 1) c.faces.first,
     ];
   }
 
-  /// Unnamed person, ≥2 faces — Unassigned cluster boxes.
-  List<({Person person, List<PersonAppearance> faces})> _unnamedMultiClusters() {
-    return [
-      for (final c in _clustersFrom(_linkedInFolder))
-        if (!personHasName(c.person) && c.faces.length >= 2) c,
-    ];
-  }
-
-  /// Null personId + unnamed solos — Unassigned loose thumbs.
-  List<PersonAppearance> _unassignedLooseFaces() {
-    final loose = List<PersonAppearance>.of(_scopedAppearances(_unassigned));
-    for (final c in _clustersFrom(_linkedInFolder)) {
-      if (!personHasName(c.person) && c.faces.length == 1) {
-        loose.add(c.faces.first);
-      }
+  /// FaceGroup (FA/FM), ≥2 faces in folder — Unassigned cluster boxes.
+  List<({String faceGroupId, FaceGroupKind kind, List<PersonAppearance> faces})>
+      _faceGroupMultiClusters() {
+    final byGroup = <String, List<PersonAppearance>>{};
+    final kindByGroup = <String, FaceGroupKind>{};
+    for (final a in _scopedAppearances(_unassigned)) {
+      final fg = a.faceGroupId;
+      if (fg == null) continue;
+      (byGroup[fg] ??= <PersonAppearance>[]).add(a);
+      final kind = a.faceGroupKind;
+      if (kind != null) kindByGroup[fg] = kind;
     }
-    return loose;
+    final clusters = [
+      for (final entry in byGroup.entries)
+        if (entry.value.length >= 2)
+          (
+            faceGroupId: entry.key,
+            kind: kindByGroup[entry.key] ?? FaceGroupKind.fa,
+            faces: entry.value,
+          ),
+    ];
+    clusters.sort((a, b) => a.faceGroupId.compareTo(b.faceGroupId));
+    return clusters;
   }
 
-  int get _unassignedTrayFaceCount =>
-      _unnamedMultiClusters().fold<int>(0, (n, c) => n + c.faces.length) +
-      _unassignedLooseFaces().length;
+  /// No faceGroupId, or a FA/FM group with <2 faces in this folder.
+  List<PersonAppearance> _unassignedLooseFaces() {
+    final counts = <String, int>{};
+    for (final a in _scopedAppearances(_unassigned)) {
+      final fg = a.faceGroupId;
+      if (fg != null) counts[fg] = (counts[fg] ?? 0) + 1;
+    }
+    return [
+      for (final a in _scopedAppearances(_unassigned))
+        if (a.faceGroupId == null || (counts[a.faceGroupId] ?? 0) < 2) a,
+    ];
+  }
+
+  int get _unassignedTrayFaceCount => _scopedAppearances(_unassigned).length;
 
   void _selectCluster(
     Person person,
@@ -336,6 +370,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
               itemId: a.itemId!,
               tagId: a.tagId!,
               personId: a.personId,
+              faceGroupId: a.faceGroupId,
+              faceGroupKind: a.faceGroupKind,
               region: a.region,
             ),
       ],
@@ -353,16 +389,125 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       _autoSelectFirstInFolder = true;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      try {
+        final ingest = ref.read(folderIngestQueueProvider);
+        _ingestQueue = ingest;
+        _lastIngestRefreshTick = ingest.libraryRefreshTick;
+        _lastIngestHadActiveJobs = ingest.hasActiveJobs;
+        ingest.addListener(_onIngestQueueChanged);
+      } catch (_) {
+        // Widget tests often omit jobs/api overrides; treat as no active ingest.
+        _ingestQueue = null;
+      }
       _reload();
     });
   }
 
   @override
   void dispose() {
+    _ingestQueue?.removeListener(_onIngestQueueChanged);
     _assignedController?.dispose();
     _renameController.dispose();
     _clusterScrollController.dispose();
     super.dispose();
+  }
+
+  void _onIngestQueueChanged() {
+    if (!mounted) return;
+    final queue = _ingestQueue;
+    if (queue == null) return;
+    final tick = queue.libraryRefreshTick;
+    final active = queue.hasActiveJobs;
+    if (tick == _lastIngestRefreshTick &&
+        active == _lastIngestHadActiveJobs) {
+      return;
+    }
+    _lastIngestRefreshTick = tick;
+    _lastIngestHadActiveJobs = active;
+    // Mid-ingest: folders stay hidden via isLoadingPath. When the job
+    // finishes (or a new job starts), quietly refresh the Faces picker.
+    unawaited(_refreshFoldersQuietly());
+  }
+
+  /// Rebuild the folder dropdown from items without a full-page loading flash.
+  Future<void> _refreshFoldersQuietly() async {
+    try {
+      final itemsRepo = ref.read(itemsRepositoryProvider);
+      FolderIngestQueue? ingestQueue = _ingestQueue;
+      if (ingestQueue == null) {
+        try {
+          ingestQueue = ref.read(folderIngestQueueProvider);
+          _ingestQueue = ingestQueue;
+        } catch (_) {
+          ingestQueue = null;
+        }
+      }
+      final items = await itemsRepo.listItems();
+      if (!mounted) return;
+      final folders = [
+        for (final f in distinctLeafFolders(items))
+          if (ingestQueue == null || !ingestQueue.isLoadingPath(f)) f,
+      ];
+      final prevFolder = _leafFolder;
+      final folder = resolveLeafFolderSelection(
+        folders: folders,
+        preferred: _leafFolder ?? faceCropLastLeafFolder,
+      );
+      faceCropLastLeafFolder = folder;
+      final scopedIds =
+          folder == null ? <String>{} : itemIdsInLeafFolder(items, folder);
+      final folderChanged = folder != prevFolder;
+      final foldersChanged = folders.length != _leafFolders.length ||
+          !_listEquals(folders, _leafFolders);
+      final prevScoped = _scopedItemIds;
+      final scopeChanged = scopedIds.length != prevScoped.length ||
+          !scopedIds.containsAll(prevScoped);
+
+      if (!foldersChanged && !folderChanged && !scopeChanged) {
+        return;
+      }
+
+      setState(() {
+        _leafFolders = folders;
+        _leafFolder = folder;
+        _scopedItemIds = scopedIds;
+      });
+
+      if (folderChanged || scopeChanged) {
+        if (folderChanged && folder != null) {
+          _autoSelectFirstInFolder = true;
+        }
+        await _refreshTraysQuietly();
+        // Auto-select first in-folder person when landing on a newly revealed
+        // folder (quiet path does not run the full _reload auto-select).
+        if (_autoSelectFirstInFolder && mounted) {
+          _autoSelectFirstInFolder = false;
+          final pid = _firstPersonIdInFolder(_persons, _assignedOverview);
+          final canCreateNew =
+              _unassignedTrayFaceCount > 0 || _excluded.isNotEmpty;
+          if (pid != null) {
+            await _selectPerson(pid);
+          } else if (canCreateNew) {
+            setState(() {
+              _personId = null;
+              _assignAsNewPerson = true;
+              _assignedController?.dispose();
+              _assignedController = null;
+            });
+          }
+        }
+      }
+    } catch (e, st) {
+      debugPrint('Faces quiet folder refresh failed: $e\n$st');
+    }
+  }
+
+  static bool _listEquals(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   PersonDetailController _controllerFor(String personId) {
@@ -385,8 +530,22 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     try {
       final personsRepo = ref.read(personsRepositoryProvider);
       final itemsRepo = ref.read(itemsRepositoryProvider);
+      FolderIngestQueue? ingestQueue = _ingestQueue;
+      if (ingestQueue == null) {
+        try {
+          ingestQueue = ref.read(folderIngestQueueProvider);
+          _ingestQueue = ingestQueue;
+        } catch (_) {
+          ingestQueue = null;
+        }
+      }
       final items = await itemsRepo.listItems();
-      final folders = distinctLeafFolders(items);
+      // Hide leaf folders still covered by an active ingest job — items exist
+      // from registering, but Faces should wait until load complete.
+      final folders = [
+        for (final f in distinctLeafFolders(items))
+          if (ingestQueue == null || !ingestQueue.isLoadingPath(f)) f,
+      ];
       final folder = resolveLeafFolderSelection(
         folders: folders,
         preferred: _leafFolder ?? faceCropLastLeafFolder,
@@ -416,10 +575,14 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           .where((e) => scopedIds.contains(e.itemId))
           .toList();
 
-      // Exclude / unlink can prune the selected person server-side; clear the
-      // dropdown value before rebuild or DropdownButton asserts.
-      // Folder switch: land on the first in-folder person (or overview if none).
+      // Exclude / unlink can prune the selected person server-side.
+      // Folder switch: land on the first in-folder person, or New Person…
+      // create-mode when the folder has no named people yet.
       var pid = _personId;
+      var assignAsNew = _assignAsNewPerson;
+      final inFolderIds = _personIdsFromAppearances(assignedOverview);
+      final canCreateNew = unassigned.isNotEmpty || excluded.isNotEmpty;
+
       if (_autoSelectFirstInFolder) {
         _autoSelectFirstInFolder = false;
         pid = _firstPersonIdInFolder(persons, assignedOverview);
@@ -429,8 +592,12 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           _renameController.clear();
         }
         if (pid != null) {
+          assignAsNew = false;
           await _controllerFor(pid).load();
           _renameController.text = _assignedController?.detail?.name ?? '';
+        } else if (canCreateNew) {
+          assignAsNew = true;
+          pid = null;
         }
       } else {
         final stillListed =
@@ -445,11 +612,21 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           _renameController.text =
               _assignedController?.detail?.name ?? '';
         }
+        // No named people left in this folder → empty Assigned = create mode.
+        if (inFolderIds.isEmpty && canCreateNew && pid == null) {
+          assignAsNew = true;
+        }
+      }
+
+      if (!canCreateNew) {
+        assignAsNew = false;
       }
 
       if (!mounted) return;
       setState(() {
         _personId = pid;
+        _assignAsNewPerson = assignAsNew;
+        if (pid != null) _assignAsNewPerson = false;
         _renaming = pid == null ? false : _renaming;
         _persons = persons;
         _leafFolders = folders;
@@ -474,6 +651,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     if (folder == null || folder == _leafFolder) return;
     faceCropLastLeafFolder = folder;
     _autoSelectFirstInFolder = true;
+    _assignAsNewPerson = false;
     _clearSelection();
     setState(() => _leafFolder = folder);
     await _reload();
@@ -484,16 +662,6 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     return all
         .where((a) => a.itemId != null && _scopedItemIds.contains(a.itemId))
         .toList();
-  }
-
-  /// Named person ids that have at least one face in the selected folder.
-  Set<String> _personIdsInCurrentFolder() {
-    final ids = <String>{};
-    for (final a in _linkedInFolder) {
-      final pid = a.personId;
-      if (pid != null && personHasName(_lookupPerson(pid))) ids.add(pid);
-    }
-    return ids;
   }
 
   /// Ids with at least one face in [assignedInFolder].
@@ -508,7 +676,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     return ids;
   }
 
-  /// Sort: in-folder first, then by name/id (same order as the Person dropdown).
+  /// Sort: in-folder first, then by name (auto-select order).
   static List<Person> _sortPersonsForDropdown(
     List<Person> persons,
     Set<String> inFolder,
@@ -518,54 +686,29 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       final ra = inFolder.contains(a.id) ? 0 : 1;
       final rb = inFolder.contains(b.id) ? 0 : 1;
       if (ra != rb) return ra.compareTo(rb);
-      final la = (a.name ?? a.id).toLowerCase();
-      final lb = (b.name ?? b.id).toLowerCase();
-      return la.compareTo(lb);
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
     });
     return list;
   }
 
-  /// First **named** person (dropdown order) with faces in [assignedInFolder].
+  /// First person (in-folder order) with faces in [assignedInFolder].
   static String? _firstPersonIdInFolder(
     List<Person> persons,
     List<PersonAppearance> assignedInFolder,
   ) {
     final inFolder = _personIdsFromAppearances(assignedInFolder);
     if (inFolder.isEmpty) return null;
-    final named = persons.where(personHasName).toList();
-    for (final p in _sortPersonsForDropdown(named, inFolder)) {
+    for (final p in _sortPersonsForDropdown(persons, inFolder)) {
       if (inFolder.contains(p.id)) return p.id;
     }
     return null;
   }
 
-  /// Named library persons; those in the current folder first.
-  List<Person> _personsForDropdown(Set<String> inFolder) {
-    return _sortPersonsForDropdown(
-      _persons.where(personHasName).toList(),
-      inFolder,
-    );
-  }
+  /// Display name for chrome / subtitle. Person.name is always non-empty (R2).
+  static String personDisplayName(Person p) => p.name.isNotEmpty ? p.name : p.id;
 
-  /// Display name for dropdown / subtitle — never a bare UUID for unnamed.
-  static String personDisplayName(Person p, {required List<Person> all}) {
-    final name = p.name?.trim();
-    if (name != null && name.isNotEmpty) return name;
-    final unnamedCount = all.where((x) {
-      final n = x.name?.trim();
-      return n == null || n.isEmpty;
-    }).length;
-    if (unnamedCount <= 1) return 'Unnamed';
-    final short = p.id.length >= 8 ? p.id.substring(0, 8) : p.id;
-    return 'Unnamed · $short';
-  }
-
-  static String _personDropdownLabel(
-    Person p, {
-    required bool inFolder,
-    required List<Person> all,
-  }) {
-    final base = personDisplayName(p, all: all);
+  static String _personDropdownLabel(Person p, {required bool inFolder}) {
+    final base = personDisplayName(p);
     return inFolder ? '$base · in folder' : base;
   }
 
@@ -573,6 +716,18 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     if (id == null) {
       setState(() {
         _personId = null;
+        _assignAsNewPerson = false;
+        _renaming = false;
+        _renameController.clear();
+        _assignedController?.dispose();
+        _assignedController = null;
+      });
+      return;
+    }
+    if (id == _newPersonSentinel) {
+      setState(() {
+        _personId = null;
+        _assignAsNewPerson = true;
         _renaming = false;
         _renameController.clear();
         _assignedController?.dispose();
@@ -583,8 +738,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     final controller = _controllerFor(id);
     setState(() {
       _personId = id;
+      _assignAsNewPerson = false;
       _renaming = false;
-      // Clear immediately so an unnamed person never shows the prior name
+      // Clear immediately so a freshly-loaded person never shows a stale name
       // while load() is in flight.
       _renameController.clear();
     });
@@ -611,12 +767,20 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     );
   }
 
-  Future<void> _createPersonFromAppearance(String appearanceId) async {
+  /// Prompts for a name, then assigns [appearanceId] straight to a new
+  /// named person (R6). Unassigned Person.name is never null — no more
+  /// "unnamed" mint step.
+  Future<void> _newPersonFromAppearance(String appearanceId) async {
     if (_busy) return;
+    final name = await showPersonNameDialog(context);
+    if (name == null || !mounted) return;
     setState(() => _busy = true);
     try {
       final persons = ref.read(personsRepositoryProvider);
-      final updated = await persons.reassignAppearance(appearanceId, null);
+      final updated = await persons.reassignAppearance(
+        appearanceId,
+        name: name,
+      );
       final newId = updated.personId;
       if (newId != null) {
         _personId = newId;
@@ -635,22 +799,45 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     }
   }
 
+  /// Prompts for a name, then promotes the whole FaceGroup [faceGroupId] to a
+  /// named person (R6).
+  Future<void> _setFaceGroupName(String faceGroupId) async {
+    if (_busy) return;
+    final name =
+        await showPersonNameDialog(context, title: 'Name this group');
+    if (name == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final persons = ref.read(personsRepositoryProvider);
+      final detail = await persons.assignFaceGroup(faceGroupId, name: name);
+      _personId = detail.id;
+      await _reload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          key: const Key('face-crop-trays-error'),
+          content: Text('Set name failed: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<_FaceMoveResult> _applyOneDrop(
     FaceCropTray target,
-    FaceCropDragData data,
-  ) async {
+    FaceCropDragData data, {
+    String? assignPersonId,
+    String? assignName,
+  }) async {
     final persons = ref.read(personsRepositoryProvider);
     final items = ref.read(itemsRepositoryProvider);
 
     switch (target) {
       case FaceCropTray.unassigned:
-        if (data.isAppearance && data.appearanceId != null) {
-          final updated = await persons.unlinkAppearance(data.appearanceId!);
-          return _FaceMoveResult(
-            removedAppearanceId: data.appearanceId,
-            addedAppearance: updated,
-          );
-        }
+        // Appearance batches (single unlink vs. bulk unassign) are handled
+        // directly in [_onDrop]; only exclusion undos reach here.
         if (data.isExclusion && data.exclusionId != null) {
           await items.undoWhoExclusion(data.itemId, data.exclusionId!);
           // Appearance id is server-assigned; quiet refresh fills Unassigned.
@@ -669,8 +856,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           addedExclusion: created.exclusion,
         );
       case FaceCropTray.assigned:
-        final pid = _personId;
-        if (pid == null) {
+        final pid = assignPersonId ?? _personId;
+        final name = assignName;
+        if (pid == null && (name == null || name.isEmpty)) {
           throw StateError('Select a person before assigning');
         }
         if (data.isExclusion && data.exclusionId != null) {
@@ -689,16 +877,27 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           if (match == null) {
             throw StateError('Could not find appearance after undo exclude');
           }
-          final updated = await persons.reassignAppearance(match.id, pid);
+          final updated = name != null && name.isNotEmpty
+              ? await persons.reassignAppearance(match.id, name: name)
+              : await persons.reassignAppearance(match.id, personId: pid!);
           return _FaceMoveResult(
             removedExclusionId: data.exclusionId,
             removedAppearanceId: match.id,
             addedAppearance: updated,
           );
         }
+        // Loose face (no faceGroupId) — FaceGroup members are promoted in
+        // bulk in [_onDrop] via assignFaceGroup.
         if (data.appearanceId != null) {
-          final updated =
-              await persons.reassignAppearance(data.appearanceId!, pid);
+          final updated = name != null && name.isNotEmpty
+              ? await persons.reassignAppearance(
+                  data.appearanceId!,
+                  name: name,
+                )
+              : await persons.reassignAppearance(
+                  data.appearanceId!,
+                  personId: pid!,
+                );
           return _FaceMoveResult(
             removedAppearanceId: data.appearanceId,
             addedAppearance: updated,
@@ -807,9 +1006,21 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         _renameController.clear();
         pid = null;
       }
+      final inFolderIds = _personIdsFromAppearances(assignedOverview);
+      final canCreateNew = unassigned.isNotEmpty || excluded.isNotEmpty;
+      var assignAsNew = _assignAsNewPerson;
+      if (pid != null) {
+        assignAsNew = false;
+      } else if (inFolderIds.isEmpty && canCreateNew) {
+        assignAsNew = true;
+      }
+      if (!canCreateNew) {
+        assignAsNew = false;
+      }
 
       setState(() {
         _personId = pid;
+        _assignAsNewPerson = assignAsNew;
         _renaming = pid == null ? false : _renaming;
         _persons = persons;
         _assignedOverview = assignedOverview;
@@ -840,14 +1051,160 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     Object? lastError;
     final applied = <_FaceMoveResult>[];
     try {
-      for (final data in toApply) {
-        try {
-          applied.add(await _applyOneDrop(target, data));
-        } catch (e) {
-          failed++;
-          lastError = e;
+      if (target == FaceCropTray.unassigned) {
+        // Appearances leaving Assigned: ≥2 become one GroupFM via a single
+        // batched call; exactly one becomes loose (R6). Exclusion undos
+        // still go through the per-item path.
+        final appearanceItems = [
+          for (final d in toApply)
+            if (d.isAppearance && d.appearanceId != null) d,
+        ];
+        final otherItems = [
+          for (final d in toApply)
+            if (!(d.isAppearance && d.appearanceId != null)) d,
+        ];
+        if (appearanceItems.isNotEmpty) {
+          try {
+            final persons = ref.read(personsRepositoryProvider);
+            if (appearanceItems.length >= 2) {
+              final ids = [
+                for (final d in appearanceItems) d.appearanceId!,
+              ];
+              final updated = await persons.unassignAppearances(ids);
+              for (final u in updated) {
+                applied.add(_FaceMoveResult(
+                  removedAppearanceId: u.id,
+                  addedAppearance: u,
+                ));
+              }
+            } else {
+              final id = appearanceItems.single.appearanceId!;
+              final updated = await persons.unlinkAppearance(id);
+              applied.add(_FaceMoveResult(
+                removedAppearanceId: id,
+                addedAppearance: updated,
+              ));
+            }
+          } catch (e) {
+            failed += appearanceItems.length;
+            lastError = e;
+          }
+        }
+        for (final data in otherItems) {
+          try {
+            applied.add(await _applyOneDrop(target, data));
+          } catch (e) {
+            failed++;
+            lastError = e;
+          }
+        }
+      } else if (target == FaceCropTray.assigned) {
+        // Appearances from a FaceGroup are promoted whole (assignFaceGroup);
+        // loose faces / exclusion undos are reassigned one at a time.
+        var personId = _personId;
+        String? createName;
+        if (_assignAsNewPerson) {
+          createName = await showPersonNameDialog(context);
+          if (createName == null || !mounted) return;
+        } else if (personId == null) {
+          failed = toApply.length;
+          lastError = StateError('Select a person before assigning');
+        }
+
+        if (failed == 0) {
+          final byFaceGroup = <String, List<FaceCropDragData>>{};
+          final singles = <FaceCropDragData>[];
+          for (final data in toApply) {
+            final fg = data.faceGroupId;
+            if (data.isAppearance && fg != null) {
+              (byFaceGroup[fg] ??= <FaceCropDragData>[]).add(data);
+            } else {
+              singles.add(data);
+            }
+          }
+          for (final entry in byFaceGroup.entries) {
+            try {
+              // The server promotes every member of the FaceGroup, not just
+              // the dragged subset — patch every known member.
+              final members = _scopedAppearances(_unassigned)
+                  .where((a) => a.faceGroupId == entry.key)
+                  .toList();
+              final persons = ref.read(personsRepositoryProvider);
+              final detail = createName != null
+                  ? await persons.assignFaceGroup(
+                      entry.key,
+                      name: createName,
+                    )
+                  : await persons.assignFaceGroup(
+                      entry.key,
+                      personId: personId!,
+                    );
+              personId = detail.id;
+              createName = null;
+              final byId = {for (final a in detail.appearances) a.id: a};
+              for (final member in members) {
+                final updated = byId[member.id];
+                if (updated != null) {
+                  applied.add(_FaceMoveResult(
+                    removedAppearanceId: member.id,
+                    addedAppearance: updated,
+                  ));
+                }
+              }
+            } catch (e) {
+              failed += entry.value.length;
+              lastError = e;
+            }
+          }
+          for (final data in singles) {
+            try {
+              final nameForThis = createName;
+              final result = await _applyOneDrop(
+                target,
+                data,
+                assignPersonId: personId,
+                assignName: nameForThis,
+              );
+              applied.add(result);
+              final newPid = result.addedAppearance?.personId;
+              if (newPid != null) {
+                personId = newPid;
+                createName = null;
+              }
+            } catch (e) {
+              failed++;
+              lastError = e;
+            }
+          }
+
+          if (_assignAsNewPerson &&
+              applied.isNotEmpty &&
+              personId != null &&
+              mounted) {
+            final listed =
+                await ref.read(personsRepositoryProvider).listPersons();
+            if (!mounted) return;
+            _assignAsNewPerson = false;
+            _personId = personId;
+            _persons = listed;
+            final controller = _controllerFor(personId);
+            await controller.load();
+            if (mounted) {
+              _renameController.text = controller.detail?.name ?? '';
+            }
+          }
+        }
+      } else {
+        for (final data in toApply) {
+          try {
+            applied.add(await _applyOneDrop(target, data));
+          } catch (e) {
+            failed++;
+            lastError = e;
+          }
         }
       }
+
       if (applied.isNotEmpty) {
         _applyMoveResults(applied);
       } else {
@@ -1016,7 +1373,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                     children: [
                       Expanded(child: _buildAssignedColumn(controller)),
                       const SizedBox(width: 8),
-                      Expanded(child: _buildUnassignedColumn(controller)),
+                      Expanded(child: _buildUnassignedColumn()),
                       const SizedBox(width: 8),
                       Expanded(
                         child: _TrayColumn(
@@ -1064,12 +1421,13 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       onStartRename: () {
         setState(() {
           _renaming = true;
-          _renameController.text = detail.name ?? '';
+          _renameController.text = detail.name;
         });
       },
       onDoneRename: () async {
-        await controller.rename(_renameController.text);
-        if (mounted) {
+        final ok = await controller.rename(_renameController.text);
+        if (!mounted) return;
+        if (ok) {
           setState(() => _renaming = false);
           final persons =
               await ref.read(personsRepositoryProvider).listPersons();
@@ -1083,80 +1441,149 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
 
   Widget _buildAssignedColumn(PersonDetailController? controller) {
     final pid = _personId;
-    final focusedNamed =
-        pid != null && personHasName(_lookupPerson(pid)) ? pid : null;
-    final selectedId = focusedNamed != null &&
-            _persons.any((p) => p.id == focusedNamed)
-        ? focusedNamed
+    Person? selectedPerson;
+    if (pid != null) {
+      for (final p in _persons) {
+        if (p.id == pid) {
+          selectedPerson = p;
+          break;
+        }
+      }
+    }
+    // Prefer list entry; fall back to controller detail so a just-created
+    // person still shows before the next full refresh.
+    final selectedId = pid != null &&
+            (selectedPerson != null ||
+                controller?.personId == pid ||
+                controller?.detail?.id == pid)
+        ? pid
         : null;
-    final inFolder = _personIdsInCurrentFolder();
-    final dropdownPersons = _personsForDropdown(inFolder);
-    final scheme = Theme.of(context).colorScheme;
-    final clusters = _namedMultiClusters();
-    final solos = _namedSoloFaces();
-    final personSelect = DropdownButtonFormField<String>(
-      key: const Key('face-crop-person-select'),
-      // ignore: deprecated_member_use
-      value: selectedId,
-      isExpanded: true,
-      decoration: const InputDecoration(
-        labelText: 'Person',
-        border: OutlineInputBorder(),
-        isDense: true,
-      ),
-      selectedItemBuilder: (context) {
-        return [
-          for (final p in dropdownPersons)
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: Text(
-                _personDropdownLabel(
-                  p,
-                  inFolder: inFolder.contains(p.id),
-                  all: dropdownPersons,
+    final selectedName = selectedPerson != null
+        ? personDisplayName(selectedPerson)
+        : (controller?.detail != null && controller!.detail!.id == pid
+            ? personDisplayName(
+                Person(
+                  id: controller.detail!.id,
+                  name: controller.detail!.name,
+                  createdAt: controller.detail!.createdAt,
                 ),
-                overflow: TextOverflow.ellipsis,
-                style: inFolder.contains(p.id)
-                    ? TextStyle(
+              )
+            : null);
+    final showNewPerson =
+        _unassignedTrayFaceCount > 0 || _excluded.isNotEmpty;
+    final allClusters = _assignedMultiClusters();
+    final allSolos = _assignedSoloFaces();
+    final inFolderIds = <String>{
+      for (final c in allClusters) c.person.id,
+      for (final a in allSolos)
+        if (a.personId != null) a.personId!,
+    };
+    var inFolderPersons = [
+      for (final p in _sortPersonsForDropdown(_persons, inFolderIds))
+        if (inFolderIds.contains(p.id)) p,
+    ];
+    if (selectedId != null &&
+        !inFolderIds.contains(selectedId) &&
+        selectedName != null) {
+      inFolderPersons = [
+        ...inFolderPersons,
+        selectedPerson ??
+            Person(id: selectedId, name: selectedName, createdAt: ''),
+      ];
+    }
+    final dropdownValue = _assignAsNewPerson && showNewPerson
+        ? _newPersonSentinel
+        : (selectedId != null &&
+                inFolderPersons.any((p) => p.id == selectedId)
+            ? selectedId
+            : null);
+    // New Person... → empty drop target. Selected person → only that person's
+    // faces (dropdown name and tray must agree). No selection → overview.
+    final clusters = _assignAsNewPerson
+        ? const <({Person person, List<PersonAppearance> faces})>[]
+        : selectedId == null
+            ? allClusters
+            : [
+                for (final c in allClusters)
+                  if (c.person.id == selectedId) c,
+              ];
+    final solos = _assignAsNewPerson
+        ? const <PersonAppearance>[]
+        : selectedId == null
+            ? allSolos
+            : [
+                for (final a in allSolos)
+                  if (a.personId == selectedId) a,
+              ];
+    final scheme = Theme.of(context).colorScheme;
+    final showPersonSelect = showNewPerson || inFolderPersons.isNotEmpty;
+    final Widget? personSelect = showPersonSelect
+        ? DropdownButtonFormField<String>(
+            key: const Key('face-crop-person-select'),
+            // ignore: deprecated_member_use
+            value: dropdownValue,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            hint: showNewPerson ? const Text('New Person...') : null,
+            selectedItemBuilder: (context) {
+              return [
+                if (showNewPerson)
+                  const Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Text(
+                      'New Person...',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                for (final p in inFolderPersons)
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Text(
+                      _personDropdownLabel(p, inFolder: true),
+                      key: Key('face-crop-person-select-label-${p.id}'),
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
                         fontWeight: FontWeight.w600,
                         color: scheme.primary,
-                      )
-                    : null,
-              ),
-            ),
-        ];
-      },
-      items: [
-        for (final p in dropdownPersons)
-          DropdownMenuItem(
-            value: p.id,
-            child: Text(
-              _personDropdownLabel(
-                p,
-                inFolder: inFolder.contains(p.id),
-                all: dropdownPersons,
-              ),
-              key: Key(
-                inFolder.contains(p.id)
-                    ? 'face-crop-person-option-in-folder-${p.id}'
-                    : 'face-crop-person-option-${p.id}',
-              ),
-              overflow: TextOverflow.ellipsis,
-              style: inFolder.contains(p.id)
-                  ? TextStyle(
+                      ),
+                    ),
+                  ),
+              ];
+            },
+            items: [
+              if (showNewPerson)
+                const DropdownMenuItem(
+                  value: _newPersonSentinel,
+                  child: Text(
+                    'New Person...',
+                    key: Key('face-crop-person-option-new'),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              for (final p in inFolderPersons)
+                DropdownMenuItem(
+                  value: p.id,
+                  child: Text(
+                    _personDropdownLabel(p, inFolder: true),
+                    key: Key('face-crop-person-option-in-folder-${p.id}'),
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
                       fontWeight: FontWeight.w600,
                       color: scheme.primary,
-                    )
-                  : TextStyle(color: scheme.onSurfaceVariant),
-            ),
-          ),
-      ],
-      onChanged: _busy
-          ? null
-          : (id) async {
-              await _selectPerson(id);
-            },
-    );
+                    ),
+                  ),
+                ),
+            ],
+            onChanged: _busy
+                ? null
+                : (id) async {
+                    await _selectPerson(id);
+                  },
+          )
+        : null;
 
     Widget buildTray({required String subtitle}) {
       final chrome =
@@ -1170,9 +1597,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         header: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            personSelect,
+            ?personSelect,
             if (chrome != null) ...[
-              const SizedBox(height: 8),
+              if (personSelect != null) const SizedBox(height: 8),
               chrome,
             ],
           ],
@@ -1181,10 +1608,15 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         child: empty
             ? Center(
                 child: Text(
-                  _unassignedTrayFaceCount == 0 && _excluded.isEmpty
-                      ? 'No faces in this folder yet'
-                      : 'No named people in this folder — '
-                          'name a group in Unassigned or check Unassigned',
+                  _assignAsNewPerson
+                      ? 'Drop faces to name a new person'
+                      : _unassignedTrayFaceCount == 0 && _excluded.isEmpty
+                          ? 'No faces in this folder yet'
+                          : selectedId != null
+                              ? 'No faces for this person in this folder'
+                              : 'No named people in this folder — group faces '
+                                  'in Unassigned and click Set name, or check '
+                                  'Unassigned',
                   key: const Key('face-crop-assigned-empty'),
                   textAlign: TextAlign.center,
                 ),
@@ -1204,7 +1636,6 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                       child: _PersonClusterCard(
                         person: clusters[i].person,
                         faces: clusters[i].faces,
-                        allPersons: _persons,
                         focused: clusters[i].person.id == selectedId,
                         busy: _busy ||
                             (clusters[i].person.id == selectedId &&
@@ -1223,8 +1654,6 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                           clusters[i].faces,
                           FaceCropTray.assigned,
                         ),
-                        onFocusPerson: () =>
-                            _selectPerson(clusters[i].person.id),
                         onSelectAppearance: (a, {required toggle}) =>
                             _selectAppearance(
                           a,
@@ -1260,7 +1689,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
 
     if (controller == null) {
       return buildTray(
-        subtitle: emptyAssignedSubtitle(clusters, solos),
+        subtitle: _assignAsNewPerson
+            ? 'Drop faces to name a new person'
+            : emptyAssignedSubtitle(clusters, solos),
       );
     }
 
@@ -1269,27 +1700,16 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       builder: (context, _) {
         final detail = controller.detail;
         final String subtitle;
-        if (clusters.isEmpty && solos.isEmpty) {
+        if (_assignAsNewPerson) {
+          subtitle = 'Drop faces to name a new person';
+        } else if (clusters.isEmpty && solos.isEmpty) {
           subtitle = 'Select a person';
         } else if (controller.phase == PersonDetailPhase.loading &&
             selectedId != null) {
           subtitle = 'Loading…';
-        } else if (detail != null &&
-            selectedId == detail.id &&
-            personHasName(
-              Person(
-                id: detail.id,
-                name: detail.name,
-                createdAt: detail.createdAt,
-              ),
-            )) {
+        } else if (detail != null && selectedId == detail.id) {
           subtitle = personDisplayName(
-            Person(
-              id: detail.id,
-              name: detail.name,
-              createdAt: detail.createdAt,
-            ),
-            all: _persons,
+            Person(id: detail.id, name: detail.name, createdAt: detail.createdAt),
           );
         } else {
           subtitle = emptyAssignedSubtitle(clusters, solos);
@@ -1311,15 +1731,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     return '$groups ${groups == 1 ? 'group' : 'groups'} · $faces faces';
   }
 
-  Widget _buildUnassignedColumn(PersonDetailController? controller) {
-    final clusters = _unnamedMultiClusters();
+  Widget _buildUnassignedColumn() {
+    final clusters = _faceGroupMultiClusters();
     final loose = _unassignedLooseFaces();
-    final pid = _personId;
-    final focusedUnnamed =
-        pid != null && !personHasName(_lookupPerson(pid)) ? pid : null;
-    final chrome = focusedUnnamed != null
-        ? _personChromeWidget(controller)
-        : null;
 
     final body = () {
       if (clusters.isEmpty && loose.isEmpty) {
@@ -1334,20 +1748,17 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       return ListView(
         padding: const EdgeInsets.all(8),
         children: [
-          for (var i = 0; i < clusters.length; i++) ...[
+          for (var i = 0; i < clusters.length; i++)
             Padding(
-              key: _clusterKey(clusters[i].person.id),
+              key: _clusterKey(clusters[i].faceGroupId),
               padding: EdgeInsets.only(
                 bottom: i == clusters.length - 1 && loose.isEmpty ? 0 : 10,
               ),
-              child: _PersonClusterCard(
-                person: clusters[i].person,
+              child: _FaceGroupClusterCard(
+                faceGroupId: clusters[i].faceGroupId,
+                kind: clusters[i].kind,
                 faces: clusters[i].faces,
-                allPersons: _persons,
-                focused: clusters[i].person.id == focusedUnnamed,
-                busy: _busy ||
-                    (clusters[i].person.id == focusedUnnamed &&
-                        (controller?.isBusy ?? false)),
+                busy: _busy,
                 selectedIds: _selectionFor(
                   FaceCropTray.unassigned,
                   FaceCropSelectKind.appearance,
@@ -1357,12 +1768,11 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                   clusters[i].faces,
                   FaceCropTray.unassigned,
                 ),
-                onSelectCluster: () => _selectCluster(
-                  clusters[i].person,
+                onSelectCluster: () => _selectFaceGroupCluster(
+                  clusters[i].faceGroupId,
                   clusters[i].faces,
-                  FaceCropTray.unassigned,
                 ),
-                onFocusPerson: () => _selectPerson(clusters[i].person.id),
+                onSetName: () => _setFaceGroupName(clusters[i].faceGroupId),
                 onSelectAppearance: (a, {required toggle}) =>
                     _selectAppearance(
                   a,
@@ -1372,7 +1782,6 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                 onOpenItem: _openItem,
               ),
             ),
-          ],
           if (loose.isNotEmpty)
             _AppearanceGrid(
               appearances: loose,
@@ -1390,7 +1799,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                 toggle: toggle,
               ),
               onOpenItem: _openItem,
-              onNewPerson: _createPersonFromAppearance,
+              onNewPerson: _newPersonFromAppearance,
             ),
         ],
       );
@@ -1399,15 +1808,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     return _TrayColumn(
       key: const Key('face-crop-tray-unassigned'),
       title: 'Unassigned',
-      tagline: 'not yet named — includes Unnamed likeness groups',
+      tagline: 'not yet named — includes auto-grouped similar faces',
       subtitle: '$_unassignedTrayFaceCount '
           '${_unassignedTrayFaceCount == 1 ? 'face' : 'faces'}',
-      header: chrome == null
-          ? null
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [chrome],
-            ),
       onAccept: (d) => _onDrop(FaceCropTray.unassigned, d),
       child: body,
     );
@@ -1418,44 +1821,32 @@ class _PersonClusterCard extends StatelessWidget {
   const _PersonClusterCard({
     required this.person,
     required this.faces,
-    required this.allPersons,
     required this.focused,
     required this.busy,
     required this.selectedIds,
     required this.tapTracker,
     required this.dragPayload,
     required this.onSelectCluster,
-    required this.onFocusPerson,
     required this.onSelectAppearance,
     required this.onOpenItem,
   });
 
   final Person person;
   final List<PersonAppearance> faces;
-  final List<Person> allPersons;
   final bool focused;
   final bool busy;
   final Set<String> selectedIds;
   final FaceCropTapTracker tapTracker;
   final FaceCropDragPayload dragPayload;
   final VoidCallback onSelectCluster;
-  final VoidCallback onFocusPerson;
   final void Function(PersonAppearance appearance, {required bool toggle})
       onSelectAppearance;
   final void Function(String itemId) onOpenItem;
 
-  bool get _isUnnamed {
-    final name = person.name?.trim();
-    return name == null || name.isEmpty;
-  }
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final label = _FaceCropTraysPageState.personDisplayName(
-      person,
-      all: allPersons,
-    );
+    final label = _FaceCropTraysPageState.personDisplayName(person);
     final header = Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1477,12 +1868,6 @@ class _PersonClusterCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (!focused && _isUnnamed)
-                TextButton(
-                  key: Key('face-crop-cluster-set-name-${person.id}'),
-                  onPressed: busy ? null : onFocusPerson,
-                  child: const Text('Set name'),
-                ),
             ],
           ),
         ),
@@ -1547,6 +1932,124 @@ class _PersonClusterCard extends StatelessWidget {
   }
 }
 
+/// Boxed Unassigned FaceGroup (GroupFA/GroupFM) — no Person exists yet.
+/// "Set name" promotes the whole group to a named person (R6).
+class _FaceGroupClusterCard extends StatelessWidget {
+  const _FaceGroupClusterCard({
+    required this.faceGroupId,
+    required this.kind,
+    required this.faces,
+    required this.busy,
+    required this.selectedIds,
+    required this.tapTracker,
+    required this.dragPayload,
+    required this.onSelectCluster,
+    required this.onSetName,
+    required this.onSelectAppearance,
+    required this.onOpenItem,
+  });
+
+  final String faceGroupId;
+  final FaceGroupKind kind;
+  final List<PersonAppearance> faces;
+  final bool busy;
+  final Set<String> selectedIds;
+  final FaceCropTapTracker tapTracker;
+  final FaceCropDragPayload dragPayload;
+  final VoidCallback onSelectCluster;
+  final VoidCallback onSetName;
+  final void Function(PersonAppearance appearance, {required bool toggle})
+      onSelectAppearance;
+  final void Function(String itemId) onOpenItem;
+
+  String get _label =>
+      kind == FaceGroupKind.fa ? 'Similar faces' : 'Grouped faces';
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final header = Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: Key('face-crop-facegroup-header-$faceGroupId'),
+        onTap: busy ? null : onSelectCluster,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(7)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '$_label · ${faces.length} '
+                  '${faces.length == 1 ? 'face' : 'faces'}',
+                  style: Theme.of(context).textTheme.titleSmall,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              TextButton(
+                key: Key('face-crop-facegroup-set-name-$faceGroupId'),
+                onPressed: busy ? null : onSetName,
+                child: const Text('Set name'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final body = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (dragPayload.items.isEmpty)
+          header
+        else
+          Draggable<FaceCropDragPayload>(
+            data: dragPayload,
+            feedback: Material(
+              elevation: 4,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: scheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '$_label · ${dragPayload.count}',
+                  key: Key('face-crop-facegroup-drag-$faceGroupId'),
+                  style: TextStyle(color: scheme.onPrimaryContainer),
+                ),
+              ),
+            ),
+            childWhenDragging: Opacity(opacity: 0.45, child: header),
+            child: header,
+          ),
+        _AppearanceGrid(
+          appearances: faces,
+          source: dragPayload.source,
+          busy: busy,
+          selectedIds: selectedIds,
+          tapTracker: tapTracker,
+          shrinkWrap: true,
+          onSelect: onSelectAppearance,
+          onOpenItem: onOpenItem,
+        ),
+      ],
+    );
+
+    return DecoratedBox(
+      key: Key('face-crop-facegroup-$faceGroupId'),
+      decoration: BoxDecoration(
+        border: Border.all(color: scheme.outlineVariant),
+        borderRadius: BorderRadius.circular(8),
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+      ),
+      child: body,
+    );
+  }
+}
+
 class _PersonChrome extends StatelessWidget {
   const _PersonChrome({
     super.key,
@@ -1571,9 +2074,6 @@ class _PersonChrome extends StatelessWidget {
   final VoidCallback onCancelRename;
   final VoidCallback onRemovePerson;
 
-  bool get _isUnnamed =>
-      detail.name == null || detail.name!.trim().isEmpty;
-
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -1583,21 +2083,20 @@ class _PersonChrome extends StatelessWidget {
         Row(
           children: [
             Expanded(
-              child: renaming || _isUnnamed
+              child: renaming
                   ? TextField(
                       key: const Key('face-crop-person-rename'),
                       controller: renameController,
                       enabled: !busy,
-                      decoration: InputDecoration(
+                      decoration: const InputDecoration(
                         labelText: 'Name',
-                        hintText: _isUnnamed ? 'Enter a name' : null,
-                        border: const OutlineInputBorder(),
+                        border: OutlineInputBorder(),
                         isDense: true,
                       ),
                       onSubmitted: (_) => onDoneRename(),
                     )
                   : Text(
-                      detail.name!,
+                      detail.name,
                       key: const Key('face-crop-person-name'),
                       style: Theme.of(context).textTheme.titleSmall,
                       overflow: TextOverflow.ellipsis,
@@ -1610,13 +2109,18 @@ class _PersonChrome extends StatelessWidget {
           spacing: 4,
           runSpacing: 4,
           children: [
-            if (renaming || _isUnnamed)
+            if (renaming) ...[
               TextButton(
                 key: const Key('face-crop-person-rename-done'),
                 onPressed: busy ? null : onDoneRename,
-                child: Text(_isUnnamed && !renaming ? 'Set name' : 'Done'),
-              )
-            else
+                child: const Text('Done'),
+              ),
+              TextButton(
+                key: const Key('face-crop-person-rename-cancel'),
+                onPressed: busy ? null : onCancelRename,
+                child: const Text('Cancel'),
+              ),
+            ] else
               Tooltip(
                 message: 'Change this person’s name',
                 child: TextButton(
@@ -1624,12 +2128,6 @@ class _PersonChrome extends StatelessWidget {
                   onPressed: busy ? null : onStartRename,
                   child: const Text('Rename'),
                 ),
-              ),
-            if (renaming)
-              TextButton(
-                key: const Key('face-crop-person-rename-cancel'),
-                onPressed: busy ? null : onCancelRename,
-                child: const Text('Cancel'),
               ),
             if (controller.canUnassign)
               Tooltip(
@@ -1786,6 +2284,8 @@ class _AppearanceGrid extends StatelessWidget {
       itemId: a.itemId!,
       tagId: a.tagId!,
       personId: a.personId,
+      faceGroupId: a.faceGroupId,
+      faceGroupKind: a.faceGroupKind,
       region: a.region,
     );
   }

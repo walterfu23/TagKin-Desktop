@@ -16,6 +16,7 @@ import 'package:tagkin_desktop/ingest/perceptual_hash.dart';
 import 'package:tagkin_desktop/ingest/post_ingest_pipeline_controller.dart';
 import 'package:tagkin_desktop/ingest/upload_controller.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
+import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/prepass/prepass_controller.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
 
@@ -126,6 +127,17 @@ class FolderIngestQueue extends ChangeNotifier {
 
   static String normalizePath(String path) => p.normalize(path);
 
+  /// Whether [path] (ingest root or a nested Faces leaf) is still being loaded.
+  ///
+  /// Active job roots hide themselves and every descendant leaf until the job
+  /// finishes — so Faces only lists a folder after load complete.
+  bool isLoadingPath(String path) {
+    final normalized = normalizePath(path);
+    return _jobs.any(
+      (j) => j.isActive && pathIsUnderFolder(normalized, j.folderPath),
+    );
+  }
+
   void _safeNotify() {
     if (_disposed) return;
     notifyListeners();
@@ -229,6 +241,9 @@ class FolderIngestQueue extends ChangeNotifier {
       final succeeded = outcomes.where((o) => o.succeeded).length;
       if (succeeded == 0) {
         job.phase = FolderIngestJobPhase.done;
+        // Still bump so Faces/Library can reveal folders that were hidden
+        // while this job was active (e.g. items from a prior register).
+        _libraryRefreshTick++;
         _safeNotify();
         return;
       }
@@ -289,6 +304,7 @@ class FolderIngestQueue extends ChangeNotifier {
     } catch (e) {
       job.phase = FolderIngestJobPhase.error;
       job.error = e;
+      _libraryRefreshTick++;
       _safeNotify();
     }
   }

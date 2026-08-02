@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
+import 'package:tagkin_desktop/library/folder_remove_queue.dart';
 
-/// Global folder-ingest progress — visible from any signed-in page.
+/// Global folder activity progress — ingest + remove, visible from any signed-in page.
 class FolderIngestStatusBanner extends ConsumerStatefulWidget {
   const FolderIngestStatusBanner({super.key});
 
@@ -17,18 +18,24 @@ class _FolderIngestStatusBannerState
 
   @override
   Widget build(BuildContext context) {
-    final queue = ref.watch(folderIngestQueueProvider);
+    final ingest = ref.watch(folderIngestQueueProvider);
+    final remove = ref.watch(folderRemoveQueueProvider);
     return ListenableBuilder(
-      listenable: queue,
+      listenable: Listenable.merge([ingest, remove]),
       builder: (context, _) {
-        if (queue.jobs.isEmpty) {
+        if (ingest.jobs.isEmpty && remove.jobs.isEmpty) {
           return const SizedBox.shrink();
         }
         final scheme = Theme.of(context).colorScheme;
-        final active = queue.activeJobCount;
-        final summary = active > 0
-            ? 'Loading $active folder${active == 1 ? '' : 's'}…'
-            : 'Folder ingest finished';
+        final loadingActive = ingest.activeJobCount;
+        final removingActive = remove.activeJobCount;
+        final active = loadingActive + removingActive;
+        final summary = _summary(
+          loadingActive: loadingActive,
+          removingActive: removingActive,
+          ingestFinished: ingest.jobs.isNotEmpty && loadingActive == 0,
+          removeFinished: remove.jobs.isNotEmpty && removingActive == 0,
+        );
 
         return Material(
           key: const Key('folder-ingest-status-banner'),
@@ -60,14 +67,21 @@ class _FolderIngestStatusBannerState
                       Expanded(
                         child: Text(
                           summary,
-                          key: const Key('folder-ingest-status-summary'),
+                          key: Key(
+                            removingActive > 0
+                                ? 'folder-remove-status-summary'
+                                : 'folder-ingest-status-summary',
+                          ),
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                       ),
                       if (active == 0)
                         TextButton(
                           key: const Key('folder-ingest-status-dismiss'),
-                          onPressed: queue.dismissFinished,
+                          onPressed: () {
+                            ingest.dismissFinished();
+                            remove.dismissFinished();
+                          },
                           child: const Text('Dismiss'),
                         ),
                       Icon(
@@ -78,8 +92,8 @@ class _FolderIngestStatusBannerState
                   ),
                 ),
               ),
-              if (_expanded)
-                for (final job in queue.jobs)
+              if (_expanded) ...[
+                for (final job in ingest.jobs)
                   ListTile(
                     dense: true,
                     title: Text(job.folderLabel),
@@ -92,14 +106,60 @@ class _FolderIngestStatusBannerState
                         ? null
                         : IconButton(
                             tooltip: 'Dismiss',
-                            onPressed: () => queue.dismissJob(job),
+                            onPressed: () => ingest.dismissJob(job),
                             icon: const Icon(Icons.close, size: 18),
                           ),
                   ),
+                for (final job in remove.jobs)
+                  ListTile(
+                    key: Key('folder-remove-job-${job.folderPath}'),
+                    dense: true,
+                    title: Text(job.folderLabel),
+                    subtitle: Text(
+                      job.error != null
+                          ? '${job.statusLabel}: ${job.error}'
+                          : job.statusLabel,
+                    ),
+                    trailing: job.isActive
+                        ? null
+                        : IconButton(
+                            tooltip: 'Dismiss',
+                            onPressed: () => remove.dismissJob(job),
+                            icon: const Icon(Icons.close, size: 18),
+                          ),
+                  ),
+              ],
             ],
           ),
         );
       },
     );
+  }
+
+  static String _summary({
+    required int loadingActive,
+    required int removingActive,
+    required bool ingestFinished,
+    required bool removeFinished,
+  }) {
+    final parts = <String>[];
+    if (loadingActive > 0) {
+      parts.add(
+        'Loading $loadingActive folder${loadingActive == 1 ? '' : 's'}…',
+      );
+    }
+    if (removingActive > 0) {
+      parts.add(
+        'Removing $removingActive folder${removingActive == 1 ? '' : 's'}…',
+      );
+    }
+    if (parts.isNotEmpty) return parts.join(' · ');
+
+    if (ingestFinished && removeFinished) {
+      return 'Folder activity finished';
+    }
+    if (removeFinished) return 'Folder remove finished';
+    if (ingestFinished) return 'Folder ingest finished';
+    return 'Folder activity finished';
   }
 }

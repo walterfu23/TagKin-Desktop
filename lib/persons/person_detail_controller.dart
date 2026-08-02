@@ -73,9 +73,14 @@ class PersonDetailController extends ChangeNotifier {
     }
   }
 
-  /// Moves [appearanceId] onto [targetPersonId], or creates a new person when
-  /// [targetPersonId] is null (R6).
-  Future<void> reassign(String appearanceId, String? targetPersonId) async {
+  /// Moves [appearanceId] onto an existing [personId], or creates a new named
+  /// person via [name] then assigns it (R6). Exactly one of [personId] /
+  /// [name] is required.
+  Future<void> reassign(
+    String appearanceId, {
+    String? personId,
+    String? name,
+  }) async {
     if (detail == null || isBusy) return;
     phase = PersonDetailPhase.busy;
     error = null;
@@ -84,7 +89,8 @@ class PersonDetailController extends ChangeNotifier {
     try {
       await personsRepository.reassignAppearance(
         appearanceId,
-        targetPersonId,
+        personId: personId,
+        name: name,
       );
       if (_disposed) return;
       await load();
@@ -96,20 +102,28 @@ class PersonDetailController extends ChangeNotifier {
     }
   }
 
-  /// Renames this person (human-authored; R6). Empty → null.
-  Future<void> rename(String? name) async {
-    if (detail == null || isBusy) return;
+  /// Renames this person (human-authored; R6). Name must be non-empty
+  /// (Person.name is always required, R2) — returns false without calling
+  /// the API when [name] trims to empty.
+  Future<bool> rename(String name) async {
+    if (detail == null || isBusy) return false;
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      error = ArgumentError('Name is required');
+      phase = PersonDetailPhase.error;
+      notifyListeners();
+      return false;
+    }
     phase = PersonDetailPhase.busy;
     error = null;
     notifyListeners();
 
     try {
-      final trimmed = name?.trim();
       final updated = await personsRepository.renamePerson(
         personId,
-        (trimmed == null || trimmed.isEmpty) ? null : trimmed,
+        trimmed,
       );
-      if (_disposed) return;
+      if (_disposed) return false;
       detail = PersonDetail(
         id: updated.id,
         name: updated.name,
@@ -118,11 +132,13 @@ class PersonDetailController extends ChangeNotifier {
       );
       phase = PersonDetailPhase.ready;
       notifyListeners();
+      return true;
     } catch (e) {
-      if (_disposed) return;
+      if (_disposed) return false;
       error = e;
       phase = PersonDetailPhase.error;
       notifyListeners();
+      return false;
     }
   }
 

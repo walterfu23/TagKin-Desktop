@@ -177,4 +177,38 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
   });
+
+  test('isLoadingPath hides ingest root and nested leaf folders while active',
+      () async {
+    final items = FakeItemsRepository();
+    final jobs = FakeJobsRepository();
+    var releaseScan = false;
+    final queue = FolderIngestQueue(
+      itemsRepository: items,
+      jobsRepository: jobs,
+      isUsageBlocked: () => false,
+      enumerateFolder: (path) async {
+        while (!releaseScan) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        return const [];
+      },
+      contentHasher: (path) async => 'hash-$path',
+      perceptualHasher: (path) async => null,
+    );
+
+    expect(queue.isLoadingPath('/albums/Trip'), isFalse);
+
+    await queue.enqueue('/albums');
+    expect(queue.isLoadingPath('/albums'), isTrue);
+    expect(queue.isLoadingPath('/albums/Trip'), isTrue);
+    expect(queue.isLoadingPath('/albums/Trip/day1'), isTrue);
+    expect(queue.isLoadingPath('/other'), isFalse);
+
+    releaseScan = true;
+    for (var i = 0; i < 80 && queue.hasActiveJobs; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(queue.isLoadingPath('/albums/Trip'), isFalse);
+  });
 }

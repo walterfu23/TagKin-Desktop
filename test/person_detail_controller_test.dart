@@ -47,26 +47,24 @@ void main() {
       await controller.load();
       expect(controller.detail!.appearances.length, 2);
 
-      // Reassign ap_2 onto a new person.
-      await controller.reassign('ap_2', null);
+      // Reassign ap_2 onto a brand-new named person.
+      await controller.reassign('ap_2', name: 'Riley');
       expect(controller.detail!.appearances.map((a) => a.id), ['ap_1']);
       expect(repo.reassignCalls.single.appearanceId, 'ap_2');
       expect(repo.reassignCalls.single.personId, isNull);
+      expect(repo.reassignCalls.single.name, 'Riley');
 
       // Reassign remaining ap_1 to person_2.
-      await controller.reassign('ap_1', 'person_2');
+      await controller.reassign('ap_1', personId: 'person_2');
       expect(controller.detail!.appearances, isEmpty);
       expect(repo.reassignCalls.last.personId, 'person_2');
 
       // Unassign from the new person (visible undo path).
-      final newPersonId = repo.reassignCalls.first.personId == null
-          ? (await repo.listPersons())
-              .firstWhere((p) => p.id.startsWith('person_new_'))
-              .id
-          : null;
-      expect(newPersonId, isNotNull);
+      final newPersonId = (await repo.listPersons())
+          .firstWhere((p) => p.id.startsWith('person_new_'))
+          .id;
       final newController = PersonDetailController(
-        personId: newPersonId!,
+        personId: newPersonId,
         personsRepository: repo,
       );
       await newController.load();
@@ -97,7 +95,7 @@ void main() {
     test('unassignPerson dissolves person via deletePerson API', () async {
       final repo = FakePersonsRepository(
         persons: [
-          fixturePersonDetail(id: 'person_1', name: null),
+          fixturePersonDetail(id: 'person_1', name: 'Sam'),
         ],
       );
       final controller = PersonDetailController(

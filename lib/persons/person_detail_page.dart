@@ -6,6 +6,7 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/persons/face_crop_trays_page.dart';
 import 'package:tagkin_desktop/persons/person_detail_controller.dart';
+import 'package:tagkin_desktop/persons/person_name_dialog.dart';
 import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
@@ -44,19 +45,16 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
   void _startRename(PersonDetail detail) {
     setState(() {
       _renaming = true;
-      _renameController.text = detail.name ?? '';
+      _renameController.text = detail.name;
     });
   }
 
   Future<void> _saveRename(PersonDetailController controller) async {
-    await controller.rename(_renameController.text);
-    if (mounted) {
+    final ok = await controller.rename(_renameController.text);
+    if (mounted && ok) {
       setState(() => _renaming = false);
     }
   }
-
-  bool _isUnnamed(PersonDetail detail) =>
-      detail.name == null || detail.name!.trim().isEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -178,7 +176,7 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
           children: [
             Expanded(
               child: Text(
-                detail.name ?? '(unnamed)',
+                detail.name,
                 key: const Key('person-detail-name'),
                 style: Theme.of(context).textTheme.titleLarge,
               ),
@@ -192,18 +190,16 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 16),
-        if (_renaming || _isUnnamed(detail))
+        if (_renaming)
           Row(
             children: [
               Expanded(
                 child: TextField(
                   key: const Key('person-rename-field'),
                   controller: _renameController,
-                  decoration: InputDecoration(
-                    labelText: _isUnnamed(detail)
-                        ? 'Enter a name for this person'
-                        : 'Person name',
-                    border: const OutlineInputBorder(),
+                  decoration: const InputDecoration(
+                    labelText: 'Person name',
+                    border: OutlineInputBorder(),
                   ),
                   enabled: !controller.isBusy,
                   onSubmitted: controller.isBusy
@@ -219,14 +215,13 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
                     : () => _saveRename(controller),
                 child: const Text('Done'),
               ),
-              if (!_isUnnamed(detail))
-                TextButton(
-                  key: const Key('person-rename-cancel'),
-                  onPressed: controller.isBusy
-                      ? null
-                      : () => setState(() => _renaming = false),
-                  child: const Text('Cancel'),
-                ),
+              TextButton(
+                key: const Key('person-rename-cancel'),
+                onPressed: controller.isBusy
+                    ? null
+                    : () => setState(() => _renaming = false),
+                child: const Text('Cancel'),
+              ),
             ],
           )
         else
@@ -278,13 +273,15 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
                         appearance.itemId!,
                         appearance.tagId!,
                       ),
-              onReassign: () {
+              onReassign: () async {
                 final target = _reassignTarget[appearance.id];
                 if (target == null || target.isEmpty) return;
                 if (target == _AppearanceCard.newPersonSentinel) {
-                  controller.reassign(appearance.id, null);
+                  final name = await showPersonNameDialog(context);
+                  if (name == null || !mounted) return;
+                  controller.reassign(appearance.id, name: name);
                 } else {
-                  controller.reassign(appearance.id, target);
+                  controller.reassign(appearance.id, personId: target);
                 }
               },
             ),
@@ -463,7 +460,7 @@ class _AppearanceCard extends StatelessWidget {
                     for (final person in otherPersons)
                       DropdownMenuItem(
                         value: person.id,
-                        child: Text(person.name ?? person.id),
+                        child: Text(person.name),
                       ),
                   ],
                   onChanged: busy
