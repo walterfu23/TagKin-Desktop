@@ -26,11 +26,11 @@ class FaceCropDragData {
     required this.itemId,
     required this.region,
     this.createdFromTagId,
+    this.faceGroupId,
+    this.faceGroupKind,
   })  : appearanceId = null,
         tagId = createdFromTagId,
-        personId = null,
-        faceGroupId = null,
-        faceGroupKind = null;
+        personId = null;
 
   final FaceCropTray source;
   final String? appearanceId;

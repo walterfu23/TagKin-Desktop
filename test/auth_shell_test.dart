@@ -10,6 +10,7 @@ import 'package:tagkin_desktop/main.dart';
 
 import 'fake_items_repository.dart';
 import 'fake_jobs_repository.dart';
+import 'fake_persons_repository.dart';
 import 'fake_usage_repository.dart';
 
 Account _account(String id) => Account(
@@ -30,6 +31,7 @@ void main() {
           itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
           usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
           jobsRepositoryProvider.overrideWithValue(FakeJobsRepository()),
+          personsRepositoryProvider.overrideWithValue(FakePersonsRepository()),
         ],
         child: const TagKinDesktopApp(),
       ),
@@ -39,12 +41,51 @@ void main() {
     expect(find.byKey(const Key('items-empty')), findsOneWidget);
     expect(find.byKey(const Key('account-label')), findsOneWidget);
     expect(find.text('acc_1@example.com'), findsOneWidget);
+    expect(find.byKey(const Key('nav-folders')), findsOneWidget);
     expect(find.byKey(const Key('nav-face-crops')), findsOneWidget);
     expect(find.byKey(const Key('nav-persons')), findsOneWidget);
-    // Faces comes before Persons in the AppBar actions.
-    final faceCrops = tester.getTopLeft(find.byKey(const Key('nav-face-crops')));
+    // Folders → Faces → Persons in the AppBar actions.
+    final folders = tester.getTopLeft(find.byKey(const Key('nav-folders')));
+    final faceCrops =
+        tester.getTopLeft(find.byKey(const Key('nav-face-crops')));
     final persons = tester.getTopLeft(find.byKey(const Key('nav-persons')));
+    expect(folders.dx, lessThan(faceCrops.dx));
     expect(faceCrops.dx, lessThan(persons.dx));
+  });
+
+  testWidgets('top-level tabs switch Folders / Faces / Persons without push',
+      (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          testSessionProvider.overrideWithValue(
+            TestSession(token: 'tok', account: _account('acc_1')),
+          ),
+          itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          jobsRepositoryProvider.overrideWithValue(FakeJobsRepository()),
+          personsRepositoryProvider.overrideWithValue(FakePersonsRepository()),
+        ],
+        child: const TagKinDesktopApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('items-empty')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('nav-persons')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('persons-empty')), findsOneWidget);
+    // Still one route — tabs do not push.
+    expect(find.byType(BackButton), findsNothing);
+
+    await tester.tap(find.byKey(const Key('nav-face-crops')));
+    await tester.pumpAndSettle();
+    expect(find.text('Faces'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('nav-folders')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('items-empty')), findsOneWidget);
   });
 
   testWidgets('401 on /me surfaces unauthorized — no crash, no retry loop',

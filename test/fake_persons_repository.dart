@@ -14,6 +14,40 @@ class FakePersonsRepository implements PersonsRepository {
   final Object? listError;
   final Object? getError;
 
+  /// Test helper: mutable person details (exclude/undo linkage).
+  List<PersonDetail> get personDetails => _persons;
+
+  /// Replace a person detail by id (exclude/undo linkage).
+  void replacePersonDetail(PersonDetail detail) {
+    final index = _persons.indexWhere((p) => p.id == detail.id);
+    if (index < 0) {
+      throw StateError('Person ${detail.id} not found');
+    }
+    _persons[index] = detail;
+  }
+
+  /// Remove and return an appearance by [tagId] from assigned or unassigned.
+  PersonAppearance? takeAppearanceByTagId(String tagId) {
+    for (var i = 0; i < _persons.length; i++) {
+      final person = _persons[i];
+      final idx = person.appearances.indexWhere((a) => a.tagId == tagId);
+      if (idx < 0) continue;
+      final found = person.appearances[idx];
+      final remaining = List<PersonAppearance>.from(person.appearances)
+        ..removeAt(idx);
+      _persons[i] = PersonDetail(
+        id: person.id,
+        name: person.name,
+        createdAt: person.createdAt,
+        appearances: remaining,
+      );
+      return found;
+    }
+    final uIdx = unassignedAppearances.indexWhere((a) => a.tagId == tagId);
+    if (uIdx >= 0) return unassignedAppearances.removeAt(uIdx);
+    return null;
+  }
+
   final List<String> unlinkCalls = <String>[];
   final List<({String appearanceId, String? personId, String? name})>
       reassignCalls =

@@ -21,7 +21,13 @@ import 'package:tagkin_desktop/persons/face_crop_trays_page.dart';
 import 'package:tagkin_desktop/persons/persons_list_page.dart';
 import 'package:tagkin_desktop/prefs/settings_navigation.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_status_banner.dart';
-import 'package:tagkin_desktop/widgets/selectable_scope.dart';
+
+/// Top-level signed-in destinations (Folders / Faces / Persons).
+enum TopLevelTab { folders, faces, persons }
+
+/// Which top-level tab is visible in [_SignedInScaffold].
+final activeTopLevelTabProvider =
+    StateProvider<TopLevelTab>((ref) => TopLevelTab.folders);
 
 /// App-wide config (overridable in tests).
 final appConfigProvider = Provider<AppConfig>((ref) => AppConfig.load());
@@ -478,22 +484,15 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold> {
 
   bool _settingsOpen = false;
 
-  Future<void> _openFaceCrops() async {
-    await openFaceCropTrays(context);
-  }
+  /// Lazily mount Faces/Persons the first time the user visits them so their
+  /// [State] survives subsequent tab switches (scroll, filters, selections).
+  final Set<TopLevelTab> _mountedTabs = {TopLevelTab.folders};
 
-  Future<void> _openPersons() async {
-    final container = ProviderScope.containerOf(context);
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => SelectableScope(
-          child: UncontrolledProviderScope(
-            container: container,
-            child: const PersonsListPage(),
-          ),
-        ),
-      ),
-    );
+  void _selectTab(TopLevelTab tab) {
+    if (!_mountedTabs.contains(tab)) {
+      setState(() => _mountedTabs.add(tab));
+    }
+    ref.read(activeTopLevelTabProvider.notifier).state = tab;
   }
 
   Future<void> _copyApiToken() async {
@@ -543,6 +542,13 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold> {
       _openSettings();
     });
 
+    final activeTab = ref.watch(activeTopLevelTabProvider);
+    // External callers (e.g. [openFaceCropTrays]) may flip the tab provider
+    // without going through [_selectTab] — ensure the page is mounted.
+    if (!_mountedTabs.contains(activeTab)) {
+      _mountedTabs.add(activeTab);
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('TagKin'),
@@ -562,16 +568,34 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold> {
               icon: const Icon(Icons.settings_outlined),
             ),
           IconButton(
+            key: const Key('nav-folders'),
+            tooltip: 'Folders',
+            onPressed: () => _selectTab(TopLevelTab.folders),
+            icon: Icon(
+              activeTab == TopLevelTab.folders
+                  ? Icons.folder
+                  : Icons.folder_outlined,
+            ),
+          ),
+          IconButton(
             key: const Key('nav-face-crops'),
             tooltip: 'Faces',
-            onPressed: _openFaceCrops,
-            icon: const Icon(Icons.face_retouching_natural_outlined),
+            onPressed: () => _selectTab(TopLevelTab.faces),
+            icon: Icon(
+              activeTab == TopLevelTab.faces
+                  ? Icons.face_retouching_natural
+                  : Icons.face_retouching_natural_outlined,
+            ),
           ),
           IconButton(
             key: const Key('nav-persons'),
             tooltip: 'Persons',
-            onPressed: _openPersons,
-            icon: const Icon(Icons.people_outline),
+            onPressed: () => _selectTab(TopLevelTab.persons),
+            icon: Icon(
+              activeTab == TopLevelTab.persons
+                  ? Icons.people
+                  : Icons.people_outline,
+            ),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -595,7 +619,20 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const FolderIngestStatusBanner(),
-          Expanded(child: widget.child),
+          Expanded(
+            child: IndexedStack(
+              index: activeTab.index,
+              children: [
+                widget.child,
+                _mountedTabs.contains(TopLevelTab.faces)
+                    ? const FaceCropTraysPage()
+                    : const SizedBox.shrink(),
+                _mountedTabs.contains(TopLevelTab.persons)
+                    ? const PersonsListPage()
+                    : const SizedBox.shrink(),
+              ],
+            ),
+          ),
         ],
       ),
     );

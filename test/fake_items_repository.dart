@@ -2,6 +2,8 @@ import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/api/items_repository.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 
+import 'fake_persons_repository.dart';
+
 /// In-memory [ItemsRepository] for widget/integration tests (no network).
 class FakeItemsRepository implements ItemsRepository {
   FakeItemsRepository({
@@ -14,6 +16,7 @@ class FakeItemsRepository implements ItemsRepository {
     this.grantError,
     this.analysisRefError,
     this.onListItems,
+    this.linkedPersons,
   })  : _items = List<Item>.from(items ?? const []),
         _knowledgeByItemId = Map<String, ItemKnowledge>.from(
           knowledgeByItemId ?? const {},
@@ -27,6 +30,10 @@ class FakeItemsRepository implements ItemsRepository {
 
   /// Optional hook before returning the list (e.g. inject one-shot failures).
   final Future<void> Function()? onListItems;
+
+  /// When set, [createWhoExclusion] / [undoWhoExclusion] also mutate the
+  /// linked persons fake (copy faceGroupId, move appearances ↔ exclusions).
+  FakePersonsRepository? linkedPersons;
 
   /// Optional grant factory; defaults to a non-expiring stub URL.
   final UploadGrant Function(String itemId, CreateUploadGrant input)?
@@ -247,13 +254,34 @@ class FakeItemsRepository implements ItemsRepository {
     String tagId,
   ) async {
     await getItem(itemId);
+
+    String? faceGroupId;
+    FaceGroupKind? faceGroupKind;
+    TagRegion region =
+        const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.5, xMax: 0.5);
+
+    final persons = linkedPersons;
+    if (persons != null) {
+      PersonAppearance? found;
+      found = persons.takeAppearanceByTagId(tagId);
+      if (found != null) {
+        faceGroupId = found.faceGroupId;
+        faceGroupKind = found.faceGroupKind;
+        if (found.region != null) region = found.region!;
+      }
+    }
+
     final exclusion = WhoExclusion(
       id: 'excl_$tagId',
       itemId: itemId,
-      region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.5, xMax: 0.5),
+      region: region,
       createdFromTagId: tagId,
       createdAt: '2026-07-26T00:00:00.000Z',
+      faceGroupId: faceGroupId,
+      faceGroupKind: faceGroupKind,
     );
+    persons?.accountExclusions.add(exclusion);
+
     final existing = _knowledgeByItemId[itemId];
     if (existing != null) {
       _knowledgeByItemId[itemId] = ItemKnowledge(
@@ -294,6 +322,31 @@ class FakeItemsRepository implements ItemsRepository {
             existing.whoExclusions.where((e) => e.id != exclusionId).toList(),
       );
     }
+
+    final persons = linkedPersons;
+    if (persons != null) {
+      final idx =
+          persons.accountExclusions.indexWhere((e) => e.id == exclusionId);
+      if (idx >= 0) {
+        found ??= persons.accountExclusions[idx];
+        persons.accountExclusions.removeAt(idx);
+      }
+      if (found != null) {
+        persons.unassignedAppearances.add(
+          PersonAppearance(
+            id: 'ap_restored_${found.id}',
+            personId: null,
+            faceGroupId: found.faceGroupId,
+            faceGroupKind: found.faceGroupKind,
+            itemId: found.itemId,
+            tagId: found.createdFromTagId,
+            region: found.region,
+            createdAt: found.createdAt,
+          ),
+        );
+      }
+    }
+
     if (found == null) {
       throw ApiException(statusCode: 404, message: 'Not found');
     }
