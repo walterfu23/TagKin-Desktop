@@ -7,6 +7,7 @@ import 'package:tagkin_desktop/ingest/upload_controller.dart';
 import 'package:tagkin_desktop/jobs/job_state_view.dart';
 import 'package:tagkin_desktop/jobs/jobs_controller.dart';
 import 'package:tagkin_desktop/library/processing_status_view.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/review/item_review_page.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
 
@@ -69,6 +70,7 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
     await jobs.delete();
     if (!mounted) return;
     if (jobs.deleted) {
+      ref.read(collectionsControllerProvider).markDirty();
       Navigator.of(context).pop(true);
     }
   }

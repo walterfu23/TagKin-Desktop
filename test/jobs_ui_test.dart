@@ -6,6 +6,8 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/upload_controller.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/main.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
+import 'package:tagkin_desktop/persons/collections_store.dart';
 
 import 'fake_comments_repository.dart';
 import 'fake_corrections_repository.dart';
@@ -39,6 +41,7 @@ List<Override> _overrides({
       usage ?? FakeUsageRepository(),
     ),
     jobsRepositoryProvider.overrideWithValue(jobs),
+    collectionsStoreProvider.overrideWithValue(MemoryCollectionsStore()),
     if (upload != null)
       uploadControllerProvider.overrideWithValue(upload),
   ];

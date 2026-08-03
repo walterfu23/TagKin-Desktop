@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/main.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
+import 'package:tagkin_desktop/persons/collections_store.dart';
 
 import 'fake_items_repository.dart';
 import 'fake_jobs_repository.dart';
@@ -31,6 +33,7 @@ void main() {
           itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
           usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
           jobsRepositoryProvider.overrideWithValue(FakeJobsRepository()),
+          collectionsStoreProvider.overrideWithValue(MemoryCollectionsStore()),
         ],
         child: const TagKinDesktopApp(),
       ),

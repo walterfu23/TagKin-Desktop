@@ -71,6 +71,11 @@ class FakeItemsRepository implements ItemsRepository {
     _items.removeWhere((i) => i.id == id);
   }
 
+  /// Test helper: append an item for reload scenarios (e.g. new sibling folder).
+  void addItem(Item item) {
+    _items.add(item);
+  }
+
   /// Updates the stored knowledge projection (D10 correction fakes).
   void setKnowledge(String itemId, ItemKnowledge knowledge) {
     _knowledgeByItemId[itemId] = knowledge;

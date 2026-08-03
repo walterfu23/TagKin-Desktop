@@ -7,6 +7,8 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/library/items_list_page.dart';
 import 'package:tagkin_desktop/main.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
+import 'package:tagkin_desktop/persons/collections_store.dart';
 
 import 'fake_comments_repository.dart';
 import 'fake_corrections_repository.dart';
@@ -42,6 +44,7 @@ List<Override> _sessionOverrides({
     jobsRepositoryProvider.overrideWithValue(
       jobs ?? FakeJobsRepository(),
     ),
+    collectionsStoreProvider.overrideWithValue(MemoryCollectionsStore()),
   ];
 }
 
@@ -252,7 +255,8 @@ void main() {
     expect(find.text('b.jpg'), findsNothing);
   });
 
-  testWidgets('nested date folders collapse under shared parent', (tester) async {
+  testWidgets('nested date folders show sibling folders under expanded parent',
+      (tester) async {
     const root = '/users/w/test';
     final a = fixtureItem(
       id: 'a',
@@ -276,18 +280,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('source-group-$root')), findsOneWidget);
-    expect(find.byKey(const Key('item-row-a')), findsNothing);
-    expect(find.byKey(const Key('source-group-$root/20260508')), findsNothing);
-
-    await tester.tap(find.byKey(const Key('source-group-toggle-$root')));
-    await tester.pumpAndSettle();
-
+    // Sibling folder headers/rows visible under auto-expanded parent.
     expect(
       find.byKey(const Key('source-group-$root/20260508')),
       findsOneWidget,
     );
-    expect(find.text('20260506/c.jpg'), findsNothing);
     expect(find.byKey(const Key('item-source-c')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-a')), findsNothing);
 
     await tester.tap(
       find.byKey(const Key('source-group-toggle-$root/20260508')),

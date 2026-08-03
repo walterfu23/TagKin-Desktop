@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io' show Platform;
+import 'dart:ui' show AppExitResponse;
 
 import 'package:clerk_auth/clerk_auth.dart' show RetryOptions;
 import 'package:clerk_flutter/clerk_flutter.dart';
@@ -17,10 +19,18 @@ import 'package:tagkin_desktop/api/usage_repository.dart';
 import 'package:tagkin_desktop/auth/secure_persistor.dart';
 import 'package:tagkin_desktop/config/app_config.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/persons/collection_navigation.dart';
+import 'package:tagkin_desktop/persons/collection_start_gate.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
+import 'package:tagkin_desktop/persons/dirty_leave_prompt.dart';
+import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/persons/face_crop_trays_page.dart';
 import 'package:tagkin_desktop/persons/persons_list_page.dart';
+import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/prefs/settings_navigation.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_status_banner.dart';
+import 'package:tagkin_desktop/shell/quit_navigation.dart';
+import 'package:window_manager/window_manager.dart';
 
 /// Top-level signed-in destinations (Folders / Faces / Persons).
 enum TopLevelTab { folders, faces, persons }
@@ -94,6 +104,7 @@ class TestSession {
     required this.token,
     this.account,
     this.meError,
+    this.onSignOut,
   });
 
   final String token;
@@ -101,6 +112,10 @@ class TestSession {
 
   /// When set, [AccountBootstrap] surfaces this instead of calling /me.
   final Object? meError;
+
+  /// Test-only sign-out hook so widget/integration tests can exercise the
+  /// Sign out button (and the dirty-collection confirm gate in front of it).
+  final Future<void> Function()? onSignOut;
 }
 
 /// Auth-gated shell: Clerk sign-in when configured, else a configure prompt;
@@ -267,6 +282,7 @@ class _TestSignedInHostState extends ConsumerState<_TestSignedInHost> {
           return MeRepository(_client).getMe();
         },
         onUnauthorized: () {},
+        onSignOut: widget.session.onSignOut,
         signedInHome: widget.signedInHome,
       ),
     );
@@ -478,7 +494,8 @@ class _SignedInScaffold extends ConsumerStatefulWidget {
   ConsumerState<_SignedInScaffold> createState() => _SignedInScaffoldState();
 }
 
-class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold> {
+class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
+    with WidgetsBindingObserver, WindowListener {
   /// In-app gear is Windows-only; macOS uses TagKin → Settings… in the menu bar.
   bool get _showSettingsGear => !kIsWeb && Platform.isWindows;
 
@@ -487,6 +504,202 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold> {
   /// Lazily mount Faces/Persons the first time the user visits them so their
   /// [State] survives subsequent tab switches (scroll, filters, selections).
   final Set<TopLevelTab> _mountedTabs = {TopLevelTab.folders};
+
+  /// Avoid re-scheduling first-run mint every frame while the spinner shows.
+  bool _collectionBootstrapRequested = false;
+
+  /// Last seen unfiltered library leaf folders (for ingest grow / remove shrink).
+  Set<String>? _trackedLibraryFolders;
+
+  /// Last applied collection uiEpoch (Folders look restore).
+  int _lastAppliedUiEpoch = -1;
+  bool _applyingCollectionUi = false;
+  LibraryTableController? _libraryLookSource;
+
+  bool _windowCloseGateActive = false;
+  Future<bool>? _leavePromptFuture;
+  Future<void>? _windowCloseInFlight;
+
+  bool get _desktopWindowCloseSupported =>
+      !kIsWeb && (Platform.isMacOS || Platform.isWindows);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_enableWindowCloseGate());
+  }
+
+  Future<void> _enableWindowCloseGate() async {
+    if (!_desktopWindowCloseSupported) return;
+    // Widget tests pump the shell without window_manager.ensureInitialized.
+    if (Platform.environment.containsKey('FLUTTER_TEST')) return;
+    try {
+      await windowManager.setPreventClose(true);
+      windowManager.addListener(this);
+      _windowCloseGateActive = true;
+    } catch (_) {
+      // Plugin missing or not ready — fall back to didRequestAppExit only.
+    }
+  }
+
+  Future<void> _allowCloseAndQuit() async {
+    if (!_windowCloseGateActive) return;
+    try {
+      await windowManager.setPreventClose(false);
+      await windowManager.destroy();
+    } catch (_) {
+      try {
+        await windowManager.destroy();
+      } catch (_) {}
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_windowCloseGateActive) {
+      windowManager.removeListener(this);
+      _windowCloseGateActive = false;
+    }
+    _libraryLookSource?.removeListener(_onLibraryLookChanged);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  void _ensureLibraryLookSync(LibraryTableController table) {
+    if (identical(_libraryLookSource, table)) return;
+    _libraryLookSource?.removeListener(_onLibraryLookChanged);
+    _libraryLookSource = table;
+    table.addListener(_onLibraryLookChanged);
+  }
+
+  void _onLibraryLookChanged() {
+    if (!mounted || _applyingCollectionUi) return;
+    final cols = ref.read(collectionsControllerProvider);
+    if (!cols.sessionReady) return;
+    cols.updateLibraryLook(
+      ref.read(libraryTableControllerProvider).captureCollectionLibraryUi(),
+    );
+  }
+
+  /// Applies the collection's saved Folders look and folds any auto-expand
+  /// into the baseline (not dirty). Must wait for the table's first real
+  /// [LibraryTableController.load] first: computing/adopting a baseline
+  /// against zero rows (login is faster than the initial library fetch),
+  /// then having real rows trigger auto-expand moments later, made every
+  /// fresh session look dirty immediately after sign-in.
+  Future<void> _applyCollectionUiIfNeeded(CollectionsController cols) async {
+    if (!cols.sessionReady) return;
+    if (cols.uiEpoch == _lastAppliedUiEpoch) return;
+    _lastAppliedUiEpoch = cols.uiEpoch;
+    _applyingCollectionUi = true;
+    try {
+      final table = ref.read(libraryTableControllerProvider);
+      await table.ensureLoaded();
+      if (!mounted) return;
+      await table.applyCollectionLibraryUi(cols.current.ui.library);
+      if (!mounted) return;
+      // Auto-expand may change expandedDirs; fold into baseline, not dirty.
+      cols.adoptLibraryLook(table.captureCollectionLibraryUi());
+    } finally {
+      _applyingCollectionUi = false;
+    }
+  }
+
+  /// Shared leave prompt so Sign out / window close / Quit await one dialog.
+  ///
+  /// Must `await` the inner call before returning: a bare `return future;`
+  /// inside try/finally lets `finally` run synchronously (before
+  /// `_leavePromptFuture` is even assigned below), latching a stale resolved
+  /// Future in `_leavePromptFuture` forever and making every later Sign
+  /// out / window-close / Quit short-circuit on the first cached answer.
+  Future<bool> _confirmLeaveIfDirty() {
+    final existing = _leavePromptFuture;
+    if (existing != null) return existing;
+    final future = () async {
+      try {
+        final cols = ref.read(collectionsControllerProvider);
+        if (!cols.dirty) return true;
+        if (!mounted) return false;
+        return await cols.confirmLeaveIfDirty(
+          resolveDirty: _presentDirtyPrompt,
+        );
+      } finally {
+        _leavePromptFuture = null;
+      }
+    }();
+    _leavePromptFuture = future;
+    return future;
+  }
+
+  Future<DirtyPromptChoice> _presentDirtyPrompt() {
+    if (!mounted) return Future.value(DirtyPromptChoice.cancel);
+    return showDirtyLeaveOverlayPrompt(context);
+  }
+
+  @override
+  Future<AppExitResponse> didRequestAppExit() async {
+    // Quit/close confirmation is owned by onWindowClose / custom Quit menu.
+    // Never show dialogs or call _handleWindowClose from here — doing so
+    // poisons macOS after Cancel (flutter#141377 / window_manager#466).
+    if (_windowCloseGateActive) {
+      return AppExitResponse.cancel;
+    }
+    final ok = await _confirmLeaveIfDirty();
+    return ok ? AppExitResponse.exit : AppExitResponse.cancel;
+  }
+
+  @override
+  void onWindowClose() {
+    unawaited(_handleWindowClose());
+  }
+
+  Future<void> _handleWindowClose() {
+    final existing = _windowCloseInFlight;
+    if (existing != null) return existing;
+    final future = () async {
+      try {
+        if (!_windowCloseGateActive) return;
+        final ok = await _confirmLeaveIfDirty();
+        if (!ok) return;
+        if (!mounted) return;
+        await _allowCloseAndQuit();
+      } finally {
+        _windowCloseInFlight = null;
+      }
+    }();
+    _windowCloseInFlight = future;
+    return future;
+  }
+
+  Future<void> _signOut() async {
+    final handler = widget.onSignOut;
+    if (handler == null) return;
+    final ok = await _confirmLeaveIfDirty();
+    if (!ok) return;
+    if (!mounted) return;
+    await handler();
+  }
+
+  List<String> _libraryFolders() {
+    try {
+      final table = ref.read(libraryTableControllerProvider);
+      return distinctLeafFolders(table.allRows.map((r) => r.item));
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> _runCollectionCommand(CollectionMenuRequest req) async {
+    final cols = ref.read(collectionsControllerProvider);
+    await runCollectionMenuCommand(
+      context: context,
+      cols: cols,
+      command: req.command,
+      libraryFolders: _libraryFolders(),
+      recentCollectionId: req.recentCollectionId,
+    );
+  }
 
   void _selectTab(TopLevelTab tab) {
     if (!_mountedTabs.contains(tab)) {
@@ -542,17 +755,128 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold> {
       _openSettings();
     });
 
+    ref.listen<int>(quitAppTickProvider, (previous, next) {
+      if (previous == null || previous == next) return;
+      if (!mounted) return;
+      unawaited(_handleWindowClose());
+    });
+
+    ref.listen<CollectionMenuRequest?>(collectionMenuRequestProvider,
+        (previous, next) {
+      if (next == null) return;
+      if (previous?.nonce == next.nonce) return;
+      if (!mounted) return;
+      unawaited(_runCollectionCommand(next));
+    });
+
+    final cols = ref.watch(collectionsControllerProvider);
+    final table = ref.watch(libraryTableControllerProvider);
+    final libraryFolders = distinctLeafFolders(table.allRows.map((r) => r.item));
+
+    // First-run only: empty catalog → mint Collection1. Non-empty waits on gate.
+    if (cols.loaded &&
+        !cols.sessionReady &&
+        cols.collections.isEmpty &&
+        !_collectionBootstrapRequested) {
+      _collectionBootstrapRequested = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        final c = ref.read(collectionsControllerProvider);
+        if (c.sessionReady) return;
+        final ok = await c.bootstrapSession(libraryFolders);
+        if (!ok && mounted) {
+          // Catalog gained entries elsewhere; allow a later empty-catalog retry.
+          _collectionBootstrapRequested = false;
+        }
+      });
+    } else if (cols.sessionReady &&
+        cols.current.leafFolders.isEmpty &&
+        libraryFolders.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        await ref
+            .read(collectionsControllerProvider)
+            .fillMembershipIfEmpty(libraryFolders);
+      });
+    }
+
     final activeTab = ref.watch(activeTopLevelTabProvider);
-    // External callers (e.g. [openFaceCropTrays]) may flip the tab provider
-    // without going through [_selectTab] — ensure the page is mounted.
     if (!_mountedTabs.contains(activeTab)) {
       _mountedTabs.add(activeTab);
     }
 
+    if (cols.loaded && !cols.sessionReady && cols.collections.isNotEmpty) {
+      return CollectionStartGate(
+        libraryFolders: libraryFolders,
+        onSignOut: widget.onSignOut == null ? null : _signOut,
+      );
+    }
+
+    if (!cols.sessionReady) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(
+            key: Key('collection-session-loading'),
+          ),
+        ),
+      );
+    }
+
+    // Sync collection membership to library folder grow/shrink, then filter.
+    // Also restore Folders look when the collection uiEpoch advances.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final c = ref.read(collectionsControllerProvider);
+      if (!c.sessionReady) return;
+      final lib = ref.read(libraryTableControllerProvider);
+      _ensureLibraryLookSync(lib);
+      unawaited(_applyCollectionUiIfNeeded(c));
+      final folders = libraryFolders.toSet();
+      final prev = _trackedLibraryFolders;
+      if (prev == null || (prev.isEmpty && folders.isNotEmpty)) {
+        // First observation / initial library populate — seed only (no dirty).
+        _trackedLibraryFolders = folders;
+      } else if (prev.length != folders.length || !prev.containsAll(folders)) {
+        for (final f in folders) {
+          if (!prev.contains(f)) c.addFolder(f);
+        }
+        for (final f in prev) {
+          if (!folders.contains(f)) c.removeFolder(f);
+        }
+        _trackedLibraryFolders = folders;
+      }
+      ref.read(libraryTableControllerProvider).setCollectionLeafFolders(
+            c.current.leafFolders.toSet(),
+          );
+    });
+
+    final showWindowsFileMenu = !kIsWeb && Platform.isWindows;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('TagKin'),
+        title: SelectionContainer.disabled(
+          child: Row(
+          children: [
+            const Text('TagKin'),
+            if (cols.chromeLabel.isNotEmpty) ...[
+              const SizedBox(width: 16),
+              Flexible(
+                child: Text(
+                  cols.chromeLabel,
+                  key: const Key('shell-collection-label'),
+                  style: Theme.of(context).textTheme.bodyMedium,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ],
+        ),
+        ),
         actions: [
+          SelectionContainer.disabled(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
           if (kDebugMode && widget.fetchApiToken != null)
             IconButton(
               key: const Key('nav-copy-api-token'),
@@ -566,6 +890,68 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold> {
               tooltip: 'Settings',
               onPressed: _openSettings,
               icon: const Icon(Icons.settings_outlined),
+            ),
+          if (showWindowsFileMenu)
+            PopupMenuButton<CollectionMenuCommand>(
+              key: const Key('windows-file-menu'),
+              tooltip: 'File',
+              onSelected: (cmd) {
+                requestCollectionMenu(ref, cmd);
+              },
+              itemBuilder: (context) {
+                final recents = cols.recentCollections;
+                return [
+                  const PopupMenuItem(
+                    value: CollectionMenuCommand.newCollection,
+                    child: Text('New Collection…'),
+                  ),
+                  const PopupMenuItem(
+                    value: CollectionMenuCommand.open,
+                    child: Text('Open Collection…'),
+                  ),
+                  for (final c in recents)
+                    PopupMenuItem<CollectionMenuCommand>(
+                      onTap: () {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          requestCollectionMenu(
+                            ref,
+                            CollectionMenuCommand.openRecent,
+                            recentCollectionId: c.id,
+                          );
+                        });
+                      },
+                      child: Text('Recent: ${c.name}'),
+                    ),
+                  const PopupMenuDivider(),
+                  PopupMenuItem(
+                    value: CollectionMenuCommand.save,
+                    enabled: cols.dirty,
+                    child: const Text('Save Collection'),
+                  ),
+                  const PopupMenuItem(
+                    value: CollectionMenuCommand.saveAs,
+                    child: Text('Save Collection as…'),
+                  ),
+                  const PopupMenuItem(
+                    value: CollectionMenuCommand.rename,
+                    child: Text('Rename Collection…'),
+                  ),
+                  const PopupMenuItem(
+                    value: CollectionMenuCommand.delete,
+                    child: Text('Delete Collection…'),
+                  ),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
+                    value: CollectionMenuCommand.addFolder,
+                    child: Text('Add Folder to Collection…'),
+                  ),
+                  const PopupMenuItem(
+                    value: CollectionMenuCommand.removeFolder,
+                    child: Text('Remove Folder from Collection…'),
+                  ),
+                ];
+              },
+              icon: const Icon(Icons.menu),
             ),
           IconButton(
             key: const Key('nav-folders'),
@@ -610,9 +996,12 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold> {
             IconButton(
               key: const Key('sign-out'),
               tooltip: 'Sign out',
-              onPressed: () => widget.onSignOut!(),
+              onPressed: _signOut,
               icon: const Icon(Icons.logout),
             ),
+              ],
+            ),
+          ),
         ],
       ),
       body: Column(

@@ -8,6 +8,9 @@ import 'package:image/image.dart' as img;
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
+import 'package:tagkin_desktop/persons/collection.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
+import 'package:tagkin_desktop/persons/collections_store.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/persons/face_crop_trays_page.dart';
 
@@ -2348,5 +2351,179 @@ void main() {
     expect(persons.assignFaceGroupCalls.single.personId, 'person_1');
     expect(persons.reassignCalls, isEmpty);
     expect(persons.accountExclusions, isEmpty);
+  });
+
+  testWidgets(
+      'face crop trays: collection open filters folder dropdown; no collection menu',
+      (tester) async {
+    final store = MemoryCollectionsStore(
+      const CollectionsFile(
+        collections: [
+          Collection(
+            id: 'collection_europe',
+            name: 'Europe',
+            leafFolders: ['/albums/Paris'],
+          ),
+        ],
+      ),
+    );
+
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: 'Sam',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_paris',
+              personId: 'person_1',
+              itemId: 'item_paris',
+              tagId: 'tag_paris',
+            ),
+            fixtureAppearance(
+              id: 'ap_rome',
+              personId: 'person_1',
+              itemId: 'item_rome',
+              tagId: 'tag_rome',
+            ),
+          ],
+        ),
+      ],
+    );
+    final items = FakeItemsRepository(
+      items: [
+        fixtureItem(
+          id: 'item_paris',
+          sourceRef: 'file:///albums/Paris/a.jpg',
+          processingStatus: ProcessingStatus.tagged,
+          contentHash: null,
+        ),
+        fixtureItem(
+          id: 'item_rome',
+          sourceRef: 'file:///albums/Rome/b.jpg',
+          processingStatus: ProcessingStatus.tagged,
+          contentHash: null,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          itemsRepositoryProvider.overrideWithValue(items),
+          collectionsStoreProvider.overrideWithValue(store),
+        ],
+        child: const MaterialApp(
+          home: FaceCropTraysPage(initialLeafFolder: '/albums/Paris'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final cols = ProviderScope.containerOf(
+      tester.element(find.byType(FaceCropTraysPage)),
+    ).read(collectionsControllerProvider);
+    if (!cols.loaded) await cols.load();
+    expect(await cols.open('collection_europe'), isTrue);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('face-crop-collection-menu')), findsNothing);
+    expect(
+      tester
+          .widget<Text>(find.byKey(const Key('face-crop-collection-label')))
+          .data,
+      'Europe',
+    );
+
+    await tester.tap(find.byKey(const Key('face-crop-folder-select')));
+    await tester.pumpAndSettle();
+    expect(find.text('Paris').last, findsOneWidget);
+    expect(find.text('Rome'), findsNothing);
+  });
+
+  testWidgets(
+      'face crop trays: assign still works with named collection open',
+      (tester) async {
+    final store = MemoryCollectionsStore(
+      const CollectionsFile(
+        collections: [
+          Collection(
+            id: 'collection_trip',
+            name: 'Trip',
+            leafFolders: ['/albums/Trip'],
+          ),
+        ],
+      ),
+    );
+
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: 'Sam',
+          appearances: const [],
+        ),
+      ],
+    );
+    persons.unassignedAppearances.add(
+      fixtureAppearance(
+        id: 'ap_u',
+        personId: null,
+        itemId: 'item_u',
+        tagId: 'tag_u',
+        region: const TagRegion(
+          yMin: 0.2,
+          xMin: 0.2,
+          yMax: 0.5,
+          xMax: 0.5,
+        ),
+      ),
+    );
+    final items = _itemsInAlbum(['item_u'], linkedPersons: persons);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          itemsRepositoryProvider.overrideWithValue(items),
+          collectionsStoreProvider.overrideWithValue(store),
+        ],
+        child: const MaterialApp(
+          home: FaceCropTraysPage(initialPersonId: 'person_1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final cols = ProviderScope.containerOf(
+      tester.element(find.byType(FaceCropTraysPage)),
+    ).read(collectionsControllerProvider);
+    if (!cols.loaded) await cols.load();
+    expect(await cols.open('collection_trip'), isTrue);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<Text>(find.byKey(const Key('face-crop-collection-label')))
+          .data,
+      'Trip',
+    );
+
+    final from = tester.getCenter(
+      find.byKey(const Key('face-crop-appearance-ap_u')),
+    );
+    final to = tester.getCenter(
+      find.byKey(const Key('face-crop-tray-assigned')),
+    );
+    final gesture = await tester.startGesture(from);
+    await tester.pump(const Duration(milliseconds: 50));
+    await gesture.moveTo(to);
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(persons.reassignCalls, isNotEmpty);
+    expect(persons.reassignCalls.last.personId, 'person_1');
   });
 }

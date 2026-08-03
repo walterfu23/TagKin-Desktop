@@ -7,6 +7,8 @@ import 'package:tagkin_desktop/config/app_config.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/items_list_page.dart';
 import 'package:tagkin_desktop/main.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
+import 'package:tagkin_desktop/persons/collections_store.dart';
 
 import 'fake_items_repository.dart';
 import 'fake_jobs_repository.dart';
@@ -19,20 +21,23 @@ Account _account(String id) => Account(
       createdAt: '2026-07-18T00:00:00.000Z',
     );
 
+List<Override> _signedInOverrides() => [
+      testSessionProvider.overrideWithValue(
+        TestSession(token: 'tok', account: _account('acc_1')),
+      ),
+      itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
+      usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+      jobsRepositoryProvider.overrideWithValue(FakeJobsRepository()),
+      personsRepositoryProvider.overrideWithValue(FakePersonsRepository()),
+      collectionsStoreProvider.overrideWithValue(MemoryCollectionsStore()),
+    ];
+
 void main() {
   testWidgets('valid session populates account and shows items library',
       (tester) async {
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          testSessionProvider.overrideWithValue(
-            TestSession(token: 'tok', account: _account('acc_1')),
-          ),
-          itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
-          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
-          jobsRepositoryProvider.overrideWithValue(FakeJobsRepository()),
-          personsRepositoryProvider.overrideWithValue(FakePersonsRepository()),
-        ],
+        overrides: _signedInOverrides(),
         child: const TagKinDesktopApp(),
       ),
     );
@@ -44,6 +49,8 @@ void main() {
     expect(find.byKey(const Key('nav-folders')), findsOneWidget);
     expect(find.byKey(const Key('nav-face-crops')), findsOneWidget);
     expect(find.byKey(const Key('nav-persons')), findsOneWidget);
+    expect(find.byKey(const Key('shell-collection-label')), findsOneWidget);
+    expect(find.text('Collection1'), findsOneWidget);
     // Folders → Faces → Persons in the AppBar actions.
     final folders = tester.getTopLeft(find.byKey(const Key('nav-folders')));
     final faceCrops =
@@ -57,15 +64,7 @@ void main() {
       (tester) async {
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          testSessionProvider.overrideWithValue(
-            TestSession(token: 'tok', account: _account('acc_1')),
-          ),
-          itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
-          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
-          jobsRepositoryProvider.overrideWithValue(FakeJobsRepository()),
-          personsRepositoryProvider.overrideWithValue(FakePersonsRepository()),
-        ],
+        overrides: _signedInOverrides(),
         child: const TagKinDesktopApp(),
       ),
     );
@@ -100,6 +99,7 @@ void main() {
             ),
           ),
           itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
+          collectionsStoreProvider.overrideWithValue(MemoryCollectionsStore()),
         ],
         child: const MaterialApp(
           home: AuthShell(

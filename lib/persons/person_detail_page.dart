@@ -4,6 +4,7 @@ import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/face_crop_trays_page.dart';
 import 'package:tagkin_desktop/persons/person_detail_controller.dart';
 import 'package:tagkin_desktop/persons/person_name_dialog.dart';
@@ -52,6 +53,7 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
   Future<void> _saveRename(PersonDetailController controller) async {
     final ok = await controller.rename(_renameController.text);
     if (mounted && ok) {
+      ref.read(collectionsControllerProvider).markDirty();
       setState(() => _renaming = false);
     }
   }
@@ -121,6 +123,7 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
     if (confirmed != true || !mounted) return;
     final ok = await controller.unassignPerson();
     if (ok && mounted) {
+      ref.read(collectionsControllerProvider).markDirty();
       Navigator.of(context).pop();
     }
   }
@@ -263,7 +266,12 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
               onReassignTargetChanged: (value) {
                 setState(() => _reassignTarget[appearance.id] = value);
               },
-              onUnassign: () => controller.unlink(appearance.id),
+              onUnassign: () async {
+                await controller.unlink(appearance.id);
+                if (mounted && controller.error == null) {
+                  ref.read(collectionsControllerProvider).markDirty();
+                }
+              },
               onOpenItem: appearance.itemId == null
                   ? null
                   : () => _openItem(appearance.itemId!),
@@ -279,9 +287,12 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
                 if (target == _AppearanceCard.newPersonSentinel) {
                   final name = await showPersonNameDialog(context);
                   if (name == null || !mounted) return;
-                  controller.reassign(appearance.id, name: name);
+                  await controller.reassign(appearance.id, name: name);
                 } else {
-                  controller.reassign(appearance.id, personId: target);
+                  await controller.reassign(appearance.id, personId: target);
+                }
+                if (mounted && controller.error == null) {
+                  ref.read(collectionsControllerProvider).markDirty();
                 }
               },
             ),
@@ -311,6 +322,7 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
       if (!mounted) return;
       await controller.load();
       if (!mounted) return;
+      ref.read(collectionsControllerProvider).markDirty();
       if (controller.detail == null) {
         Navigator.of(context).pop();
         return;

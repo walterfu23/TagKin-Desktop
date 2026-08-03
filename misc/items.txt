@@ -19,4 +19,5 @@ might want to consider path hiearchy.
 16. On the faces page, In the folder dropdown, it might be a good idea to separate out folders that have been fully processed from other folders. perhaps more a simple dropdown anymore?
 17. Google consent page shows Clerk wants access to the google account. look at it later. somehow it has to do with google cloud console to create/configure oath client + consent screen with app name. 
 18. If several faces are already grouped, because they are alike, there should be a box around them so that actions can be applied to the group, for example making a new person from the group, drag the group between trays 
+19. add more into settings.
 

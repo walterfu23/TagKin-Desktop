@@ -10,6 +10,7 @@ import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/library/library_items_table.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/source_reveal.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/usage/usage_banner.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
@@ -39,7 +40,9 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(usageControllerProvider).load();
-      ref.read(libraryTableControllerProvider).load();
+      // ensureLoaded (not load) dedupes with the shell's own initial
+      // ensureLoaded call for Folders-look baseline capture.
+      ref.read(libraryTableControllerProvider).ensureLoaded();
       final ingest = ref.read(folderIngestQueueProvider);
       _ingestQueue = ingest;
       _lastIngestRefreshTick = ingest.libraryRefreshTick;
@@ -125,6 +128,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     try {
       await ref.read(jobsRepositoryProvider).deleteItem(item.id);
       if (!mounted) return;
+      ref.read(collectionsControllerProvider).markDirty();
       _retry();
     } catch (e) {
       if (!mounted) return;
@@ -184,6 +188,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     final result = await queue.enqueue(dir, ids);
     if (!mounted) return;
     if (result == FolderRemoveEnqueueResult.started) {
+      ref.read(collectionsControllerProvider).markDirty();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           key: Key('folder-remove-started'),

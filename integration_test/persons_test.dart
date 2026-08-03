@@ -11,6 +11,8 @@ import 'package:integration_test/integration_test.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/main.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
+import 'package:tagkin_desktop/persons/collections_store.dart';
 
 import '../test/fake_items_repository.dart';
 import '../test/fake_jobs_repository.dart';
@@ -60,6 +62,7 @@ void main() {
             FakeJobsRepository(itemId: 'item_p', item: item),
           ),
           personsRepositoryProvider.overrideWithValue(persons),
+          collectionsStoreProvider.overrideWithValue(MemoryCollectionsStore()),
         ],
         child: const TagKinDesktopApp(),
       ),

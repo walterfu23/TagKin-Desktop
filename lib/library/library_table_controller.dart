@@ -9,6 +9,8 @@ import 'package:tagkin_desktop/app_shell.dart'
     show commentsRepositoryProvider, itemsRepositoryProvider;
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/local_thumb_cache.dart';
+import 'package:tagkin_desktop/persons/collection.dart';
+import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/where/where_label_resolver.dart';
@@ -169,10 +171,28 @@ class LibraryTableController extends ChangeNotifier {
   bool loading = false;
   bool knowledgeWarming = false;
 
+  /// True once [load] has settled (success or error) at least once. Callers
+  /// that need real rows before computing a baseline (e.g. Folders
+  /// auto-expand) should await [ensureLoaded] first instead of reading
+  /// [allRows] immediately after sign-in / mint.
+  bool hasLoadedOnce = false;
+  Future<void>? _loadFuture;
+
+  /// Awaits the first [load] (kicking one off if none has ever run/is in
+  /// flight); no-ops on later calls. Dedupes with a concurrent caller (e.g.
+  /// [ItemsListPage.initState]) that also triggers the initial load.
+  Future<void> ensureLoaded() {
+    if (hasLoadedOnce) return Future.value();
+    return _loadFuture ??= load();
+  }
+
   String filterQuery = '';
   ProcessingStatus? statusFilter;
   List<LibrarySortKey> sortKeys = const [];
   int pageIndex = 0;
+
+  /// When non-null, only rows whose leaf folder is in this set are shown.
+  Set<String>? collectionLeafFolders;
 
   /// Item ids with who/where/comment expanded in the table.
   final Set<String> expandedWho = {};
@@ -180,7 +200,12 @@ class LibraryTableController extends ChangeNotifier {
   final Set<String> expandedComments = {};
 
   /// Parent dirs the user has expanded (multi-item groups default collapsed).
+  /// Sibling-folder parents (2+ child directories) are auto-seeded into this set.
   final Set<String> expandedSourceDirs = {};
+
+  /// Multi-child folder parents already considered for auto-expand this session.
+  /// Prevents re-expanding after the user collapses one.
+  final Set<String> _seededBranchParents = {};
 
   int? _loadGeneration;
 
@@ -188,6 +213,13 @@ class LibraryTableController extends ChangeNotifier {
 
   List<LibraryTableRow> get filteredSorted {
     var list = List<LibraryTableRow>.from(_rows);
+    final collectionFolders = collectionLeafFolders;
+    if (collectionFolders != null) {
+      list = list.where((r) {
+        final folder = leafFolderFromItem(r.item);
+        return folder != null && collectionFolders.contains(folder);
+      }).toList();
+    }
     final q = filterQuery.trim().toLowerCase();
     if (q.isNotEmpty) {
       list = list.where((r) {
@@ -258,33 +290,118 @@ class LibraryTableController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final items = await itemsRepository.listItems(status: statusFilter);
-      if (_loadGeneration != gen) return;
-      _thumbCache.clear();
-      expandedWho.clear();
-      expandedWhere.clear();
-      expandedComments.clear();
-      // Keep folder expand/collapse across reload (e.g. after delete).
-      _rows = items.map((item) => LibraryTableRow(item: item)).toList();
-      _pruneExpandedSourceDirs();
-      pageIndex = 0;
-      loading = false;
-      notifyListeners();
+      try {
+        final items = await itemsRepository.listItems(status: statusFilter);
+        if (_loadGeneration != gen) return;
+        _thumbCache.clear();
+        expandedWho.clear();
+        expandedWhere.clear();
+        expandedComments.clear();
+        // Keep folder expand/collapse across reload (e.g. after delete).
+        _rows = items.map((item) => LibraryTableRow(item: item)).toList();
+        _pruneExpandedSourceDirs();
+        _autoExpandSiblingFolderParents(filteredSorted);
+        pageIndex = 0;
+        loading = false;
+        hasLoadedOnce = true;
+        notifyListeners();
 
-      unawaited(_warmThumbs(gen));
-      unawaited(_warmKnowledge(gen));
-      unawaited(_warmComments(gen));
-    } catch (e) {
-      if (_loadGeneration != gen) return;
-      error = e;
-      loading = false;
-      notifyListeners();
+        unawaited(_warmThumbs(gen));
+        unawaited(_warmKnowledge(gen));
+        unawaited(_warmComments(gen));
+      } catch (e) {
+        if (_loadGeneration != gen) return;
+        error = e;
+        loading = false;
+        hasLoadedOnce = true;
+        notifyListeners();
+      }
+    } finally {
+      _loadFuture = null;
     }
   }
 
   void setFilterQuery(String value) {
     filterQuery = value;
     pageIndex = 0;
+    notifyListeners();
+  }
+
+  /// Snapshot of Folders look for the open collection.
+  CollectionLibraryUi captureCollectionLibraryUi() {
+    return CollectionLibraryUi(
+      filterQuery: filterQuery,
+      statusFilter: statusFilter?.wire,
+      sortKeys: [
+        for (final k in sortKeys)
+          CollectionSortKey(k.column.name, ascending: k.ascending),
+      ],
+      expandedDirs: expandedSourceDirs.toList()..sort(),
+    );
+  }
+
+  /// Restore Folders look from a saved collection (no network reload unless
+  /// status filter requires it).
+  Future<void> applyCollectionLibraryUi(CollectionLibraryUi ui) async {
+    filterQuery = ui.filterQuery;
+    pageIndex = 0;
+    sortKeys = [
+      for (final k in ui.sortKeys)
+        if (_sortColumnFromName(k.column) != null)
+          LibrarySortKey(
+            _sortColumnFromName(k.column)!,
+            ascending: k.ascending,
+          ),
+    ];
+    expandedSourceDirs
+      ..clear()
+      ..addAll(ui.expandedDirs);
+    // Empty saved expansion → default expand sibling-folder parents.
+    // Non-empty → respect saved set; mark all current branches seeded so we
+    // do not immediately re-expand a collapsed parent.
+    final branches = _multiChildFolderParentPaths(filteredSorted);
+    if (ui.expandedDirs.isEmpty) {
+      expandedSourceDirs.addAll(branches);
+    }
+    _seededBranchParents
+      ..clear()
+      ..addAll(branches);
+    ProcessingStatus? nextStatus;
+    final raw = ui.statusFilter;
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        nextStatus = ProcessingStatus.fromWire(raw);
+      } catch (_) {
+        nextStatus = null;
+      }
+    }
+    if (nextStatus != statusFilter) {
+      statusFilter = nextStatus;
+      await load();
+    } else {
+      notifyListeners();
+    }
+  }
+
+  static LibrarySortColumn? _sortColumnFromName(String name) {
+    for (final c in LibrarySortColumn.values) {
+      if (c.name == name) return c;
+    }
+    return null;
+  }
+
+  void setCollectionLeafFolders(Set<String>? folders) {
+    final prev = collectionLeafFolders;
+    if (prev == null && folders == null) return;
+    if (prev != null &&
+        folders != null &&
+        prev.length == folders.length &&
+        prev.containsAll(folders)) {
+      return;
+    }
+    collectionLeafFolders = folders;
+    pageIndex = 0;
+    _autoExpandSiblingFolderParents(filteredSorted);
     notifyListeners();
   }
 
@@ -376,7 +493,7 @@ class LibraryTableController extends ChangeNotifier {
   /// Drop expanded folder keys that no longer appear in the loaded rows
   /// (or as ancestors of those paths).
   void _pruneExpandedSourceDirs() {
-    if (expandedSourceDirs.isEmpty) return;
+    if (expandedSourceDirs.isEmpty && _seededBranchParents.isEmpty) return;
     final valid = <String>{};
     final ctx = p.context;
     for (final row in _rows) {
@@ -389,6 +506,42 @@ class LibraryTableController extends ChangeNotifier {
       }
     }
     expandedSourceDirs.removeWhere((d) => !valid.contains(d));
+    _seededBranchParents.removeWhere((d) => !valid.contains(d));
+  }
+
+  /// First time a parent has 2+ subdirectory children, expand it so sibling
+  /// folders are visible. File-only groups (no subdirs) stay collapsed.
+  void _autoExpandSiblingFolderParents(List<LibraryTableRow> items) {
+    final branches = _multiChildFolderParentPaths(items);
+    for (final dir in branches) {
+      if (_seededBranchParents.contains(dir)) continue;
+      _seededBranchParents.add(dir);
+      expandedSourceDirs.add(dir);
+    }
+    _seededBranchParents.removeWhere((d) => !branches.contains(d));
+  }
+
+  /// Absolute paths of directory nodes that have two or more child folders.
+  static Set<String> _multiChildFolderParentPaths(List<LibraryTableRow> items) {
+    if (items.isEmpty) return {};
+    final ctx = p.context;
+    final root = _PathNode(segment: '', absolutePath: '');
+    for (final row in items) {
+      final dir = row.sourceDir;
+      if (dir.isEmpty) continue;
+      root.insert(row, dir, ctx);
+    }
+    final out = <String>{};
+    void walk(_PathNode node) {
+      if (node.children.length >= 2 && node.absolutePath.isNotEmpty) {
+        out.add(node.absolutePath);
+      }
+      for (final child in node.children.values) {
+        walk(child);
+      }
+    }
+    walk(root);
+    return out;
   }
 
   Future<void> _warmThumbs(int gen) async {

@@ -308,22 +308,19 @@ void main() {
     );
     await controller.load();
 
-    // Common ancestor /users/w groups test + other.
-    final collapsed = controller.visibleEntries;
-    expect(collapsed, hasLength(1));
+    // Common ancestor /users/w has two child folders → auto-expanded.
+    // File group /users/w/test stays collapsed by default.
+    final initial = controller.visibleEntries;
+    expect(initial, hasLength(3)); // /users/w + test group + other singleton
     expect(
-      collapsed.single,
+      initial[0],
       isA<LibraryPathGroupHeader>()
           .having((h) => h.dir, 'dir', '/users/w')
           .having((h) => h.count, 'count', 3)
-          .having((h) => h.collapsed, 'collapsed', isTrue),
+          .having((h) => h.collapsed, 'collapsed', isFalse),
     );
-
-    controller.toggleCollapseSourceDir('/users/w');
-    final mid = controller.visibleEntries;
-    expect(mid, hasLength(3)); // header + test group + other singleton
     expect(
-      mid[1],
+      initial[1],
       isA<LibraryPathGroupHeader>()
           .having((h) => h.dir, 'dir', shared)
           .having((h) => h.label, 'label', 'test')
@@ -331,7 +328,7 @@ void main() {
           .having((h) => h.collapsed, 'collapsed', isTrue),
     );
     expect(
-      mid[2],
+      initial[2],
       isA<LibraryItemEntry>()
           .having((e) => e.row.item.id, 'id', 'c')
           .having((e) => e.sourceDisplay, 'display', 'other/c.jpg'),
@@ -354,7 +351,8 @@ void main() {
     );
   });
 
-  test('date folders under shared parent collapse into one tree', () async {
+  test('date folders under shared parent are expanded; file groups stay collapsed',
+      () async {
     const root = '/users/w/test';
     final a = fixtureItem(
       id: 'a',
@@ -379,24 +377,22 @@ void main() {
     );
     await controller.load();
 
-    expect(controller.visibleEntries, hasLength(1));
+    final mid = controller.visibleEntries;
+    expect(mid, hasLength(3)); // root header + 20260508 group + singleton c
     expect(
-      controller.visibleEntries.single,
+      mid[0],
       isA<LibraryPathGroupHeader>()
           .having((h) => h.dir, 'dir', root)
           .having((h) => h.count, 'count', 3)
-          .having((h) => h.collapsed, 'collapsed', isTrue),
+          .having((h) => h.collapsed, 'collapsed', isFalse),
     );
-
-    controller.toggleCollapseSourceDir(root);
-    final mid = controller.visibleEntries;
-    expect(mid, hasLength(3)); // root header + 20260508 group + singleton c
     expect(
       mid[1],
       isA<LibraryPathGroupHeader>()
           .having((h) => h.dir, 'dir', '$root/20260508')
           .having((h) => h.label, 'label', '20260508')
-          .having((h) => h.count, 'count', 2),
+          .having((h) => h.count, 'count', 2)
+          .having((h) => h.collapsed, 'collapsed', isTrue),
     );
     expect(
       mid[2],
@@ -417,6 +413,80 @@ void main() {
       open[3],
       isA<LibraryItemEntry>()
           .having((e) => e.sourceDisplay, 'display', 'b.jpg'),
+    );
+  });
+
+  test('adding a sibling album auto-expands the shared parent', () async {
+    const root = '/users/w/albums';
+    final day1 = fixtureItem(
+      id: 'd1',
+      sourceRef: 'file://$root/Day1/a.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final day2 = fixtureItem(
+      id: 'd2',
+      sourceRef: 'file://$root/Day2/b.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final repo = FakeItemsRepository(items: [day1]);
+    final controller = LibraryTableController(
+      itemsRepository: repo,
+      commentsRepository: FakeCommentsRepository(),
+      thumbCache: LocalThumbCache(),
+      knowledgeConcurrency: 3,
+    );
+    await controller.load();
+
+    // Single album — no multi-child parent header.
+    expect(
+      controller.visibleEntries.whereType<LibraryPathGroupHeader>(),
+      isEmpty,
+    );
+    expect(controller.visibleEntries, hasLength(1));
+
+    repo.addItem(day2);
+    await controller.load();
+
+    final entries = controller.visibleEntries;
+    expect(
+      entries[0],
+      isA<LibraryPathGroupHeader>()
+          .having((h) => h.dir, 'dir', root)
+          .having((h) => h.collapsed, 'collapsed', isFalse),
+    );
+    // Both child albums visible as item rows (singletons under expanded parent).
+    expect(
+      entries.whereType<LibraryItemEntry>().map((e) => e.row.item.id),
+      containsAll(['d1', 'd2']),
+    );
+  });
+
+  test('file-only shared dir stays collapsed by default', () async {
+    const shared = '/users/w/test';
+    final a = fixtureItem(
+      id: 'a',
+      sourceRef: 'file://$shared/a.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final b = fixtureItem(
+      id: 'b',
+      sourceRef: 'file://$shared/b.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final controller = LibraryTableController(
+      itemsRepository: FakeItemsRepository(items: [a, b]),
+      commentsRepository: FakeCommentsRepository(),
+      thumbCache: LocalThumbCache(),
+      knowledgeConcurrency: 3,
+    );
+    await controller.load();
+
+    expect(controller.visibleEntries, hasLength(1));
+    expect(
+      controller.visibleEntries.single,
+      isA<LibraryPathGroupHeader>()
+          .having((h) => h.dir, 'dir', shared)
+          .having((h) => h.collapsed, 'collapsed', isTrue),
     );
   });
 

@@ -5,6 +5,8 @@ import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/items_list_page.dart';
 import 'package:tagkin_desktop/main.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
+import 'package:tagkin_desktop/persons/collections_store.dart';
 import 'package:tagkin_desktop/usage/usage_banner.dart';
 import 'package:tagkin_desktop/usage/usage_gate.dart';
 
@@ -32,6 +34,7 @@ List<Override> _overrides({
     ),
     usageRepositoryProvider.overrideWithValue(usage),
     jobsRepositoryProvider.overrideWithValue(FakeJobsRepository()),
+    collectionsStoreProvider.overrideWithValue(MemoryCollectionsStore()),
   ];
 }
 

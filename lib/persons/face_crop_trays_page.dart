@@ -8,6 +8,7 @@ import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/face_crop_drag.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/persons/person_detail_controller.dart';
@@ -16,6 +17,7 @@ import 'package:tagkin_desktop/persons/who_exclusion_crop_thumb.dart';
 import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
+/// Menu actions for the Faces collection chrome.
 /// Request to focus the (already-mounted) Faces trays on a person / folder.
 ///
 /// Written by [openFaceCropTrays]; consumed by [FaceCropTraysPage] via
@@ -98,6 +100,7 @@ class FaceCropTapTracker {
 /// Side-by-side Faces trays: Assigned | Unassigned | Excluded.
 ///
 /// Work is scoped to one **leaf folder** at a time (picker in the app bar).
+/// An optional local **collection** narrows which folders appear in the picker.
 /// Persons stay library-wide; trays only show faces from the selected folder.
 ///
 /// Finder-style face thumbs: single-click selects, Cmd/Ctrl+click multi-selects,
@@ -134,12 +137,19 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   List<PersonAppearance> _assignedOverview = const [];
   List<PersonAppearance> _unassigned = const [];
   List<WhoExclusion> _excluded = const [];
+  /// Full library leaf folders (before collection filter).
+  List<String> _allLeafFolders = const [];
+  /// Visible folders in the dropdown (filtered when a collection is open).
   List<String> _leafFolders = const [];
   String? _leafFolder;
   Set<String> _scopedItemIds = const {};
   bool _loading = true;
   bool _busy = false;
   Object? _error;
+
+  /// Skip collection dirty while restoring Faces look from a saved collection.
+  bool _applyingCollectionFacesUi = false;
+  int _appliedCollectionUiEpoch = -1;
 
   /// One-shot: next [_reload] selects the first person with faces in the folder.
   bool _autoSelectFirstInFolder = false;
@@ -166,6 +176,39 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
 
   /// Last [FaceCropFocusRequest.nonce] applied (avoids re-applying).
   int? _lastFocusNonce;
+
+  /// Narrow [all] to the current collection's folders.
+  List<String> _foldersForCollection(List<String> all) {
+    final cols = ref.read(collectionsControllerProvider);
+    if (!cols.hasCurrent) return all;
+    final allowed = cols.current.leafFolders.toSet();
+    return [for (final f in all) if (allowed.contains(f)) f];
+  }
+
+  Future<void> _refilterFromCollection() async {
+    if (!mounted || _loading) return;
+    final visible = _foldersForCollection(_allLeafFolders);
+    final prevFolder = _leafFolder;
+    final folder = resolveLeafFolderSelection(
+      folders: visible,
+      preferred: _leafFolder ?? faceCropLastLeafFolder,
+    );
+    faceCropLastLeafFolder = folder;
+    final foldersChanged = visible.length != _leafFolders.length ||
+        !_listEquals(visible, _leafFolders);
+    if (!foldersChanged && folder == prevFolder) {
+      setState(() {});
+      return;
+    }
+    setState(() {
+      _leafFolders = visible;
+      _leafFolder = folder;
+    });
+    if (folder != prevFolder) {
+      _autoSelectFirstInFolder = folder != null;
+      await _reload();
+    }
+  }
 
   void _clearSelection() {
     _faceTapTracker.clear();
@@ -572,10 +615,11 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       }
       final items = await itemsRepo.listItems();
       if (!mounted) return;
-      final folders = [
+      final allFolders = [
         for (final f in distinctLeafFolders(items))
           if (ingestQueue == null || !ingestQueue.isLoadingPath(f)) f,
       ];
+      final folders = _foldersForCollection(allFolders);
       final prevFolder = _leafFolder;
       final folder = resolveLeafFolderSelection(
         folders: folders,
@@ -591,11 +635,15 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       final scopeChanged = scopedIds.length != prevScoped.length ||
           !scopedIds.containsAll(prevScoped);
 
-      if (!foldersChanged && !folderChanged && !scopeChanged) {
+      if (!foldersChanged &&
+          !folderChanged &&
+          !scopeChanged &&
+          _listEquals(allFolders, _allLeafFolders)) {
         return;
       }
 
       setState(() {
+        _allLeafFolders = allFolders;
         _leafFolders = folders;
         _leafFolder = folder;
         _scopedItemIds = scopedIds;
@@ -670,10 +718,11 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       final items = await itemsRepo.listItems();
       // Hide leaf folders still covered by an active ingest job — items exist
       // from registering, but Faces should wait until load complete.
-      final folders = [
+      final allFolders = [
         for (final f in distinctLeafFolders(items))
           if (ingestQueue == null || !ingestQueue.isLoadingPath(f)) f,
       ];
+      final folders = _foldersForCollection(allFolders);
       final folder = resolveLeafFolderSelection(
         folders: folders,
         preferred: _leafFolder ?? faceCropLastLeafFolder,
@@ -757,6 +806,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         if (pid != null) _assignAsNewPerson = false;
         _renaming = pid == null ? false : _renaming;
         _persons = persons;
+        _allLeafFolders = allFolders;
         _leafFolders = folders;
         _leafFolder = folder;
         _scopedItemIds = scopedIds;
@@ -782,7 +832,36 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     _assignAsNewPerson = false;
     _clearSelection();
     setState(() => _leafFolder = folder);
+    if (!_applyingCollectionFacesUi) {
+      ref.read(collectionsControllerProvider).updateFacesLook(leafFolder: folder);
+    }
     await _reload();
+  }
+
+  Future<void> _applyCollectionFacesUi(CollectionsController cols) async {
+    if (!cols.sessionReady) return;
+    _appliedCollectionUiEpoch = cols.uiEpoch;
+    final faces = cols.current.ui.faces;
+    _applyingCollectionFacesUi = true;
+    try {
+      final folder = faces.leafFolder;
+      if (folder != null && folder != _leafFolder) {
+        faceCropLastLeafFolder = folder;
+        _autoSelectFirstInFolder = faces.personId == null;
+        _assignAsNewPerson = false;
+        _clearSelection();
+        setState(() => _leafFolder = folder);
+        await _reload();
+      }
+      if (!mounted) return;
+      // null personId in saved ui means "unset", not "clear current selection".
+      final personId = faces.personId;
+      if (personId != null && personId != _personId) {
+        await _selectPerson(personId);
+      }
+    } finally {
+      _applyingCollectionFacesUi = false;
+    }
   }
 
   List<PersonAppearance> _scopedAppearances(List<PersonAppearance> all) {
@@ -850,6 +929,11 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         _assignedController?.dispose();
         _assignedController = null;
       });
+      if (!_applyingCollectionFacesUi) {
+        ref
+            .read(collectionsControllerProvider)
+            .updateFacesLook(clearPersonId: true);
+      }
       return;
     }
     if (id == _newPersonSentinel) {
@@ -861,6 +945,11 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         _assignedController?.dispose();
         _assignedController = null;
       });
+      if (!_applyingCollectionFacesUi) {
+        ref
+            .read(collectionsControllerProvider)
+            .updateFacesLook(clearPersonId: true);
+      }
       return;
     }
     final controller = _controllerFor(id);
@@ -872,6 +961,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       // while load() is in flight.
       _renameController.clear();
     });
+    if (!_applyingCollectionFacesUi) {
+      ref.read(collectionsControllerProvider).updateFacesLook(personId: id);
+    }
     _scrollToCluster(id);
     await controller.load();
     if (!mounted) return;
@@ -914,6 +1006,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         _personId = newId;
       }
       await _reload();
+      _markCollectionDirty();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -940,6 +1033,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       final detail = await persons.assignFaceGroup(faceGroupId, name: name);
       _personId = detail.id;
       await _reload();
+      _markCollectionDirty();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -951,6 +1045,10 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  void _markCollectionDirty() {
+    ref.read(collectionsControllerProvider).markDirty();
   }
 
   Future<_FaceMoveResult> _applyOneDrop(
@@ -1429,6 +1527,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
 
       if (applied.isNotEmpty) {
         _applyMoveResults(applied);
+        _markCollectionDirty();
       } else {
         setState(() {
           _selectedIds.clear();
@@ -1480,6 +1579,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     if (confirmed != true || !mounted) return;
     final ok = await controller.unassignPerson();
     if (ok && mounted) {
+      _markCollectionDirty();
       await _selectPerson(null);
       await _reload();
     }
@@ -1499,6 +1599,13 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       unawaited(_applyFocusRequest(next));
     });
 
+    ref.listen(collectionsControllerProvider, (previous, next) {
+      unawaited(_refilterFromCollection());
+      if (next.sessionReady && next.uiEpoch != _appliedCollectionUiEpoch) {
+        unawaited(_applyCollectionFacesUi(next));
+      }
+    });
+
     return Focus(
       autofocus: true,
       onKeyEvent: (node, event) {
@@ -1513,6 +1620,17 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       appBar: AppBar(
         title: const Text('Faces'),
         actions: [
+          if (!_loading && _error == null)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Center(
+                child: Text(
+                  ref.watch(collectionsControllerProvider).chromeLabel,
+                  key: const Key('face-crop-collection-label'),
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+            ),
           if (!_loading && _error == null && _leafFolders.isNotEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1587,11 +1705,15 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                   ),
                 )
               : _leafFolders.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: Text(
-                        'No local folders in the library yet.\n'
-                        'Add photos from a folder, then open Faces.',
-                        key: Key('face-crop-trays-no-folders'),
+                        _allLeafFolders.isEmpty
+                            ? 'No local folders in the library yet.\n'
+                                'Add photos from a folder, then open Faces.'
+                            : 'This collection has no folders that match '
+                                'the library.\n'
+                                'Add folders on the Folders page.',
+                        key: const Key('face-crop-trays-no-folders'),
                         textAlign: TextAlign.center,
                       ),
                     )
