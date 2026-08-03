@@ -9,7 +9,8 @@ enum DirtyPromptChoice { save, discard, cancel }
 /// In-memory catalog + optional current named collection.
 ///
 /// Under development — not shipped. No Untitled collection: first empty catalog
-/// mints Collection1; later sessions require an explicit New/Open (start gate).
+/// mints Collection1; later sessions resume [CollectionsFile.currentCollectionId]
+/// when still in the catalog, otherwise show the New/Open start gate.
 ///
 /// Dirty = structural diff vs last-saved baseline (name / folders / page look)
 /// OR sticky [markDirty] activity (Faces moves, deletes, etc.).
@@ -75,8 +76,9 @@ class CollectionsController extends ChangeNotifier {
   }
 
   /// First run: empty catalog → mint Collection1 (or CollectionN), open it.
-  /// Returns true if a collection is ready (first-run mint or already ready).
-  /// Returns false when catalog is non-empty and the start gate must show.
+  /// Otherwise resume [CollectionsFile.currentCollectionId] when still present.
+  /// Returns true if a collection is ready (mint, resume, or already ready).
+  /// Returns false when the start gate must show (non-empty, no valid current).
   Future<bool> bootstrapSession(List<String> libraryFolders) async {
     _libraryFolders = List<String>.of(libraryFolders);
     if (!_loaded) await load();
@@ -85,7 +87,22 @@ class CollectionsController extends ChangeNotifier {
       await _mintDefaultCollection(libraryFolders);
       return true;
     }
+    final id = _catalog.currentCollectionId;
+    if (id != null && _catalog.collections.any((c) => c.id == id)) {
+      return open(id);
+    }
     return false;
+  }
+
+  /// Drop the in-memory open session; catalog on disk is unchanged.
+  /// Used on sign-out so the next auth re-runs [bootstrapSession] from disk.
+  void clearSession() {
+    _current = null;
+    _baseline = null;
+    _dirty = false;
+    _activityDirty = false;
+    _sessionReady = false;
+    notifyListeners();
   }
 
   /// If the open collection has no folders yet (e.g. minted before library load),

@@ -107,17 +107,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Non-empty catalog -> start gate; open the existing collection
-    // directly through the controller (bypassing the picker UI).
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(TagKinDesktopApp)),
-    );
-    final opened = await container
-        .read(collectionsControllerProvider)
-        .open('c1');
-    expect(opened, isTrue);
-    await tester.pumpAndSettle();
-
+    // Non-empty catalog with currentCollectionId → auto-resume (no start gate).
+    expect(find.text('Existing'), findsOneWidget);
     expect(find.byKey(const Key('shell-collection-label')), findsOneWidget);
     expect(
       find.textContaining('*'),

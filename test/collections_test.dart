@@ -67,14 +67,49 @@ void main() {
       expect(await controller.create(name: 'Collection1'), isFalse);
     });
 
-    test('non-empty catalog bootstrap returns false until open', () async {
+    test('bootstrap resumes currentCollectionId', () async {
       await controller.create(name: 'Europe', seedFolders: ['/a']);
+      final id = controller.current.id;
+      await controller.load();
+      expect(controller.sessionReady, isFalse);
+      expect(await controller.bootstrapSession(['/a']), isTrue);
+      expect(controller.sessionReady, isTrue);
+      expect(controller.current.id, id);
+      expect(controller.current.name, 'Europe');
+    });
+
+    test('bootstrap returns false when currentCollectionId missing', () async {
+      await controller.create(name: 'Europe', seedFolders: ['/a']);
+      final store = CollectionsStore(supportDir: tempDir);
+      await store.save(controller.catalog.copyWith(clearCurrent: true));
       await controller.load();
       expect(controller.collections, hasLength(1));
       expect(await controller.bootstrapSession(['/a']), isFalse);
       expect(controller.sessionReady, isFalse);
       expect(await controller.open(controller.collections.single.id), isTrue);
       expect(controller.sessionReady, isTrue);
+    });
+
+    test('bootstrap returns false when currentCollectionId is stale', () async {
+      await controller.create(name: 'Europe', seedFolders: ['/a']);
+      final store = CollectionsStore(supportDir: tempDir);
+      await store.save(
+        controller.catalog.copyWith(currentCollectionId: 'missing_id'),
+      );
+      await controller.load();
+      expect(await controller.bootstrapSession(['/a']), isFalse);
+      expect(controller.sessionReady, isFalse);
+    });
+
+    test('clearSession then bootstrap resumes from disk', () async {
+      await controller.create(name: 'Europe', seedFolders: ['/a']);
+      final id = controller.current.id;
+      controller.clearSession();
+      expect(controller.sessionReady, isFalse);
+      expect(controller.collections, hasLength(1));
+      expect(await controller.bootstrapSession(['/a']), isTrue);
+      expect(controller.current.id, id);
+      expect(controller.current.name, 'Europe');
     });
 
     test('saveAs copies membership and switches current', () async {

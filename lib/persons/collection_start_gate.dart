@@ -5,7 +5,8 @@ import 'package:tagkin_desktop/persons/collection_navigation.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 
-/// Blocking start gate when the catalog already has collections (not first run).
+/// Blocking start gate when the catalog has collections but none was resumed
+/// (missing or stale [CollectionsFile.currentCollectionId]).
 ///
 /// Under development — not shipped.
 class CollectionStartGate extends ConsumerWidget {

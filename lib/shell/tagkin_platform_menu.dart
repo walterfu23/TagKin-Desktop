@@ -75,11 +75,7 @@ class TagKinPlatformMenu extends ConsumerWidget {
               meta: true,
             ),
             onSelected: () {
-              final cols = ref.read(collectionsControllerProvider);
-              requestQuitAppOrExitNow(
-                ref,
-                needsDirtyConfirm: cols.sessionReady && cols.dirty,
-              );
+              requestQuitAppOrExitNow(ref);
             },
           ),
         ],

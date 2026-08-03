@@ -517,6 +517,9 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
   LibraryTableController? _libraryLookSource;
 
   bool _windowCloseGateActive = false;
+  /// Set before [windowManager.destroy] so [didRequestAppExit] allows terminate
+  /// (macOS destroy → NSApp.terminate; gate alone would cancel exit).
+  bool _quitConfirmed = false;
   Future<bool>? _leavePromptFuture;
   Future<void>? _windowCloseInFlight;
 
@@ -538,13 +541,24 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
       await windowManager.setPreventClose(true);
       windowManager.addListener(this);
       _windowCloseGateActive = true;
+      signedInQuitHandlerReady = true;
     } catch (_) {
       // Plugin missing or not ready — fall back to didRequestAppExit only.
     }
   }
 
+  /// Disarm the close gate, then terminate. Must clear [_windowCloseGateActive]
+  /// and set [_quitConfirmed] before [windowManager.destroy]: on macOS destroy
+  /// is NSApp.terminate, which re-enters [didRequestAppExit]; leaving the gate
+  /// armed cancels that exit (Save/Discard appear to "work" but the app stays).
   Future<void> _allowCloseAndQuit() async {
-    if (!_windowCloseGateActive) return;
+    if (!_windowCloseGateActive && !_quitConfirmed) return;
+    _quitConfirmed = true;
+    if (_windowCloseGateActive) {
+      windowManager.removeListener(this);
+      _windowCloseGateActive = false;
+    }
+    signedInQuitHandlerReady = false;
     try {
       await windowManager.setPreventClose(false);
       await windowManager.destroy();
@@ -561,6 +575,7 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
       windowManager.removeListener(this);
       _windowCloseGateActive = false;
     }
+    signedInQuitHandlerReady = false;
     _libraryLookSource?.removeListener(_onLibraryLookChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -642,6 +657,7 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
     // Quit/close confirmation is owned by onWindowClose / custom Quit menu.
     // Never show dialogs or call _handleWindowClose from here — doing so
     // poisons macOS after Cancel (flutter#141377 / window_manager#466).
+    if (_quitConfirmed) return AppExitResponse.exit;
     if (_windowCloseGateActive) {
       return AppExitResponse.cancel;
     }
@@ -678,6 +694,8 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
     final ok = await _confirmLeaveIfDirty();
     if (!ok) return;
     if (!mounted) return;
+    ref.read(collectionsControllerProvider).clearSession();
+    _collectionBootstrapRequested = false;
     await handler();
   }
 
@@ -773,21 +791,14 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
     final table = ref.watch(libraryTableControllerProvider);
     final libraryFolders = distinctLeafFolders(table.allRows.map((r) => r.item));
 
-    // First-run only: empty catalog → mint Collection1. Non-empty waits on gate.
-    if (cols.loaded &&
-        !cols.sessionReady &&
-        cols.collections.isEmpty &&
-        !_collectionBootstrapRequested) {
+    // Empty → mint Collection1; else resume currentCollectionId; else start gate.
+    if (cols.loaded && !cols.sessionReady && !_collectionBootstrapRequested) {
       _collectionBootstrapRequested = true;
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (!mounted) return;
         final c = ref.read(collectionsControllerProvider);
         if (c.sessionReady) return;
-        final ok = await c.bootstrapSession(libraryFolders);
-        if (!ok && mounted) {
-          // Catalog gained entries elsewhere; allow a later empty-catalog retry.
-          _collectionBootstrapRequested = false;
-        }
+        await c.bootstrapSession(libraryFolders);
       });
     } else if (cols.sessionReady &&
         cols.current.leafFolders.isEmpty &&
