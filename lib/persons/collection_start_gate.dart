@@ -217,14 +217,22 @@ Future<void> runCollectionMenuCommand({
     case CollectionMenuCommand.addFolder:
       if (!cols.hasCurrent) return;
       final currentFolders = cols.current.leafFolders.toSet();
+      final claimedElsewhere =
+          cols.foldersClaimedByOthers(exceptId: cols.current.id);
       final candidates = [
         for (final f in libraryFolders)
-          if (!currentFolders.contains(f)) f,
+          if (!currentFolders.contains(f) && !claimedElsewhere.contains(f)) f,
       ];
       if (candidates.isEmpty) {
+        final othersHaveFolders = claimedElsewhere.isNotEmpty;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('All library folders are already in this collection.'),
+          SnackBar(
+            content: Text(
+              othersHaveFolders
+                  ? 'No free folders left. Remaining folders belong '
+                      'to other collections.'
+                  : 'All folders are already in this collection.',
+            ),
           ),
         );
         return;

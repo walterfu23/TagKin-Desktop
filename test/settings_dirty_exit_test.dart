@@ -40,7 +40,8 @@ void main() {
     await tester.tap(find.byKey(const Key('open-settings')));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('pref-multi-column-sort')));
+    // Where labels stay near the top (after the intro card).
+    await tester.tap(find.byKey(const Key('pref-show-country-same')));
     await tester.pump();
 
     // Back via AppBar.
@@ -53,7 +54,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(SettingsPage), findsNothing);
-    expect(prefsController.prefs.multiColumnSort, isFalse);
+    expect(prefsController.prefs.showCountryWhenSameCountry, isFalse);
   });
 
   testWidgets('dirty Settings Save from exit dialog persists', (tester) async {
@@ -89,7 +90,7 @@ void main() {
     await tester.tap(find.byKey(const Key('open-settings')));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('pref-multi-column-sort')));
+    await tester.tap(find.byKey(const Key('pref-show-country-same')));
     await tester.pump();
 
     await tester.tap(find.byType(BackButton));
@@ -98,7 +99,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(SettingsPage), findsNothing);
-    expect(prefsController.prefs.multiColumnSort, isTrue);
+    expect(prefsController.prefs.showCountryWhenSameCountry, isTrue);
   });
 
   testWidgets('Settings slider Save persists library page size', (tester) async {
@@ -134,9 +135,15 @@ void main() {
     await tester.tap(find.byKey(const Key('open-settings')));
     await tester.pumpAndSettle();
 
-    // Visible near the top of Settings (ListView builds lazily).
+    // Library is below the intro + Where card; ListView builds lazily.
     final pageSizeKey = find.byKey(const Key('pref-library-page-size'));
-    expect(pageSizeKey, findsOneWidget);
+    await tester.dragUntilVisible(
+      pageSizeKey,
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
+    await tester.pumpAndSettle();
+
     final slider = tester.widget<Slider>(pageSizeKey);
     slider.onChanged!(25);
     await tester.pump();

@@ -1280,7 +1280,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     final applied = <_FaceMoveResult>[];
     try {
       if (target == FaceCropTray.unassigned) {
-        // Appearances leaving Assigned: ≥2 become one GroupFM via a single
+        // Appearances leaving Assigned: ≥2 become one GroupFA via a single
         // batched call; exactly one becomes loose (R6). Exclusion undos
         // still go through the per-item path.
         final appearanceItems = [
@@ -1460,7 +1460,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         // Drop onto Excluded: preserve FaceGroup membership. Appearances that
         // already share a faceGroupId are excluded per-face (server copies the
         // id). ≥2 ungrouped appearances (typical Assigned multi-drag) are
-        // minted into one GroupFM first, then excluded.
+        // minted into one GroupFA first, then excluded.
         final appearanceItems = [
           for (final d in toApply)
             if (d.isAppearance && d.appearanceId != null) d,
@@ -1710,10 +1710,10 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                   ? Center(
                       child: Text(
                         _allLeafFolders.isEmpty
-                            ? 'No local folders in the library yet.\n'
+                            ? 'No local folders yet.\n'
                                 'Add photos from a folder, then open Faces.'
                             : 'This collection has no folders that match '
-                                'the library.\n'
+                                'items you have added.\n'
                                 'Add folders on the Folders page.',
                         key: const Key('face-crop-trays-no-folders'),
                         textAlign: TextAlign.center,

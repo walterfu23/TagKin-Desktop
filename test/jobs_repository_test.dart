@@ -44,15 +44,6 @@ Map<String, dynamic> _jobJson({
       'updatedAt': '2026-07-20T00:00:00.000Z',
     };
 
-Map<String, dynamic> _exportJson({required String itemId}) => {
-      'items': [_itemJson(id: itemId)],
-      'tags': <dynamic>[],
-      'persons': <dynamic>[],
-      'comments': <dynamic>[],
-      'corrections': <dynamic>[],
-      'exportedAt': '2026-07-20T12:00:00.000Z',
-    };
-
 void main() {
   group('JobsRepository', () {
     test('analyzeItem POSTs /items/{id}/analyze with empty body (R1/R10)',
@@ -203,33 +194,6 @@ void main() {
       )..recordRequests = true;
       await JobsRepository(client).deleteItem('item_a');
       expect(client.recordedRequests.single.body, isNull);
-      expect(client.recordedRequests.single.bodyContainsOwnerField, isFalse);
-      client.close();
-    });
-
-    test('exportLibrary returns knowledge only — no byte fields (R1)',
-        () async {
-      final mock = MockClient((request) async {
-        expect(request.method, 'GET');
-        expect(request.url.path, '/export');
-        expect(request.body, isEmpty);
-        return http.Response(
-          jsonEncode(_exportJson(itemId: 'item_a')),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      });
-      final client = ApiClient(
-        baseUrl: 'http://api.test',
-        tokenProvider: () => 'tok-a',
-        httpClient: mock,
-      )..recordRequests = true;
-      final exported = await JobsRepository(client).exportLibrary();
-      expect(exported.items.single.id, 'item_a');
-      final json = exported.toJson();
-      expect(json.containsKey('bytes'), isFalse);
-      expect(json.containsKey('blob'), isFalse);
-      expect(json.containsKey('data'), isFalse);
       expect(client.recordedRequests.single.bodyContainsOwnerField, isFalse);
       client.close();
     });

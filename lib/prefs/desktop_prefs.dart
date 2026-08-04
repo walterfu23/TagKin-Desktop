@@ -39,7 +39,7 @@ class DesktopPrefs {
   /// GUI label: Familiar state/province.
   final String familiarRegions;
 
-  /// Rows per page in the Folders library table.
+  /// Rows per page in the Folders table.
   final int libraryPageSize;
 
   /// Max entries in Open Recent / start-gate Recents.

@@ -144,28 +144,6 @@ void main() {
     expect(find.byKey(const Key('item-row-item_del')), findsNothing);
   });
 
-  testWidgets('Export library writes via ExportController', (tester) async {
-    final jobs = FakeJobsRepository();
-    String? written;
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          ..._overrides(
-            items: FakeItemsRepository(items: [fixtureItem()]),
-            jobs: jobs,
-          ),
-        ],
-        child: const TagKinDesktopApp(),
-      ),
-    );
-    // Swap export writer by overriding after build is awkward; tap export
-    // with default FilePicker may cancel in tests. Instead assert button exists
-    // and FakeJobsRepository is wired — full export path covered in unit tests.
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('export-library')), findsOneWidget);
-    expect(written, isNull);
-  });
-
   testWidgets('Cancel during polling reflects cancelled', (tester) async {
     final item = fixtureItem(id: 'item_c');
     final jobs = FakeJobsRepository(

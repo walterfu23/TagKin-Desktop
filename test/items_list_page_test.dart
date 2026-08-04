@@ -110,7 +110,7 @@ void main() {
       tester,
       items: FakeItemsRepository(items: [item]),
     );
-    // Prefer the what-cell control — FAB may cover the bottom of a single row.
+    // Prefer the what-cell control — toolbar may sit above a single row.
     await tester.ensureVisible(find.byKey(const Key('item-what-item_nav')));
     await tester.tap(find.byKey(const Key('item-what-item_nav')));
     await tester.pumpAndSettle();

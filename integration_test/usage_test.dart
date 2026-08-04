@@ -52,10 +52,10 @@ void main() {
     expect(find.byKey(const Key('usage-banner-blocked')), findsOneWidget);
     expect(find.textContaining('integration kill switch'), findsOneWidget);
 
-    final fab = tester.widget<FloatingActionButton>(
+    final button = tester.widget<FilledButton>(
       find.byKey(const Key('add-from-folder')),
     );
-    expect(fab.onPressed, isNull);
+    expect(button.onPressed, isNull);
     expect(usage.getUsageCallCount, greaterThan(0));
   });
 }

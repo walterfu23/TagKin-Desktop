@@ -112,15 +112,64 @@ void main() {
       expect(controller.current.name, 'Europe');
     });
 
-    test('saveAs copies membership and switches current', () async {
+    test('saveAs starts empty membership and switches current', () async {
       await controller.bootstrapSession(['/a', '/b']);
       controller.removeFolder('/b');
       expect(controller.dirty, isTrue);
       expect(await controller.saveAs('Europe'), isTrue);
       expect(controller.current.name, 'Europe');
-      expect(controller.current.leafFolders, ['/a']);
+      expect(controller.current.leafFolders, isEmpty);
       expect(controller.dirty, isFalse);
-      expect(controller.collections.map((c) => c.name), containsAll(['Collection1', 'Europe']));
+      expect(controller.collections.map((c) => c.name),
+          containsAll(['Collection1', 'Europe']));
+      // Source collection still owns /a.
+      expect(controller.ownerCollectionId('/a'), isNot(controller.current.id));
+    });
+
+    test('minted ids are UUID v4 shaped', () async {
+      await controller.bootstrapSession(['/a']);
+      final id = controller.current.id;
+      expect(
+        id,
+        matches(
+          RegExp(
+            r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+            caseSensitive: false,
+          ),
+        ),
+      );
+      expect(await controller.create(name: 'Other'), isTrue);
+      expect(controller.current.id, isNot(id));
+      expect(
+        controller.current.id,
+        matches(
+          RegExp(
+            r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+            caseSensitive: false,
+          ),
+        ),
+      );
+    });
+
+    test('create without seed starts empty; cannot steal owned folders',
+        () async {
+      await controller.create(name: 'Trip', seedFolders: ['/a']);
+      expect(await controller.create(name: 'Other'), isTrue);
+      expect(controller.current.leafFolders, isEmpty);
+      expect(controller.addFolder('/a'), isFalse);
+      expect(controller.current.leafFolders, isEmpty);
+      expect(controller.addFolder('/b'), isTrue);
+      expect(controller.current.leafFolders, ['/b']);
+    });
+
+    test('create seedFolders skips paths owned by another collection',
+        () async {
+      await controller.create(name: 'Trip', seedFolders: ['/a']);
+      expect(
+        await controller.create(name: 'Other', seedFolders: ['/a', '/b']),
+        isTrue,
+      );
+      expect(controller.current.leafFolders, ['/b']);
     });
 
     test('create → open restores folders; touches recents', () async {

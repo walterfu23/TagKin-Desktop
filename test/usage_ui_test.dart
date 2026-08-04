@@ -60,7 +60,7 @@ void main() {
     expect(find.text('80% of budget used'), findsOneWidget);
   });
 
-  testWidgets('kill-switch disables Add from folder FAB and shows banner',
+  testWidgets('kill-switch disables Add from folder and shows banner',
       (tester) async {
     final usage = FakeUsageRepository(
       summary: fixtureUsageSummary(
@@ -81,13 +81,13 @@ void main() {
     expect(find.byKey(const Key('usage-banner-blocked')), findsOneWidget);
     expect(find.textContaining('kill switch enabled'), findsOneWidget);
 
-    final fab = tester.widget<FloatingActionButton>(
+    final button = tester.widget<FilledButton>(
       find.byKey(const Key('add-from-folder')),
     );
-    expect(fab.onPressed, isNull);
+    expect(button.onPressed, isNull);
   });
 
-  testWidgets('hard-limit disables Add from folder FAB', (tester) async {
+  testWidgets('hard-limit disables Add from folder', (tester) async {
     final usage = FakeUsageRepository(
       summary: fixtureUsageSummary(
         hardLimitCents: 100,
@@ -106,13 +106,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('usage-banner-blocked')), findsOneWidget);
-    final fab = tester.widget<FloatingActionButton>(
+    final button = tester.widget<FilledButton>(
       find.byKey(const Key('add-from-folder')),
     );
-    expect(fab.onPressed, isNull);
+    expect(button.onPressed, isNull);
   });
 
-  testWidgets('open budget leaves FAB enabled and banner hidden',
+  testWidgets('open budget leaves Add from folder enabled and banner hidden',
       (tester) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -123,10 +123,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('usage-banner-hidden')), findsOneWidget);
-    final fab = tester.widget<FloatingActionButton>(
+    final button = tester.widget<FilledButton>(
       find.byKey(const Key('add-from-folder')),
     );
-    expect(fab.onPressed, isNotNull);
+    expect(button.onPressed, isNotNull);
   });
 
   testWidgets('account B never renders account A usage numbers (R10)',

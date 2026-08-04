@@ -506,7 +506,7 @@ void main() {
   });
 
   testWidgets(
-      'face crop trays: multi-select drag to Unassigned creates one GroupFM',
+      'face crop trays: multi-select drag to Unassigned creates one GroupFA',
       (tester) async {
     final persons = FakePersonsRepository(
       persons: [
@@ -580,7 +580,7 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
 
-    // Two faces moved together become one GroupFM via a single batched call
+    // Two faces moved together become one GroupFA via a single batched call
     // (R6), not two individual unlinks.
     expect(persons.unlinkCalls, isEmpty);
     expect(persons.unassignAppearancesCalls, hasLength(1));
@@ -592,7 +592,7 @@ void main() {
     final moved =
         persons.unassignedAppearances.where((a) => a.id == 'ap_a').single;
     expect(moved.faceGroupId, isNotNull);
-    expect(moved.faceGroupKind, FaceGroupKind.fm);
+    expect(moved.faceGroupKind, FaceGroupKind.fa);
   });
 
   testWidgets(
@@ -1393,7 +1393,7 @@ void main() {
   });
 
   testWidgets(
-      'face crop trays: drag cluster header creates one GroupFM',
+      'face crop trays: drag cluster header creates one GroupFA',
       (tester) async {
     final persons = FakePersonsRepository(
       persons: [
@@ -1458,7 +1458,7 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
 
-    // The whole GroupP cluster moves together — one GroupFM, not per-face
+    // The whole GroupP cluster moves together — one GroupFA, not per-face
     // unlinks (R6).
     expect(persons.unlinkCalls, isEmpty);
     expect(persons.unassignAppearancesCalls, hasLength(1));
@@ -2192,7 +2192,7 @@ void main() {
   });
 
   testWidgets(
-      'face crop trays: Assigned multi-drag to Excluded mints GroupFM and boxes',
+      'face crop trays: Assigned multi-drag to Excluded mints GroupFA and boxes',
       (tester) async {
     final persons = FakePersonsRepository(
       persons: [

@@ -1,5 +1,7 @@
 /// A named saved set of leaf folders (local-only catalog entry).
 ///
+/// [id] is the collection GUID (UUID v4 for newly minted collections).
+///
 /// Collections are not owned by the server. Persons stay account-scoped;
 /// a collection only scopes which folders the Faces dropdown shows.
 ///
@@ -12,6 +14,7 @@ class Collection {
     this.ui = CollectionUiState.empty,
   });
 
+  /// Collection GUID persisted in collections.json.
   final String id;
   final String name;
 

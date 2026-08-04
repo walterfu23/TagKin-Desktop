@@ -1,5 +1,5 @@
 // D7 Tagging & Jobs Lifecycle integration: analyze → terminal, cancel,
-// delete, export against fake JobsRepository (mocked API per §5).
+// delete against fake JobsRepository (mocked API per §5).
 //   flutter test integration_test/jobs_lifecycle_test.dart -d macos
 //   flutter test integration_test/jobs_lifecycle_test.dart -d windows
 
@@ -9,8 +9,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
-import 'package:tagkin_desktop/jobs/export_controller.dart';
 import 'package:tagkin_desktop/main.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
+import 'package:tagkin_desktop/persons/collections_store.dart';
 
 import '../test/fake_comments_repository.dart';
 import '../test/fake_corrections_repository.dart';
@@ -21,7 +22,7 @@ import '../test/fake_usage_repository.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('analyze reaches completed; delete removes from list; export runs',
+  testWidgets('analyze reaches completed; delete removes from list',
       (WidgetTester tester) async {
     final item = fixtureItem(
       id: 'item_int',
@@ -35,7 +36,6 @@ void main() {
       item: item,
       onDelete: items.removeItem,
     );
-    String? savedPath;
 
     await tester.pumpWidget(
       ProviderScope(
@@ -59,17 +59,7 @@ void main() {
           ),
           usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
           jobsRepositoryProvider.overrideWithValue(jobs),
-          exportControllerProvider.overrideWith((ref) {
-            final controller = ExportController(
-              jobsRepository: jobs,
-              writer: ({required suggestedName, required contents}) async {
-                savedPath = '/tmp/$suggestedName';
-                return savedPath;
-              },
-            );
-            ref.onDispose(controller.dispose);
-            return controller;
-          }),
+          collectionsStoreProvider.overrideWithValue(MemoryCollectionsStore()),
         ],
         child: const TagKinDesktopApp(),
       ),
@@ -77,13 +67,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('item-row-item_int')), findsOneWidget);
-
-    // Export from list.
-    await tester.tap(find.byKey(const Key('export-library')));
-    await tester.pumpAndSettle();
-    expect(jobs.exportCallCount, 1);
-    expect(savedPath, isNotNull);
-    expect(find.byKey(const Key('export-success')), findsOneWidget);
 
     // Analyze on detail.
     await tester.tap(find.byKey(const Key('item-row-item_int')));
@@ -96,7 +79,7 @@ void main() {
     // Delete.
     await tester.tap(find.byKey(const Key('item-delete')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('delete-confirm')));
+    await tester.tap(find.byKey(const Key('item-remove-confirm')));
     await tester.pumpAndSettle();
     expect(jobs.deleteCallCount, 1);
     expect(find.byKey(const Key('item-row-item_int')), findsNothing);
@@ -145,6 +128,7 @@ void main() {
           ),
           usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
           jobsRepositoryProvider.overrideWithValue(jobs),
+          collectionsStoreProvider.overrideWithValue(MemoryCollectionsStore()),
         ],
         child: const TagKinDesktopApp(),
       ),

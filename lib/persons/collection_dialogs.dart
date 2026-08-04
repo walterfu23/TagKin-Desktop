@@ -182,7 +182,7 @@ class _DeleteCollectionDialogState extends State<_DeleteCollectionDialog> {
           children: [
             Text(
               'This only deletes the saved collection “${widget.name}” '
-              '(its name and folder list). Library items and people are '
+              '(its name and folder list). Items and people are '
               'unchanged.\n\n'
               'Type the collection name to confirm.',
             ),

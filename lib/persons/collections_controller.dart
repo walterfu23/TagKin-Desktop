@@ -3,15 +3,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/persons/collection.dart';
 import 'package:tagkin_desktop/persons/collections_store.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
+import 'package:uuid/uuid.dart';
 
 /// Result of a dirty-prompt: save first, discard changes, or cancel the action.
 enum DirtyPromptChoice { save, discard, cancel }
+
+const _uuid = Uuid();
+
+/// Mints a new collection GUID (UUID v4).
+String newCollectionId() => _uuid.v4();
 
 /// In-memory catalog + optional current named collection.
 ///
 /// Under development — not shipped. No Untitled collection: first empty catalog
 /// mints Collection1; later sessions resume [CollectionsFile.currentCollectionId]
 /// when still in the catalog, otherwise show the New/Open start gate.
+///
+/// A library leaf folder path may appear in at most one collection's
+/// [Collection.leafFolders] (enforced in memory against the loaded catalog).
 ///
 /// Dirty = structural diff vs last-saved baseline (name / folders / page look)
 /// OR sticky [markDirty] activity (Faces moves, deletes, etc.).
@@ -50,6 +59,34 @@ class CollectionsController extends ChangeNotifier {
   bool get loaded => _loaded;
   bool get sessionReady => _sessionReady && _current != null;
   int get uiEpoch => _uiEpoch;
+
+  /// GUID of the collection that currently lists [folder], if any.
+  /// Prefers the dirty in-memory current over a stale catalog row for the same id.
+  String? ownerCollectionId(String folder) {
+    if (folder.isEmpty) return null;
+    final cur = _current;
+    if (cur != null && cur.leafFolders.contains(folder)) return cur.id;
+    for (final c in _catalog.collections) {
+      if (cur != null && c.id == cur.id) continue;
+      if (c.leafFolders.contains(folder)) return c.id;
+    }
+    return null;
+  }
+
+  /// Library folders claimed by any collection other than [exceptId].
+  Set<String> foldersClaimedByOthers({required String exceptId}) {
+    final claimed = <String>{};
+    final cur = _current;
+    for (final c in _catalog.collections) {
+      if (c.id == exceptId) continue;
+      if (cur != null && c.id == cur.id) continue;
+      claimed.addAll(c.leafFolders);
+    }
+    if (cur != null && cur.id != exceptId) {
+      claimed.addAll(cur.leafFolders);
+    }
+    return claimed;
+  }
 
   List<Collection> get recentCollections {
     final byId = {for (final c in _catalog.collections) c.id: c};
@@ -117,13 +154,19 @@ class CollectionsController extends ChangeNotifier {
   }
 
   /// If the open collection has no folders yet (e.g. minted before library load),
-  /// fill from [libraryFolders] and persist without marking dirty.
+  /// fill with unowned [libraryFolders] and persist without marking dirty.
   Future<void> fillMembershipIfEmpty(List<String> libraryFolders) async {
     final cur = _current;
     if (cur == null || cur.leafFolders.isNotEmpty) return;
     if (libraryFolders.isEmpty) return;
     _libraryFolders = List<String>.of(libraryFolders);
-    _current = cur.copyWith(leafFolders: List<String>.of(libraryFolders));
+    final claimed = foldersClaimedByOthers(exceptId: cur.id);
+    final folders = [
+      for (final f in libraryFolders)
+        if (!claimed.contains(f)) f,
+    ];
+    if (folders.isEmpty) return;
+    _current = cur.copyWith(leafFolders: folders);
     await _writeCurrentToCatalog(_current!);
     _captureBaseline();
     notifyListeners();
@@ -140,7 +183,7 @@ class CollectionsController extends ChangeNotifier {
   Future<void> _mintDefaultCollection(List<String> libraryFolders) async {
     final name = _nextDefaultName();
     final created = Collection(
-      id: 'collection_${DateTime.now().microsecondsSinceEpoch}',
+      id: newCollectionId(),
       name: name,
       leafFolders: List<String>.of(libraryFolders),
     );
@@ -253,10 +296,14 @@ class CollectionsController extends ChangeNotifier {
     if (trimmed.isEmpty) return false;
     if (!await _resolveDirtyIfNeeded(resolveDirty: resolveDirty)) return false;
     if (_nameTaken(trimmed)) return false;
-    final folders =
-        seedFolders.isNotEmpty ? seedFolders : List<String>.of(_libraryFolders);
+    final id = newCollectionId();
+    final claimed = foldersClaimedByOthers(exceptId: id);
+    final folders = [
+      for (final f in seedFolders)
+        if (f.isNotEmpty && !claimed.contains(f)) f,
+    ];
     _current = Collection(
-      id: 'collection_${DateTime.now().microsecondsSinceEpoch}',
+      id: id,
       name: trimmed,
       leafFolders: folders,
     );
@@ -368,6 +415,8 @@ class CollectionsController extends ChangeNotifier {
     final cur = _current;
     if (cur == null || folder.isEmpty) return false;
     if (cur.leafFolders.contains(folder)) return true;
+    final owner = ownerCollectionId(folder);
+    if (owner != null && owner != cur.id) return false;
     _current = cur.copyWith(leafFolders: [...cur.leafFolders, folder]);
     _recomputeDirty();
     return true;
@@ -398,20 +447,21 @@ class CollectionsController extends ChangeNotifier {
   }
 
   /// Save a copy under [name] and switch current to that copy.
+  /// New GUID + copied page look; folder membership starts empty (exclusivity).
   Future<bool> saveAs(String name) async {
     final cur = _current;
     if (cur == null) return false;
     final trimmed = name.trim();
     if (trimmed.isEmpty) return false;
     if (_nameTaken(trimmed)) return false;
-    // Persist dirty edits onto the original first so Save as copies latest.
+    // Persist dirty edits onto the original first so Save as keeps latest look.
     if (_dirty && _catalog.collections.any((c) => c.id == cur.id)) {
       await _writeCurrentToCatalog(cur);
     }
     final copy = Collection(
-      id: 'collection_${DateTime.now().microsecondsSinceEpoch}',
+      id: newCollectionId(),
       name: trimmed,
-      leafFolders: List<String>.of(cur.leafFolders),
+      leafFolders: const [],
       ui: cur.ui,
     );
     _current = copy;

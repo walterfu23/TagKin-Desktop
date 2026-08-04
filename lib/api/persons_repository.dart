@@ -128,7 +128,7 @@ class PersonsRepository {
   }
 
   /// `POST /persons/appearances/unassign` — move appearances to Unassigned.
-  /// Two or more become GroupFM; a single face becomes loose (R6).
+  /// Two or more become GroupFA; a single face becomes loose (R6).
   Future<List<PersonAppearance>> unassignAppearances(
     List<String> appearanceIds,
   ) async {

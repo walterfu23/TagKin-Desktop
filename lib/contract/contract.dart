@@ -882,44 +882,6 @@ enum KnowledgeSource {
   String toString() => wire;
 }
 
-class LibraryExport {
-  const LibraryExport({
-    required this.items,
-    required this.tags,
-    required this.persons,
-    required this.comments,
-    required this.corrections,
-    required this.exportedAt,
-  });
-
-  final List<Item> items;
-  final List<Tag> tags;
-  final List<Person> persons;
-  final List<Comment> comments;
-  final List<Correction> corrections;
-  final String exportedAt;
-
-  factory LibraryExport.fromJson(Map<String, dynamic> json) => LibraryExport(
-        items: (json['items'] as List<dynamic>).map((e) => Item.fromJson(e as Map<String, dynamic>)).toList(),
-        tags: (json['tags'] as List<dynamic>).map((e) => Tag.fromJson(e as Map<String, dynamic>)).toList(),
-        persons: (json['persons'] as List<dynamic>).map((e) => Person.fromJson(e as Map<String, dynamic>)).toList(),
-        comments: (json['comments'] as List<dynamic>).map((e) => Comment.fromJson(e as Map<String, dynamic>)).toList(),
-        corrections: (json['corrections'] as List<dynamic>).map((e) => Correction.fromJson(e as Map<String, dynamic>)).toList(),
-        exportedAt: json['exportedAt'] as String,
-      );
-
-  Map<String, dynamic> toJson() {
-    final json = <String, dynamic>{};
-    json['items'] = items.map((e) => e.toJson()).toList();
-    json['tags'] = tags.map((e) => e.toJson()).toList();
-    json['persons'] = persons.map((e) => e.toJson()).toList();
-    json['comments'] = comments.map((e) => e.toJson()).toList();
-    json['corrections'] = corrections.map((e) => e.toJson()).toList();
-    json['exportedAt'] = exportedAt;
-    return json;
-  }
-}
-
 class LinkPeopleResponse {
   const LinkPeopleResponse({
     required this.appearances,

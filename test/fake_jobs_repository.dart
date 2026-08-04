@@ -10,28 +10,23 @@ class FakeJobsRepository implements JobsRepository {
     this.itemId = 'item_1',
     Item? item,
     List<Job>? jobs,
-    LibraryExport? export,
     this.analyzeError,
     this.jobsError,
     this.cancelError,
     this.deleteError,
-    this.exportError,
     this.analyzeDelay,
     this.onDelete,
   })  : item = item ?? fixtureItem(id: itemId),
-        _jobs = List<Job>.from(jobs ?? const []),
-        export = export ?? fixtureLibraryExport();
+        _jobs = List<Job>.from(jobs ?? const []);
 
   String itemId;
   Item item;
   final List<Job> _jobs;
-  LibraryExport export;
 
   final Object? analyzeError;
   final Object? jobsError;
   final Object? cancelError;
   final Object? deleteError;
-  final Object? exportError;
 
   /// Optional delay before [analyzeItem] completes (tests race/cancel).
   final Duration? analyzeDelay;
@@ -53,7 +48,6 @@ class FakeJobsRepository implements JobsRepository {
   int listJobsCallCount = 0;
   int cancelCallCount = 0;
   int deleteCallCount = 0;
-  int exportCallCount = 0;
 
   final List<String> analyzedItemIds = <String>[];
   final List<String> deletedItemIds = <String>[];
@@ -166,13 +160,6 @@ class FakeJobsRepository implements JobsRepository {
     // Accept any item id so folder remove can soft-delete a subtree.
     onDelete?.call(id);
   }
-
-  @override
-  Future<LibraryExport> exportLibrary() async {
-    exportCallCount++;
-    if (exportError != null) throw exportError!;
-    return export;
-  }
 }
 
 Job fixtureJob({
@@ -191,19 +178,5 @@ Job fixtureJob({
     pipelineVersion: 1,
     createdAt: '2026-07-20T00:00:00.000Z',
     updatedAt: '2026-07-20T00:00:00.000Z',
-  );
-}
-
-LibraryExport fixtureLibraryExport({
-  List<Item>? items,
-  String exportedAt = '2026-07-20T12:00:00.000Z',
-}) {
-  return LibraryExport(
-    items: items ?? [fixtureItem()],
-    tags: const [],
-    persons: const [],
-    comments: const [],
-    corrections: const [],
-    exportedAt: exportedAt,
   );
 }

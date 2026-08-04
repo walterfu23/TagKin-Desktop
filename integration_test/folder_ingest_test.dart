@@ -77,6 +77,9 @@ void main() {
                   faceEmbedder,
                   skipFaces = false,
                   maxFrames = 20,
+                  minIntervalMs = 2000,
+                  maxIntervalMs = 10000,
+                  sceneCutThreshold = 27.0,
                 }) async {
                   return PrePassBuildResult(
                     payload: PrePassResult(

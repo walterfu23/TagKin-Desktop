@@ -4,7 +4,6 @@ import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/ingest/folder_picker.dart';
-import 'package:tagkin_desktop/jobs/export_controller.dart';
 import 'package:tagkin_desktop/library/folder_remove_queue.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/library/library_items_table.dart';
@@ -16,12 +15,12 @@ import 'package:tagkin_desktop/usage/usage_banner.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
-/// Post-auth library home (D2): wide multi-column items table.
+/// Post-auth Folders home (D2): wide multi-column items table.
 ///
 /// D6 gates the "Add from folder" FAB on [UsageGate.blocked] and shows a
-/// warn/blocked [UsageBanner] above the table. D7 adds library export.
-/// Folder ingest and folder remove run in the background; progress is in the
-/// shell status banner ([FolderIngestQueue] / [FolderRemoveQueue]).
+/// warn/blocked [UsageBanner] above the table. Folder ingest and folder remove
+/// run in the background; progress is in the shell status banner
+/// ([FolderIngestQueue] / [FolderRemoveQueue]).
 class ItemsListPage extends ConsumerStatefulWidget {
   const ItemsListPage({super.key});
 
@@ -210,65 +209,52 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     }
   }
 
-  Future<void> _exportLibrary() async {
-    final export = ref.read(exportControllerProvider);
-    await export.exportLibrary();
-    if (!mounted) return;
-    if (export.phase == ExportPhase.done) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          key: const Key('export-success'),
-          content: Text('Exported to ${export.savedPath}'),
-        ),
-      );
-    } else if (export.phase == ExportPhase.error) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          key: const Key('export-error'),
-          content: Text('Export failed: ${export.error}'),
-        ),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final usage = ref.watch(usageControllerProvider);
-    final export = ref.watch(exportControllerProvider);
     final table = ref.watch(libraryTableControllerProvider);
     return ListenableBuilder(
-      listenable: Listenable.merge([usage, export, table]),
+      listenable: Listenable.merge([usage, table]),
       builder: (context, _) {
         final blocked = usage.gate.blocked;
-        final exporting = export.phase == ExportPhase.running;
         return Scaffold(
-          floatingActionButtonLocation: FloatingActionButtonLocation.endTop,
-          floatingActionButton: FloatingActionButton.extended(
-            key: const Key('add-from-folder'),
-            onPressed: blocked ? null : _openFolderIngest,
-            icon: const Icon(Icons.drive_folder_upload),
-            label: const Text('Add from folder'),
-          ),
           body: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               UsageBanner(gate: usage.gate),
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    key: const Key('export-library'),
-                    onPressed: exporting ? null : _exportLibrary,
-                    icon: exporting
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.download_outlined),
-                    label: const Text('Export library…'),
-                  ),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        key: const Key('library-filter'),
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          prefixIcon: Icon(Icons.search, size: 20),
+                          hintText:
+                              'Filter who, what, where, source, comment…',
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: table.setFilterQuery,
+                      ),
+                    ),
+                    if (table.knowledgeWarming) ...[
+                      const SizedBox(width: 12),
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ],
+                    const SizedBox(width: 12),
+                    FilledButton.icon(
+                      key: const Key('add-from-folder'),
+                      onPressed: blocked ? null : _openFolderIngest,
+                      icon: const Icon(Icons.drive_folder_upload),
+                      label: const Text('Add from folder'),
+                    ),
+                  ],
                 ),
               ),
               Expanded(child: _buildBody(table)),

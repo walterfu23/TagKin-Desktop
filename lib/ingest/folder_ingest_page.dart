@@ -226,7 +226,7 @@ class _ReviewView extends StatelessWidget {
           child: Text(
             'Found ${controller.totalFound} file(s): '
             '${result.representatives.length} new, '
-            '${result.skipped.length} skipped (duplicate/already in library).',
+            '${result.skipped.length} skipped (duplicate/already added).',
             key: const Key('ingest-summary'),
           ),
         ),
@@ -270,7 +270,7 @@ class _ReviewView extends StatelessWidget {
       case SkipReason.duplicateInBatch:
         return 'Duplicate of another file in this folder';
       case SkipReason.existingInLibrary:
-        return 'Already in your library';
+        return 'Already added';
     }
   }
 }

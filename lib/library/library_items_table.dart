@@ -62,8 +62,6 @@ class LibraryItemsTable extends ConsumerWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _FilterBar(controller: controller),
-            const Divider(height: 1),
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {
@@ -150,62 +148,6 @@ class LibraryItemsTable extends ConsumerWidget {
   }
 }
 
-class _FilterBar extends StatelessWidget {
-  const _FilterBar({required this.controller});
-
-  final LibraryTableController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              key: const Key('library-filter'),
-              decoration: const InputDecoration(
-                isDense: true,
-                prefixIcon: Icon(Icons.search, size: 20),
-                hintText: 'Filter who, what, where, source, comment…',
-                border: OutlineInputBorder(),
-              ),
-              onChanged: controller.setFilterQuery,
-            ),
-          ),
-          const SizedBox(width: 12),
-          DropdownButton<ProcessingStatus?>(
-            key: const Key('library-status-filter'),
-            value: controller.statusFilter,
-            hint: const Text('All statuses'),
-            items: [
-              const DropdownMenuItem<ProcessingStatus?>(
-                value: null,
-                child: Text('All statuses'),
-              ),
-              ...ProcessingStatus.values.map(
-                (s) => DropdownMenuItem<ProcessingStatus?>(
-                  value: s,
-                  child: Text(s.wire),
-                ),
-              ),
-            ],
-            onChanged: (v) => controller.setStatusFilter(v),
-          ),
-          if (controller.knowledgeWarming) ...[
-            const SizedBox(width: 12),
-            const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
 class _HeaderRow extends StatelessWidget {
   const _HeaderRow({
     required this.controller,
@@ -268,13 +210,38 @@ class _HeaderRow extends StatelessWidget {
               controller: controller,
               multiColumnSort: multiColumnSort,
             ),
-            const SizedBox(
+            SizedBox(
               width: _kColActions,
               child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 8),
-                child: Text(
-                  'Status',
-                  style: TextStyle(fontWeight: FontWeight.w600),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<ProcessingStatus?>(
+                    key: const Key('library-status-filter'),
+                    isDense: true,
+                    isExpanded: true,
+                    value: controller.statusFilter,
+                    hint: const Text(
+                      'All statuses',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                    items: [
+                      const DropdownMenuItem<ProcessingStatus?>(
+                        value: null,
+                        child: Text('All statuses'),
+                      ),
+                      ...ProcessingStatus.values.map(
+                        (s) => DropdownMenuItem<ProcessingStatus?>(
+                          value: s,
+                          child: Text(s.wire),
+                        ),
+                      ),
+                    ],
+                    onChanged: (v) => controller.setStatusFilter(v),
+                  ),
                 ),
               ),
             ),

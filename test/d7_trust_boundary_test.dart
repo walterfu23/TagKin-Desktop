@@ -29,9 +29,8 @@ void main() {
   test('JobsRepository / JobsController implement no server-only logic', () {
     final repo = File('lib/api/jobs_repository.dart').readAsStringSync();
     final controller = File('lib/jobs/jobs_controller.dart').readAsStringSync();
-    final export = File('lib/jobs/export_controller.dart').readAsStringSync();
 
-    for (final source in [repo, controller, export]) {
+    for (final source in [repo, controller]) {
       expect(source.contains('estimateCost'), isFalse);
       expect(source.contains('reserve('), isFalse);
       expect(source.contains('mintUpload'), isFalse);

@@ -336,8 +336,8 @@ class FakePersonsRepository implements PersonsRepository {
     FaceGroupKind? faceGroupKind;
     if (moved.length >= 2) {
       _newFaceGroupCounter += 1;
-      faceGroupId = 'fg_fm_$_newFaceGroupCounter';
-      faceGroupKind = FaceGroupKind.fm;
+      faceGroupId = 'fg_fa_$_newFaceGroupCounter';
+      faceGroupKind = FaceGroupKind.fa;
     }
 
     final result = <PersonAppearance>[

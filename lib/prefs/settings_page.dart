@@ -8,7 +8,7 @@ import 'package:tagkin_desktop/where/where_label_resolver.dart';
 import 'package:tagkin_desktop/where/where_place_label.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
-/// Desktop preferences (Where, Library, Ingest, Video, Faces, Jobs).
+/// Desktop preferences (Where, Folders, Ingest, Video, Faces, Jobs).
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
 
@@ -224,10 +224,95 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     }
   }
 
-  Widget _sectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 8),
-      child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+  Widget _settingsIntro() {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    return Card(
+      key: const Key('settings-intro'),
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 16),
+      color: theme.colorScheme.primaryContainer.withValues(alpha: 0.35),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: theme.colorScheme.primary.withValues(alpha: 0.28),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'About these settings',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'These preferences apply across all collections. '
+              'Defaults work for most people—change a section only when you '
+              'need different behavior.',
+              style: theme.textTheme.bodySmall?.copyWith(color: muted),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Edits are not applied until you press Save. '
+              'Restore defaults resets these Settings only '
+              '(not each collection’s page look).',
+              style: theme.textTheme.bodySmall?.copyWith(color: muted),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _settingsGroup({
+    required String title,
+    String? subtitle,
+    required List<Widget> children,
+  }) {
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 16, 8, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                title,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text(
+                  subtitle,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 8),
+            ...children,
+          ],
+        ),
+      ),
     );
   }
 
@@ -333,169 +418,246 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           body: ListView(
             padding: const EdgeInsets.all(24),
             children: [
-              _sectionTitle('Where labels'),
-              SwitchListTile(
-                key: const Key('pref-show-country-same'),
-                title: const Text('Show country when in the same country'),
-                subtitle: const Text(
-                  'Off (default): omit country when the photo matches '
-                  'this computer’s country.',
-                ),
-                value: _showCountryWhenSameCountry,
-                onChanged: (v) =>
-                    setState(() => _showCountryWhenSameCountry = v),
-              ),
-              SwitchListTile(
-                key: const Key('pref-show-state-same'),
-                title: const Text('Show state/province when familiar'),
-                subtitle: const Text(
-                  'Off (default): omit state/province when it matches a '
-                  'Familiar state/province below.',
-                ),
-                value: _showStateWhenSameState,
-                onChanged: (v) => setState(() => _showStateWhenSameState = v),
-              ),
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: TextField(
-                  key: const Key('pref-familiar-regions'),
-                  controller: _familiarRegions,
-                  decoration: const InputDecoration(
-                    labelText: 'Familiar state/province',
-                    hintText: 'e.g. California, Nevada, BC',
-                    helperText:
-                        'Comma-separated. Leave blank to always show state/province. '
-                        'You can also add from the Where column on Folders.',
-                    border: OutlineInputBorder(),
+              _settingsIntro(),
+              _settingsGroup(
+                title: 'Where labels',
+                subtitle:
+                    'Shortens place text in the Folders “Where” column. '
+                    'Leave defaults if you prefer full city / state / country.',
+                children: [
+                  SwitchListTile(
+                    key: const Key('pref-show-country-same'),
+                    title: const Text('Show country when in the same country'),
+                    subtitle: const Text(
+                      'Off (default): if a photo’s country matches this '
+                      'computer’s country, hide the country name to keep '
+                      'Where shorter. Turn on to always show country.',
+                    ),
+                    value: _showCountryWhenSameCountry,
+                    onChanged: (v) =>
+                        setState(() => _showCountryWhenSameCountry = v),
                   ),
-                ),
+                  SwitchListTile(
+                    key: const Key('pref-show-state-same'),
+                    title: const Text('Show state/province when familiar'),
+                    subtitle: const Text(
+                      'Off (default): hide state/province when it matches an '
+                      'entry in Familiar state/province below. Turn on to '
+                      'always show state/province.',
+                    ),
+                    value: _showStateWhenSameState,
+                    onChanged: (v) =>
+                        setState(() => _showStateWhenSameState = v),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: TextField(
+                      key: const Key('pref-familiar-regions'),
+                      controller: _familiarRegions,
+                      decoration: const InputDecoration(
+                        labelText: 'Familiar state/province',
+                        hintText: 'e.g. California, Nevada, BC',
+                        helperText:
+                            'Places you already know—used to shorten Where when '
+                            '“Show state/province when familiar” is off. '
+                            'Comma-separated. Leave blank to always show '
+                            'state/province. You can also add from the Where '
+                            'column on Folders.',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              _sectionTitle('Library'),
-              SwitchListTile(
-                key: const Key('pref-multi-column-sort'),
-                title: const Text('Multi-column sort'),
-                subtitle: const Text(
-                  'Off (default): one sort column. On: click columns to build '
-                  'a priority stack (1, 2, …).',
-                ),
-                value: _multiColumnSort,
-                onChanged: (v) => setState(() => _multiColumnSort = v),
+              _settingsGroup(
+                title: 'Folders',
+                subtitle:
+                    'How the Folders table sorts and pages, and how many '
+                    'recent collections appear on Open Recent / the start gate.',
+                children: [
+                  SwitchListTile(
+                    key: const Key('pref-multi-column-sort'),
+                    title: const Text('Multi-column sort'),
+                    subtitle: const Text(
+                      'Off (default): clicking a column header sorts by that '
+                      'column only. On: each click builds a priority stack '
+                      '(1, 2, …) so you can sort by several columns at once.',
+                    ),
+                    value: _multiColumnSort,
+                    onChanged: (v) => setState(() => _multiColumnSort = v),
+                  ),
+                  _intSlider(
+                    key: const Key('pref-library-page-size'),
+                    label: 'Rows per page',
+                    helper:
+                        'How many items the Folders table shows before you '
+                        'turn the page. Raise for fewer page flips; lower on '
+                        'small screens. Default 50 (2–200).',
+                    value: _libraryPageSize,
+                    min: DesktopPrefs.libraryPageSizeMin,
+                    max: DesktopPrefs.libraryPageSizeMax,
+                    step: DesktopPrefs.libraryPageSizeStep,
+                    onChanged: (v) => _libraryPageSize = v,
+                  ),
+                  _intSlider(
+                    key: const Key('pref-recent-collections-limit'),
+                    label: 'Recent collections limit',
+                    helper:
+                        'Max collections listed under Open Recent and on the '
+                        'start gate. Raise if you juggle many collections. '
+                        'Default 20 (1–100).',
+                    value: _recentCollectionsLimit,
+                    min: DesktopPrefs.recentCollectionsLimitMin,
+                    max: DesktopPrefs.recentCollectionsLimitMax,
+                    step: DesktopPrefs.recentCollectionsLimitStep,
+                    onChanged: (v) => _recentCollectionsLimit = v,
+                  ),
+                ],
               ),
-              _intSlider(
-                key: const Key('pref-library-page-size'),
-                label: 'Rows per page',
-                helper: 'Default 50 (2–200).',
-                value: _libraryPageSize,
-                min: DesktopPrefs.libraryPageSizeMin,
-                max: DesktopPrefs.libraryPageSizeMax,
-                step: DesktopPrefs.libraryPageSizeStep,
-                onChanged: (v) => _libraryPageSize = v,
+              _settingsGroup(
+                title: 'Faces',
+                subtitle:
+                    'Boxes on the review photo plus how strict local face '
+                    'finding is. Leave defaults unless faces are missed or '
+                    'you see false detections.',
+                children: [
+                  SwitchListTile(
+                    key: const Key('pref-show-face-overlays'),
+                    title: const Text('Show face boxes on photos'),
+                    subtitle: const Text(
+                      'On (default): on the review photo, draw a labeled '
+                      'square for each who-tag that has a face region from '
+                      'analysis. Turn off for a cleaner photo view.',
+                    ),
+                    value: _showFaceOverlays,
+                    onChanged: (v) => setState(() => _showFaceOverlays = v),
+                  ),
+                  _doubleSlider(
+                    key: const Key('pref-faces-detect-score'),
+                    label: 'Face detect score threshold',
+                    helper:
+                        'Minimum confidence for the local face finder to keep '
+                        'a detection. Raise if you see false boxes; lower if '
+                        'real faces are missed. Default 0.2.',
+                    value: _facesDetectScoreThreshold,
+                    min: DesktopPrefs.facesDetectScoreThresholdMin,
+                    max: DesktopPrefs.facesDetectScoreThresholdMax,
+                    step: DesktopPrefs.facesDetectScoreThresholdStep,
+                    onChanged: (v) => _facesDetectScoreThreshold = v,
+                  ),
+                  _intSlider(
+                    key: const Key('pref-faces-tray-page-limit'),
+                    label: 'Faces tray fetch limit',
+                    helper:
+                        'How many face appearances the Faces trays load per '
+                        'request. Raise only if trays feel incomplete on huge '
+                        'collections. Default 500 (50–500).',
+                    value: _facesTrayPageLimit,
+                    min: DesktopPrefs.facesTrayPageLimitMin,
+                    max: DesktopPrefs.facesTrayPageLimitMax,
+                    step: DesktopPrefs.facesTrayPageLimitStep,
+                    onChanged: (v) => _facesTrayPageLimit = v,
+                  ),
+                ],
               ),
-              _intSlider(
-                key: const Key('pref-recent-collections-limit'),
-                label: 'Recent collections limit',
-                helper: 'Default 20 (1–100). Open Recent / start gate.',
-                value: _recentCollectionsLimit,
-                min: DesktopPrefs.recentCollectionsLimitMin,
-                max: DesktopPrefs.recentCollectionsLimitMax,
-                step: DesktopPrefs.recentCollectionsLimitStep,
-                onChanged: (v) => _recentCollectionsLimit = v,
+              _settingsGroup(
+                title: 'Ingest & video',
+                subtitle:
+                    'How near-duplicates are detected when adding from a '
+                    'folder, and how videos are sampled before analysis. '
+                    'Leave defaults unless ingest is too slow or too aggressive.',
+                children: [
+                  _intSlider(
+                    key: const Key('pref-near-duplicate-threshold'),
+                    label: 'Near-duplicate Hamming threshold',
+                    helper:
+                        'How similar two photos must look (fingerprint '
+                        'distance) to count as near-duplicates when adding '
+                        'from a folder. Lower = stricter (fewer matches). '
+                        'Default 4.',
+                    value: _nearDuplicateThreshold,
+                    min: DesktopPrefs.nearDuplicateThresholdMin,
+                    max: DesktopPrefs.nearDuplicateThresholdMax,
+                    step: DesktopPrefs.nearDuplicateThresholdStep,
+                    onChanged: (v) => _nearDuplicateThreshold = v,
+                  ),
+                  _intSlider(
+                    key: const Key('pref-sample-min-interval'),
+                    label: 'Min sample interval (ms)',
+                    helper:
+                        'Closest spacing between video frames taken in short '
+                        'stretches. Smaller = more frames (slower, more '
+                        'thorough). Default 1000 ms.',
+                    value: _sampleMinIntervalMs,
+                    min: DesktopPrefs.sampleMinIntervalMsMin,
+                    max: DesktopPrefs.sampleMinIntervalMsMax,
+                    step: DesktopPrefs.sampleMinIntervalMsStep,
+                    onChanged: (v) => _sampleMinIntervalMs = v,
+                  ),
+                  _intSlider(
+                    key: const Key('pref-sample-max-interval'),
+                    label: 'Max sample interval (ms)',
+                    helper:
+                        'Widest spacing between frames in long, uneventful '
+                        'stretches. Smaller = denser sampling of long clips. '
+                        'Default 15000 ms.',
+                    value: _sampleMaxIntervalMs,
+                    min: DesktopPrefs.sampleMaxIntervalMsMin,
+                    max: DesktopPrefs.sampleMaxIntervalMsMax,
+                    step: DesktopPrefs.sampleMaxIntervalMsStep,
+                    onChanged: (v) => _sampleMaxIntervalMs = v,
+                  ),
+                  _intSlider(
+                    key: const Key('pref-soft-max-frames'),
+                    label: 'Soft max frames per video',
+                    helper:
+                        'Soft cap on sample frames taken from one video so '
+                        'long clips stay manageable. Raise for longer '
+                        'coverage; lower to speed up pre-pass. Default 500.',
+                    value: _softMaxFramesPerItem,
+                    min: DesktopPrefs.softMaxFramesPerItemMin,
+                    max: DesktopPrefs.softMaxFramesPerItemMax,
+                    step: DesktopPrefs.softMaxFramesPerItemStep,
+                    onChanged: (v) => _softMaxFramesPerItem = v,
+                  ),
+                  _doubleSlider(
+                    key: const Key('pref-scene-cut-threshold'),
+                    label: 'Scene-cut threshold',
+                    helper:
+                        'Sensitivity for detecting cuts between scenes. '
+                        'Lower finds more cuts (more samples around changes). '
+                        'Default 0.3.',
+                    value: _sceneCutThreshold,
+                    min: DesktopPrefs.sceneCutThresholdMin,
+                    max: DesktopPrefs.sceneCutThresholdMax,
+                    step: DesktopPrefs.sceneCutThresholdStep,
+                    onChanged: (v) => _sceneCutThreshold = v,
+                  ),
+                ],
               ),
-              _sectionTitle('Review'),
-              SwitchListTile(
-                key: const Key('pref-show-face-overlays'),
-                title: const Text('Show face boxes on photos'),
-                subtitle: const Text(
-                  'On (default): draw a labeled square for each who tag '
-                  'that has a face region from analysis.',
-                ),
-                value: _showFaceOverlays,
-                onChanged: (v) => setState(() => _showFaceOverlays = v),
-              ),
-              _sectionTitle('Ingest'),
-              _intSlider(
-                key: const Key('pref-near-duplicate-threshold'),
-                label: 'Near-duplicate Hamming threshold',
-                helper: 'Default 4. Lower = stricter matching.',
-                value: _nearDuplicateThreshold,
-                min: DesktopPrefs.nearDuplicateThresholdMin,
-                max: DesktopPrefs.nearDuplicateThresholdMax,
-                step: DesktopPrefs.nearDuplicateThresholdStep,
-                onChanged: (v) => _nearDuplicateThreshold = v,
-              ),
-              _sectionTitle('Video / pre-pass'),
-              _intSlider(
-                key: const Key('pref-sample-min-interval'),
-                label: 'Min sample interval (ms)',
-                helper: 'Default 1000. Spacing in short key periods.',
-                value: _sampleMinIntervalMs,
-                min: DesktopPrefs.sampleMinIntervalMsMin,
-                max: DesktopPrefs.sampleMinIntervalMsMax,
-                step: DesktopPrefs.sampleMinIntervalMsStep,
-                onChanged: (v) => _sampleMinIntervalMs = v,
-              ),
-              _intSlider(
-                key: const Key('pref-sample-max-interval'),
-                label: 'Max sample interval (ms)',
-                helper: 'Default 15000. Spacing in long key periods.',
-                value: _sampleMaxIntervalMs,
-                min: DesktopPrefs.sampleMaxIntervalMsMin,
-                max: DesktopPrefs.sampleMaxIntervalMsMax,
-                step: DesktopPrefs.sampleMaxIntervalMsStep,
-                onChanged: (v) => _sampleMaxIntervalMs = v,
-              ),
-              _intSlider(
-                key: const Key('pref-soft-max-frames'),
-                label: 'Soft max frames per video',
-                helper: 'Default 500.',
-                value: _softMaxFramesPerItem,
-                min: DesktopPrefs.softMaxFramesPerItemMin,
-                max: DesktopPrefs.softMaxFramesPerItemMax,
-                step: DesktopPrefs.softMaxFramesPerItemStep,
-                onChanged: (v) => _softMaxFramesPerItem = v,
-              ),
-              _doubleSlider(
-                key: const Key('pref-scene-cut-threshold'),
-                label: 'Scene-cut threshold',
-                helper: 'Default 0.3. Lower detects more cuts.',
-                value: _sceneCutThreshold,
-                min: DesktopPrefs.sceneCutThresholdMin,
-                max: DesktopPrefs.sceneCutThresholdMax,
-                step: DesktopPrefs.sceneCutThresholdStep,
-                onChanged: (v) => _sceneCutThreshold = v,
-              ),
-              _sectionTitle('Faces'),
-              _doubleSlider(
-                key: const Key('pref-faces-detect-score'),
-                label: 'Face detect score threshold',
-                helper: 'Default 0.2. Local SCRFD score floor.',
-                value: _facesDetectScoreThreshold,
-                min: DesktopPrefs.facesDetectScoreThresholdMin,
-                max: DesktopPrefs.facesDetectScoreThresholdMax,
-                step: DesktopPrefs.facesDetectScoreThresholdStep,
-                onChanged: (v) => _facesDetectScoreThreshold = v,
-              ),
-              _intSlider(
-                key: const Key('pref-faces-tray-page-limit'),
-                label: 'Faces tray fetch limit',
-                helper: 'Default 500 (50–500). API appearances page size.',
-                value: _facesTrayPageLimit,
-                min: DesktopPrefs.facesTrayPageLimitMin,
-                max: DesktopPrefs.facesTrayPageLimitMax,
-                step: DesktopPrefs.facesTrayPageLimitStep,
-                onChanged: (v) => _facesTrayPageLimit = v,
-              ),
-              _sectionTitle('Jobs'),
-              _intSlider(
-                key: const Key('pref-jobs-poll-interval'),
-                label: 'Job poll interval (seconds)',
-                helper: 'Default 2 (1–30).',
-                value: _jobsPollIntervalSeconds,
-                min: DesktopPrefs.jobsPollIntervalSecondsMin,
-                max: DesktopPrefs.jobsPollIntervalSecondsMax,
-                step: DesktopPrefs.jobsPollIntervalSecondsStep,
-                onChanged: (v) => _jobsPollIntervalSeconds = v,
+              _settingsGroup(
+                title: 'Jobs',
+                subtitle:
+                    'How often the app checks analyze / upload progress. '
+                    'Leave the default unless the network is very slow.',
+                children: [
+                  _intSlider(
+                    key: const Key('pref-jobs-poll-interval'),
+                    label: 'Job poll interval (seconds)',
+                    helper:
+                        'Seconds between progress checks while analyze or '
+                        'upload runs. Higher = less network chatter; lower = '
+                        'snappier status. Default 2 (1–30).',
+                    value: _jobsPollIntervalSeconds,
+                    min: DesktopPrefs.jobsPollIntervalSecondsMin,
+                    max: DesktopPrefs.jobsPollIntervalSecondsMax,
+                    step: DesktopPrefs.jobsPollIntervalSecondsStep,
+                    onChanged: (v) => _jobsPollIntervalSeconds = v,
+                  ),
+                ],
               ),
             ],
           ),

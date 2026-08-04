@@ -5,9 +5,9 @@ import 'package:tagkin_desktop/contract/contract.dart';
 
 /// Typed client for tagging + jobs lifecycle (D7).
 ///
-/// Triggers analysis, lists jobs, cancel, delete, and library export. Never
-/// sends media bytes (R1/R5/R7) or `ownerUserId` (R10). Never estimates cost
-/// or routes providers (R8/R9 — server-authoritative).
+/// Triggers analysis, lists jobs, cancel, and delete. Never sends media bytes
+/// (R1/R5/R7) or `ownerUserId` (R10). Never estimates cost or routes providers
+/// (R8/R9 — server-authoritative).
 class JobsRepository {
   JobsRepository(this._client);
 
@@ -61,18 +61,5 @@ class JobsRepository {
   /// media (R1/R5/R10). Expects `204`.
   Future<void> deleteItem(String itemId) async {
     await _client.delete('/items/$itemId');
-  }
-
-  /// `GET /export` — owner-scoped library knowledge only (no media bytes).
-  Future<LibraryExport> exportLibrary() async {
-    final response = await _client.get('/export');
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected /export response shape',
-      );
-    }
-    return LibraryExport.fromJson(json);
   }
 }

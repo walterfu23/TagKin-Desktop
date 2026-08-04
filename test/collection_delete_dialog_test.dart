@@ -28,7 +28,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.textContaining('Library items and people are unchanged'),
+      find.textContaining('Items and people are unchanged'),
       findsOneWidget,
     );
 
