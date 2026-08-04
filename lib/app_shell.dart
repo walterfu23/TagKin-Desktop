@@ -654,11 +654,23 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
 
   @override
   Future<AppExitResponse> didRequestAppExit() async {
-    // Quit/close confirmation is owned by onWindowClose / custom Quit menu.
-    // Never show dialogs or call _handleWindowClose from here — doing so
-    // poisons macOS after Cancel (flutter#141377 / window_manager#466).
+    // Prefer onWindowClose / custom Quit for dirty confirm (avoids poisoning
+    // after Cancel — flutter#141377). System Shut Down / Restart / Log Out
+    // often terminate here without onWindowClose; blanket-cancel blocks macOS.
     if (_quitConfirmed) return AppExitResponse.exit;
     if (_windowCloseGateActive) {
+      final cols = ref.read(collectionsControllerProvider);
+      if (!cols.dirty) {
+        _quitConfirmed = true;
+        windowManager.removeListener(this);
+        _windowCloseGateActive = false;
+        signedInQuitHandlerReady = false;
+        try {
+          await windowManager.setPreventClose(false);
+        } catch (_) {}
+        return AppExitResponse.exit;
+      }
+      unawaited(_handleWindowClose());
       return AppExitResponse.cancel;
     }
     final ok = await _confirmLeaveIfDirty();
