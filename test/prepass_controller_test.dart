@@ -25,6 +25,9 @@ void main() {
           FaceEmbedder? faceEmbedder,
           bool skipFaces = false,
           int maxFrames = kDefaultMaxFramesPerItem,
+          int minIntervalMs = 1000,
+          int maxIntervalMs = 15000,
+          double sceneCutThreshold = 0.3,
         }) async {
           expect(skipFaces, isTrue);
           return PrePassBuildResult(
@@ -73,6 +76,9 @@ void main() {
           FaceEmbedder? faceEmbedder,
           bool skipFaces = false,
           int maxFrames = kDefaultMaxFramesPerItem,
+          int minIntervalMs = 1000,
+          int maxIntervalMs = 15000,
+          double sceneCutThreshold = 0.3,
         }) async {
           calls++;
           if (path.endsWith('a.jpg')) {

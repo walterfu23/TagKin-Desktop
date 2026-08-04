@@ -23,7 +23,7 @@ class PlaceParts {
   /// City / town / village.
   final String? locality;
 
-  /// State / province / region.
+  /// State / province / region (geocoder `administrativeArea`).
   final String? administrativeArea;
 
   /// Country display name.
@@ -31,6 +31,34 @@ class PlaceParts {
 
   /// ISO 3166-1 alpha-2 (e.g. `US`, `CA`).
   final String? isoCountryCode;
+}
+
+/// Formatted where label with optional segments for Folders UI.
+class WhereDisplay {
+  const WhereDisplay({
+    required this.label,
+    this.locality,
+    this.region,
+    this.regionName,
+    this.country,
+  });
+
+  /// Joined display string (sort / filter / plain Text).
+  final String label;
+
+  final String? locality;
+
+  /// State/province included in [label] (null when omitted as familiar).
+  final String? region;
+
+  /// Geocoder administrative area when known (for “add to familiar”), even if
+  /// omitted from [label].
+  final String? regionName;
+
+  final String? country;
+
+  /// Non-GPS / failed geocode passthrough.
+  factory WhereDisplay.plain(String value) => WhereDisplay(label: value);
 }
 
 final _latLngTag = RegExp(
@@ -92,26 +120,78 @@ String? _clean(String? value) {
   return trimmed;
 }
 
-bool _sameRegion(String? a, String? b) {
+bool sameRegionName(String? a, String? b) {
   final left = _clean(a)?.toLowerCase();
   final right = _clean(b)?.toLowerCase();
   if (left == null || right == null) return false;
   return left == right;
 }
 
+final _unicodeLetter = RegExp(r'\p{L}', unicode: true);
+
+/// True when [token] (trimmed) contains at least one Unicode letter.
+/// Rejects `-`, `123`, empty; allows `CA`, `zzz`, `Île-de-France`.
+bool isValidFamiliarRegionToken(String token) {
+  final trimmed = token.trim();
+  if (trimmed.isEmpty) return false;
+  return _unicodeLetter.hasMatch(trimmed);
+}
+
+/// Splits familiar-regions CSV into trimmed non-empty entries.
+List<String> parseFamiliarRegions(String csv) {
+  return [
+    for (final part in csv.split(','))
+      if (part.trim().isNotEmpty) part.trim(),
+  ];
+}
+
+/// Trimmed tokens from [csv] that fail [isValidFamiliarRegionToken].
+List<String> invalidFamiliarRegionTokens(String csv) {
+  return [
+    for (final part in parseFamiliarRegions(csv))
+      if (!isValidFamiliarRegionToken(part)) part,
+  ];
+}
+
+/// Joins familiar region names for prefs storage.
+String encodeFamiliarRegions(Iterable<String> regions) {
+  return [
+    for (final r in regions)
+      if (r.trim().isNotEmpty) r.trim(),
+  ].join(', ');
+}
+
+/// Trim, drop empties/invalids, case-insensitive dedupe (keeps first spelling).
+String normalizeFamiliarRegionsCsv(String csv) {
+  final seen = <String>{};
+  final out = <String>[];
+  for (final part in parseFamiliarRegions(csv)) {
+    if (!isValidFamiliarRegionToken(part)) continue;
+    final key = part.toLowerCase();
+    if (!seen.add(key)) continue;
+    out.add(part);
+  }
+  return encodeFamiliarRegions(out);
+}
+
+bool isFamiliarRegion(String region, String familiarRegionsCsv) {
+  return parseFamiliarRegions(familiarRegionsCsv)
+      .any((r) => sameRegionName(r, region));
+}
+
 /// Formats city / state[/province][, country] using display prefs.
 ///
-/// [showCountryWhenSameCountry] / [showStateWhenSameState] default false.
-/// [homeState] empty → same-state never matches (region always shown when set).
-String? formatWherePlaceLabel(
+/// [familiarRegions] is a CSV of familiar region names. Empty → never omit
+/// state/province as familiar.
+WhereDisplay formatWhereDisplay(
   PlaceParts place, {
   String? deviceCountryCode,
-  String homeState = '',
+  String familiarRegions = '',
   bool showCountryWhenSameCountry = false,
   bool showStateWhenSameState = false,
 }) {
   final city = _clean(place.locality);
-  final region = _clean(place.administrativeArea);
+  final regionName = _clean(place.administrativeArea);
   final country = _clean(place.country);
   final placeCountry = _normalizeCountryCode(place.isoCountryCode);
   final device = _normalizeCountryCode(deviceCountryCode);
@@ -122,16 +202,52 @@ String? formatWherePlaceLabel(
   final includeCountry = country != null &&
       (!sameCountry || showCountryWhenSameCountry);
 
-  final sameState = _sameRegion(region, homeState);
-  final includeRegion = region != null &&
-      region != city &&
-      (!sameState || showStateWhenSameState);
+  final familiar = isFamiliarRegion(regionName ?? '', familiarRegions);
+  final includeRegion = regionName != null &&
+      regionName != city &&
+      (!familiar || showStateWhenSameState);
 
   final parts = <String>[
     ?city,
-    if (includeRegion) region,
+    if (includeRegion) regionName,
     if (includeCountry) country,
   ];
-  if (parts.isEmpty) return null;
-  return parts.join(', ');
+  if (parts.isEmpty) {
+    return WhereDisplay(
+      label: regionName ?? country ?? '',
+      locality: city,
+      region: includeRegion ? regionName : null,
+      regionName: regionName,
+      country: includeCountry ? country : null,
+    );
+  }
+  return WhereDisplay(
+    label: parts.join(', '),
+    locality: city,
+    region: includeRegion ? regionName : null,
+    regionName: regionName,
+    country: includeCountry ? country : null,
+  );
+}
+
+/// Convenience: joined label only (tests / simple callers).
+String? formatWherePlaceLabel(
+  PlaceParts place, {
+  String? deviceCountryCode,
+  String familiarRegions = '',
+  @Deprecated('Use familiarRegions') String homeState = '',
+  bool showCountryWhenSameCountry = false,
+  bool showStateWhenSameState = false,
+}) {
+  final csv =
+      familiarRegions.isNotEmpty ? familiarRegions : homeState;
+  final display = formatWhereDisplay(
+    place,
+    deviceCountryCode: deviceCountryCode,
+    familiarRegions: csv,
+    showCountryWhenSameCountry: showCountryWhenSameCountry,
+    showStateWhenSameState: showStateWhenSameState,
+  );
+  if (display.label.isEmpty) return null;
+  return display.label;
 }

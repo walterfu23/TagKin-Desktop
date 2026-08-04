@@ -4,6 +4,8 @@ import 'package:tagkin_desktop/api/items_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart' show itemsRepositoryProvider;
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/batch_ingest_controller.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prepass/face_embedder.dart';
 import 'package:tagkin_desktop/prepass/frame_sampler.dart';
 import 'package:tagkin_desktop/prepass/prepass_payload_builder.dart';
@@ -30,6 +32,17 @@ class PrePassOutcome {
   bool get succeeded => response != null && error == null;
 }
 
+typedef PrePassPayloadBuilder = Future<PrePassBuildResult> Function({
+  required String path,
+  required ItemType type,
+  FaceEmbedder? faceEmbedder,
+  bool skipFaces,
+  int maxFrames,
+  int minIntervalMs,
+  int maxIntervalMs,
+  double sceneCutThreshold,
+});
+
 /// Orchestrates D4: for each D3 [IngestOutcome], build a contract-shaped
 /// pre-pass payload from local media and `POST /items/{id}/pre-pass-result`.
 ///
@@ -40,17 +53,18 @@ class PrePassController extends ChangeNotifier {
     required this.itemsRepository,
     this.faceEmbedder,
     this.buildPayload = buildPrePassPayload,
-  });
+    DesktopPrefs? samplingPrefs,
+  }) : _samplingPrefs = samplingPrefs ?? DesktopPrefs.defaults;
 
   final ItemsRepository itemsRepository;
   final FaceEmbedder? faceEmbedder;
-  final Future<PrePassBuildResult> Function({
-    required String path,
-    required ItemType type,
-    FaceEmbedder? faceEmbedder,
-    bool skipFaces,
-    int maxFrames,
-  }) buildPayload;
+  final PrePassPayloadBuilder buildPayload;
+  DesktopPrefs _samplingPrefs;
+
+  /// Refresh video/face sampling knobs from Settings without recreating.
+  void applySamplingPrefs(DesktopPrefs prefs) {
+    _samplingPrefs = prefs;
+  }
 
   PrePassPhase phase = PrePassPhase.idle;
   Object? error;
@@ -80,6 +94,7 @@ class PrePassController extends ChangeNotifier {
     frameSamplesByItemId.clear();
     notifyListeners();
 
+    final prefs = _samplingPrefs;
     for (final ingest in succeeded) {
       final item = ingest.item!;
       try {
@@ -90,7 +105,10 @@ class PrePassController extends ChangeNotifier {
           // Who-face crops (WhoFaceLinker) own identity linking — not
           // full-image pre-pass embeddings (avoids duplicate suggested persons).
           skipFaces: true,
-          maxFrames: kDefaultMaxFramesPerItem,
+          maxFrames: prefs.softMaxFramesPerItem,
+          minIntervalMs: prefs.sampleMinIntervalMs,
+          maxIntervalMs: prefs.sampleMaxIntervalMs,
+          sceneCutThreshold: prefs.sceneCutThreshold,
         );
         final response = await itemsRepository.recordPrePassResult(
           item.id,
@@ -135,9 +153,10 @@ final prePassControllerProvider = Provider.autoDispose<PrePassController>(
   (ref) {
     final controller = PrePassController(
       itemsRepository: ref.watch(itemsRepositoryProvider),
+      samplingPrefs: ref.watch(desktopPrefsProvider),
     );
     ref.onDispose(controller.dispose);
     return controller;
   },
-  dependencies: [itemsRepositoryProvider],
+  dependencies: [itemsRepositoryProvider, desktopPrefsProvider],
 );

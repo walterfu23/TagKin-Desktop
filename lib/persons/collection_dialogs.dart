@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/dirty_leave_prompt.dart';
 import 'package:tagkin_desktop/shell/app_navigator.dart';
+import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
 /// Asks for a collection name. Returns trimmed non-empty name, or null.
 Future<String?> showCollectionNameDialog(
@@ -129,33 +130,91 @@ Future<String?> showOpenCollectionDialog(
   );
 }
 
-/// Confirm deleting the current collection.
+/// Confirm deleting the current collection (must type the name to enable Delete).
 Future<bool> showDeleteCollectionDialog(
   BuildContext context, {
   required String name,
 }) async {
   final ok = await showDialog<bool>(
     context: context,
-    builder: (ctx) => AlertDialog(
-      key: const Key('collection-delete-dialog'),
-      title: const Text('Delete collection'),
-      content: Text(
-        'Delete "$name"? Folders and faces are not removed — '
-        'only this saved set.',
-      ),
-      actions: [
-        TextButton(
-          key: const Key('collection-delete-cancel'),
-          onPressed: () => Navigator.of(ctx).pop(false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          key: const Key('collection-delete-confirm'),
-          onPressed: () => Navigator.of(ctx).pop(true),
-          child: const Text('Delete'),
-        ),
-      ],
-    ),
+    builder: (ctx) => _DeleteCollectionDialog(name: name),
   );
   return ok ?? false;
+}
+
+class _DeleteCollectionDialog extends StatefulWidget {
+  const _DeleteCollectionDialog({required this.name});
+
+  final String name;
+
+  @override
+  State<_DeleteCollectionDialog> createState() =>
+      _DeleteCollectionDialogState();
+}
+
+class _DeleteCollectionDialogState extends State<_DeleteCollectionDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+    _controller.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  bool get _nameMatches => _controller.text.trim() == widget.name;
+
+  @override
+  Widget build(BuildContext context) {
+    return SelectableScope(
+      child: AlertDialog(
+        key: const Key('collection-delete-dialog'),
+        title: const Text('Delete collection'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'This only deletes the saved collection “${widget.name}” '
+              '(its name and folder list). Library items and people are '
+              'unchanged.\n\n'
+              'Type the collection name to confirm.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              key: const Key('collection-delete-name-field'),
+              controller: _controller,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'Collection name',
+                hintText: widget.name,
+              ),
+              onSubmitted: (_) {
+                if (_nameMatches) Navigator.of(context).pop(true);
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            key: const Key('collection-delete-cancel'),
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('collection-delete-confirm'),
+            onPressed:
+                _nameMatches ? () => Navigator.of(context).pop(true) : null,
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
 }

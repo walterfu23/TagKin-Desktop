@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/persons/collection.dart';
 import 'package:tagkin_desktop/persons/collections_store.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 
 /// Result of a dirty-prompt: save first, discard changes, or cancel the action.
 enum DirtyPromptChoice { save, discard, cancel }
@@ -15,10 +16,14 @@ enum DirtyPromptChoice { save, discard, cancel }
 /// Dirty = structural diff vs last-saved baseline (name / folders / page look)
 /// OR sticky [markDirty] activity (Faces moves, deletes, etc.).
 class CollectionsController extends ChangeNotifier {
-  CollectionsController({CollectionsStore? store})
-      : _store = store ?? CollectionsStore();
+  CollectionsController({
+    CollectionsStore? store,
+    int Function()? maxRecents,
+  })  : _store = store ?? CollectionsStore(),
+        _maxRecents = maxRecents;
 
   final CollectionsStore _store;
+  final int Function()? _maxRecents;
   CollectionsFile _catalog = CollectionsFile.empty;
   Collection? _current;
   Collection? _baseline;
@@ -48,10 +53,16 @@ class CollectionsController extends ChangeNotifier {
 
   List<Collection> get recentCollections {
     final byId = {for (final c in _catalog.collections) c.id: c};
-    return [
-      for (final id in _catalog.recentCollectionIds)
-        if (byId[id] != null) byId[id]!,
-    ];
+    final limit =
+        (_maxRecents?.call() ?? CollectionsFile.maxRecents).clamp(1, 100);
+    final out = <Collection>[];
+    for (final id in _catalog.recentCollectionIds) {
+      final c = byId[id];
+      if (c == null) continue;
+      out.add(c);
+      if (out.length >= limit) break;
+    }
+    return out;
   }
 
   String get chromeLabel {
@@ -492,10 +503,11 @@ class CollectionsController extends ChangeNotifier {
   }
 
   Future<void> _touchRecent(String id) async {
+    final limit = (_maxRecents?.call() ?? CollectionsFile.maxRecents).clamp(1, 100);
     final next = <String>[id];
     for (final existing in _catalog.recentCollectionIds) {
       if (existing != id) next.add(existing);
-      if (next.length >= CollectionsFile.maxRecents) break;
+      if (next.length >= limit) break;
     }
     if (_listEq(next, _catalog.recentCollectionIds)) return;
     _catalog = _catalog.copyWith(recentCollectionIds: next);
@@ -519,6 +531,7 @@ final collectionsControllerProvider =
     ChangeNotifierProvider<CollectionsController>((ref) {
   final controller = CollectionsController(
     store: ref.read(collectionsStoreProvider),
+    maxRecents: () => ref.read(desktopPrefsProvider).recentCollectionsLimit,
   );
   controller.load();
   return controller;

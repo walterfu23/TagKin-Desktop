@@ -7,6 +7,9 @@ import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/processing_status_view.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
+import 'package:tagkin_desktop/where/where_label_resolver.dart';
+import 'package:tagkin_desktop/where/where_place_label.dart';
+import 'package:tagkin_desktop/widgets/sure_action_button.dart';
 
 const double _kThumbSize = 56;
 const double _kColThumb = 72;
@@ -448,24 +451,30 @@ class _PathGroupHeader extends StatelessWidget {
                     },
                   ),
                 ),
-                IconButton(
-                  key: Key('source-group-remove-$dir'),
-                  tooltip: removing ? 'Removing folder…' : 'Remove folder',
-                  icon: removing
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
+                removing
+                    ? const SizedBox(
+                        width: 32,
+                        height: 32,
+                        child: Padding(
+                          padding: EdgeInsets.all(8),
                           child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.folder_off_outlined, size: 18),
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 32,
-                    minHeight: 32,
-                  ),
-                  onPressed: removing ? null : onRemoveFolder,
-                ),
+                        ),
+                      )
+                    : SureActionButton(
+                        idleKey: Key('source-group-remove-$dir'),
+                        confirmKey: Key('source-group-remove-confirm-$dir'),
+                        tooltip: 'Remove folder',
+                        confirmSemanticsLabel: 'Confirm remove folder',
+                        icon: const Icon(Icons.folder_off_outlined, size: 18),
+                        iconSize: 18,
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                        onConfirm: onRemoveFolder,
+                      ),
               ],
             ),
           ),
@@ -475,7 +484,7 @@ class _PathGroupHeader extends StatelessWidget {
   }
 }
 
-class _DataRow extends StatelessWidget {
+class _DataRow extends ConsumerWidget {
   const _DataRow({
     required this.index,
     required this.row,
@@ -493,7 +502,7 @@ class _DataRow extends StatelessWidget {
   final void Function(Item item) onRevealSource;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final item = row.item;
     final zebra = index.isOdd;
     final expanded = controller.expandedWho.contains(item.id) ||
@@ -560,13 +569,28 @@ class _DataRow extends StatelessWidget {
                     width: _kColWhere,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: _ExpandableValues(
-                        keyPrefix: 'where',
+                      child: _WhereValues(
                         itemId: item.id,
-                        values: row.where,
+                        entries: row.whereEntries,
                         expanded: controller.expandedWhere.contains(item.id),
                         loading: !row.knowledgeLoaded,
                         onToggle: () => controller.toggleExpandWhere(item.id),
+                        onAddFamiliar: (region) async {
+                          final added = await ref
+                              .read(desktopPrefsControllerProvider)
+                              .addFamiliarRegion(region);
+                          if (!added) return;
+                          ref.read(whereLabelResolverProvider).clearCache();
+                          await controller.refreshWhereLabels();
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Added “$region” to Familiar state/province',
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ),
@@ -601,11 +625,14 @@ class _DataRow extends StatelessWidget {
                               ),
                             ),
                           ),
-                          IconButton(
-                            key: Key('item-list-delete-${item.id}'),
-                            tooltip: 'Delete item',
-                            icon: const Icon(Icons.delete_outline),
-                            onPressed: () => onDelete(item),
+                          SureActionButton(
+                            idleKey: Key('item-list-remove-${item.id}'),
+                            confirmKey:
+                                Key('item-list-remove-confirm-${item.id}'),
+                            tooltip: 'Remove item',
+                            confirmSemanticsLabel: 'Confirm remove item',
+                            icon: const Icon(Icons.remove_circle_outline),
+                            onConfirm: () => onDelete(item),
                           ),
                         ],
                       ),
@@ -668,6 +695,173 @@ class _Thumb extends StatelessWidget {
         missing ? Icons.broken_image_outlined : icon,
         key: Key('item-thumb-placeholder-${item.id}'),
       ),
+    );
+  }
+}
+
+class _WhereValues extends ConsumerWidget {
+  const _WhereValues({
+    required this.itemId,
+    required this.entries,
+    required this.expanded,
+    required this.loading,
+    required this.onToggle,
+    required this.onAddFamiliar,
+  });
+
+  final String itemId;
+  final List<WhereDisplay> entries;
+  final bool expanded;
+  final bool loading;
+  final VoidCallback onToggle;
+  final Future<void> Function(String region) onAddFamiliar;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (loading && entries.isEmpty) {
+      return Text(
+        '…',
+        key: Key('item-where-loading-$itemId'),
+        style: Theme.of(context).textTheme.bodySmall,
+      );
+    }
+    if (entries.isEmpty) {
+      return Text(
+        '—',
+        key: Key('item-where-empty-$itemId'),
+        style: Theme.of(context).textTheme.bodySmall,
+      );
+    }
+    final familiarCsv = ref.watch(desktopPrefsProvider).familiarRegions;
+    final shown = expanded ? entries : entries.take(1).toList();
+    final more = entries.length - 1;
+    return ClipRect(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final entry in shown)
+            _WhereEntryLine(
+              itemId: itemId,
+              entry: entry,
+              familiarCsv: familiarCsv,
+              onAddFamiliar: onAddFamiliar,
+            ),
+          if (!expanded && more > 0)
+            TextButton(
+              key: Key('item-where-more-$itemId'),
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: onToggle,
+              child: Text('+$more more'),
+            ),
+          if (expanded && more > 0)
+            TextButton(
+              key: Key('item-where-less-$itemId'),
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: onToggle,
+              child: const Text('Show less'),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WhereEntryLine extends StatelessWidget {
+  const _WhereEntryLine({
+    required this.itemId,
+    required this.entry,
+    required this.familiarCsv,
+    required this.onAddFamiliar,
+  });
+
+  final String itemId;
+  final WhereDisplay entry;
+  final String familiarCsv;
+  final Future<void> Function(String region) onAddFamiliar;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.bodyMedium;
+    final regionName = entry.regionName;
+    final showAdd = regionName != null &&
+        entry.region != null &&
+        !isFamiliarRegion(regionName, familiarCsv);
+
+    // Plain / non-segmented (scene labels, raw coords, city-only).
+    if (entry.locality == null &&
+        entry.region == null &&
+        entry.country == null) {
+      return Text(
+        entry.label,
+        key: Key('item-where-$itemId'),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: style,
+      );
+    }
+
+    final children = <InlineSpan>[];
+    void addText(String text, {bool commaBefore = false}) {
+      if (commaBefore && children.isNotEmpty) {
+        children.add(TextSpan(text: ', ', style: style));
+      }
+      children.add(TextSpan(text: text, style: style));
+    }
+
+    if (entry.locality != null) {
+      addText(entry.locality!);
+    }
+    if (entry.region != null) {
+      addText(entry.region!, commaBefore: true);
+    }
+    if (entry.country != null) {
+      addText(entry.country!, commaBefore: true);
+    }
+
+    final place = Text.rich(
+      TextSpan(children: children),
+      key: Key('item-where-$itemId'),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+    );
+
+    if (!showAdd) return place;
+
+    final region = regionName;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        place,
+        Tooltip(
+          message: 'Add to Familiar state/province',
+          child: FilledButton.tonal(
+            key: Key('item-where-add-familiar-$itemId'),
+            style: FilledButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            onPressed: () => onAddFamiliar(region),
+            child: Text(
+              'Add $region',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

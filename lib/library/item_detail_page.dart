@@ -10,6 +10,7 @@ import 'package:tagkin_desktop/library/processing_status_view.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/review/item_review_page.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
+import 'package:tagkin_desktop/widgets/sure_action_button.dart';
 
 /// Item detail (D2 metadata + D7 tagging/jobs + D8 review).
 class ItemDetailPage extends ConsumerStatefulWidget {
@@ -43,30 +44,7 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
     });
   }
 
-  Future<void> _confirmDelete(JobsController jobs) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete item?'),
-        content: const Text(
-          'Removes this item from your TagKin library. '
-          'Original local media is not deleted.',
-        ),
-        actions: [
-          TextButton(
-            key: const Key('delete-cancel'),
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            key: const Key('delete-confirm'),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
+  Future<void> _removeItem(JobsController jobs) async {
     await jobs.delete();
     if (!mounted) return;
     if (jobs.deleted) {
@@ -153,11 +131,14 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
           appBar: AppBar(
             title: const Text('Item'),
             actions: [
-              IconButton(
-                key: const Key('item-delete'),
-                tooltip: 'Delete item',
-                onPressed: jobs.deleted ? null : () => _confirmDelete(jobs),
-                icon: const Icon(Icons.delete_outline),
+              SureActionButton(
+                idleKey: const Key('item-delete'),
+                confirmKey: const Key('item-remove-confirm'),
+                tooltip: 'Remove item',
+                confirmSemanticsLabel: 'Confirm remove item',
+                icon: const Icon(Icons.remove_circle_outline),
+                enabled: !jobs.deleted,
+                onConfirm: () => _removeItem(jobs),
               ),
             ],
           ),

@@ -18,6 +18,8 @@ import 'package:tagkin_desktop/ingest/upload_controller.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/prepass/prepass_controller.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
 
 /// Phase of one background folder ingest job (full D3→D4→D5→D7 chain).
@@ -94,6 +96,7 @@ class FolderIngestQueue extends ChangeNotifier {
     this.contentHasher = computeContentHash,
     this.perceptualHasher = computePerceptualHashFromFile,
     this.nearDuplicateHammingThreshold = kDefaultNearDuplicateThreshold,
+    this.samplingPrefs,
     this.prePassFactory,
     this.uploadFactory,
     this.whoFaceLinkerFactory,
@@ -106,6 +109,7 @@ class FolderIngestQueue extends ChangeNotifier {
   final Future<String> Function(String path) contentHasher;
   final Future<String?> Function(String path) perceptualHasher;
   final int nearDuplicateHammingThreshold;
+  final DesktopPrefs Function()? samplingPrefs;
 
   /// Test hooks — production builds per-job controllers.
   final PrePassController Function()? prePassFactory;
@@ -249,7 +253,10 @@ class FolderIngestQueue extends ChangeNotifier {
       }
 
       final prePass = prePassFactory?.call() ??
-          PrePassController(itemsRepository: itemsRepository);
+          PrePassController(
+            itemsRepository: itemsRepository,
+            samplingPrefs: samplingPrefs?.call(),
+          );
       final upload = uploadFactory?.call() ??
           UploadController(itemsRepository: itemsRepository);
       final linker = whoFaceLinkerFactory?.call() ??
@@ -322,6 +329,9 @@ final folderIngestQueueProvider = ChangeNotifierProvider<FolderIngestQueue>(
       enumerateFolder: ref.watch(mediaEnumeratorProvider),
       contentHasher: ref.watch(contentHasherProvider),
       perceptualHasher: ref.watch(perceptualHasherProvider),
+      nearDuplicateHammingThreshold:
+          ref.watch(desktopPrefsProvider).nearDuplicateThreshold,
+      samplingPrefs: () => ref.read(desktopPrefsProvider),
     );
   },
   dependencies: [
@@ -331,5 +341,6 @@ final folderIngestQueueProvider = ChangeNotifierProvider<FolderIngestQueue>(
     mediaEnumeratorProvider,
     contentHasherProvider,
     perceptualHasherProvider,
+    desktopPrefsProvider,
   ],
 );

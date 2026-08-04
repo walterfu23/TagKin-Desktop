@@ -133,9 +133,10 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('item-delete')));
-    await tester.pumpAndSettle();
-    expect(find.text('Delete item?'), findsOneWidget);
-    await tester.tap(find.byKey(const Key('delete-confirm')));
+    await tester.pump();
+    expect(find.text('Sure?'), findsOneWidget);
+    expect(find.text('Delete item?'), findsNothing);
+    await tester.tap(find.byKey(const Key('item-remove-confirm')));
     await tester.pumpAndSettle();
 
     expect(jobs.deleteCallCount, 1);

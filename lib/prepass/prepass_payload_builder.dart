@@ -29,6 +29,9 @@ Future<PrePassBuildResult> buildPrePassPayload({
   FaceEmbedder? faceEmbedder,
   bool skipFaces = false,
   int maxFrames = kDefaultMaxFramesPerItem,
+  int minIntervalMs = kDefaultMinSampleIntervalMs,
+  int maxIntervalMs = kDefaultMaxSampleIntervalMs,
+  double sceneCutThreshold = 0.3,
 }) async {
   final contentHash = await computeContentHash(path);
   final bytes = await File(path).readAsBytes();
@@ -67,13 +70,18 @@ Future<PrePassBuildResult> buildPrePassPayload({
 
     if (hasFfmpeg()) {
       try {
-        final scene = await detectSceneKeyPeriods(path);
+        final scene = await detectSceneKeyPeriods(
+          path,
+          threshold: sceneCutThreshold,
+        );
         durationMs = scene.durationMs;
         keyPeriods = scene.keyPeriods;
         frameSamples = await sampleFrames(
           videoPath: path,
           keyPeriods: scene.keyPeriods,
           maxFrames: maxFrames,
+          minIntervalMs: minIntervalMs,
+          maxIntervalMs: maxIntervalMs,
         );
 
         if (!skipFaces && frameSamples.isNotEmpty) {

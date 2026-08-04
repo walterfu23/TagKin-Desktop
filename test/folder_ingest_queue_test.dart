@@ -41,6 +41,9 @@ FolderIngestQueue _queue({
         faceEmbedder,
         skipFaces = false,
         maxFrames = 20,
+        minIntervalMs = 1000,
+        maxIntervalMs = 15000,
+        sceneCutThreshold = 0.3,
       }) async {
         return PrePassBuildResult(
           payload: PrePassResult(
@@ -124,6 +127,9 @@ void main() {
           faceEmbedder,
           skipFaces = false,
           maxFrames = 20,
+          minIntervalMs = 1000,
+          maxIntervalMs = 15000,
+          sceneCutThreshold = 0.3,
         }) async {
           return PrePassBuildResult(
             payload: PrePassResult(contentHash: 'hash'),

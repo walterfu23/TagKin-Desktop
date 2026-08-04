@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_store.dart';
 import 'package:tagkin_desktop/where/reverse_geocoder.dart';
 import 'package:tagkin_desktop/where/where_label_resolver.dart';
@@ -32,7 +33,7 @@ void main() {
 
     test('same country omits country by default', () {
       expect(
-        formatWherePlaceLabel(sf, deviceCountryCode: 'US', homeState: 'CA'),
+        formatWherePlaceLabel(sf, deviceCountryCode: 'US', familiarRegions: 'CA'),
         'San Francisco',
       );
     });
@@ -42,7 +43,7 @@ void main() {
         formatWherePlaceLabel(
           sf,
           deviceCountryCode: 'US',
-          homeState: 'CA',
+          familiarRegions: 'CA',
           showCountryWhenSameCountry: true,
         ),
         'San Francisco, United States',
@@ -54,14 +55,14 @@ void main() {
         formatWherePlaceLabel(
           sf,
           deviceCountryCode: 'US',
-          homeState: 'CA',
+          familiarRegions: 'CA',
           showStateWhenSameState: true,
         ),
         'San Francisco, CA',
       );
     });
 
-    test('empty homeState always shows state', () {
+    test('empty familiarRegions always shows state', () {
       expect(
         formatWherePlaceLabel(sf, deviceCountryCode: 'US'),
         'San Francisco, CA',
@@ -99,15 +100,25 @@ void main() {
   });
 
   group('DesktopPrefs', () {
-    test('defaults: where flags off; face overlays on', () {
+    test('defaults: where flags off; face overlays on; recents 20', () {
       expect(DesktopPrefs.defaults.showCountryWhenSameCountry, isFalse);
       expect(DesktopPrefs.defaults.showStateWhenSameState, isFalse);
       expect(DesktopPrefs.defaults.multiColumnSort, isFalse);
       expect(DesktopPrefs.defaults.showFaceOverlays, isTrue);
-      expect(DesktopPrefs.defaults.homeState, '');
+      expect(DesktopPrefs.defaults.familiarRegions, '');
+      expect(DesktopPrefs.defaults.libraryPageSize, 50);
+      expect(DesktopPrefs.defaults.recentCollectionsLimit, 20);
+      expect(DesktopPrefs.defaults.nearDuplicateThreshold, 4);
+      expect(DesktopPrefs.defaults.sampleMinIntervalMs, 1000);
+      expect(DesktopPrefs.defaults.sampleMaxIntervalMs, 15000);
+      expect(DesktopPrefs.defaults.softMaxFramesPerItem, 500);
+      expect(DesktopPrefs.defaults.sceneCutThreshold, 0.3);
+      expect(DesktopPrefs.defaults.facesDetectScoreThreshold, 0.2);
+      expect(DesktopPrefs.defaults.facesTrayPageLimit, 500);
+      expect(DesktopPrefs.defaults.jobsPollIntervalSeconds, 2);
     });
 
-    test('round-trips through JSON including showFaceOverlays', () async {
+    test('round-trips through JSON including new prefs', () async {
       final dir = await Directory.systemTemp.createTemp('tagkin_prefs_');
       addTearDown(() => dir.delete(recursive: true));
       final store = DesktopPrefsStore(supportDir: dir);
@@ -116,7 +127,17 @@ void main() {
         showStateWhenSameState: true,
         multiColumnSort: true,
         showFaceOverlays: false,
-        homeState: 'CA',
+        familiarRegions: 'CA',
+        libraryPageSize: 25,
+        recentCollectionsLimit: 10,
+        nearDuplicateThreshold: 6,
+        sampleMinIntervalMs: 800,
+        sampleMaxIntervalMs: 12000,
+        softMaxFramesPerItem: 200,
+        sceneCutThreshold: 0.4,
+        facesDetectScoreThreshold: 0.35,
+        facesTrayPageLimit: 200,
+        jobsPollIntervalSeconds: 5,
       );
       await store.save(prefs);
       expect(await store.load(), prefs);
@@ -128,6 +149,98 @@ void main() {
         'ui.multiColumnSort': false,
       });
       expect(prefs.showFaceOverlays, isTrue);
+      expect(prefs.recentCollectionsLimit, 20);
+      expect(prefs.libraryPageSize, 50);
+    });
+
+    test('fromJson migrates where.homeState to familiarRegions', () {
+      final prefs = DesktopPrefs.fromJson({
+        'where.homeState': 'California',
+      });
+      expect(prefs.familiarRegions, 'California');
+    });
+
+    test('normalizeFamiliarRegionsCsv trims dedupes and drops empties', () {
+      expect(
+        normalizeFamiliarRegionsCsv(' California, , nevada, California '),
+        'California, nevada',
+      );
+      expect(normalizeFamiliarRegionsCsv(', ,'), '');
+      expect(normalizeFamiliarRegionsCsv(''), '');
+    });
+
+    test('invalidFamiliarRegionTokens lists letter-less tokens', () {
+      expect(invalidFamiliarRegionTokens('CA, -, NV'), ['-']);
+      expect(invalidFamiliarRegionTokens('123, --'), ['123', '--']);
+      expect(invalidFamiliarRegionTokens('CA, Nevada'), isEmpty);
+    });
+
+    test('isValidFamiliarRegionToken letter rule', () {
+      expect(isValidFamiliarRegionToken('CA'), isTrue);
+      expect(isValidFamiliarRegionToken('zzz'), isTrue);
+      expect(isValidFamiliarRegionToken('Île-de-France'), isTrue);
+      expect(isValidFamiliarRegionToken('-'), isFalse);
+      expect(isValidFamiliarRegionToken('123'), isFalse);
+      expect(isValidFamiliarRegionToken(''), isFalse);
+    });
+
+    test('normalizeFamiliarRegionsCsv drops invalid tokens', () {
+      expect(
+        normalizeFamiliarRegionsCsv('CA, -, NV, wa'),
+        'CA, NV, wa',
+      );
+      expect(normalizeFamiliarRegionsCsv('zzz'), 'zzz');
+      expect(normalizeFamiliarRegionsCsv('-'), '');
+    });
+
+    test('fromJson normalizes messy familiarRegions CSV', () {
+      final prefs = DesktopPrefs.fromJson({
+        'where.familiarRegions': ' CA, , ca, Nevada ',
+      });
+      expect(prefs.familiarRegions, 'CA, Nevada');
+    });
+
+    test('addFamiliarRegion appends and dedupes', () async {
+      final dir = await Directory.systemTemp.createTemp('tagkin_prefs_fam_');
+      addTearDown(() => dir.delete(recursive: true));
+      final controller = DesktopPrefsController(
+        store: DesktopPrefsStore(supportDir: dir),
+      );
+      expect(await controller.addFamiliarRegion('California'), isTrue);
+      expect(controller.prefs.familiarRegions, 'California');
+      expect(await controller.addFamiliarRegion('california'), isFalse);
+      expect(await controller.addFamiliarRegion('Nevada'), isTrue);
+      expect(controller.prefs.familiarRegions, 'California, Nevada');
+    });
+
+    test('CSV familiarRegions matches any entry', () {
+      expect(
+        formatWherePlaceLabel(
+          const PlaceParts(
+            locality: 'Reno',
+            administrativeArea: 'Nevada',
+            country: 'United States',
+            isoCountryCode: 'US',
+          ),
+          deviceCountryCode: 'US',
+          familiarRegions: 'California, Nevada',
+        ),
+        'Reno',
+      );
+    });
+
+    test('restoreDefaults writes factory prefs', () async {
+      final dir = await Directory.systemTemp.createTemp('tagkin_prefs_restore_');
+      addTearDown(() => dir.delete(recursive: true));
+      final controller = DesktopPrefsController(
+        store: DesktopPrefsStore(supportDir: dir),
+      );
+      await controller.update(
+        const DesktopPrefs(libraryPageSize: 12, recentCollectionsLimit: 3),
+      );
+      await controller.restoreDefaults();
+      expect(controller.prefs, DesktopPrefs.defaults);
+      expect(await DesktopPrefsStore(supportDir: dir).load(), DesktopPrefs.defaults);
     });
   });
 
@@ -143,7 +256,7 @@ void main() {
           ),
         }),
         deviceCountryCodeProvider: () => 'US',
-        prefsProvider: () => const DesktopPrefs(homeState: 'NY'),
+        prefsProvider: () => const DesktopPrefs(familiarRegions: 'NY'),
       );
 
       expect(await resolver.resolve('restaurant'), 'restaurant');

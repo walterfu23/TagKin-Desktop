@@ -497,7 +497,7 @@ void main() {
     expect(find.byKey(const Key('items-retry')), findsOneWidget);
   });
 
-  testWidgets('list delete confirms and removes row via API', (tester) async {
+  testWidgets('list remove uses Sure? then removes row via API', (tester) async {
     final item = fixtureItem(id: 'item_list_del');
     final items = FakeItemsRepository(items: [item]);
     final jobs = FakeJobsRepository(
@@ -509,12 +509,16 @@ void main() {
     expect(find.byKey(const Key('item-row-item_list_del')), findsOneWidget);
 
     await tester.ensureVisible(
-      find.byKey(const Key('item-list-delete-item_list_del')),
+      find.byKey(const Key('item-list-remove-item_list_del')),
     );
-    await tester.tap(find.byKey(const Key('item-list-delete-item_list_del')));
-    await tester.pumpAndSettle();
-    expect(find.text('Delete item?'), findsOneWidget);
-    await tester.tap(find.byKey(const Key('delete-confirm')));
+    await tester.tap(find.byKey(const Key('item-list-remove-item_list_del')));
+    await tester.pump();
+    expect(find.text('Sure?'), findsOneWidget);
+    expect(find.text('Delete item?'), findsNothing);
+
+    await tester.tap(
+      find.byKey(const Key('item-list-remove-confirm-item_list_del')),
+    );
     await tester.pumpAndSettle();
 
     expect(jobs.deletedItemIds, ['item_list_del']);
@@ -550,14 +554,12 @@ void main() {
       find.byKey(const Key('source-group-remove-$shared')),
     );
     await tester.tap(find.byKey(const Key('source-group-remove-$shared')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Remove folder?'), findsOneWidget);
-    expect(
-      find.textContaining('Removes 2 items under this folder'),
-      findsOneWidget,
+    await tester.pump();
+    expect(find.text('Sure?'), findsOneWidget);
+    expect(find.text('Remove folder?'), findsNothing);
+    await tester.tap(
+      find.byKey(const Key('source-group-remove-confirm-$shared')),
     );
-    await tester.tap(find.byKey(const Key('remove-folder-confirm')));
     await tester.pump(); // enqueue + snackbar
     expect(find.byKey(const Key('folder-remove-started')), findsOneWidget);
     await tester.pumpAndSettle();
@@ -590,18 +592,21 @@ void main() {
       find.byKey(const Key('source-group-remove-$shared')),
     );
     await tester.tap(find.byKey(const Key('source-group-remove-$shared')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('remove-folder-confirm')));
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const Key('source-group-remove-confirm-$shared')),
+    );
     await tester.pump();
 
     expect(find.text('Removing 1 folder…'), findsOneWidget);
     expect(find.byKey(const Key('folder-ingest-status-banner')), findsOneWidget);
 
-    // Remove button is disabled / shows spinner while active.
-    final removeBtn = tester.widget<IconButton>(
+    // Idle remove control replaced by spinner while active.
+    expect(
       find.byKey(const Key('source-group-remove-$shared')),
+      findsNothing,
     );
-    expect(removeBtn.onPressed, isNull);
+    expect(find.byType(CircularProgressIndicator), findsWidgets);
 
     await tester.pumpAndSettle();
     expect(jobs.deletedItemIds.toSet(), {'a', 'b'});

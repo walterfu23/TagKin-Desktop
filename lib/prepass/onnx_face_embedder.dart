@@ -272,6 +272,9 @@ class OnnxFaceEmbedder implements FaceEmbedder {
   final OrtSession? _det;
   final String modelId;
 
+  /// SCRFD score floor; updated from [DesktopPrefs.facesDetectScoreThreshold].
+  static double defaultDetectScoreThreshold = 0.2;
+
   static const int _inputSize = 112;
   static const int _detSize = 640;
   static const recogAssetKey = 'assets/models/w600k_r50.onnx';
@@ -600,7 +603,7 @@ class OnnxFaceEmbedder implements FaceEmbedder {
         inputHeight: _detSize,
         inputWidth: _detSize,
         detScale: packed.detScale,
-        threshold: 0.2,
+        threshold: defaultDetectScoreThreshold,
       );
     } catch (e, st) {
       debugPrint('OnnxFaceEmbedder: SCRFD detect failed: $e\n$st');

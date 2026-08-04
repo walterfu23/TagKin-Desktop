@@ -14,6 +14,8 @@ import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/where/where_label_resolver.dart';
+import 'package:tagkin_desktop/where/where_place_label.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 
 /// Columns that support header sorting on the library table.
 enum LibrarySortColumn { who, what, where, source, comment, type, status }
@@ -77,7 +79,7 @@ class LibraryTableRow {
     required this.item,
     this.who = const [],
     this.what = const [],
-    this.where = const [],
+    this.whereEntries = const [],
     this.whereRaw = const [],
     this.comments = const [],
     this.knowledgeLoaded = false,
@@ -89,8 +91,11 @@ class LibraryTableRow {
   final List<String> who;
   final List<String> what;
 
-  /// Display where labels (GPS reverse-geocoded when applicable).
-  final List<String> where;
+  /// Structured where labels (GPS reverse-geocoded when applicable).
+  final List<WhereDisplay> whereEntries;
+
+  /// Joined where labels for filter / sort.
+  List<String> get where => [for (final e in whereEntries) e.label];
 
   /// Raw where tag values (for re-resolving after prefs change).
   final List<String> whereRaw;
@@ -126,7 +131,7 @@ class LibraryTableRow {
     Item? item,
     List<String>? who,
     List<String>? what,
-    List<String>? where,
+    List<WhereDisplay>? whereEntries,
     List<String>? whereRaw,
     List<String>? comments,
     bool? knowledgeLoaded,
@@ -137,7 +142,7 @@ class LibraryTableRow {
       item: item ?? this.item,
       who: who ?? this.who,
       what: what ?? this.what,
-      where: where ?? this.where,
+      whereEntries: whereEntries ?? this.whereEntries,
       whereRaw: whereRaw ?? this.whereRaw,
       comments: comments ?? this.comments,
       knowledgeLoaded: knowledgeLoaded ?? this.knowledgeLoaded,
@@ -154,17 +159,30 @@ class LibraryTableController extends ChangeNotifier {
     required this.commentsRepository,
     LocalThumbCache? thumbCache,
     WhereLabelResolver? whereLabelResolver,
-    this.pageSize = 50,
+    int pageSize = 50,
     this.knowledgeConcurrency = 6,
   })  : _thumbCache = thumbCache ?? LocalThumbCache(),
-        _whereLabels = whereLabelResolver ?? WhereLabelResolver();
+        _whereLabels = whereLabelResolver ?? WhereLabelResolver(),
+        _pageSize = pageSize;
 
   final ItemsRepository itemsRepository;
   final CommentsRepository commentsRepository;
   final LocalThumbCache _thumbCache;
   final WhereLabelResolver _whereLabels;
-  final int pageSize;
+  int _pageSize;
   final int knowledgeConcurrency;
+
+  int get pageSize => _pageSize;
+
+  set pageSize(int value) {
+    final next = value.clamp(2, 200);
+    if (next == _pageSize) return;
+    _pageSize = next;
+    if (pageIndex >= pageCount && pageCount > 0) {
+      pageIndex = pageCount - 1;
+    }
+    notifyListeners();
+  }
 
   List<LibraryTableRow> _rows = const [];
   Object? error;
@@ -459,8 +477,8 @@ class LibraryTableController extends ChangeNotifier {
     final snapshot = List<LibraryTableRow>.from(_rows);
     for (final row in snapshot) {
       if (!row.knowledgeLoaded || row.whereRaw.isEmpty) continue;
-      final labels = await _whereLabels.resolveAll(row.whereRaw);
-      _replaceRow(row.item.id, (r) => r.copyWith(where: labels));
+      final entries = await _whereLabels.resolveAllDisplays(row.whereRaw);
+      _replaceRow(row.item.id, (r) => r.copyWith(whereEntries: entries));
     }
   }
 
@@ -570,14 +588,14 @@ class LibraryTableController extends ChangeNotifier {
           if (_loadGeneration != gen) return;
           final grouped = groupItemLevelTagsByDimension(knowledge.tags);
           final whereRaw = grouped['where']!.map((t) => t.value).toList();
-          final whereLabels = await _whereLabels.resolveAll(whereRaw);
+          final whereEntries = await _whereLabels.resolveAllDisplays(whereRaw);
           if (_loadGeneration != gen) return;
           _replaceRow(
             id,
             (r) => r.copyWith(
               who: grouped['who']!.map((t) => t.value).toList(),
               what: grouped['what']!.map((t) => t.value).toList(),
-              where: whereLabels,
+              whereEntries: whereEntries,
               whereRaw: whereRaw,
               knowledgeLoaded: true,
             ),
@@ -680,12 +698,14 @@ final libraryTableControllerProvider =
       itemsRepository: ref.watch(itemsRepositoryProvider),
       commentsRepository: ref.watch(commentsRepositoryProvider),
       whereLabelResolver: ref.watch(whereLabelResolverProvider),
+      pageSize: ref.read(desktopPrefsProvider).libraryPageSize,
     );
   },
   dependencies: [
     itemsRepositoryProvider,
     commentsRepositoryProvider,
     whereLabelResolverProvider,
+    desktopPrefsProvider,
   ],
 );
 

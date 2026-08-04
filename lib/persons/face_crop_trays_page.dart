@@ -9,6 +9,7 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/persons/face_crop_drag.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/persons/person_detail_controller.dart';
@@ -168,7 +169,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   final _clusterScrollController = ScrollController();
   final Map<String, GlobalKey> _clusterKeys = <String, GlobalKey>{};
 
-  static const _trayPageLimit = 500;
+  int get _trayPageLimit =>
+      ref.read(desktopPrefsProvider).facesTrayPageLimit.clamp(50, 500);
 
   int _lastIngestRefreshTick = 0;
   bool _lastIngestHadActiveJobs = false;

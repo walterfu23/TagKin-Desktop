@@ -27,6 +27,9 @@ PrePassController _stubPrePass(FakeItemsRepository items) {
       faceEmbedder,
       skipFaces = false,
       maxFrames = 20,
+      minIntervalMs = 1000,
+      maxIntervalMs = 15000,
+      sceneCutThreshold = 0.3,
     }) async {
       return PrePassBuildResult(
         payload: PrePassResult(

@@ -308,7 +308,7 @@ class CollectionsFile {
   final List<String> recentCollectionIds;
 
   static const empty = CollectionsFile();
-  static const maxRecents = 5;
+  static const maxRecents = 20;
 
   CollectionsFile copyWith({
     List<Collection>? collections,

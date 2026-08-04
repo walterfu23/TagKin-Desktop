@@ -8,6 +8,7 @@ import 'package:tagkin_desktop/app_shell.dart'
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/jobs/job_state_view.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 
 /// Lifecycle phase of a per-item jobs controller (D7).
 enum JobsPhase { idle, analyzing, polling, terminal, error }
@@ -272,15 +273,21 @@ class JobsController extends ChangeNotifier {
 final jobsControllerProvider =
     Provider.autoDispose.family<JobsController, String>(
   (ref, itemId) {
+    final prefs = ref.watch(desktopPrefsProvider);
     final controller = JobsController(
       itemId: itemId,
       jobsRepository: ref.watch(jobsRepositoryProvider),
       whoFaceLinker: WhoFaceLinker(
         items: ref.watch(itemsRepositoryProvider),
       ),
+      pollInterval: Duration(seconds: prefs.jobsPollIntervalSeconds),
     );
     ref.onDispose(controller.dispose);
     return controller;
   },
-  dependencies: [jobsRepositoryProvider, itemsRepositoryProvider],
+  dependencies: [
+    jobsRepositoryProvider,
+    itemsRepositoryProvider,
+    desktopPrefsProvider,
+  ],
 );

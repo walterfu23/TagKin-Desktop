@@ -101,30 +101,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     }
   }
 
-  Future<void> _confirmDeleteFromList(Item item) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete item?'),
-        content: const Text(
-          'Removes this item from your TagKin library. '
-          'Original local media is not deleted.',
-        ),
-        actions: [
-          TextButton(
-            key: const Key('delete-cancel'),
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            key: const Key('delete-confirm'),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
+  Future<void> _removeItemFromList(Item item) async {
     try {
       await ref.read(jobsRepositoryProvider).deleteItem(item.id);
       if (!mounted) return;
@@ -135,13 +112,13 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           key: const Key('list-delete-error'),
-          content: Text('Delete failed: $e'),
+          content: Text('Remove failed: $e'),
         ),
       );
     }
   }
 
-  Future<void> _confirmRemoveFolder(String dir, int count) async {
+  Future<void> _removeFolderFromList(String dir, int count) async {
     final queue = ref.read(folderRemoveQueueProvider);
     if (queue.isRemoving(dir)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -152,30 +129,6 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
       );
       return;
     }
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Remove folder?'),
-        content: Text(
-          'Removes $count item${count == 1 ? '' : 's'} under this folder '
-          'from your TagKin library. Original local media is not deleted.',
-        ),
-        actions: [
-          TextButton(
-            key: const Key('remove-folder-cancel'),
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            key: const Key('remove-folder-confirm'),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
 
     final table = ref.read(libraryTableControllerProvider);
     final ids = itemIdsUnderFolder(
@@ -372,8 +325,8 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
         return LibraryItemsTable(
           controller: table,
           onOpenDetail: _openDetail,
-          onDelete: _confirmDeleteFromList,
-          onRemoveFolder: _confirmRemoveFolder,
+          onDelete: _removeItemFromList,
+          onRemoveFolder: _removeFolderFromList,
           onRevealSource: _revealSource,
           isFolderRemoving: removeQueue.isRemoving,
         );

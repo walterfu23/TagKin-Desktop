@@ -9,6 +9,7 @@ import 'package:tagkin_desktop/ingest/dedup.dart';
 import 'package:tagkin_desktop/ingest/folder_picker.dart';
 import 'package:tagkin_desktop/ingest/media_enumerator.dart';
 import 'package:tagkin_desktop/ingest/perceptual_hash.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 
 /// Lifecycle phase of a folder-ingest run.
 enum BatchIngestPhase { idle, scanning, reviewing, ingesting, done, error }
@@ -235,6 +236,8 @@ final batchIngestControllerProvider =
       enumerateFolder: ref.watch(mediaEnumeratorProvider),
       contentHasher: ref.watch(contentHasherProvider),
       perceptualHasher: ref.watch(perceptualHasherProvider),
+      nearDuplicateHammingThreshold:
+          ref.watch(desktopPrefsProvider).nearDuplicateThreshold,
     );
     ref.onDispose(controller.dispose);
     return controller;
@@ -245,5 +248,6 @@ final batchIngestControllerProvider =
     mediaEnumeratorProvider,
     contentHasherProvider,
     perceptualHasherProvider,
+    desktopPrefsProvider,
   ],
 );

@@ -28,15 +28,15 @@ class WhereLabelResolver {
   final ReverseGeocoder _geocoder;
   final String? Function() _deviceCountryCode;
   final DesktopPrefs Function() _prefs;
-  final Map<String, String> _cache = {};
-  final Map<String, Future<String>> _inflight = {};
+  final Map<String, WhereDisplay> _cache = {};
+  final Map<String, Future<WhereDisplay>> _inflight = {};
 
   void clearCache() {
     _cache.clear();
     _inflight.clear();
   }
 
-  Future<String> resolve(String rawValue) {
+  Future<WhereDisplay> resolveDisplay(String rawValue) {
     final cached = _cache[rawValue];
     if (cached != null) return Future.value(cached);
 
@@ -48,40 +48,52 @@ class WhereLabelResolver {
     return future.whenComplete(() => _inflight.remove(rawValue));
   }
 
-  Future<List<String>> resolveAll(Iterable<String> values) async {
-    final out = <String>[];
+  Future<String> resolve(String rawValue) async {
+    return (await resolveDisplay(rawValue)).label;
+  }
+
+  Future<List<WhereDisplay>> resolveAllDisplays(Iterable<String> values) async {
+    final out = <WhereDisplay>[];
     for (final value in values) {
-      out.add(await resolve(value));
+      out.add(await resolveDisplay(value));
     }
     return out;
   }
 
-  Future<String> _resolveUncached(String rawValue) async {
+  Future<List<String>> resolveAll(Iterable<String> values) async {
+    return [
+      for (final d in await resolveAllDisplays(values)) d.label,
+    ];
+  }
+
+  Future<WhereDisplay> _resolveUncached(String rawValue) async {
     final coords = parseLatLngTag(rawValue);
     if (coords == null) {
-      _cache[rawValue] = rawValue;
-      return rawValue;
+      final plain = WhereDisplay.plain(rawValue);
+      _cache[rawValue] = plain;
+      return plain;
     }
     try {
       final place = await _geocoder.reverse(coords.lat, coords.lng);
       if (place != null) {
         final prefs = _prefs();
-        final label = formatWherePlaceLabel(
+        final display = formatWhereDisplay(
           place,
           deviceCountryCode: _deviceCountryCode(),
-          homeState: prefs.homeState,
+          familiarRegions: prefs.familiarRegions,
           showCountryWhenSameCountry: prefs.showCountryWhenSameCountry,
           showStateWhenSameState: prefs.showStateWhenSameState,
         );
-        if (label != null && label.isNotEmpty) {
-          _cache[rawValue] = label;
-          return label;
+        if (display.label.isNotEmpty) {
+          _cache[rawValue] = display;
+          return display;
         }
       }
     } catch (_) {
       // Keep raw coords on failure.
     }
-    _cache[rawValue] = rawValue;
-    return rawValue;
+    final fallback = WhereDisplay.plain(rawValue);
+    _cache[rawValue] = fallback;
+    return fallback;
   }
 }
