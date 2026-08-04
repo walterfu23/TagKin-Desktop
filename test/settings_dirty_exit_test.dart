@@ -100,6 +100,53 @@ void main() {
     expect(find.byType(SettingsPage), findsNothing);
     expect(prefsController.prefs.multiColumnSort, isTrue);
   });
+
+  testWidgets('Settings slider Save persists library page size', (tester) async {
+    final store = MemoryDesktopPrefsStore();
+    final prefsController = DesktopPrefsController(store: store);
+    await prefsController.load();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          desktopPrefsControllerProvider.overrideWith((ref) => prefsController),
+        ],
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                key: const Key('open-settings'),
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SettingsPage(),
+                    ),
+                  );
+                },
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('open-settings')));
+    await tester.pumpAndSettle();
+
+    // Visible near the top of Settings (ListView builds lazily).
+    final pageSizeKey = find.byKey(const Key('pref-library-page-size'));
+    expect(pageSizeKey, findsOneWidget);
+    final slider = tester.widget<Slider>(pageSizeKey);
+    slider.onChanged!(25);
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('settings-save')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SettingsPage), findsNothing);
+    expect(prefsController.prefs.libraryPageSize, 25);
+  });
 }
 
 /// In-memory prefs store for Settings widget tests.

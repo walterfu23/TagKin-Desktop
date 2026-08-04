@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
+import 'package:tagkin_desktop/prefs/range_slider_control.dart';
 import 'package:tagkin_desktop/where/where_label_resolver.dart';
 import 'package:tagkin_desktop/where/where_place_label.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
@@ -23,16 +23,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   late bool _multiColumnSort;
   late bool _showFaceOverlays;
   late TextEditingController _familiarRegions;
-  late TextEditingController _libraryPageSize;
-  late TextEditingController _recentCollectionsLimit;
-  late TextEditingController _nearDuplicateThreshold;
-  late TextEditingController _sampleMinIntervalMs;
-  late TextEditingController _sampleMaxIntervalMs;
-  late TextEditingController _softMaxFramesPerItem;
-  late TextEditingController _sceneCutThreshold;
-  late TextEditingController _facesDetectScoreThreshold;
-  late TextEditingController _facesTrayPageLimit;
-  late TextEditingController _jobsPollIntervalSeconds;
+  late int _libraryPageSize;
+  late int _recentCollectionsLimit;
+  late int _nearDuplicateThreshold;
+  late int _sampleMinIntervalMs;
+  late int _sampleMaxIntervalMs;
+  late int _softMaxFramesPerItem;
+  late double _sceneCutThreshold;
+  late double _facesDetectScoreThreshold;
+  late int _facesTrayPageLimit;
+  late int _jobsPollIntervalSeconds;
 
   @override
   void initState() {
@@ -47,40 +47,20 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _multiColumnSort = prefs.multiColumnSort;
     _showFaceOverlays = prefs.showFaceOverlays;
     _familiarRegions = TextEditingController(text: prefs.familiarRegions);
-    _libraryPageSize =
-        TextEditingController(text: '${prefs.libraryPageSize}');
-    _recentCollectionsLimit =
-        TextEditingController(text: '${prefs.recentCollectionsLimit}');
-    _nearDuplicateThreshold =
-        TextEditingController(text: '${prefs.nearDuplicateThreshold}');
-    _sampleMinIntervalMs =
-        TextEditingController(text: '${prefs.sampleMinIntervalMs}');
-    _sampleMaxIntervalMs =
-        TextEditingController(text: '${prefs.sampleMaxIntervalMs}');
-    _softMaxFramesPerItem =
-        TextEditingController(text: '${prefs.softMaxFramesPerItem}');
-    _sceneCutThreshold =
-        TextEditingController(text: '${prefs.sceneCutThreshold}');
-    _facesDetectScoreThreshold =
-        TextEditingController(text: '${prefs.facesDetectScoreThreshold}');
-    _facesTrayPageLimit =
-        TextEditingController(text: '${prefs.facesTrayPageLimit}');
-    _jobsPollIntervalSeconds =
-        TextEditingController(text: '${prefs.jobsPollIntervalSeconds}');
+    _libraryPageSize = prefs.libraryPageSize;
+    _recentCollectionsLimit = prefs.recentCollectionsLimit;
+    _nearDuplicateThreshold = prefs.nearDuplicateThreshold;
+    _sampleMinIntervalMs = prefs.sampleMinIntervalMs;
+    _sampleMaxIntervalMs = prefs.sampleMaxIntervalMs;
+    _softMaxFramesPerItem = prefs.softMaxFramesPerItem;
+    _sceneCutThreshold = prefs.sceneCutThreshold;
+    _facesDetectScoreThreshold = prefs.facesDetectScoreThreshold;
+    _facesTrayPageLimit = prefs.facesTrayPageLimit;
+    _jobsPollIntervalSeconds = prefs.jobsPollIntervalSeconds;
   }
 
   void _disposeDraftControllers() {
     _familiarRegions.dispose();
-    _libraryPageSize.dispose();
-    _recentCollectionsLimit.dispose();
-    _nearDuplicateThreshold.dispose();
-    _sampleMinIntervalMs.dispose();
-    _sampleMaxIntervalMs.dispose();
-    _softMaxFramesPerItem.dispose();
-    _sceneCutThreshold.dispose();
-    _facesDetectScoreThreshold.dispose();
-    _facesTrayPageLimit.dispose();
-    _jobsPollIntervalSeconds.dispose();
   }
 
   @override
@@ -90,11 +70,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   }
 
   DesktopPrefs _draftPrefs() {
-    int parseInt(TextEditingController c, int fallback) =>
-        int.tryParse(c.text.trim()) ?? fallback;
-    double parseDouble(TextEditingController c, double fallback) =>
-        double.tryParse(c.text.trim()) ?? fallback;
-
     // Clamp via fromJson ranges; familiar CSV normalized on save path.
     return DesktopPrefs.fromJson({
       'where.showCountryWhenSameCountry': _showCountryWhenSameCountry,
@@ -103,44 +78,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       'ui.showFaceOverlays': _showFaceOverlays,
       'where.familiarRegions':
           normalizeFamiliarRegionsCsv(_familiarRegions.text),
-      'ui.libraryPageSize':
-          parseInt(_libraryPageSize, DesktopPrefs.defaults.libraryPageSize),
-      'ui.recentCollectionsLimit': parseInt(
-        _recentCollectionsLimit,
-        DesktopPrefs.defaults.recentCollectionsLimit,
-      ),
-      'ingest.nearDuplicateThreshold': parseInt(
-        _nearDuplicateThreshold,
-        DesktopPrefs.defaults.nearDuplicateThreshold,
-      ),
-      'video.sampleMinIntervalMs': parseInt(
-        _sampleMinIntervalMs,
-        DesktopPrefs.defaults.sampleMinIntervalMs,
-      ),
-      'video.sampleMaxIntervalMs': parseInt(
-        _sampleMaxIntervalMs,
-        DesktopPrefs.defaults.sampleMaxIntervalMs,
-      ),
-      'video.softMaxFramesPerItem': parseInt(
-        _softMaxFramesPerItem,
-        DesktopPrefs.defaults.softMaxFramesPerItem,
-      ),
-      'video.sceneCutThreshold': parseDouble(
-        _sceneCutThreshold,
-        DesktopPrefs.defaults.sceneCutThreshold,
-      ),
-      'faces.detectScoreThreshold': parseDouble(
-        _facesDetectScoreThreshold,
-        DesktopPrefs.defaults.facesDetectScoreThreshold,
-      ),
-      'faces.trayPageLimit': parseInt(
-        _facesTrayPageLimit,
-        DesktopPrefs.defaults.facesTrayPageLimit,
-      ),
-      'jobs.pollIntervalSeconds': parseInt(
-        _jobsPollIntervalSeconds,
-        DesktopPrefs.defaults.jobsPollIntervalSeconds,
-      ),
+      'ui.libraryPageSize': _libraryPageSize,
+      'ui.recentCollectionsLimit': _recentCollectionsLimit,
+      'ingest.nearDuplicateThreshold': _nearDuplicateThreshold,
+      'video.sampleMinIntervalMs': _sampleMinIntervalMs,
+      'video.sampleMaxIntervalMs': _sampleMaxIntervalMs,
+      'video.softMaxFramesPerItem': _softMaxFramesPerItem,
+      'video.sceneCutThreshold': _sceneCutThreshold,
+      'faces.detectScoreThreshold': _facesDetectScoreThreshold,
+      'faces.trayPageLimit': _facesTrayPageLimit,
+      'jobs.pollIntervalSeconds': _jobsPollIntervalSeconds,
     });
   }
 
@@ -284,45 +231,76 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     );
   }
 
-  Widget _intField({
+  Widget _intSlider({
     required Key key,
-    required TextEditingController controller,
     required String label,
     required String helper,
+    required int value,
+    required int min,
+    required int max,
+    required int step,
+    required ValueChanged<int> onChanged,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: TextField(
-        key: key,
-        controller: controller,
-        keyboardType: TextInputType.number,
-        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        decoration: InputDecoration(
-          labelText: label,
-          helperText: helper,
-          border: const OutlineInputBorder(),
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(label, style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 2),
+          Text(
+            helper,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+          const SizedBox(height: 4),
+          RangeSliderControl(
+            sliderKey: key,
+            value: value,
+            min: min,
+            max: max,
+            step: step,
+            onChanged: (v) => setState(() => onChanged(v)),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _doubleField({
+  Widget _doubleSlider({
     required Key key,
-    required TextEditingController controller,
     required String label,
     required String helper,
+    required double value,
+    required double min,
+    required double max,
+    required double step,
+    required ValueChanged<double> onChanged,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: TextField(
-        key: key,
-        controller: controller,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        decoration: InputDecoration(
-          labelText: label,
-          helperText: helper,
-          border: const OutlineInputBorder(),
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(label, style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 2),
+          Text(
+            helper,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+          const SizedBox(height: 4),
+          DoubleRangeSliderControl(
+            sliderKey: key,
+            value: value,
+            min: min,
+            max: max,
+            step: step,
+            onChanged: (v) => setState(() => onChanged(v)),
+          ),
+        ],
       ),
     );
   }
@@ -404,17 +382,25 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 value: _multiColumnSort,
                 onChanged: (v) => setState(() => _multiColumnSort = v),
               ),
-              _intField(
+              _intSlider(
                 key: const Key('pref-library-page-size'),
-                controller: _libraryPageSize,
                 label: 'Rows per page',
                 helper: 'Default 50 (2–200).',
+                value: _libraryPageSize,
+                min: DesktopPrefs.libraryPageSizeMin,
+                max: DesktopPrefs.libraryPageSizeMax,
+                step: DesktopPrefs.libraryPageSizeStep,
+                onChanged: (v) => _libraryPageSize = v,
               ),
-              _intField(
+              _intSlider(
                 key: const Key('pref-recent-collections-limit'),
-                controller: _recentCollectionsLimit,
                 label: 'Recent collections limit',
                 helper: 'Default 20 (1–100). Open Recent / start gate.',
+                value: _recentCollectionsLimit,
+                min: DesktopPrefs.recentCollectionsLimitMin,
+                max: DesktopPrefs.recentCollectionsLimitMax,
+                step: DesktopPrefs.recentCollectionsLimitStep,
+                onChanged: (v) => _recentCollectionsLimit = v,
               ),
               _sectionTitle('Review'),
               SwitchListTile(
@@ -428,56 +414,88 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 onChanged: (v) => setState(() => _showFaceOverlays = v),
               ),
               _sectionTitle('Ingest'),
-              _intField(
+              _intSlider(
                 key: const Key('pref-near-duplicate-threshold'),
-                controller: _nearDuplicateThreshold,
                 label: 'Near-duplicate Hamming threshold',
                 helper: 'Default 4. Lower = stricter matching.',
+                value: _nearDuplicateThreshold,
+                min: DesktopPrefs.nearDuplicateThresholdMin,
+                max: DesktopPrefs.nearDuplicateThresholdMax,
+                step: DesktopPrefs.nearDuplicateThresholdStep,
+                onChanged: (v) => _nearDuplicateThreshold = v,
               ),
               _sectionTitle('Video / pre-pass'),
-              _intField(
+              _intSlider(
                 key: const Key('pref-sample-min-interval'),
-                controller: _sampleMinIntervalMs,
                 label: 'Min sample interval (ms)',
                 helper: 'Default 1000. Spacing in short key periods.',
+                value: _sampleMinIntervalMs,
+                min: DesktopPrefs.sampleMinIntervalMsMin,
+                max: DesktopPrefs.sampleMinIntervalMsMax,
+                step: DesktopPrefs.sampleMinIntervalMsStep,
+                onChanged: (v) => _sampleMinIntervalMs = v,
               ),
-              _intField(
+              _intSlider(
                 key: const Key('pref-sample-max-interval'),
-                controller: _sampleMaxIntervalMs,
                 label: 'Max sample interval (ms)',
                 helper: 'Default 15000. Spacing in long key periods.',
+                value: _sampleMaxIntervalMs,
+                min: DesktopPrefs.sampleMaxIntervalMsMin,
+                max: DesktopPrefs.sampleMaxIntervalMsMax,
+                step: DesktopPrefs.sampleMaxIntervalMsStep,
+                onChanged: (v) => _sampleMaxIntervalMs = v,
               ),
-              _intField(
+              _intSlider(
                 key: const Key('pref-soft-max-frames'),
-                controller: _softMaxFramesPerItem,
                 label: 'Soft max frames per video',
                 helper: 'Default 500.',
+                value: _softMaxFramesPerItem,
+                min: DesktopPrefs.softMaxFramesPerItemMin,
+                max: DesktopPrefs.softMaxFramesPerItemMax,
+                step: DesktopPrefs.softMaxFramesPerItemStep,
+                onChanged: (v) => _softMaxFramesPerItem = v,
               ),
-              _doubleField(
+              _doubleSlider(
                 key: const Key('pref-scene-cut-threshold'),
-                controller: _sceneCutThreshold,
                 label: 'Scene-cut threshold',
                 helper: 'Default 0.3. Lower detects more cuts.',
+                value: _sceneCutThreshold,
+                min: DesktopPrefs.sceneCutThresholdMin,
+                max: DesktopPrefs.sceneCutThresholdMax,
+                step: DesktopPrefs.sceneCutThresholdStep,
+                onChanged: (v) => _sceneCutThreshold = v,
               ),
               _sectionTitle('Faces'),
-              _doubleField(
+              _doubleSlider(
                 key: const Key('pref-faces-detect-score'),
-                controller: _facesDetectScoreThreshold,
                 label: 'Face detect score threshold',
                 helper: 'Default 0.2. Local SCRFD score floor.',
+                value: _facesDetectScoreThreshold,
+                min: DesktopPrefs.facesDetectScoreThresholdMin,
+                max: DesktopPrefs.facesDetectScoreThresholdMax,
+                step: DesktopPrefs.facesDetectScoreThresholdStep,
+                onChanged: (v) => _facesDetectScoreThreshold = v,
               ),
-              _intField(
+              _intSlider(
                 key: const Key('pref-faces-tray-page-limit'),
-                controller: _facesTrayPageLimit,
                 label: 'Faces tray fetch limit',
                 helper: 'Default 500 (50–500). API appearances page size.',
+                value: _facesTrayPageLimit,
+                min: DesktopPrefs.facesTrayPageLimitMin,
+                max: DesktopPrefs.facesTrayPageLimitMax,
+                step: DesktopPrefs.facesTrayPageLimitStep,
+                onChanged: (v) => _facesTrayPageLimit = v,
               ),
               _sectionTitle('Jobs'),
-              _intField(
+              _intSlider(
                 key: const Key('pref-jobs-poll-interval'),
-                controller: _jobsPollIntervalSeconds,
                 label: 'Job poll interval (seconds)',
                 helper: 'Default 2 (1–30).',
+                value: _jobsPollIntervalSeconds,
+                min: DesktopPrefs.jobsPollIntervalSecondsMin,
+                max: DesktopPrefs.jobsPollIntervalSecondsMax,
+                step: DesktopPrefs.jobsPollIntervalSecondsStep,
+                onChanged: (v) => _jobsPollIntervalSeconds = v,
               ),
             ],
           ),

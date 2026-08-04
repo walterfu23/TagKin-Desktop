@@ -71,6 +71,47 @@ class DesktopPrefs {
 
   static const defaults = DesktopPrefs();
 
+  // Slider / clamp ranges (UI and fromJson share these).
+  static const libraryPageSizeMin = 2;
+  static const libraryPageSizeMax = 200;
+  static const libraryPageSizeStep = 1;
+
+  static const recentCollectionsLimitMin = 1;
+  static const recentCollectionsLimitMax = 100;
+  static const recentCollectionsLimitStep = 1;
+
+  static const nearDuplicateThresholdMin = 0;
+  static const nearDuplicateThresholdMax = 64;
+  static const nearDuplicateThresholdStep = 1;
+
+  static const sampleMinIntervalMsMin = 100;
+  static const sampleMinIntervalMsMax = 60000;
+  static const sampleMinIntervalMsStep = 100;
+
+  static const sampleMaxIntervalMsMin = 500;
+  static const sampleMaxIntervalMsMax = 120000;
+  static const sampleMaxIntervalMsStep = 500;
+
+  static const softMaxFramesPerItemMin = 10;
+  static const softMaxFramesPerItemMax = 2000;
+  static const softMaxFramesPerItemStep = 10;
+
+  static const sceneCutThresholdMin = 0.05;
+  static const sceneCutThresholdMax = 0.9;
+  static const sceneCutThresholdStep = 0.05;
+
+  static const facesDetectScoreThresholdMin = 0.05;
+  static const facesDetectScoreThresholdMax = 0.95;
+  static const facesDetectScoreThresholdStep = 0.05;
+
+  static const facesTrayPageLimitMin = 50;
+  static const facesTrayPageLimitMax = 500;
+  static const facesTrayPageLimitStep = 10;
+
+  static const jobsPollIntervalSecondsMin = 1;
+  static const jobsPollIntervalSecondsMax = 30;
+  static const jobsPollIntervalSecondsStep = 1;
+
   DesktopPrefs copyWith({
     bool? showCountryWhenSameCountry,
     bool? showStateWhenSameState,
@@ -182,25 +223,66 @@ class DesktopPrefs {
       multiColumnSort: flag('ui.multiColumnSort', fallback: false),
       showFaceOverlays: flag('ui.showFaceOverlays', fallback: true),
       familiarRegions: familiarCsv,
-      libraryPageSize: intVal('ui.libraryPageSize', 50, min: 2, max: 200),
-      recentCollectionsLimit:
-          intVal('ui.recentCollectionsLimit', 20, min: 1, max: 100),
-      nearDuplicateThreshold:
-          intVal('ingest.nearDuplicateThreshold', 4, min: 0, max: 64),
-      sampleMinIntervalMs:
-          intVal('video.sampleMinIntervalMs', 1000, min: 100, max: 60000),
-      sampleMaxIntervalMs:
-          intVal('video.sampleMaxIntervalMs', 15000, min: 500, max: 120000),
-      softMaxFramesPerItem:
-          intVal('video.softMaxFramesPerItem', 500, min: 1, max: 2000),
-      sceneCutThreshold:
-          doubleVal('video.sceneCutThreshold', 0.3, min: 0.05, max: 0.9),
-      facesDetectScoreThreshold:
-          doubleVal('faces.detectScoreThreshold', 0.2, min: 0.05, max: 0.95),
-      facesTrayPageLimit:
-          intVal('faces.trayPageLimit', 500, min: 50, max: 500),
-      jobsPollIntervalSeconds:
-          intVal('jobs.pollIntervalSeconds', 2, min: 1, max: 30),
+      libraryPageSize: intVal(
+        'ui.libraryPageSize',
+        50,
+        min: libraryPageSizeMin,
+        max: libraryPageSizeMax,
+      ),
+      recentCollectionsLimit: intVal(
+        'ui.recentCollectionsLimit',
+        20,
+        min: recentCollectionsLimitMin,
+        max: recentCollectionsLimitMax,
+      ),
+      nearDuplicateThreshold: intVal(
+        'ingest.nearDuplicateThreshold',
+        4,
+        min: nearDuplicateThresholdMin,
+        max: nearDuplicateThresholdMax,
+      ),
+      sampleMinIntervalMs: intVal(
+        'video.sampleMinIntervalMs',
+        1000,
+        min: sampleMinIntervalMsMin,
+        max: sampleMinIntervalMsMax,
+      ),
+      sampleMaxIntervalMs: intVal(
+        'video.sampleMaxIntervalMs',
+        15000,
+        min: sampleMaxIntervalMsMin,
+        max: sampleMaxIntervalMsMax,
+      ),
+      softMaxFramesPerItem: intVal(
+        'video.softMaxFramesPerItem',
+        500,
+        min: softMaxFramesPerItemMin,
+        max: softMaxFramesPerItemMax,
+      ),
+      sceneCutThreshold: doubleVal(
+        'video.sceneCutThreshold',
+        0.3,
+        min: sceneCutThresholdMin,
+        max: sceneCutThresholdMax,
+      ),
+      facesDetectScoreThreshold: doubleVal(
+        'faces.detectScoreThreshold',
+        0.2,
+        min: facesDetectScoreThresholdMin,
+        max: facesDetectScoreThresholdMax,
+      ),
+      facesTrayPageLimit: intVal(
+        'faces.trayPageLimit',
+        500,
+        min: facesTrayPageLimitMin,
+        max: facesTrayPageLimitMax,
+      ),
+      jobsPollIntervalSeconds: intVal(
+        'jobs.pollIntervalSeconds',
+        2,
+        min: jobsPollIntervalSecondsMin,
+        max: jobsPollIntervalSecondsMax,
+      ),
     );
   }
 
