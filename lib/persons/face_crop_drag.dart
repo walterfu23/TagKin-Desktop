@@ -6,6 +6,9 @@ enum FaceCropTray { assigned, unassigned, excluded }
 /// Kind of face entry for multi-select (appearances and exclusions do not mix).
 enum FaceCropSelectKind { appearance, exclusion }
 
+/// How a face thumb click updates the selection (Finder-style).
+enum FaceCropSelectMode { replace, toggle, range }
+
 /// One face crop move between trays (D9).
 class FaceCropDragData {
   const FaceCropDragData.appearance({

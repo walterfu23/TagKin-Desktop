@@ -358,6 +358,140 @@ class FakePersonsRepository implements PersonsRepository {
     return result;
   }
 
+  final List<List<String>> assembleAppearancesCalls = <List<String>>[];
+  final List<List<String>> assembleExclusionsCalls = <List<String>>[];
+  final List<String> ungroupFaceGroupCalls = <String>[];
+
+  @override
+  Future<AssembleAppearancesResponse> assembleAppearances(
+    List<String> appearanceIds,
+  ) async {
+    assembleAppearancesCalls.add(List<String>.from(appearanceIds));
+    if (appearanceIds.length < 2) {
+      throw ApiException(statusCode: 400, message: 'need ≥2');
+    }
+    final members = <PersonAppearance>[];
+    for (final id in appearanceIds) {
+      final idx = unassignedAppearances.indexWhere((a) => a.id == id);
+      if (idx < 0) {
+        throw ApiException(statusCode: 400, message: 'Not loose: $id');
+      }
+      members.add(unassignedAppearances[idx]);
+    }
+    _newFaceGroupCounter += 1;
+    final faceGroupId = 'fg_fm_$_newFaceGroupCounter';
+    final updated = <PersonAppearance>[
+      for (final a in members)
+        PersonAppearance(
+          id: a.id,
+          personId: null,
+          faceGroupId: faceGroupId,
+          faceGroupKind: FaceGroupKind.fm,
+          itemId: a.itemId,
+          keyPeriodId: a.keyPeriodId,
+          tagId: a.tagId,
+          region: a.region,
+          createdAt: a.createdAt,
+        ),
+    ];
+    unassignedAppearances.removeWhere((a) => appearanceIds.contains(a.id));
+    unassignedAppearances.addAll(updated);
+    return AssembleAppearancesResponse(
+      faceGroupId: faceGroupId,
+      appearances: updated,
+    );
+  }
+
+  @override
+  Future<AssembleExclusionsResponse> assembleExclusions(
+    List<String> exclusionIds,
+  ) async {
+    assembleExclusionsCalls.add(List<String>.from(exclusionIds));
+    if (exclusionIds.length < 2) {
+      throw ApiException(statusCode: 400, message: 'need ≥2');
+    }
+    final members = <WhoExclusion>[];
+    for (final id in exclusionIds) {
+      final idx = accountExclusions.indexWhere((e) => e.id == id);
+      if (idx < 0) {
+        throw ApiException(statusCode: 400, message: 'Not found: $id');
+      }
+      members.add(accountExclusions[idx]);
+    }
+    _newFaceGroupCounter += 1;
+    final faceGroupId = 'fg_fm_$_newFaceGroupCounter';
+    final updated = <WhoExclusion>[
+      for (final e in members)
+        WhoExclusion(
+          id: e.id,
+          itemId: e.itemId,
+          region: e.region,
+          faceGroupId: faceGroupId,
+          faceGroupKind: FaceGroupKind.fm,
+          createdFromTagId: e.createdFromTagId,
+          createdAt: e.createdAt,
+        ),
+    ];
+    accountExclusions.removeWhere((e) => exclusionIds.contains(e.id));
+    accountExclusions.addAll(updated);
+    return AssembleExclusionsResponse(
+      faceGroupId: faceGroupId,
+      exclusions: updated,
+    );
+  }
+
+  @override
+  Future<UngroupFaceGroupResponse> ungroupFaceGroup(String faceGroupId) async {
+    ungroupFaceGroupCalls.add(faceGroupId);
+    final aps = unassignedAppearances
+        .where((a) => a.faceGroupId == faceGroupId)
+        .toList();
+    final exs =
+        accountExclusions.where((e) => e.faceGroupId == faceGroupId).toList();
+    if (aps.isEmpty && exs.isEmpty) {
+      throw ApiException(statusCode: 404, message: 'Face group not found');
+    }
+    if (aps.any((a) => a.faceGroupKind == FaceGroupKind.fa) ||
+        exs.any((e) => e.faceGroupKind == FaceGroupKind.fa)) {
+      throw ApiException(statusCode: 400, message: 'Only GroupFM');
+    }
+    final clearedAps = <PersonAppearance>[
+      for (final a in aps)
+        PersonAppearance(
+          id: a.id,
+          personId: null,
+          faceGroupId: null,
+          faceGroupKind: null,
+          itemId: a.itemId,
+          keyPeriodId: a.keyPeriodId,
+          tagId: a.tagId,
+          region: a.region,
+          createdAt: a.createdAt,
+        ),
+    ];
+    final clearedExs = <WhoExclusion>[
+      for (final e in exs)
+        WhoExclusion(
+          id: e.id,
+          itemId: e.itemId,
+          region: e.region,
+          faceGroupId: null,
+          faceGroupKind: null,
+          createdFromTagId: e.createdFromTagId,
+          createdAt: e.createdAt,
+        ),
+    ];
+    unassignedAppearances.removeWhere((a) => a.faceGroupId == faceGroupId);
+    unassignedAppearances.addAll(clearedAps);
+    accountExclusions.removeWhere((e) => e.faceGroupId == faceGroupId);
+    accountExclusions.addAll(clearedExs);
+    return UngroupFaceGroupResponse(
+      faceGroupId: faceGroupId,
+      appearances: clearedAps,
+      exclusions: clearedExs,
+    );
+  }
+
   @override
   Future<void> deletePerson(String personId) async {
     deleteCalls.add(personId);

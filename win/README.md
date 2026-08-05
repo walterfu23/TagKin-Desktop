@@ -39,6 +39,7 @@ Subsystem regression entry points use **`NNN_test_dN.ps1`** (`d0`, `d1`, … `d1
 | [`104_analyze.ps1`](./104_analyze.ps1) | Static analysis bar (`flutter analyze`). |
 | [`105_fetch_ffmpeg.ps1`](./105_fetch_ffmpeg.ps1) | Download ffmpeg+ffprobe into `third_party/ffmpeg/windows/` for embedding next to the exe (D4; end users never install ffmpeg). |
 | [`111_clear_secure_store.ps1`](./111_clear_secure_store.ps1) | Wipe Credential Manager entries for `tagkin.desktop.secure` (D1; force clean sign-in). |
+| [`122_wipe_Devtime.ps1`](./122_wipe_Devtime.ps1) | **Devtime only.** Wipe collections, prefs, bookmarks, and Credential Manager session (`CONFIRM=1`). Pair with `TagKin/mac/122_wipe_Devtime.sh` for Postgres. Does not delete media or face models. |
 | [`11_dev.ps1`](./11_dev.ps1) | Run the app on Windows (`flutter run -d windows`). |
 | [`51_test_all.ps1`](./51_test_all.ps1) | All completed desktop subsystem bars in order (`106_test_d0`, `107_test_d1`, `108_test_d2`, …). Before a PR. |
 | [`106_test_d0.ps1`](./106_test_d0.ps1) | D0 Foundation regression bar alone. |

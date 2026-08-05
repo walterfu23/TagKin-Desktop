@@ -36,6 +36,7 @@ Do **not** reuse the API `sN` ids (those are the `tagkin` repo's `TagKin/mac/`);
 | [`104_analyze.sh`](./104_analyze.sh) | Static analysis bar (`flutter analyze`). |
 | [`105_fetch_ffmpeg.sh`](./105_fetch_ffmpeg.sh) | Download/copy ffmpeg+ffprobe into `third_party/ffmpeg/macos/` for embedding in the `.app` (D4; end users never install ffmpeg). |
 | [`111_clear_secure_store.sh`](./111_clear_secure_store.sh) | Wipe Keychain items for `tagkin.desktop.secure` (D1; force clean sign-in / stop repeat access prompts). |
+| [`122_wipe_Devtime.sh`](./122_wipe_Devtime.sh) | **Devtime only.** Wipe collections, prefs, bookmarks, and Keychain session (`CONFIRM=1`). Pair with `TagKin/mac/122_wipe_Devtime.sh` for Postgres. Does not delete media or face models. |
 | [`11_dev.sh`](./11_dev.sh) | Clear secure store, then run the app on macOS (`flutter run -d macos`). |
 | [`12_person_link_loop.sh`](./12_person_link_loop.sh) | Ops: delete suggested persons → re-analyze item ids → who-face link; repeat until Persons consolidate (max 20). Needs `TAGKIN_API_TOKEN` + `TAGKIN_LOOP_ITEM_IDS`. |
 | [`51_test_all.sh`](./51_test_all.sh) | All completed desktop subsystem bars in order (`106_test_d0`, `107_test_d1`, `108_test_d2`, …). Before a PR. |

@@ -61,6 +61,10 @@ class _FaceMoveResult {
 @visibleForTesting
 bool Function()? debugFaceCropMetaPressed;
 
+/// Override for widget tests (Shift simulation is flaky under flutter_test).
+@visibleForTesting
+bool Function()? debugFaceCropShiftPressed;
+
 bool faceCropMetaPressed() {
   final override = debugFaceCropMetaPressed;
   if (override != null) return override();
@@ -69,6 +73,21 @@ bool faceCropMetaPressed() {
       keys.contains(LogicalKeyboardKey.metaRight) ||
       keys.contains(LogicalKeyboardKey.controlLeft) ||
       keys.contains(LogicalKeyboardKey.controlRight);
+}
+
+bool faceCropShiftPressed() {
+  final override = debugFaceCropShiftPressed;
+  if (override != null) return override();
+  final keys = HardwareKeyboard.instance.logicalKeysPressed;
+  return keys.contains(LogicalKeyboardKey.shiftLeft) ||
+      keys.contains(LogicalKeyboardKey.shiftRight);
+}
+
+/// Resolves click modifiers into a [FaceCropSelectMode] (Shift wins over Cmd).
+FaceCropSelectMode faceCropSelectMode() {
+  if (faceCropShiftPressed()) return FaceCropSelectMode.range;
+  if (faceCropMetaPressed()) return FaceCropSelectMode.toggle;
+  return FaceCropSelectMode.replace;
 }
 
 /// Resolves Finder-style single vs double click without [GestureDetector.onDoubleTap]
@@ -105,6 +124,7 @@ class FaceCropTapTracker {
 /// Persons stay library-wide; trays only show faces from the selected folder.
 ///
 /// Finder-style face thumbs: single-click selects, Cmd/Ctrl+click multi-selects,
+/// Shift+click range-selects, Cmd/Ctrl+A selects all in the active tray,
 /// double-click opens the item. Drag a selection between trays. **Assigned**
 /// holds appearances on a named person (boxes when ≥2 faces — GroupP).
 /// **Unassigned** holds loose faces (personId and faceGroupId both null) plus
@@ -165,6 +185,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   final Set<String> _selectedIds = <String>{};
   FaceCropTray? _selectionTray;
   FaceCropSelectKind? _selectionKind;
+  /// Anchor for Shift+click range (last plain / Cmd click, or cluster select).
+  String? _selectionAnchorId;
   final FaceCropTapTracker _faceTapTracker = FaceCropTapTracker();
   final _clusterScrollController = ScrollController();
   final Map<String, GlobalKey> _clusterKeys = <String, GlobalKey>{};
@@ -216,23 +238,76 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     _faceTapTracker.clear();
     if (_selectedIds.isEmpty &&
         _selectionTray == null &&
-        _selectionKind == null) {
+        _selectionKind == null &&
+        _selectionAnchorId == null) {
       return;
     }
     setState(() {
       _selectedIds.clear();
       _selectionTray = null;
       _selectionKind = null;
+      _selectionAnchorId = null;
     });
+  }
+
+  /// Visual order of appearance ids in [tray] (clusters then loose).
+  List<String> _orderedAppearanceIds(FaceCropTray tray) {
+    switch (tray) {
+      case FaceCropTray.assigned:
+        return [
+          for (final c in _assignedMultiClusters())
+            for (final a in c.faces) a.id,
+          for (final a in _assignedSoloFaces()) a.id,
+        ];
+      case FaceCropTray.unassigned:
+        return [
+          for (final c in _faceGroupMultiClusters())
+            for (final a in c.faces) a.id,
+          for (final a in _unassignedLooseFaces()) a.id,
+        ];
+      case FaceCropTray.excluded:
+        return const [];
+    }
+  }
+
+  /// Visual order of exclusion ids (clusters then loose).
+  List<String> _orderedExclusionIds() {
+    return [
+      for (final c in _excludedFaceGroupMultiClusters())
+        for (final e in c.faces) e.id,
+      for (final e in _excludedLooseFaces()) e.id,
+    ];
+  }
+
+  void _applyRangeSelection(List<String> order, String clickedId) {
+    final anchor = _selectionAnchorId;
+    final a = anchor == null ? -1 : order.indexOf(anchor);
+    final b = order.indexOf(clickedId);
+    if (a < 0 || b < 0) {
+      _selectedIds
+        ..clear()
+        ..add(clickedId);
+      _selectionAnchorId = clickedId;
+      return;
+    }
+    final lo = a < b ? a : b;
+    final hi = a < b ? b : a;
+    _selectedIds
+      ..clear()
+      ..addAll(order.sublist(lo, hi + 1));
   }
 
   void _selectAppearance(
     PersonAppearance a,
     FaceCropTray tray, {
-    required bool toggle,
+    required FaceCropSelectMode mode,
   }) {
     setState(() {
-      if (toggle &&
+      if (mode == FaceCropSelectMode.range &&
+          _selectionTray == tray &&
+          _selectionKind == FaceCropSelectKind.appearance) {
+        _applyRangeSelection(_orderedAppearanceIds(tray), a.id);
+      } else if (mode == FaceCropSelectMode.toggle &&
           _selectionTray == tray &&
           _selectionKind == FaceCropSelectKind.appearance) {
         if (!_selectedIds.remove(a.id)) {
@@ -241,6 +316,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         if (_selectedIds.isEmpty) {
           _selectionTray = null;
           _selectionKind = null;
+          _selectionAnchorId = null;
+        } else {
+          _selectionAnchorId = a.id;
         }
       } else {
         _selectedIds
@@ -248,6 +326,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           ..add(a.id);
         _selectionTray = tray;
         _selectionKind = FaceCropSelectKind.appearance;
+        _selectionAnchorId = a.id;
       }
     });
     final pid = a.personId;
@@ -256,9 +335,13 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     }
   }
 
-  void _selectExclusion(WhoExclusion e, {required bool toggle}) {
+  void _selectExclusion(WhoExclusion e, {required FaceCropSelectMode mode}) {
     setState(() {
-      if (toggle &&
+      if (mode == FaceCropSelectMode.range &&
+          _selectionTray == FaceCropTray.excluded &&
+          _selectionKind == FaceCropSelectKind.exclusion) {
+        _applyRangeSelection(_orderedExclusionIds(), e.id);
+      } else if (mode == FaceCropSelectMode.toggle &&
           _selectionTray == FaceCropTray.excluded &&
           _selectionKind == FaceCropSelectKind.exclusion) {
         if (!_selectedIds.remove(e.id)) {
@@ -267,6 +350,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         if (_selectedIds.isEmpty) {
           _selectionTray = null;
           _selectionKind = null;
+          _selectionAnchorId = null;
+        } else {
+          _selectionAnchorId = e.id;
         }
       } else {
         _selectedIds
@@ -274,7 +360,24 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           ..add(e.id);
         _selectionTray = FaceCropTray.excluded;
         _selectionKind = FaceCropSelectKind.exclusion;
+        _selectionAnchorId = e.id;
       }
+    });
+  }
+
+  void _selectAllInActiveTray() {
+    final tray = _selectionTray;
+    final kind = _selectionKind;
+    if (tray == null || kind == null) return;
+    final ids = kind == FaceCropSelectKind.appearance
+        ? _orderedAppearanceIds(tray)
+        : _orderedExclusionIds();
+    if (ids.isEmpty) return;
+    setState(() {
+      _selectedIds
+        ..clear()
+        ..addAll(ids);
+      _selectionAnchorId = ids.first;
     });
   }
 
@@ -287,6 +390,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         ..addAll(faces.map((a) => a.id));
       _selectionTray = FaceCropTray.unassigned;
       _selectionKind = FaceCropSelectKind.appearance;
+      _selectionAnchorId = faces.first.id;
     });
   }
 
@@ -299,6 +403,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         ..addAll(faces.map((e) => e.id));
       _selectionTray = FaceCropTray.excluded;
       _selectionKind = FaceCropSelectKind.exclusion;
+      _selectionAnchorId = faces.first.id;
     });
   }
 
@@ -498,6 +603,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         ..addAll(faces.map((a) => a.id));
       _selectionTray = tray;
       _selectionKind = FaceCropSelectKind.appearance;
+      _selectionAnchorId = faces.first.id;
     });
     _selectPerson(person.id);
   }
@@ -1185,6 +1291,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       _selectedIds.clear();
       _selectionTray = null;
       _selectionKind = null;
+      _selectionAnchorId = null;
       _faceTapTracker.clear();
 
       final pid = _personId;
@@ -1535,6 +1642,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           _selectedIds.clear();
           _selectionTray = null;
           _selectionKind = null;
+          _selectionAnchorId = null;
         });
       }
       if (!mounted) return;
@@ -1587,6 +1695,167 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     }
   }
 
+  bool get _canGroupSelection {
+    if (_busy || _selectedIds.length < 2) return false;
+    if (_selectionTray == FaceCropTray.unassigned &&
+        _selectionKind == FaceCropSelectKind.appearance) {
+      final loose = _unassignedLooseFaces().map((a) => a.id).toSet();
+      return _selectedIds.every(loose.contains);
+    }
+    if (_selectionTray == FaceCropTray.excluded &&
+        _selectionKind == FaceCropSelectKind.exclusion) {
+      final loose = _excludedLooseFaces().map((e) => e.id).toSet();
+      return _selectedIds.every(loose.contains);
+    }
+    return false;
+  }
+
+  /// When the selection is exactly one GroupFM's members, return that id.
+  String? get _selectedFmGroupId {
+    if (_selectedIds.isEmpty) return null;
+    if (_selectionTray == FaceCropTray.unassigned &&
+        _selectionKind == FaceCropSelectKind.appearance) {
+      final selected = [
+        for (final a in _scopedAppearances(_unassigned))
+          if (_selectedIds.contains(a.id)) a,
+      ];
+      if (selected.isEmpty) return null;
+      final gid = selected.first.faceGroupId;
+      if (gid == null ||
+          selected.any(
+            (a) =>
+                a.faceGroupId != gid || a.faceGroupKind != FaceGroupKind.fm,
+          )) {
+        return null;
+      }
+      final allInGroup = {
+        for (final a in _scopedAppearances(_unassigned))
+          if (a.faceGroupId == gid) a.id,
+      };
+      if (allInGroup.length != _selectedIds.length ||
+          !allInGroup.containsAll(_selectedIds)) {
+        return null;
+      }
+      return gid;
+    }
+    if (_selectionTray == FaceCropTray.excluded &&
+        _selectionKind == FaceCropSelectKind.exclusion) {
+      final selected = [
+        for (final e in _excluded)
+          if (_exclusionInScope(e) && _selectedIds.contains(e.id)) e,
+      ];
+      if (selected.isEmpty) return null;
+      final gid = selected.first.faceGroupId;
+      if (gid == null ||
+          selected.any(
+            (e) =>
+                e.faceGroupId != gid || e.faceGroupKind != FaceGroupKind.fm,
+          )) {
+        return null;
+      }
+      final allInGroup = {
+        for (final e in _excluded)
+          if (_exclusionInScope(e) && e.faceGroupId == gid) e.id,
+      };
+      if (allInGroup.length != _selectedIds.length ||
+          !allInGroup.containsAll(_selectedIds)) {
+        return null;
+      }
+      return gid;
+    }
+    return null;
+  }
+
+  Future<void> _groupSelection() async {
+    if (!_canGroupSelection) return;
+    final persons = ref.read(personsRepositoryProvider);
+    setState(() => _busy = true);
+    try {
+      if (_selectionTray == FaceCropTray.unassigned) {
+        final ids = _selectedIds.toList();
+        final result = await persons.assembleAppearances(ids);
+        _markCollectionDirty();
+        await _reload();
+        if (!mounted) return;
+        setState(() {
+          _selectedIds
+            ..clear()
+            ..addAll(result.appearances.map((a) => a.id));
+          _selectionTray = FaceCropTray.unassigned;
+          _selectionKind = FaceCropSelectKind.appearance;
+          _selectionAnchorId = result.appearances.first.id;
+        });
+      } else if (_selectionTray == FaceCropTray.excluded) {
+        final ids = _selectedIds.toList();
+        final result = await persons.assembleExclusions(ids);
+        _markCollectionDirty();
+        await _reload();
+        if (!mounted) return;
+        setState(() {
+          _selectedIds
+            ..clear()
+            ..addAll(result.exclusions.map((e) => e.id));
+          _selectionTray = FaceCropTray.excluded;
+          _selectionKind = FaceCropSelectKind.exclusion;
+          _selectionAnchorId = result.exclusions.first.id;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          key: const Key('face-crop-trays-error'),
+          content: Text('Group failed: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _ungroupFm(String faceGroupId) async {
+    final persons = ref.read(personsRepositoryProvider);
+    setState(() => _busy = true);
+    try {
+      final result = await persons.ungroupFaceGroup(faceGroupId);
+      _markCollectionDirty();
+      await _reload();
+      if (!mounted) return;
+      setState(() {
+        if (result.appearances.isNotEmpty) {
+          _selectedIds
+            ..clear()
+            ..addAll(result.appearances.map((a) => a.id));
+          _selectionTray = FaceCropTray.unassigned;
+          _selectionKind = FaceCropSelectKind.appearance;
+          _selectionAnchorId = result.appearances.first.id;
+        } else if (result.exclusions.isNotEmpty) {
+          _selectedIds
+            ..clear()
+            ..addAll(result.exclusions.map((e) => e.id));
+          _selectionTray = FaceCropTray.excluded;
+          _selectionKind = FaceCropSelectKind.exclusion;
+          _selectionAnchorId = result.exclusions.first.id;
+        } else {
+          _selectedIds.clear();
+          _selectionTray = null;
+          _selectionKind = null;
+          _selectionAnchorId = null;
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          key: const Key('face-crop-trays-error'),
+          content: Text('Ungroup failed: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // Local [_assignedController] — do not watch autoDispose
@@ -1611,9 +1880,15 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     return Focus(
       autofocus: true,
       onKeyEvent: (node, event) {
-        if (event is KeyDownEvent &&
-            event.logicalKey == LogicalKeyboardKey.escape) {
+        if (event is! KeyDownEvent) return KeyEventResult.ignored;
+        if (event.logicalKey == LogicalKeyboardKey.escape) {
           _clearSelection();
+          return KeyEventResult.handled;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.keyA &&
+            (HardwareKeyboard.instance.isMetaPressed ||
+                HardwareKeyboard.instance.isControlPressed)) {
+          _selectAllInActiveTray();
           return KeyEventResult.handled;
         }
         return KeyEventResult.ignored;
@@ -1670,6 +1945,19 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                   ),
                 ),
               ),
+            ),
+          if (_canGroupSelection)
+            TextButton(
+              key: const Key('face-crop-group-selection'),
+              onPressed: _busy ? null : _groupSelection,
+              child: const Text('Group'),
+            ),
+          if (_selectedFmGroupId != null)
+            TextButton(
+              key: const Key('face-crop-ungroup-selection'),
+              onPressed:
+                  _busy ? null : () => _ungroupFm(_selectedFmGroupId!),
+              child: const Text('Ungroup'),
             ),
           IconButton(
             key: const Key('face-crop-trays-refresh'),
@@ -1987,11 +2275,11 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                           clusters[i].faces,
                           FaceCropTray.assigned,
                         ),
-                        onSelectAppearance: (a, {required toggle}) =>
+                        onSelectAppearance: (a, {required mode}) =>
                             _selectAppearance(
                           a,
                           FaceCropTray.assigned,
-                          toggle: toggle,
+                          mode: mode,
                         ),
                         onOpenItem: _openItem,
                       ),
@@ -2008,10 +2296,10 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                       ),
                       tapTracker: _faceTapTracker,
                       shrinkWrap: true,
-                      onSelect: (a, {required toggle}) => _selectAppearance(
+                      onSelect: (a, {required mode}) => _selectAppearance(
                         a,
                         FaceCropTray.assigned,
-                        toggle: toggle,
+                        mode: mode,
                       ),
                       onOpenItem: _openItem,
                     ),
@@ -2106,11 +2394,14 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                   clusters[i].faces,
                 ),
                 onSetName: () => _setFaceGroupName(clusters[i].faceGroupId),
-                onSelectAppearance: (a, {required toggle}) =>
+                onUngroup: clusters[i].kind == FaceGroupKind.fm
+                    ? () => _ungroupFm(clusters[i].faceGroupId)
+                    : null,
+                onSelectAppearance: (a, {required mode}) =>
                     _selectAppearance(
                   a,
                   FaceCropTray.unassigned,
-                  toggle: toggle,
+                  mode: mode,
                 ),
                 onOpenItem: _openItem,
               ),
@@ -2126,10 +2417,10 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
               ),
               tapTracker: _faceTapTracker,
               shrinkWrap: true,
-              onSelect: (a, {required toggle}) => _selectAppearance(
+              onSelect: (a, {required mode}) => _selectAppearance(
                 a,
                 FaceCropTray.unassigned,
-                toggle: toggle,
+                mode: mode,
               ),
               onOpenItem: _openItem,
               onSetName: _setNameFromAppearance,
@@ -2188,8 +2479,11 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                 dragPayload: _excludedClusterDragPayload(clusters[i].faces),
                 onSelectCluster: () =>
                     _selectExcludedFaceGroupCluster(clusters[i].faces),
-                onSelectExclusion: (e, {required toggle}) =>
-                    _selectExclusion(e, toggle: toggle),
+                onUngroup: clusters[i].kind == FaceGroupKind.fm
+                    ? () => _ungroupFm(clusters[i].faceGroupId)
+                    : null,
+                onSelectExclusion: (e, {required mode}) =>
+                    _selectExclusion(e, mode: mode),
                 onOpenItem: _openItem,
               ),
             ),
@@ -2203,8 +2497,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
               ),
               tapTracker: _faceTapTracker,
               shrinkWrap: true,
-              onSelect: (e, {required toggle}) =>
-                  _selectExclusion(e, toggle: toggle),
+              onSelect: (e, {required mode}) =>
+                  _selectExclusion(e, mode: mode),
               onOpenItem: _openItem,
             ),
         ],
@@ -2244,7 +2538,7 @@ class _PersonClusterCard extends StatelessWidget {
   final FaceCropTapTracker tapTracker;
   final FaceCropDragPayload dragPayload;
   final VoidCallback onSelectCluster;
-  final void Function(PersonAppearance appearance, {required bool toggle})
+  final void Function(PersonAppearance appearance, {required FaceCropSelectMode mode})
       onSelectAppearance;
   final void Function(String itemId) onOpenItem;
 
@@ -2350,6 +2644,7 @@ class _FaceGroupClusterCard extends StatelessWidget {
     required this.dragPayload,
     required this.onSelectCluster,
     required this.onSetName,
+    this.onUngroup,
     required this.onSelectAppearance,
     required this.onOpenItem,
   });
@@ -2363,7 +2658,8 @@ class _FaceGroupClusterCard extends StatelessWidget {
   final FaceCropDragPayload dragPayload;
   final VoidCallback onSelectCluster;
   final VoidCallback onSetName;
-  final void Function(PersonAppearance appearance, {required bool toggle})
+  final VoidCallback? onUngroup;
+  final void Function(PersonAppearance appearance, {required FaceCropSelectMode mode})
       onSelectAppearance;
   final void Function(String itemId) onOpenItem;
 
@@ -2391,6 +2687,14 @@ class _FaceGroupClusterCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (onUngroup != null)
+                IconButton(
+                  key: Key('face-crop-ungroup-$faceGroupId'),
+                  tooltip: 'Ungroup',
+                  onPressed: busy ? null : onUngroup,
+                  icon: const Icon(Icons.call_split),
+                  visualDensity: VisualDensity.compact,
+                ),
               TextButton(
                 key: Key('face-crop-facegroup-set-name-$faceGroupId'),
                 onPressed: busy ? null : onSetName,
@@ -2467,6 +2771,7 @@ class _ExcludedFaceGroupClusterCard extends StatelessWidget {
     required this.tapTracker,
     required this.dragPayload,
     required this.onSelectCluster,
+    this.onUngroup,
     required this.onSelectExclusion,
     required this.onOpenItem,
   });
@@ -2479,7 +2784,8 @@ class _ExcludedFaceGroupClusterCard extends StatelessWidget {
   final FaceCropTapTracker tapTracker;
   final FaceCropDragPayload dragPayload;
   final VoidCallback onSelectCluster;
-  final void Function(WhoExclusion exclusion, {required bool toggle})
+  final VoidCallback? onUngroup;
+  final void Function(WhoExclusion exclusion, {required FaceCropSelectMode mode})
       onSelectExclusion;
   final void Function(String itemId) onOpenItem;
 
@@ -2507,6 +2813,14 @@ class _ExcludedFaceGroupClusterCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (onUngroup != null)
+                IconButton(
+                  key: Key('face-crop-ungroup-$faceGroupId'),
+                  tooltip: 'Ungroup',
+                  onPressed: busy ? null : onUngroup,
+                  icon: const Icon(Icons.call_split),
+                  visualDensity: VisualDensity.compact,
+                ),
             ],
           ),
         ),
@@ -2785,7 +3099,7 @@ class _AppearanceGrid extends StatelessWidget {
   final bool busy;
   final Set<String> selectedIds;
   final FaceCropTapTracker tapTracker;
-  final void Function(PersonAppearance appearance, {required bool toggle})
+  final void Function(PersonAppearance appearance, {required FaceCropSelectMode mode})
       onSelect;
   final void Function(String itemId) onOpenItem;
   /// When set (Unassigned tray), shows Set name on each loose thumb.
@@ -2828,7 +3142,7 @@ class _AppearanceGrid extends StatelessWidget {
       onOpenItem(itemId);
       return;
     }
-    onSelect(a, toggle: faceCropMetaPressed());
+    onSelect(a, mode: faceCropSelectMode());
   }
 
   @override
@@ -2973,7 +3287,7 @@ class _ExclusionGrid extends StatelessWidget {
   final bool busy;
   final Set<String> selectedIds;
   final FaceCropTapTracker tapTracker;
-  final void Function(WhoExclusion exclusion, {required bool toggle}) onSelect;
+  final void Function(WhoExclusion exclusion, {required FaceCropSelectMode mode}) onSelect;
   final void Function(String itemId) onOpenItem;
   final bool shrinkWrap;
 
@@ -3011,7 +3325,7 @@ class _ExclusionGrid extends StatelessWidget {
       onOpenItem(e.itemId);
       return;
     }
-    onSelect(e, toggle: faceCropMetaPressed());
+    onSelect(e, mode: faceCropSelectMode());
   }
 
   @override

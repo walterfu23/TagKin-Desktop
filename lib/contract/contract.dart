@@ -133,6 +133,86 @@ class AnalyzeResultResponse {
   }
 }
 
+class AssembleAppearances {
+  const AssembleAppearances({
+    required this.appearanceIds,
+  });
+
+  final List<String> appearanceIds;
+
+  factory AssembleAppearances.fromJson(Map<String, dynamic> json) => AssembleAppearances(
+        appearanceIds: (json['appearanceIds'] as List<dynamic>).map((e) => e as String).toList(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['appearanceIds'] = appearanceIds.map((e) => e).toList();
+    return json;
+  }
+}
+
+class AssembleAppearancesResponse {
+  const AssembleAppearancesResponse({
+    required this.faceGroupId,
+    required this.appearances,
+  });
+
+  final String faceGroupId;
+  final List<PersonAppearance> appearances;
+
+  factory AssembleAppearancesResponse.fromJson(Map<String, dynamic> json) => AssembleAppearancesResponse(
+        faceGroupId: json['faceGroupId'] as String,
+        appearances: (json['appearances'] as List<dynamic>).map((e) => PersonAppearance.fromJson(e as Map<String, dynamic>)).toList(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['faceGroupId'] = faceGroupId;
+    json['appearances'] = appearances.map((e) => e.toJson()).toList();
+    return json;
+  }
+}
+
+class AssembleExclusions {
+  const AssembleExclusions({
+    required this.exclusionIds,
+  });
+
+  final List<String> exclusionIds;
+
+  factory AssembleExclusions.fromJson(Map<String, dynamic> json) => AssembleExclusions(
+        exclusionIds: (json['exclusionIds'] as List<dynamic>).map((e) => e as String).toList(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['exclusionIds'] = exclusionIds.map((e) => e).toList();
+    return json;
+  }
+}
+
+class AssembleExclusionsResponse {
+  const AssembleExclusionsResponse({
+    required this.faceGroupId,
+    required this.exclusions,
+  });
+
+  final String faceGroupId;
+  final List<WhoExclusion> exclusions;
+
+  factory AssembleExclusionsResponse.fromJson(Map<String, dynamic> json) => AssembleExclusionsResponse(
+        faceGroupId: json['faceGroupId'] as String,
+        exclusions: (json['exclusions'] as List<dynamic>).map((e) => WhoExclusion.fromJson(e as Map<String, dynamic>)).toList(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['faceGroupId'] = faceGroupId;
+    json['exclusions'] = exclusions.map((e) => e.toJson()).toList();
+    return json;
+  }
+}
+
 class AssignFaceGroup {
   const AssignFaceGroup({
     this.personId,
@@ -1509,6 +1589,32 @@ class UndoCorrectionResultRestored {
     if (tag != null) json['tag'] = tag?.toJson();
     if (item != null) json['item'] = item?.toJson();
     if (keyPeriod != null) json['keyPeriod'] = keyPeriod?.toJson();
+    return json;
+  }
+}
+
+class UngroupFaceGroupResponse {
+  const UngroupFaceGroupResponse({
+    required this.faceGroupId,
+    required this.appearances,
+    required this.exclusions,
+  });
+
+  final String faceGroupId;
+  final List<PersonAppearance> appearances;
+  final List<WhoExclusion> exclusions;
+
+  factory UngroupFaceGroupResponse.fromJson(Map<String, dynamic> json) => UngroupFaceGroupResponse(
+        faceGroupId: json['faceGroupId'] as String,
+        appearances: (json['appearances'] as List<dynamic>).map((e) => PersonAppearance.fromJson(e as Map<String, dynamic>)).toList(),
+        exclusions: (json['exclusions'] as List<dynamic>).map((e) => WhoExclusion.fromJson(e as Map<String, dynamic>)).toList(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['faceGroupId'] = faceGroupId;
+    json['appearances'] = appearances.map((e) => e.toJson()).toList();
+    json['exclusions'] = exclusions.map((e) => e.toJson()).toList();
     return json;
   }
 }

@@ -146,6 +146,57 @@ class PersonsRepository {
     return UnassignAppearancesResponse.fromJson(json).appearances;
   }
 
+  /// `POST /persons/appearances/assemble` — ≥2 loose faces → one GroupFM.
+  Future<AssembleAppearancesResponse> assembleAppearances(
+    List<String> appearanceIds,
+  ) async {
+    final response = await _client.post(
+      '/persons/appearances/assemble',
+      body: AssembleAppearances(appearanceIds: appearanceIds).toJson(),
+    );
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected assemble-appearances response shape',
+      );
+    }
+    return AssembleAppearancesResponse.fromJson(json);
+  }
+
+  /// `POST /persons/exclusions/assemble` — ≥2 loose exclusions → one GroupFM.
+  Future<AssembleExclusionsResponse> assembleExclusions(
+    List<String> exclusionIds,
+  ) async {
+    final response = await _client.post(
+      '/persons/exclusions/assemble',
+      body: AssembleExclusions(exclusionIds: exclusionIds).toJson(),
+    );
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected assemble-exclusions response shape',
+      );
+    }
+    return AssembleExclusionsResponse.fromJson(json);
+  }
+
+  /// `POST /persons/face-groups/{id}/ungroup` — dissolve GroupFM → loose faces.
+  Future<UngroupFaceGroupResponse> ungroupFaceGroup(String faceGroupId) async {
+    final response = await _client.post(
+      '/persons/face-groups/$faceGroupId/ungroup',
+    );
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected ungroup-face-group response shape',
+      );
+    }
+    return UngroupFaceGroupResponse.fromJson(json);
+  }
+
   /// `GET /persons/appearances/unassigned` — Unassigned tray (R1: no embeddings).
   Future<UnassignedAppearancesPage> listUnassignedAppearances({
     int limit = 100,

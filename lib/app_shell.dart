@@ -511,6 +511,10 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
   /// Last seen unfiltered library leaf folders (for ingest grow / remove shrink).
   Set<String>? _trackedLibraryFolders;
 
+  /// Bumped each time a library↔membership sync is scheduled; stale callbacks
+  /// skip membership mutations so an older empty snapshot cannot removeFolder.
+  int _libraryFolderSyncGen = 0;
+
   /// Last applied collection uiEpoch (Folders look restore).
   int _lastAppliedUiEpoch = -1;
   bool _applyingCollectionUi = false;
@@ -847,27 +851,40 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
 
     // Sync collection membership to library folder grow/shrink, then filter.
     // Also restore Folders look when the collection uiEpoch advances.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    final syncGen = ++_libraryFolderSyncGen;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       final c = ref.read(collectionsControllerProvider);
       if (!c.sessionReady) return;
       final lib = ref.read(libraryTableControllerProvider);
       _ensureLibraryLookSync(lib);
       unawaited(_applyCollectionUiIfNeeded(c));
-      final folders = libraryFolders.toSet();
+      // Live read — do not trust the build-time libraryFolders closure.
+      final folders =
+          distinctLeafFolders(lib.allRows.map((r) => r.item)).toSet();
+      if (syncGen != _libraryFolderSyncGen) return;
+
       final prev = _trackedLibraryFolders;
-      if (prev == null || (prev.isEmpty && folders.isNotEmpty)) {
-        // First observation / initial library populate — seed only (no dirty).
-        _trackedLibraryFolders = folders;
-      } else if (prev.length != folders.length || !prev.containsAll(folders)) {
+      if (c.current.leafFolders.isEmpty && folders.isNotEmpty) {
+        // Minted before items loaded — adopt without dirtying.
+        await c.fillMembershipIfEmpty(folders.toList());
+        if (!mounted) return;
+        if (syncGen != _libraryFolderSyncGen) return;
+      } else {
+        // Adopt any new unowned library leaves (e.g. folder ingest finished).
+        final membership = c.current.leafFolders.toSet();
         for (final f in folders) {
-          if (!prev.contains(f)) c.addFolder(f);
+          if (!membership.contains(f)) c.addFolder(f);
         }
+      }
+      // Shrink only against the last tracked library set (not a stale empty).
+      if (prev != null) {
         for (final f in prev) {
           if (!folders.contains(f)) c.removeFolder(f);
         }
-        _trackedLibraryFolders = folders;
       }
+      if (syncGen != _libraryFolderSyncGen) return;
+      _trackedLibraryFolders = folders;
       ref.read(libraryTableControllerProvider).setCollectionLeafFolders(
             c.current.leafFolders.toSet(),
           );
