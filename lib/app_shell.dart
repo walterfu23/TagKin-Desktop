@@ -534,7 +534,33 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    HardwareKeyboard.instance.addHandler(_onHardwareKeyForFacesSelectAll);
     unawaited(_enableWindowCloseGate());
+  }
+
+  /// Cmd+A on Faces must expand loose face selection even when focus is not
+  /// under Faces (face taps do not take focus; SelectionArea would steal it).
+  bool _onHardwareKeyForFacesSelectAll(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    if (event.logicalKey != LogicalKeyboardKey.keyA) return false;
+    if (!HardwareKeyboard.instance.isMetaPressed &&
+        !HardwareKeyboard.instance.isControlPressed) {
+      return false;
+    }
+    if (!mounted) return false;
+    if (ref.read(activeTopLevelTabProvider) != TopLevelTab.faces) {
+      return false;
+    }
+    final focusCtx = FocusManager.instance.primaryFocus?.context;
+    if (focusCtx != null &&
+        (focusCtx.widget is EditableText ||
+            focusCtx.findAncestorWidgetOfExactType<EditableText>() != null)) {
+      return false;
+    }
+    final selectAll = facesSelectAllLooseHandler;
+    if (selectAll == null) return false;
+    selectAll();
+    return true;
   }
 
   Future<void> _enableWindowCloseGate() async {
@@ -575,6 +601,7 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onHardwareKeyForFacesSelectAll);
     if (_windowCloseGateActive) {
       windowManager.removeListener(this);
       _windowCloseGateActive = false;
@@ -1049,17 +1076,21 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
         children: [
           const FolderIngestStatusBanner(),
           Expanded(
-            child: IndexedStack(
-              index: activeTab.index,
-              children: [
-                widget.child,
-                _mountedTabs.contains(TopLevelTab.faces)
-                    ? const FaceCropTraysPage()
-                    : const SizedBox.shrink(),
-                _mountedTabs.contains(TopLevelTab.persons)
-                    ? const PersonsListPage()
-                    : const SizedBox.shrink(),
-              ],
+            // Offstage IndexedStack siblings must not participate in
+            // app-wide SelectionArea (Cmd+A / right-click Copy on Faces).
+            child: SelectionContainer.disabled(
+              child: IndexedStack(
+                index: activeTab.index,
+                children: [
+                  widget.child,
+                  _mountedTabs.contains(TopLevelTab.faces)
+                      ? const FaceCropTraysPage()
+                      : const SizedBox.shrink(),
+                  _mountedTabs.contains(TopLevelTab.persons)
+                      ? const PersonsListPage()
+                      : const SizedBox.shrink(),
+                ],
+              ),
             ),
           ),
         ],

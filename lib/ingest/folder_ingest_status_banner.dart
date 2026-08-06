@@ -37,10 +37,11 @@ class _FolderIngestStatusBannerState
           removeFinished: remove.jobs.isNotEmpty && removingActive == 0,
         );
 
-        return Material(
-          key: const Key('folder-ingest-status-banner'),
-          color: scheme.surfaceContainerHighest,
-          child: Column(
+        return SelectionContainer.disabled(
+          child: Material(
+            key: const Key('folder-ingest-status-banner'),
+            color: scheme.surfaceContainerHighest,
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               InkWell(
@@ -130,6 +131,7 @@ class _FolderIngestStatusBannerState
                   ),
               ],
             ],
+          ),
           ),
         );
       },
