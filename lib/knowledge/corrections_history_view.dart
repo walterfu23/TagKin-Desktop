@@ -1,18 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 
-/// Lists [Correction] overlays from the approved projection with Undo (D10).
+/// Lists [Correction] overlays from the approved projection (read-only; D12).
+///
+/// Undo/redo is via the screen LIFO stack (Cmd/Ctrl+Z), not per-row buttons.
 class CorrectionsHistoryView extends StatelessWidget {
   const CorrectionsHistoryView({
     super.key,
     required this.corrections,
-    this.onUndo,
-    this.enabled = true,
   });
 
   final List<Correction> corrections;
-  final void Function(String correctionId)? onUndo;
-  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -34,25 +32,11 @@ class CorrectionsHistoryView extends StatelessWidget {
           for (final correction in corrections)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${correction.targetType} · '
-                      '${_summarize(correction.previousValue)} → '
-                      '${_summarize(correction.newValue)}',
-                      key: Key('correction-${correction.id}'),
-                    ),
-                  ),
-                  if (onUndo != null)
-                    TextButton(
-                      key: Key('correction-undo-${correction.id}'),
-                      onPressed:
-                          enabled ? () => onUndo!(correction.id) : null,
-                      child: const Text('Undo'),
-                    ),
-                ],
+              child: Text(
+                '${correction.targetType} · '
+                '${_summarize(correction.previousValue)} → '
+                '${_summarize(correction.newValue)}',
+                key: Key('correction-${correction.id}'),
               ),
             ),
       ],

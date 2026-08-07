@@ -4,6 +4,9 @@ import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prefs/range_slider_control.dart';
+import 'package:tagkin_desktop/undo/undo_controller.dart';
+import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
+import 'package:tagkin_desktop/undo/undoable_action.dart';
 import 'package:tagkin_desktop/where/where_label_resolver.dart';
 import 'package:tagkin_desktop/where/where_place_label.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
@@ -33,6 +36,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   late double _facesDetectScoreThreshold;
   late int _facesTrayPageLimit;
   late int _jobsPollIntervalSeconds;
+  final UndoController _undoStack = UndoController();
 
   @override
   void initState() {
@@ -59,12 +63,50 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _jobsPollIntervalSeconds = prefs.jobsPollIntervalSeconds;
   }
 
+  /// Restore draft fields without recreating text controllers (undo/redo).
+  void _restoreDraftSnapshot(DesktopPrefs prefs) {
+    _showCountryWhenSameCountry = prefs.showCountryWhenSameCountry;
+    _showStateWhenSameState = prefs.showStateWhenSameState;
+    _multiColumnSort = prefs.multiColumnSort;
+    _showFaceOverlays = prefs.showFaceOverlays;
+    _familiarRegions.text = prefs.familiarRegions;
+    _libraryPageSize = prefs.libraryPageSize;
+    _recentCollectionsLimit = prefs.recentCollectionsLimit;
+    _nearDuplicateThreshold = prefs.nearDuplicateThreshold;
+    _sampleMinIntervalMs = prefs.sampleMinIntervalMs;
+    _sampleMaxIntervalMs = prefs.sampleMaxIntervalMs;
+    _softMaxFramesPerItem = prefs.softMaxFramesPerItem;
+    _sceneCutThreshold = prefs.sceneCutThreshold;
+    _facesDetectScoreThreshold = prefs.facesDetectScoreThreshold;
+    _facesTrayPageLimit = prefs.facesTrayPageLimit;
+    _jobsPollIntervalSeconds = prefs.jobsPollIntervalSeconds;
+  }
+
+  void _mutateDraft(VoidCallback change, {String label = 'Edit setting'}) {
+    final before = _draftPrefs();
+    setState(change);
+    final after = _draftPrefs();
+    if (before == after) return;
+    _undoStack.push(
+      CallbackUndoableAction(
+        label: label,
+        onUndo: () async {
+          setState(() => _restoreDraftSnapshot(before));
+        },
+        onRedo: () async {
+          setState(() => _restoreDraftSnapshot(after));
+        },
+      ),
+    );
+  }
+
   void _disposeDraftControllers() {
     _familiarRegions.dispose();
   }
 
   @override
   void dispose() {
+    _undoStack.dispose();
     _disposeDraftControllers();
     super.dispose();
   }
@@ -141,6 +183,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     if (!mounted) return;
     _familiarRegions.text = next.familiarRegions;
     _baseline = next;
+    _undoStack.clear();
     if (pop) Navigator.of(context).pop();
   }
 
@@ -174,6 +217,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       _baseline = DesktopPrefs.defaults;
       _applyDraft(DesktopPrefs.defaults);
     });
+    _undoStack.clear();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Settings restored to defaults')),
@@ -215,6 +259,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     if (!mounted) return;
     switch (choice) {
       case _SettingsLeaveChoice.discard:
+        _undoStack.clear();
         Navigator.of(context).pop();
       case _SettingsLeaveChoice.save:
         await _save();
@@ -346,7 +391,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             min: min,
             max: max,
             step: step,
-            onChanged: (v) => setState(() => onChanged(v)),
+            onChanged: (v) => _mutateDraft(() => onChanged(v)),
           ),
         ],
       ),
@@ -383,7 +428,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             min: min,
             max: max,
             step: step,
-            onChanged: (v) => setState(() => onChanged(v)),
+            onChanged: (v) => _mutateDraft(() => onChanged(v)),
           ),
         ],
       ),
@@ -398,10 +443,18 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         if (didPop) return;
         _onPopAttempt();
       },
-      child: SelectableScope(
+      child: UndoShortcuts(
+        controller: _undoStack,
+        child: SelectableScope(
         child: Scaffold(
           appBar: AppBar(
-            title: const Text('Settings'),
+            title: Row(
+              children: [
+                const Text('Settings'),
+                const SizedBox(width: 8),
+                UndoDepthBadge(controller: _undoStack),
+              ],
+            ),
             actions: [
               TextButton(
                 key: const Key('settings-restore'),
@@ -435,7 +488,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     ),
                     value: _showCountryWhenSameCountry,
                     onChanged: (v) =>
-                        setState(() => _showCountryWhenSameCountry = v),
+                        _mutateDraft(() => _showCountryWhenSameCountry = v),
                   ),
                   SwitchListTile(
                     key: const Key('pref-show-state-same'),
@@ -447,7 +500,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     ),
                     value: _showStateWhenSameState,
                     onChanged: (v) =>
-                        setState(() => _showStateWhenSameState = v),
+                        _mutateDraft(() => _showStateWhenSameState = v),
                   ),
                   Padding(
                     padding: const EdgeInsets.symmetric(
@@ -487,7 +540,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       '(1, 2, …) so you can sort by several columns at once.',
                     ),
                     value: _multiColumnSort,
-                    onChanged: (v) => setState(() => _multiColumnSort = v),
+                    onChanged: (v) => _mutateDraft(() => _multiColumnSort = v),
                   ),
                   _intSlider(
                     key: const Key('pref-library-page-size'),
@@ -533,7 +586,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       'analysis. Turn off for a cleaner photo view.',
                     ),
                     value: _showFaceOverlays,
-                    onChanged: (v) => setState(() => _showFaceOverlays = v),
+                    onChanged: (v) => _mutateDraft(() => _showFaceOverlays = v),
                   ),
                   _doubleSlider(
                     key: const Key('pref-faces-detect-score'),
@@ -662,6 +715,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

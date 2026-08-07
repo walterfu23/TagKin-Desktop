@@ -18,7 +18,6 @@ class KnowledgeView extends StatelessWidget {
     this.onEditTag,
     this.onRemoveTag,
     this.onExcludeWho,
-    this.onUndoWhoExclusion,
     this.correctionsEnabled = true,
   });
 
@@ -41,9 +40,6 @@ class KnowledgeView extends StatelessWidget {
 
   /// Durable exclude who face from this photo (survives re-analyze).
   final void Function(Tag tag)? onExcludeWho;
-
-  /// Undo a who-face exclusion (R6).
-  final void Function(WhoExclusion exclusion)? onUndoWhoExclusion;
 
   final bool correctionsEnabled;
 
@@ -94,22 +90,10 @@ class KnowledgeView extends StatelessWidget {
           for (final exclusion in knowledge.whoExclusions)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Row(
+              child: Text(
                 key: Key('who-exclusion-${exclusion.id}'),
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Excluded face (${exclusion.id.substring(0, 8)}…)',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
-                  if (onUndoWhoExclusion != null && correctionsEnabled)
-                    TextButton(
-                      key: Key('who-exclusion-undo-${exclusion.id}'),
-                      onPressed: () => onUndoWhoExclusion!(exclusion),
-                      child: const Text('Undo'),
-                    ),
-                ],
+                'Excluded face (${exclusion.id.substring(0, 8)}…)',
+                style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
         ],

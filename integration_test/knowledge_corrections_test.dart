@@ -11,6 +11,7 @@ import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/main.dart';
+import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 
 import '../test/fake_comments_repository.dart';
 import '../test/fake_corrections_repository.dart';
@@ -97,16 +98,9 @@ void main() {
     expect(find.byKey(const Key('item-review')), findsOneWidget);
     expect(find.byKey(const Key('knowledge-view')), findsOneWidget);
     expect(find.text('picnic'), findsOneWidget);
+    expect(find.byKey(const Key('correction-undo-corr_seed')), findsNothing);
 
-    // Undo the seeded correction (visible history path).
-    await tester.ensureVisible(
-      find.byKey(const Key('correction-undo-corr_seed')),
-    );
-    await tester.tap(find.byKey(const Key('correction-undo-corr_seed')));
-    await tester.pumpAndSettle();
-    expect(corrections.undoCalls, contains('corr_seed'));
-
-    // Add a where tag.
+    // Add a where tag, then undo via screen LIFO (D12).
     await tester.ensureVisible(find.byKey(const Key('tag-add-where')));
     await tester.tap(find.byKey(const Key('tag-add-where')));
     await tester.pumpAndSettle();
@@ -116,6 +110,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(corrections.addTagCalls, hasLength(1));
     expect(find.text('park'), findsWidgets);
+
+    final undoContext = tester.element(find.byKey(const Key('item-review')));
+    Actions.invoke(undoContext, const ScreenUndoIntent());
+    await tester.pumpAndSettle();
+    expect(corrections.undoCalls, isNotEmpty);
 
     // Add a comment — author stamped by server fake.
     await tester.ensureVisible(find.byKey(const Key('comment-body-field')));

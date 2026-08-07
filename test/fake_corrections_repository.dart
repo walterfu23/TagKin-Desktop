@@ -25,6 +25,7 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
   final List<({String keyPeriodId, CorrectKeyPeriodBounds input})>
       boundsCalls = <({String keyPeriodId, CorrectKeyPeriodBounds input})>[];
   final List<String> undoCalls = <String>[];
+  final List<String> redoCalls = <String>[];
 
   Object? addTagError;
   Object? editTagError;
@@ -32,6 +33,11 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
   Object? capturedAtError;
   Object? boundsError;
   Object? undoError;
+  Object? redoError;
+
+  /// Corrections removed by [undoCorrection], keyed for [redoCorrection].
+  final Map<String, ({String itemId, Correction correction, ItemKnowledge before})>
+      _undone = {};
 
   int _seq = 0;
   String _nextId(String prefix) => '${prefix}_${++_seq}';
@@ -324,9 +330,10 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
 
       if (correction.targetType == 'item_captured_at') {
         kind = 'item_captured_at';
-        final prev = correction.previousValue is String
-            ? correction.previousValue as String
-            : null;
+        final prevMap = correction.previousValue;
+        final prev = prevMap is Map
+            ? prevMap['capturedAt'] as String?
+            : (prevMap is String ? prevMap : null);
         restoredItem = Item(
           id: knowledge.item.id,
           type: knowledge.item.type,
@@ -402,17 +409,20 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
 
       final remaining = List<Correction>.from(knowledge.corrections)
         ..removeAt(index);
-      items.setKnowledge(
-        item.id,
-        ItemKnowledge(
-          item: restoredItem,
-          tags: restoredTags,
-          keyPeriods: restoredKeyPeriods,
-          appearances: knowledge.appearances,
-          corrections: remaining,
-          whoExclusions: knowledge.whoExclusions,
-        ),
+      final restored = ItemKnowledge(
+        item: restoredItem,
+        tags: restoredTags,
+        keyPeriods: restoredKeyPeriods,
+        appearances: knowledge.appearances,
+        corrections: remaining,
+        whoExclusions: knowledge.whoExclusions,
       );
+      _undone[correctionId] = (
+        itemId: item.id,
+        correction: correction,
+        before: knowledge,
+      );
+      items.setKnowledge(item.id, restored);
       return UndoCorrectionResult(
         correction: correction,
         restored: UndoCorrectionResultRestored(
@@ -432,6 +442,44 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
       );
     }
     throw ApiException(statusCode: 404, message: 'Not found');
+  }
+
+  @override
+  Future<RedoCorrectionResult> redoCorrection(String correctionId) async {
+    redoCalls.add(correctionId);
+    if (redoError != null) throw redoError!;
+    final saved = _undone.remove(correctionId);
+    if (saved == null) {
+      throw ApiException(
+        statusCode: 400,
+        message: 'Correction is not in the undone state',
+      );
+    }
+    items.setKnowledge(saved.itemId, saved.before);
+    final correction = saved.correction;
+    String kind = correction.targetType;
+    if (kind != 'item_captured_at' &&
+        kind != 'key_period_bounds' &&
+        kind != 'tag') {
+      kind = 'tag';
+    }
+    return RedoCorrectionResult(
+      correction: correction,
+      restored: RedoCorrectionResultRestored(
+        kind: kind,
+        item: kind == 'item_captured_at' ? saved.before.item : null,
+        tag: kind == 'tag' && saved.before.tags.isNotEmpty
+            ? saved.before.tags.last
+            : null,
+        keyPeriod: kind == 'key_period_bounds' &&
+                saved.before.keyPeriods.isNotEmpty
+            ? saved.before.keyPeriods.firstWhere(
+                (k) => k.id == correction.targetId,
+                orElse: () => saved.before.keyPeriods.first,
+              )
+            : null,
+      ),
+    );
   }
 
   Tag? _findTag(ItemKnowledge knowledge, String tagId) {

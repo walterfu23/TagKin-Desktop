@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
+import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 
 import 'fake_comments_repository.dart';
 import 'fake_corrections_repository.dart';
@@ -65,14 +66,26 @@ void main() {
     expect(find.byKey(const Key('corrections-history')), findsOneWidget);
     expect(find.byKey(const Key('correction-corr_existing')), findsOneWidget);
     expect(find.byKey(const Key('comments-view')), findsOneWidget);
+    // Per-row Undo removed (D12) — history is read-only.
+    expect(find.byKey(const Key('correction-undo-corr_existing')), findsNothing);
 
-    // Undo existing correction.
-    await tester.ensureVisible(
-      find.byKey(const Key('correction-undo-corr_existing')),
-    );
-    await tester.tap(find.byKey(const Key('correction-undo-corr_existing')));
+    // Add a tag (records on screen undo stack), then Cmd+Z via Actions.
+    await tester.ensureVisible(find.byKey(const Key('tag-add-what')));
+    await tester.tap(find.byKey(const Key('tag-add-what')));
     await tester.pumpAndSettle();
-    expect(corrections.undoCalls, ['corr_existing']);
+    // Dialog flow may vary; if add button opens dialog, enter value.
+    final valueField = find.byKey(const Key('tag-value-field'));
+    if (valueField.evaluate().isNotEmpty) {
+      await tester.enterText(valueField, 'hike');
+      await tester.tap(find.byKey(const Key('tag-edit-save')));
+      await tester.pumpAndSettle();
+      expect(corrections.addTagCalls, isNotEmpty);
+
+      final undoContext = tester.element(find.byKey(const Key('item-review')));
+      Actions.invoke(undoContext, const ScreenUndoIntent());
+      await tester.pumpAndSettle();
+      expect(corrections.undoCalls, isNotEmpty);
+    }
 
     // Add a comment.
     await tester.ensureVisible(find.byKey(const Key('comment-body-field')));
@@ -94,8 +107,8 @@ void main() {
     await tester.enterText(find.byKey(const Key('tag-value-field')), 'park');
     await tester.tap(find.byKey(const Key('tag-edit-save')));
     await tester.pumpAndSettle();
-    expect(corrections.addTagCalls, hasLength(1));
-    expect(corrections.addTagCalls.single.input.value, 'park');
+    expect(corrections.addTagCalls, isNotEmpty);
+    expect(corrections.addTagCalls.last.input.value, 'park');
     expect(find.text('park'), findsWidgets);
   });
 

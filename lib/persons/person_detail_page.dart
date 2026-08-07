@@ -9,6 +9,9 @@ import 'package:tagkin_desktop/persons/face_crop_trays_page.dart';
 import 'package:tagkin_desktop/persons/person_detail_controller.dart';
 import 'package:tagkin_desktop/persons/person_name_dialog.dart';
 import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
+import 'package:tagkin_desktop/undo/undo_controller.dart';
+import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
+import 'package:tagkin_desktop/undo/undoable_action.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
 /// Person detail + unassign / reassign / rename / delete (D9).
@@ -28,6 +31,7 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
   final _renameController = TextEditingController();
   bool _renaming = false;
   final Map<String, String> _reassignTarget = {};
+  final UndoController _undoStack = UndoController();
 
   @override
   void initState() {
@@ -40,6 +44,7 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
   @override
   void dispose() {
     _renameController.dispose();
+    _undoStack.dispose();
     super.dispose();
   }
 
@@ -51,10 +56,34 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
   }
 
   Future<void> _saveRename(PersonDetailController controller) async {
+    final prior = controller.detail?.name;
+    if (prior == null) return;
+    final next = _renameController.text.trim();
+    if (next == prior) {
+      if (mounted) setState(() => _renaming = false);
+      return;
+    }
     final ok = await controller.rename(_renameController.text);
     if (mounted && ok) {
       ref.read(collectionsControllerProvider).markDirty();
       setState(() => _renaming = false);
+      _undoStack.push(
+        CallbackUndoableAction(
+          label: 'Rename person',
+          onUndo: () async {
+            final restored = await controller.rename(prior);
+            if (restored && mounted) {
+              ref.read(collectionsControllerProvider).markDirty();
+            }
+          },
+          onRedo: () async {
+            final restored = await controller.rename(next);
+            if (restored && mounted) {
+              ref.read(collectionsControllerProvider).markDirty();
+            }
+          },
+        ),
+      );
     }
   }
 
@@ -63,12 +92,26 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
     final controller =
         ref.watch(personDetailControllerProvider(widget.personId));
 
-    return ListenableBuilder(
+    return UndoShortcuts(
+      controller: _undoStack,
+      onError: (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$e')),
+        );
+      },
+      child: ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Person'),
+            title: Row(
+              children: [
+                const Text('Person'),
+                const SizedBox(width: 8),
+                UndoDepthBadge(controller: _undoStack),
+              ],
+            ),
             actions: [
               if (controller.canUnassign)
                 Tooltip(
@@ -94,6 +137,7 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
           body: _buildBody(controller),
         );
       },
+    ),
     );
   }
 
@@ -267,9 +311,31 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
                 setState(() => _reassignTarget[appearance.id] = value);
               },
               onUnassign: () async {
-                await controller.unlink(appearance.id);
+                final appearanceId = appearance.id;
+                final fromPersonId = widget.personId;
+                await controller.unlink(appearanceId);
                 if (mounted && controller.error == null) {
                   ref.read(collectionsControllerProvider).markDirty();
+                  _undoStack.push(
+                    CallbackUndoableAction(
+                      label: 'Unassign appearance',
+                      onUndo: () async {
+                        await controller.reassign(
+                          appearanceId,
+                          personId: fromPersonId,
+                        );
+                        if (mounted && controller.error == null) {
+                          ref.read(collectionsControllerProvider).markDirty();
+                        }
+                      },
+                      onRedo: () async {
+                        await controller.unlink(appearanceId);
+                        if (mounted && controller.error == null) {
+                          ref.read(collectionsControllerProvider).markDirty();
+                        }
+                      },
+                    ),
+                  );
                 }
               },
               onOpenItem: appearance.itemId == null
@@ -284,15 +350,47 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
               onReassign: () async {
                 final target = _reassignTarget[appearance.id];
                 if (target == null || target.isEmpty) return;
+                final appearanceId = appearance.id;
+                final fromPersonId = widget.personId;
+                String? newPersonName;
+                String? targetPersonId;
                 if (target == _AppearanceCard.newPersonSentinel) {
-                  final name = await showPersonNameDialog(context);
-                  if (name == null || !mounted) return;
-                  await controller.reassign(appearance.id, name: name);
+                  newPersonName = await showPersonNameDialog(context);
+                  if (newPersonName == null || !mounted) return;
                 } else {
-                  await controller.reassign(appearance.id, personId: target);
+                  targetPersonId = target;
                 }
+                await controller.reassign(
+                  appearanceId,
+                  personId: targetPersonId,
+                  name: newPersonName,
+                );
                 if (mounted && controller.error == null) {
                   ref.read(collectionsControllerProvider).markDirty();
+                  _undoStack.push(
+                    CallbackUndoableAction(
+                      label: 'Reassign appearance',
+                      onUndo: () async {
+                        await controller.reassign(
+                          appearanceId,
+                          personId: fromPersonId,
+                        );
+                        if (mounted && controller.error == null) {
+                          ref.read(collectionsControllerProvider).markDirty();
+                        }
+                      },
+                      onRedo: () async {
+                        await controller.reassign(
+                          appearanceId,
+                          personId: targetPersonId,
+                          name: newPersonName,
+                        );
+                        if (mounted && controller.error == null) {
+                          ref.read(collectionsControllerProvider).markDirty();
+                        }
+                      },
+                    ),
+                  );
                 }
               },
             ),

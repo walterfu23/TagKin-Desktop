@@ -16,13 +16,16 @@ import 'package:tagkin_desktop/review/knowledge_view.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/review/media_viewer.dart';
 import 'package:tagkin_desktop/review/review_controller.dart';
+import 'package:tagkin_desktop/undo/undo_controller.dart';
+import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
-/// Review surface: local media + approved knowledge + corrections/comments.
+/// Review screen: local media + approved knowledge + corrections/comments.
 ///
 /// Embedded below D2/D7 metadata on the item detail screen. D9 adds
 /// Find person matches + appearance → person navigation. D10 owns tag /
-/// captured-at / key-period corrections, undo, and comments.
+/// captured-at / key-period corrections and comments. D12 owns per-screen
+/// LIFO undo/redo (Cmd/Ctrl+Z) for this Review page.
 class ItemReviewSection extends ConsumerStatefulWidget {
   const ItemReviewSection({
     super.key,
@@ -45,17 +48,21 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
   String? _openedPath;
   bool _linking = false;
   String? _linkStatus;
+  late final UndoController _undoStack = UndoController();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(reviewControllerProvider(widget.itemId)).load();
+      final review = ref.read(reviewControllerProvider(widget.itemId));
+      review.undoStack = _undoStack;
+      review.load();
     });
   }
 
   @override
   void dispose() {
+    _undoStack.dispose();
     _disposePlayer();
     super.dispose();
   }
@@ -245,13 +252,27 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
           });
         }
 
-        return Column(
+        return UndoShortcuts(
+          controller: _undoStack,
+          onError: (e) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('$e')),
+            );
+          },
+          child: Column(
           key: const Key('item-review'),
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Review',
-              style: Theme.of(context).textTheme.titleMedium,
+            Row(
+              children: [
+                Text(
+                  'Review',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(width: 8),
+                UndoDepthBadge(controller: _undoStack),
+              ],
             ),
             const SizedBox(height: 12),
             if (review.phase == ReviewPhase.loading)
@@ -314,7 +335,6 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
                 onEditTag: (t) => _editTag(review, t),
                 onRemoveTag: (t) => review.removeTag(t.id),
                 onExcludeWho: (t) => review.excludeWhoFace(t.id),
-                onUndoWhoExclusion: (e) => review.undoWhoExclusion(e.id),
                 correctionsEnabled: !review.isBusy,
               ),
               if (review.mutationError != null) ...[
@@ -328,8 +348,6 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
               const SizedBox(height: 16),
               CorrectionsHistoryView(
                 corrections: knowledge.corrections,
-                onUndo: review.undoCorrection,
-                enabled: !review.isBusy,
               ),
               const SizedBox(height: 16),
               CommentsView(
@@ -369,6 +387,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
               ],
             ],
           ],
+        ),
         );
       },
     );

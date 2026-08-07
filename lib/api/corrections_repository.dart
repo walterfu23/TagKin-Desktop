@@ -91,6 +91,20 @@ class CorrectionsRepository {
     return UndoCorrectionResult.fromJson(json);
   }
 
+  /// `POST /corrections/{correctionId}/redo` — re-apply original correction
+  /// after undo when the entity is still in the undone state (S8 / R6).
+  Future<RedoCorrectionResult> redoCorrection(String correctionId) async {
+    final response = await _client.post('/corrections/$correctionId/redo');
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected redo-correction response shape',
+      );
+    }
+    return RedoCorrectionResult.fromJson(json);
+  }
+
   TagMutationResult _tagMutation(http.Response response, String label) {
     final json = jsonDecode(response.body);
     if (json is! Map<String, dynamic>) {

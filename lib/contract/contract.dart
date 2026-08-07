@@ -1287,6 +1287,58 @@ class RecordAnalysisRef {
   }
 }
 
+class RedoCorrectionResult {
+  const RedoCorrectionResult({
+    required this.correction,
+    required this.restored,
+  });
+
+  final Correction correction;
+  final RedoCorrectionResultRestored restored;
+
+  factory RedoCorrectionResult.fromJson(Map<String, dynamic> json) => RedoCorrectionResult(
+        correction: Correction.fromJson(json['correction'] as Map<String, dynamic>),
+        restored: RedoCorrectionResultRestored.fromJson(json['restored'] as Map<String, dynamic>),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['correction'] = correction.toJson();
+    json['restored'] = restored.toJson();
+    return json;
+  }
+}
+
+class RedoCorrectionResultRestored {
+  const RedoCorrectionResultRestored({
+    required this.kind,
+    this.tag,
+    this.item,
+    this.keyPeriod,
+  });
+
+  final String kind;
+  final Tag? tag;
+  final Item? item;
+  final KeyPeriodKnowledge? keyPeriod;
+
+  factory RedoCorrectionResultRestored.fromJson(Map<String, dynamic> json) => RedoCorrectionResultRestored(
+        kind: json['kind'] as String,
+        tag: json['tag'] == null ? null : Tag.fromJson(json['tag'] as Map<String, dynamic>),
+        item: json['item'] == null ? null : Item.fromJson(json['item'] as Map<String, dynamic>),
+        keyPeriod: json['keyPeriod'] == null ? null : KeyPeriodKnowledge.fromJson(json['keyPeriod'] as Map<String, dynamic>),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['kind'] = kind;
+    if (tag != null) json['tag'] = tag?.toJson();
+    if (item != null) json['item'] = item?.toJson();
+    if (keyPeriod != null) json['keyPeriod'] = keyPeriod?.toJson();
+    return json;
+  }
+}
+
 class RenamePerson {
   const RenamePerson({
     required this.name,

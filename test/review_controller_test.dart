@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/review/review_controller.dart';
+import 'package:tagkin_desktop/undo/undo_controller.dart';
 
 import 'fake_comments_repository.dart';
 import 'fake_corrections_repository.dart';
@@ -126,6 +127,43 @@ void main() {
     expect(phases, contains(ReviewPhase.loading));
     expect(phases, contains(ReviewPhase.ready));
     controller.dispose();
+  });
+
+  test('addTag records undo stack; undo then redo via stack', () async {
+    final item = fixtureItem(id: 'item_1');
+    final knowledge = fixtureKnowledge(
+      item: item,
+      tags: [fixtureTag(id: 'tag_what', dimension: 'what', value: 'picnic')],
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {'item_1': knowledge},
+    );
+    final corrections = FakeCorrectionsRepository(items: items);
+    final stack = UndoController();
+    final controller = ReviewController(
+      itemId: 'item_1',
+      itemsRepository: items,
+      correctionsRepository: corrections,
+      commentsRepository: FakeCommentsRepository(),
+      resolveMedia: (_) async =>
+          const LocalMediaResolution(status: LocalMediaStatus.missing),
+      undoStack: stack,
+    );
+    await controller.load();
+    await controller.addTag(dimension: 'where', value: 'beach');
+    expect(stack.undoDepth, 1);
+    expect(corrections.addTagCalls, hasLength(1));
+
+    await stack.undo();
+    expect(corrections.undoCalls, hasLength(1));
+    expect(stack.canRedo, isTrue);
+
+    await stack.redo();
+    expect(corrections.redoCalls, hasLength(1));
+    expect(stack.undoDepth, 1);
+    controller.dispose();
+    stack.dispose();
   });
 
   test('addTag optimistic then reconciles approved value; undo restores',

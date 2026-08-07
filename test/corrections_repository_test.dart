@@ -244,6 +244,34 @@ void main() {
       client.close();
     });
 
+    test('redoCorrection POSTs /corrections/{id}/redo', () async {
+      final mock = MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/corrections/corr_1/redo');
+        expect(request.body.isEmpty || request.body == 'null', isTrue);
+        return http.Response(
+          jsonEncode({
+            'correction': _correctionJson(id: 'corr_1'),
+            'restored': {
+              'kind': 'tag',
+              'tag': _tagJson(id: 'tag_1', value: 'picnic'),
+            },
+          }),
+          200,
+        );
+      });
+      final client = ApiClient(
+        baseUrl: 'http://api.test',
+        tokenProvider: () => 'tok',
+        httpClient: mock,
+      );
+      final result =
+          await CorrectionsRepository(client).redoCorrection('corr_1');
+      expect(result.restored.kind, 'tag');
+      expect(result.restored.tag!.value, 'picnic');
+      client.close();
+    });
+
     test('foreign tag id surfaces 404 (R10)', () async {
       final mock = MockClient((request) async {
         return http.Response(

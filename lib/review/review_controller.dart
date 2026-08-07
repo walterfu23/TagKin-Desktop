@@ -10,6 +10,8 @@ import 'package:tagkin_desktop/app_shell.dart'
         itemsRepositoryProvider;
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
+import 'package:tagkin_desktop/undo/undo_controller.dart';
+import 'package:tagkin_desktop/undo/undoable_action.dart';
 
 /// Lifecycle of a per-item knowledge review load (D8) + corrections (D10).
 enum ReviewPhase { idle, loading, ready, busy, error }
@@ -19,6 +21,9 @@ enum ReviewPhase { idle, loading, ready, busy, error }
 ///
 /// Never sends `ownerUserId` (R10). Never uploads media bytes (R1/R5/R7).
 /// Person confirm/correct controls live in D9.
+///
+/// Optional [undoStack] records successful mutations for per-screen LIFO
+/// undo/redo (D12). Stack undo/redo calls do not re-push.
 class ReviewController extends ChangeNotifier {
   ReviewController({
     required this.itemId,
@@ -26,6 +31,7 @@ class ReviewController extends ChangeNotifier {
     required this.correctionsRepository,
     required this.commentsRepository,
     this.resolveMedia = resolveLocalMedia,
+    this.undoStack,
   });
 
   final String itemId;
@@ -33,6 +39,9 @@ class ReviewController extends ChangeNotifier {
   final CorrectionsRepository correctionsRepository;
   final CommentsRepository commentsRepository;
   final Future<LocalMediaResolution> Function(Item item) resolveMedia;
+
+  /// Per-screen undo/redo stack (owned by the Review page).
+  UndoController? undoStack;
 
   ReviewPhase phase = ReviewPhase.idle;
   ItemKnowledge? knowledge;
@@ -110,12 +119,13 @@ class ReviewController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await correctionsRepository.addTag(
+      final result = await correctionsRepository.addTag(
         itemId,
         AddTag(dimension: dimension, value: value, keyPeriodId: keyPeriodId),
       );
       if (_disposed) return;
       await _reconcileKnowledge();
+      _recordCorrectionUndo('Add tag', result.correction.id);
     } catch (e) {
       if (_disposed) return;
       knowledge = snapshot;
@@ -135,9 +145,11 @@ class ReviewController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await correctionsRepository.editTag(tagId, EditTag(value: value));
+      final result =
+          await correctionsRepository.editTag(tagId, EditTag(value: value));
       if (_disposed) return;
       await _reconcileKnowledge();
+      _recordCorrectionUndo('Edit tag', result.correction.id);
     } catch (e) {
       if (_disposed) return;
       knowledge = snapshot;
@@ -157,9 +169,10 @@ class ReviewController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await correctionsRepository.removeTag(tagId);
+      final result = await correctionsRepository.removeTag(tagId);
       if (_disposed) return;
       await _reconcileKnowledge();
+      _recordCorrectionUndo('Remove tag', result.correction.id);
     } catch (e) {
       if (_disposed) return;
       knowledge = snapshot;
@@ -179,9 +192,14 @@ class ReviewController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await itemsRepository.createWhoExclusion(itemId, tagId);
+      final exclusion =
+          await itemsRepository.createWhoExclusion(itemId, tagId);
       if (_disposed) return;
       await _reconcileKnowledge();
+      _recordWhoExcludeUndo(
+        tagId: tagId,
+        exclusionId: exclusion.exclusion.id,
+      );
     } catch (e) {
       if (_disposed) return;
       knowledge = snapshot;
@@ -254,12 +272,13 @@ class ReviewController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await correctionsRepository.correctCapturedAt(
+      final result = await correctionsRepository.correctCapturedAt(
         itemId,
         CorrectCapturedAt(capturedAt: capturedAt),
       );
       if (_disposed) return;
       await _reconcileKnowledge();
+      _recordCorrectionUndo('Edit capturedAt', result.correction.id);
     } catch (e) {
       if (_disposed) return;
       knowledge = snapshot;
@@ -302,12 +321,13 @@ class ReviewController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await correctionsRepository.correctKeyPeriodBounds(
+      final result = await correctionsRepository.correctKeyPeriodBounds(
         keyPeriodId,
         CorrectKeyPeriodBounds(startMs: startMs, endMs: endMs),
       );
       if (_disposed) return;
       await _reconcileKnowledge();
+      _recordCorrectionUndo('Edit key period', result.correction.id);
     } catch (e) {
       if (_disposed) return;
       knowledge = snapshot;
@@ -318,6 +338,7 @@ class ReviewController extends ChangeNotifier {
   }
 
   /// Undo a prior correction; busy then reconcile via `/knowledge`.
+  /// Does not push onto [undoStack] (stack undo already owns the action).
   Future<void> undoCorrection(String correctionId) async {
     if (!canMutate) return;
     phase = ReviewPhase.busy;
@@ -334,6 +355,92 @@ class ReviewController extends ChangeNotifier {
       phase = ReviewPhase.ready;
       notifyListeners();
     }
+  }
+
+  /// Redo a prior correction after undo (S8 / D12).
+  Future<void> redoCorrection(String correctionId) async {
+    if (!canMutate) return;
+    phase = ReviewPhase.busy;
+    mutationError = null;
+    notifyListeners();
+
+    try {
+      await correctionsRepository.redoCorrection(correctionId);
+      if (_disposed) return;
+      await _reconcileKnowledge();
+    } catch (e) {
+      if (_disposed) return;
+      mutationError = e;
+      phase = ReviewPhase.ready;
+      notifyListeners();
+    }
+  }
+
+  void _recordCorrectionUndo(String label, String correctionId) {
+    final stack = undoStack;
+    if (stack == null || !_recordUndo) return;
+    stack.push(
+      CallbackUndoableAction(
+        label: label,
+        onUndo: () => _withoutRecording(() => undoCorrection(correctionId)),
+        onRedo: () => _withoutRecording(() => redoCorrection(correctionId)),
+      ),
+    );
+  }
+
+  void _recordWhoExcludeUndo({
+    required String tagId,
+    required String exclusionId,
+  }) {
+    final stack = undoStack;
+    if (stack == null || !_recordUndo) return;
+    stack.push(
+      CallbackUndoableAction(
+        label: 'Exclude face',
+        onUndo: () => _withoutRecording(() => undoWhoExclusion(exclusionId)),
+        onRedo: () => _withoutRecording(() async {
+          if (!canMutate) return;
+          phase = ReviewPhase.busy;
+          mutationError = null;
+          notifyListeners();
+          try {
+            await itemsRepository.createWhoExclusion(itemId, tagId);
+            if (_disposed) return;
+            await _reconcileKnowledge();
+          } catch (e) {
+            if (_disposed) return;
+            mutationError = e;
+            phase = ReviewPhase.ready;
+            notifyListeners();
+            rethrow;
+          }
+        }),
+      ),
+    );
+  }
+
+  void _recordCommentAdd(String commentId, String body) {
+    final stack = undoStack;
+    if (stack == null || !_recordUndo) return;
+    stack.push(
+      CallbackUndoableAction(
+        label: 'Add comment',
+        onUndo: () => _withoutRecording(() => deleteComment(commentId)),
+        onRedo: () => _withoutRecording(() => addItemComment(body)),
+      ),
+    );
+  }
+
+  void _recordCommentEdit(String commentId, String prior, String next) {
+    final stack = undoStack;
+    if (stack == null || !_recordUndo) return;
+    stack.push(
+      CallbackUndoableAction(
+        label: 'Edit comment',
+        onUndo: () => _withoutRecording(() => editComment(commentId, prior)),
+        onRedo: () => _withoutRecording(() => editComment(commentId, next)),
+      ),
+    );
   }
 
   /// Create an item-level comment; optimistic insert, splice server result.
@@ -366,6 +473,7 @@ class ReviewController extends ChangeNotifier {
       ];
       phase = ReviewPhase.ready;
       notifyListeners();
+      _recordCommentAdd(created.id, trimmed);
     } catch (e) {
       if (_disposed) return;
       comments = snapshot;
@@ -406,6 +514,7 @@ class ReviewController extends ChangeNotifier {
       ];
       phase = ReviewPhase.ready;
       notifyListeners();
+      _recordCommentAdd(created.id, trimmed);
     } catch (e) {
       if (_disposed) return;
       comments = snapshot;
@@ -420,6 +529,7 @@ class ReviewController extends ChangeNotifier {
     if (!canMutate) return;
     final trimmed = body.trim();
     if (trimmed.isEmpty) return;
+    final prior = comments.where((c) => c.id == commentId).firstOrNull?.body;
     final snapshot = List<Comment>.from(comments);
     comments = [
       for (final c in comments)
@@ -453,6 +563,9 @@ class ReviewController extends ChangeNotifier {
       ];
       phase = ReviewPhase.ready;
       notifyListeners();
+      if (prior != null) {
+        _recordCommentEdit(commentId, prior, trimmed);
+      }
     } catch (e) {
       if (_disposed) return;
       comments = snapshot;
@@ -603,6 +716,20 @@ class ReviewController extends ChangeNotifier {
   }
 
   bool _disposed = false;
+
+  /// When false, successful mutations do not push onto [undoStack]
+  /// (used while executing a stack undo/redo).
+  bool _recordUndo = true;
+
+  Future<void> _withoutRecording(Future<void> Function() run) async {
+    final prev = _recordUndo;
+    _recordUndo = false;
+    try {
+      await run();
+    } finally {
+      _recordUndo = prev;
+    }
+  }
 
   @override
   void dispose() {
