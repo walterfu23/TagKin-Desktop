@@ -973,7 +973,7 @@ void main() {
   });
 
   testWidgets(
-      'face crop trays: multi-select drag to Unassigned creates one GroupFA',
+      'face crop trays: multi-select drag to Unassigned creates one GroupFM',
       (tester) async {
     final persons = FakePersonsRepository(
       persons: [
@@ -1047,7 +1047,7 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
 
-    // Two faces moved together become one GroupFA via a single batched call
+    // Two faces moved together become one GroupFM via a single batched call
     // (R6), not two individual unlinks.
     expect(persons.unlinkCalls, isEmpty);
     expect(persons.unassignAppearancesCalls, hasLength(1));
@@ -1059,7 +1059,7 @@ void main() {
     final moved =
         persons.unassignedAppearances.where((a) => a.id == 'ap_a').single;
     expect(moved.faceGroupId, isNotNull);
-    expect(moved.faceGroupKind, FaceGroupKind.fa);
+    expect(moved.faceGroupKind, FaceGroupKind.fm);
   });
 
   testWidgets(
@@ -1860,7 +1860,7 @@ void main() {
   });
 
   testWidgets(
-      'face crop trays: drag cluster header creates one GroupFA',
+      'face crop trays: drag cluster header creates one GroupFM',
       (tester) async {
     final persons = FakePersonsRepository(
       persons: [
@@ -1925,7 +1925,7 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
 
-    // The whole GroupP cluster moves together — one GroupFA, not per-face
+    // The whole GroupP cluster moves together — one GroupFM, not per-face
     // unlinks (R6).
     expect(persons.unlinkCalls, isEmpty);
     expect(persons.unassignAppearancesCalls, hasLength(1));
@@ -1937,6 +1937,109 @@ void main() {
       'ap_g1',
       'ap_g2',
     });
+    // Last in-folder person emptied → New Person… empty drop target.
+    expect(find.text('Drop faces to name a new person'), findsWidgets);
+    expect(find.byKey(const Key('face-crop-assigned-empty')), findsOneWidget);
+    expect(find.byKey(const Key('face-crop-cluster-person_g')), findsNothing);
+    expect(find.textContaining('Grouped faces'), findsOneWidget);
+    expect(find.text('Ungroup'), findsOneWidget);
+  });
+
+  testWidgets(
+      'face crop trays: emptying focused person lands on another in-folder person',
+      (tester) async {
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_a',
+          name: 'Alex',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_a',
+              personId: 'person_a',
+              itemId: 'item_a',
+              tagId: 'tag_a',
+              region: const TagRegion(
+                yMin: 0.1,
+                xMin: 0.1,
+                yMax: 0.4,
+                xMax: 0.4,
+              ),
+            ),
+          ],
+        ),
+        fixturePersonDetail(
+          id: 'person_b',
+          name: 'Bea',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_b',
+              personId: 'person_b',
+              itemId: 'item_b',
+              tagId: 'tag_b',
+              region: const TagRegion(
+                yMin: 0.1,
+                xMin: 0.1,
+                yMax: 0.4,
+                xMax: 0.4,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          itemsRepositoryProvider.overrideWithValue(
+            _itemsInAlbum(['item_a', 'item_b']),
+          ),
+        ],
+        child: const MaterialApp(
+          home: FaceCropTraysPage(initialPersonId: 'person_a'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('face-crop-appearance-ap_a')), findsOneWidget);
+    expect(find.byKey(const Key('face-crop-appearance-ap_b')), findsNothing);
+
+    final from = tester.getCenter(
+      find.byKey(const Key('face-crop-appearance-ap_a')),
+    );
+    final to = tester.getCenter(
+      find.byKey(const Key('face-crop-tray-unassigned')),
+    );
+    final gesture = await tester.startGesture(from);
+    await tester.pump(const Duration(milliseconds: 50));
+    await gesture.moveTo(to);
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    // Land on Bea — not New Person… with everyone's faces.
+    expect(find.text('Drop faces to name a new person'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('face-crop-tray-assigned')),
+        matching: find.byKey(const Key('face-crop-appearance-ap_a')),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('face-crop-tray-assigned')),
+        matching: find.byKey(const Key('face-crop-appearance-ap_b')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<Text>(find.byKey(const Key('face-crop-person-name'))).data,
+      'Bea',
+    );
   });
 
   testWidgets(
@@ -2659,7 +2762,7 @@ void main() {
   });
 
   testWidgets(
-      'face crop trays: Assigned multi-drag to Excluded mints GroupFA and boxes',
+      'face crop trays: Assigned multi-drag to Excluded mints GroupFM and boxes',
       (tester) async {
     final persons = FakePersonsRepository(
       persons: [
@@ -2737,12 +2840,17 @@ void main() {
     expect(fgIds.length, 1);
     expect(fgIds.single, isNotNull);
     expect(
+      persons.accountExclusions.every((e) => e.faceGroupKind == FaceGroupKind.fm),
+      isTrue,
+    );
+    expect(
       find.descendant(
         of: find.byKey(const Key('face-crop-tray-excluded')),
         matching: find.byKey(Key('face-crop-facegroup-${fgIds.single}')),
       ),
       findsOneWidget,
     );
+    expect(find.textContaining('Grouped faces'), findsOneWidget);
   });
 
   testWidgets(
@@ -2823,6 +2931,112 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const Key('face-crop-group-selection')), findsOneWidget);
+  });
+
+  testWidgets(
+      'face crop trays: Excluded loose multi-drag back to Unassigned stays selected',
+      (tester) async {
+    final persons = FakePersonsRepository(persons: const []);
+    persons.unassignedAppearances.addAll([
+      fixtureAppearance(
+        id: 'ap_u1',
+        personId: null,
+        itemId: 'item_u1',
+        tagId: 'tag_u1',
+        region: const TagRegion(
+          yMin: 0.1,
+          xMin: 0.1,
+          yMax: 0.4,
+          xMax: 0.4,
+        ),
+      ),
+      fixtureAppearance(
+        id: 'ap_u2',
+        personId: null,
+        itemId: 'item_u2',
+        tagId: 'tag_u2',
+        region: const TagRegion(
+          yMin: 0.1,
+          xMin: 0.1,
+          yMax: 0.4,
+          xMax: 0.4,
+        ),
+      ),
+    ]);
+    final items = _itemsInAlbum(['item_u1', 'item_u2'], linkedPersons: persons);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          itemsRepositoryProvider.overrideWithValue(items),
+        ],
+        child: const MaterialApp(home: FaceCropTraysPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    Future<void> dragSelection({
+      required Key fromKey,
+      required Key toTray,
+    }) async {
+      final from = tester.getCenter(find.byKey(fromKey));
+      final to = tester.getCenter(find.byKey(toTray));
+      final gesture = await tester.startGesture(from);
+      await tester.pump(const Duration(milliseconds: 50));
+      await gesture.moveTo(to);
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+    }
+
+    // Unassigned → Excluded (stay selected).
+    await tester.tap(find.byKey(const Key('face-crop-appearance-ap_u1')));
+    await tester.pumpAndSettle();
+    debugFaceCropMetaPressed = () => true;
+    await tester.tap(find.byKey(const Key('face-crop-appearance-ap_u2')));
+    await tester.pumpAndSettle();
+    debugFaceCropMetaPressed = null;
+    await dragSelection(
+      fromKey: const Key('face-crop-appearance-ap_u1'),
+      toTray: const Key('face-crop-tray-excluded'),
+    );
+    expect(
+      find.byKey(const Key('face-crop-selected-excl_tag_u1')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('face-crop-selected-excl_tag_u2')),
+      findsOneWidget,
+    );
+
+    // Excluded → Unassigned: faces restored and stay multi-selected.
+    await dragSelection(
+      fromKey: const Key('face-crop-exclusion-excl_tag_u1'),
+      toTray: const Key('face-crop-tray-unassigned'),
+    );
+    expect(persons.accountExclusions, isEmpty);
+    expect(persons.unassignedAppearances, hasLength(2));
+    const restored1 = Key('face-crop-selected-ap_restored_excl_tag_u1');
+    const restored2 = Key('face-crop-selected-ap_restored_excl_tag_u2');
+    expect(find.byKey(restored1), findsOneWidget);
+    expect(find.byKey(restored2), findsOneWidget);
+    expect(find.byKey(const Key('face-crop-group-selection')), findsOneWidget);
+
+    // Second round-trip: faces must not disappear.
+    await dragSelection(
+      fromKey: const Key('face-crop-appearance-ap_restored_excl_tag_u1'),
+      toTray: const Key('face-crop-tray-excluded'),
+    );
+    expect(persons.accountExclusions, hasLength(2));
+    await dragSelection(
+      fromKey: const Key('face-crop-exclusion-excl_tag_u1'),
+      toTray: const Key('face-crop-tray-unassigned'),
+    );
+    expect(persons.accountExclusions, isEmpty);
+    expect(persons.unassignedAppearances, hasLength(2));
+    expect(find.byKey(restored1), findsOneWidget);
+    expect(find.byKey(restored2), findsOneWidget);
   });
 
   testWidgets(

@@ -1230,8 +1230,26 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         // directly in [_onDrop]; only exclusion undos reach here.
         if (data.isExclusion && data.exclusionId != null) {
           await items.undoWhoExclusion(data.itemId, data.exclusionId!);
-          // Appearance id is server-assigned; quiet refresh fills Unassigned.
-          return _FaceMoveResult(removedExclusionId: data.exclusionId);
+          // Server mints a new appearance id; resolve it so the tray updates
+          // immediately and loose multi-select can be reselected.
+          final tagId = data.tagId ?? data.createdFromTagId;
+          final page = await persons.listUnassignedAppearances(
+            limit: _trayPageLimit,
+          );
+          PersonAppearance? match;
+          for (final a in page.appearances) {
+            if (a.tagId == tagId) {
+              match = a;
+              break;
+            }
+          }
+          if (match == null) {
+            throw StateError('Could not find appearance after undo exclude');
+          }
+          return _FaceMoveResult(
+            removedExclusionId: data.exclusionId,
+            addedAppearance: match,
+          );
         }
         return const _FaceMoveResult();
       case FaceCropTray.excluded:
@@ -1305,7 +1323,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   bool _exclusionInScope(WhoExclusion e) =>
       _scopedItemIds.contains(e.itemId);
 
-  /// Same-person ≥2 leaving Assigned → one GroupFA batch; solos / already-loose
+  /// Same-person ≥2 leaving Assigned → one GroupFM batch; solos / already-loose
   /// stay per-face.
   ({
     List<List<FaceCropDragData>> samePersonBatches,
@@ -1334,6 +1352,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
 
   void _applyMoveResults(List<_FaceMoveResult> results) {
     if (results.isEmpty) return;
+    String? loadPersonId;
+    var clearFacesPerson = false;
     setState(() {
       var assigned = List<PersonAppearance>.of(_assignedOverview);
       var unassigned = List<PersonAppearance>.of(_unassigned);
@@ -1411,16 +1431,49 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       }
       _faceTapTracker.clear();
 
+      // Focused person emptied → land on another in-folder person, or true
+      // New Person… empty mode (never overview + New Person… hint).
       final pid = _personId;
       if (pid != null &&
           !assigned.any((a) => a.personId == pid)) {
-        _personId = null;
+        final next = _firstPersonIdInFolder(_persons, assigned);
         _renaming = false;
         _renameController.clear();
         _assignedController?.dispose();
         _assignedController = null;
+        if (next != null) {
+          _personId = next;
+          _assignAsNewPerson = false;
+          loadPersonId = next;
+        } else {
+          _personId = null;
+          _assignAsNewPerson =
+              unassigned.isNotEmpty || excluded.isNotEmpty;
+          clearFacesPerson = true;
+        }
       }
     });
+    final nextId = loadPersonId;
+    if (nextId != null) {
+      if (!_applyingCollectionFacesUi) {
+        ref
+            .read(collectionsControllerProvider)
+            .updateFacesLook(personId: nextId);
+      }
+      final controller = _controllerFor(nextId);
+      unawaited(() async {
+        await controller.load();
+        if (!mounted) return;
+        setState(() {
+          _renameController.text = controller.detail?.name ?? '';
+        });
+        _scrollToCluster(nextId);
+      }());
+    } else if (clearFacesPerson && !_applyingCollectionFacesUi) {
+      ref
+          .read(collectionsControllerProvider)
+          .updateFacesLook(clearPersonId: true);
+    }
   }
 
   /// Sync trays from the API without blanking the page (no [listItems]).
@@ -1504,7 +1557,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     final applied = <_FaceMoveResult>[];
     try {
       if (target == FaceCropTray.unassigned) {
-        // Same-person ≥2 leaving Assigned → one GroupFA. Solos / already-loose
+        // Same-person ≥2 leaving Assigned → one GroupFM. Solos / already-loose
         // unlink per face. Exclusion undos still go through the per-item path.
         final appearanceItems = [
           for (final d in toApply)
@@ -1693,7 +1746,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         // Drop onto Excluded: preserve FaceGroup membership. Appearances that
         // already share a faceGroupId are excluded per-face (server copies the
         // id). Unassigned → Excluded never calls unassignAppearances (would mint
-        // GroupFA). Only Assigned same-person ≥2 mint GroupFA then exclude.
+        // GroupFM). Only Assigned same-person ≥2 mint GroupFM then exclude.
         final appearanceItems = [
           for (final d in toApply)
             if (d.isAppearance && d.appearanceId != null) d,
@@ -2237,7 +2290,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
               border: OutlineInputBorder(),
               isDense: true,
             ),
-            hint: showNewPerson ? const Text('New Person...') : null,
+            hint: showNewPerson && !_assignAsNewPerson
+                ? const Text('Select a person')
+                : null,
             selectedItemBuilder: (context) {
               return [
                 if (showNewPerson)
@@ -2774,30 +2829,35 @@ class _FaceGroupClusterCard extends StatelessWidget {
         borderRadius: const BorderRadius.vertical(top: Radius.circular(7)),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: Text(
-                  '$_label · ${faces.length} '
-                  '${faces.length == 1 ? 'face' : 'faces'}',
-                  style: Theme.of(context).textTheme.titleSmall,
-                  overflow: TextOverflow.ellipsis,
-                ),
+              Text(
+                '$_label · ${faces.length} '
+                '${faces.length == 1 ? 'face' : 'faces'}',
+                style: Theme.of(context).textTheme.titleSmall,
+                overflow: TextOverflow.ellipsis,
               ),
-              if (onUngroup != null) ...[
-                OutlinedButton(
-                  key: Key('face-crop-ungroup-$faceGroupId'),
-                  onPressed: busy ? null : onUngroup,
-                  style: _faceActionButtonStyle(scheme),
-                  child: const Text('Ungroup'),
-                ),
-                const SizedBox(width: 6),
-              ],
-              OutlinedButton(
-                key: Key('face-crop-facegroup-set-name-$faceGroupId'),
-                onPressed: busy ? null : onSetName,
-                style: _faceActionButtonStyle(scheme),
-                child: const Text('Set name'),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                alignment: WrapAlignment.end,
+                children: [
+                  if (onUngroup != null)
+                    OutlinedButton(
+                      key: Key('face-crop-ungroup-$faceGroupId'),
+                      onPressed: busy ? null : onUngroup,
+                      style: _faceActionButtonStyle(scheme),
+                      child: const Text('Ungroup'),
+                    ),
+                  OutlinedButton(
+                    key: Key('face-crop-facegroup-set-name-$faceGroupId'),
+                    onPressed: busy ? null : onSetName,
+                    style: _faceActionButtonStyle(scheme),
+                    child: const Text('Set name'),
+                  ),
+                ],
               ),
             ],
           ),
@@ -2902,23 +2962,27 @@ class _ExcludedFaceGroupClusterCard extends StatelessWidget {
         borderRadius: const BorderRadius.vertical(top: Radius.circular(7)),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: Text(
-                  '$_label · ${faces.length} '
-                  '${faces.length == 1 ? 'face' : 'faces'}',
-                  style: Theme.of(context).textTheme.titleSmall,
-                  overflow: TextOverflow.ellipsis,
-                ),
+              Text(
+                '$_label · ${faces.length} '
+                '${faces.length == 1 ? 'face' : 'faces'}',
+                style: Theme.of(context).textTheme.titleSmall,
+                overflow: TextOverflow.ellipsis,
               ),
-              if (onUngroup != null)
-                OutlinedButton(
-                  key: Key('face-crop-ungroup-$faceGroupId'),
-                  onPressed: busy ? null : onUngroup,
-                  style: _faceActionButtonStyle(scheme),
-                  child: const Text('Ungroup'),
+              if (onUngroup != null) ...[
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: OutlinedButton(
+                    key: Key('face-crop-ungroup-$faceGroupId'),
+                    onPressed: busy ? null : onUngroup,
+                    style: _faceActionButtonStyle(scheme),
+                    child: const Text('Ungroup'),
+                  ),
                 ),
+              ],
             ],
           ),
         ),

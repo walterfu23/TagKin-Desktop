@@ -336,8 +336,8 @@ class FakePersonsRepository implements PersonsRepository {
     FaceGroupKind? faceGroupKind;
     if (moved.length >= 2) {
       _newFaceGroupCounter += 1;
-      faceGroupId = 'fg_fa_$_newFaceGroupCounter';
-      faceGroupKind = FaceGroupKind.fa;
+      faceGroupId = 'fg_fm_$_newFaceGroupCounter';
+      faceGroupKind = FaceGroupKind.fm;
     }
 
     final result = <PersonAppearance>[
@@ -500,11 +500,20 @@ class FakePersonsRepository implements PersonsRepository {
       throw ApiException(statusCode: 404, message: 'Not found');
     }
     final person = _persons[index];
+    String? faceGroupId;
+    FaceGroupKind? faceGroupKind;
+    if (person.appearances.length >= 2) {
+      _newFaceGroupCounter += 1;
+      faceGroupId = 'fg_fm_$_newFaceGroupCounter';
+      faceGroupKind = FaceGroupKind.fm;
+    }
     for (final a in person.appearances) {
       unassignedAppearances.add(
         PersonAppearance(
           id: a.id,
           personId: null,
+          faceGroupId: faceGroupId,
+          faceGroupKind: faceGroupKind,
           itemId: a.itemId,
           keyPeriodId: a.keyPeriodId,
           tagId: a.tagId,
