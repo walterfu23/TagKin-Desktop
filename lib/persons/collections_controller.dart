@@ -27,9 +27,8 @@ String newCollectionId() => _uuid.v4();
 class CollectionsController extends ChangeNotifier {
   CollectionsController({
     CollectionsStore? store,
-    int Function()? maxRecents,
-  })  : _store = store ?? CollectionsStore(),
-        _maxRecents = maxRecents;
+    this._maxRecents,
+  }) : _store = store ?? CollectionsStore();
 
   final CollectionsStore _store;
   final int Function()? _maxRecents;

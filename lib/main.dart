@@ -9,6 +9,7 @@ import 'package:tagkin_desktop/auth/clerk_theme.dart';
 import 'package:tagkin_desktop/library/items_list_page.dart';
 import 'package:tagkin_desktop/shell/app_navigator.dart';
 import 'package:tagkin_desktop/shell/tagkin_platform_menu.dart';
+import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -46,9 +47,14 @@ class TagKinDesktopApp extends StatelessWidget {
           useMaterial3: true,
           extensions: <ThemeExtension<dynamic>>[tagKinClerkTheme()],
         ),
-        // SelectionArea must be under Overlay (per route), not MaterialApp.builder.
-        home: const SelectableScope(
-          child: AuthShell(signedInHome: ItemsListPage()),
+        // ActiveUndoShortcuts must sit above SelectableScope so Cmd/Ctrl+Z
+        // still reaches the active screen stack when SelectionArea holds
+        // focus (D12). SelectionArea must be under Overlay (per route), not
+        // MaterialApp.builder.
+        home: const ActiveUndoShortcuts(
+          child: SelectableScope(
+            child: AuthShell(signedInHome: ItemsListPage()),
+          ),
         ),
       ),
     );

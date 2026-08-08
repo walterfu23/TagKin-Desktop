@@ -159,11 +159,10 @@ class LibraryTableController extends ChangeNotifier {
     required this.commentsRepository,
     LocalThumbCache? thumbCache,
     WhereLabelResolver? whereLabelResolver,
-    int pageSize = 50,
+    this._pageSize = 50,
     this.knowledgeConcurrency = 6,
   })  : _thumbCache = thumbCache ?? LocalThumbCache(),
-        _whereLabels = whereLabelResolver ?? WhereLabelResolver(),
-        _pageSize = pageSize;
+        _whereLabels = whereLabelResolver ?? WhereLabelResolver();
 
   final ItemsRepository itemsRepository;
   final CommentsRepository commentsRepository;

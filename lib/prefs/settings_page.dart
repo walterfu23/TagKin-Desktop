@@ -443,7 +443,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         if (didPop) return;
         _onPopAttempt();
       },
-      child: UndoShortcuts(
+      child: ActiveUndoHost(
+        controller: _undoStack,
+        child: UndoShortcuts(
         controller: _undoStack,
         child: SelectableScope(
         child: Scaffold(
@@ -715,6 +717,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ],
           ),
         ),
+      ),
       ),
       ),
     );

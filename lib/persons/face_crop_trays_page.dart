@@ -72,6 +72,23 @@ class _FaceDropUndoStep {
   final Future<void> Function() redo;
 }
 
+/// Rematch loose multi-select after tray-move undo/redo (ids mint on each hop).
+class _FaceDropSelectionRestore {
+  const _FaceDropSelectionRestore({
+    required this.tagIds,
+    required this.undoTray,
+    required this.undoKind,
+    required this.redoTray,
+    required this.redoKind,
+  });
+
+  final List<String> tagIds;
+  final FaceCropTray undoTray;
+  final FaceCropSelectKind undoKind;
+  final FaceCropTray redoTray;
+  final FaceCropSelectKind redoKind;
+}
+
 /// Override for widget tests (Cmd/Ctrl simulation is flaky under flutter_test).
 @visibleForTesting
 bool Function()? debugFaceCropMetaPressed;
@@ -206,6 +223,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   final _clusterScrollController = ScrollController();
   final Map<String, GlobalKey> _clusterKeys = <String, GlobalKey>{};
   final UndoController _undoStack = UndoController();
+  final FocusNode _trayFocusNode = FocusNode(debugLabel: 'faces-trays');
 
   int get _trayPageLimit =>
       ref.read(desktopPrefsProvider).facesTrayPageLimit.clamp(50, 500);
@@ -363,7 +381,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     if (pid == null) return;
     if (assignedMulti) {
       if (_personId != null) {
-        unawaited(_selectPerson(null));
+        unawaited(_selectPerson(null, recordUndo: false));
       }
       return;
     }
@@ -756,6 +774,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     _assignedController?.dispose();
     _renameController.dispose();
     _clusterScrollController.dispose();
+    _trayFocusNode.dispose();
     _undoStack.dispose();
     super.dispose();
   }
@@ -839,7 +858,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           final canCreateNew =
               _unassignedTrayFaceCount > 0 || _excluded.isNotEmpty;
           if (pid != null) {
-            await _selectPerson(pid);
+            await _selectPerson(pid, recordUndo: false);
           } else if (canCreateNew) {
             setState(() {
               _personId = null;
@@ -1096,7 +1115,17 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     return inFolder ? '$base · in folder' : base;
   }
 
-  Future<void> _selectPerson(String? id) async {
+  /// Encodes Assigned person dropdown selection for undo (sentinel = New Person…).
+  String? _encodedPersonSelection() {
+    if (_assignAsNewPerson) return _newPersonSentinel;
+    return _personId;
+  }
+
+  Future<void> _selectPerson(
+    String? id, {
+    bool recordUndo = true,
+  }) async {
+    final prior = _encodedPersonSelection();
     if (id == null) {
       setState(() {
         _personId = null;
@@ -1111,9 +1140,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
             .read(collectionsControllerProvider)
             .updateFacesLook(clearPersonId: true);
       }
-      return;
-    }
-    if (id == _newPersonSentinel) {
+    } else if (id == _newPersonSentinel) {
       setState(() {
         _personId = null;
         _assignAsNewPerson = true;
@@ -1127,27 +1154,41 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
             .read(collectionsControllerProvider)
             .updateFacesLook(clearPersonId: true);
       }
-      return;
+    } else {
+      final controller = _controllerFor(id);
+      setState(() {
+        _personId = id;
+        _assignAsNewPerson = false;
+        _renaming = false;
+        // Clear immediately so a freshly-loaded person never shows a stale name
+        // while load() is in flight.
+        _renameController.clear();
+      });
+      if (!_applyingCollectionFacesUi) {
+        ref.read(collectionsControllerProvider).updateFacesLook(personId: id);
+      }
+      _scrollToCluster(id);
+      await controller.load();
+      if (!mounted) return;
+      setState(() {
+        _renameController.text = controller.detail?.name ?? '';
+      });
+      _scrollToCluster(id);
     }
-    final controller = _controllerFor(id);
-    setState(() {
-      _personId = id;
-      _assignAsNewPerson = false;
-      _renaming = false;
-      // Clear immediately so a freshly-loaded person never shows a stale name
-      // while load() is in flight.
-      _renameController.clear();
-    });
-    if (!_applyingCollectionFacesUi) {
-      ref.read(collectionsControllerProvider).updateFacesLook(personId: id);
-    }
-    _scrollToCluster(id);
-    await controller.load();
+
     if (!mounted) return;
-    setState(() {
-      _renameController.text = controller.detail?.name ?? '';
-    });
-    _scrollToCluster(id);
+    final next = _encodedPersonSelection();
+    if (recordUndo &&
+        !_applyingCollectionFacesUi &&
+        prior != next) {
+      _undoStack.push(
+        CallbackUndoableAction(
+          label: 'Select person',
+          onUndo: () => _selectPerson(prior, recordUndo: false),
+          onRedo: () => _selectPerson(next, recordUndo: false),
+        ),
+      );
+    }
   }
 
   Future<void> _openItem(String itemId) async {
@@ -1184,6 +1225,28 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       }
       await _reload();
       _markCollectionDirty();
+      _undoStack.push(
+        CallbackUndoableAction(
+          label: 'Set name',
+          onUndo: () async {
+            await persons.unlinkAppearance(appearanceId);
+            _markCollectionDirty();
+            await _reload();
+          },
+          onRedo: () async {
+            final restored = await persons.reassignAppearance(
+              appearanceId,
+              name: name,
+            );
+            final pid = restored.personId;
+            if (pid != null && mounted) {
+              _personId = pid;
+            }
+            _markCollectionDirty();
+            await _reload();
+          },
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1209,8 +1272,41 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       final persons = ref.read(personsRepositoryProvider);
       final detail = await persons.assignFaceGroup(faceGroupId, name: name);
       _personId = detail.id;
+      final appearanceIds = [for (final a in detail.appearances) a.id];
       await _reload();
       _markCollectionDirty();
+      // assignFaceGroup deletes the prior FaceGroup; undo via unassign
+      // (≥2 → new GroupFM). Redo uses that new faceGroupId (closure).
+      String? redoFaceGroupId;
+      _undoStack.push(
+        CallbackUndoableAction(
+          label: 'Set name',
+          onUndo: () async {
+            final restored = await persons.unassignAppearances(appearanceIds);
+            redoFaceGroupId = restored
+                .map((a) => a.faceGroupId)
+                .whereType<String>()
+                .firstOrNull;
+            if (mounted) {
+              _personId = null;
+            }
+            _markCollectionDirty();
+            await _reload();
+          },
+          onRedo: () async {
+            final fg = redoFaceGroupId;
+            if (fg == null) {
+              throw StateError('No FaceGroup to re-assign after undo');
+            }
+            final again = await persons.assignFaceGroup(fg, name: name);
+            if (mounted) {
+              _personId = again.id;
+            }
+            _markCollectionDirty();
+            await _reload();
+          },
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1234,9 +1330,14 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         FaceCropTray.excluded => 'Exclude faces',
       };
 
-  void _recordFaceDropUndo(List<_FaceDropUndoStep> steps, FaceCropTray target) {
+  void _recordFaceDropUndo(
+    List<_FaceDropUndoStep> steps,
+    FaceCropTray target, {
+    _FaceDropSelectionRestore? selectionRestore,
+  }) {
     if (steps.isEmpty) return;
     final label = _faceDropUndoLabel(target);
+    final restore = selectionRestore;
     _undoStack.push(
       CallbackUndoableAction(
         label: label,
@@ -1246,6 +1347,12 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           }
           _markCollectionDirty();
           await _reload();
+          if (!mounted || restore == null) return;
+          _restoreLooseSelectionByTagIds(
+            tagIds: restore.tagIds,
+            tray: restore.undoTray,
+            kind: restore.undoKind,
+          );
         },
         onRedo: () async {
           for (final step in steps) {
@@ -1253,9 +1360,58 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           }
           _markCollectionDirty();
           await _reload();
+          if (!mounted || restore == null) return;
+          _restoreLooseSelectionByTagIds(
+            tagIds: restore.tagIds,
+            tray: restore.redoTray,
+            kind: restore.redoKind,
+          );
         },
       ),
     );
+  }
+
+  /// After tray-move undo/redo remint ids; reselect by stable tagId.
+  void _restoreLooseSelectionByTagIds({
+    required List<String> tagIds,
+    required FaceCropTray tray,
+    required FaceCropSelectKind kind,
+  }) {
+    if (tagIds.length < 2) return;
+    final ids = <String>[];
+    if (kind == FaceCropSelectKind.exclusion) {
+      for (final tagId in tagIds) {
+        for (final e in _excluded) {
+          if (e.createdFromTagId == tagId && e.faceGroupId == null) {
+            ids.add(e.id);
+            break;
+          }
+        }
+      }
+    } else {
+      final pool = tray == FaceCropTray.assigned
+          ? _assignedOverview
+          : _unassigned;
+      for (final tagId in tagIds) {
+        for (final a in pool) {
+          if (a.tagId == tagId &&
+              a.personId == null &&
+              a.faceGroupId == null) {
+            ids.add(a.id);
+            break;
+          }
+        }
+      }
+    }
+    if (ids.length < 2) return;
+    setState(() {
+      _selectedIds
+        ..clear()
+        ..addAll(ids);
+      _selectionTray = tray;
+      _selectionKind = kind;
+      _selectionAnchorId = ids.first;
+    });
   }
 
   void _recordDropStepForOne(
@@ -1277,11 +1433,16 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           final tagId = data.tagId ?? data.createdFromTagId;
           if (tagId == null) return;
           final itemId = data.itemId;
-          final exclusionId = data.exclusionId!;
+          // Undo mints a new exclusion id; redo must use that live id.
+          var liveExclusionId = data.exclusionId!;
           steps.add(
             _FaceDropUndoStep(
-              undo: () => items.createWhoExclusion(itemId, tagId),
-              redo: () => items.undoWhoExclusion(itemId, exclusionId),
+              undo: () async {
+                final created =
+                    await items.createWhoExclusion(itemId, tagId);
+                liveExclusionId = created.exclusion.id;
+              },
+              redo: () => items.undoWhoExclusion(itemId, liveExclusionId),
             ),
           );
         } else if (source == FaceCropTray.assigned &&
@@ -1568,10 +1729,13 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     return (samePersonBatches: batches, perFace: perFace);
   }
 
-  void _applyMoveResults(List<_FaceMoveResult> results) {
-    if (results.isEmpty) return;
+  /// Applies tray-move patches and returns restore metadata when a loose
+  /// multi-select (≥2) was kept on the destination (Excluded↔Unassigned).
+  _FaceDropSelectionRestore? _applyMoveResults(List<_FaceMoveResult> results) {
+    if (results.isEmpty) return null;
     String? loadPersonId;
     var clearFacesPerson = false;
+    _FaceDropSelectionRestore? selectionRestore;
     setState(() {
       var assigned = List<PersonAppearance>.of(_assignedOverview);
       var unassigned = List<PersonAppearance>.of(_unassigned);
@@ -1612,6 +1776,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
 
       // Loose multi-move: keep destination selection so Group / triage continues.
       final selectIds = <String>[];
+      final tagIds = <String>[];
       FaceCropTray? selectTray;
       FaceCropSelectKind? selectKind;
       var allLoose = true;
@@ -1620,6 +1785,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         if (ex != null && _exclusionInScope(ex)) {
           if (ex.faceGroupId != null) allLoose = false;
           selectIds.add(ex.id);
+          final tagId = ex.createdFromTagId;
+          if (tagId != null) tagIds.add(tagId);
           selectTray = FaceCropTray.excluded;
           selectKind = FaceCropSelectKind.exclusion;
         }
@@ -1627,6 +1794,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         if (ap != null && _appearanceInScope(ap)) {
           if (ap.personId != null || ap.faceGroupId != null) allLoose = false;
           selectIds.add(ap.id);
+          final tagId = ap.tagId;
+          if (tagId != null) tagIds.add(tagId);
           selectTray = FaceCropTray.unassigned;
           selectKind = FaceCropSelectKind.appearance;
         }
@@ -1641,6 +1810,25 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         _selectionTray = selectTray;
         _selectionKind = selectKind;
         _selectionAnchorId = selectIds.first;
+        // Only Excluded↔Unassigned hops remint across both trays; capture
+        // tagIds so undo/redo can reselect after reload.
+        if (tagIds.length == selectIds.length &&
+            (selectTray == FaceCropTray.excluded ||
+                selectTray == FaceCropTray.unassigned)) {
+          final undoTray = selectTray == FaceCropTray.excluded
+              ? FaceCropTray.unassigned
+              : FaceCropTray.excluded;
+          final undoKind = selectTray == FaceCropTray.excluded
+              ? FaceCropSelectKind.appearance
+              : FaceCropSelectKind.exclusion;
+          selectionRestore = _FaceDropSelectionRestore(
+            tagIds: List<String>.of(tagIds),
+            undoTray: undoTray,
+            undoKind: undoKind,
+            redoTray: selectTray,
+            redoKind: selectKind,
+          );
+        }
       } else {
         _selectedIds.clear();
         _selectionTray = null;
@@ -1692,6 +1880,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           .read(collectionsControllerProvider)
           .updateFacesLook(clearPersonId: true);
     }
+    return selectionRestore;
   }
 
   /// Sync trays from the API without blanking the page (no [listItems]).
@@ -2152,11 +2341,18 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       }
 
       if (applied.isNotEmpty) {
-        _applyMoveResults(applied);
+        final selectionRestore = _applyMoveResults(applied);
         _markCollectionDirty();
         if (failed == 0) {
-          _recordFaceDropUndo(undoSteps, target);
+          _recordFaceDropUndo(
+            undoSteps,
+            target,
+            selectionRestore: selectionRestore,
+          );
         }
+        // Drag often leaves primary focus on the app-wide SelectionArea;
+        // reclaim tray focus so local Cmd+A (and tests) stay reliable.
+        _trayFocusNode.requestFocus();
       } else {
         setState(() {
           _selectedIds.clear();
@@ -2210,7 +2406,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     final ok = await controller.unassignPerson();
     if (ok && mounted) {
       _markCollectionDirty();
-      await _selectPerson(null);
+      await _selectPerson(null, recordUndo: false);
       await _reload();
     }
   }
@@ -2312,24 +2508,26 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     setState(() => _busy = true);
     try {
       final result = await persons.ungroupFaceGroup(faceGroupId);
+      final appearanceIds = [for (final a in result.appearances) a.id];
+      final exclusionIds = [for (final e in result.exclusions) e.id];
       _markCollectionDirty();
       await _reload();
       if (!mounted) return;
       setState(() {
-        if (result.appearances.isNotEmpty) {
+        if (appearanceIds.isNotEmpty) {
           _selectedIds
             ..clear()
-            ..addAll(result.appearances.map((a) => a.id));
+            ..addAll(appearanceIds);
           _selectionTray = FaceCropTray.unassigned;
           _selectionKind = FaceCropSelectKind.appearance;
-          _selectionAnchorId = result.appearances.first.id;
-        } else if (result.exclusions.isNotEmpty) {
+          _selectionAnchorId = appearanceIds.first;
+        } else if (exclusionIds.isNotEmpty) {
           _selectedIds
             ..clear()
-            ..addAll(result.exclusions.map((e) => e.id));
+            ..addAll(exclusionIds);
           _selectionTray = FaceCropTray.excluded;
           _selectionKind = FaceCropSelectKind.exclusion;
-          _selectionAnchorId = result.exclusions.first.id;
+          _selectionAnchorId = exclusionIds.first;
         } else {
           _selectedIds.clear();
           _selectionTray = null;
@@ -2337,6 +2535,76 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           _selectionAnchorId = null;
         }
       });
+      // Reverse of Group: re-assemble members (≥2). Redo ungroups the new FM.
+      final memberCount = appearanceIds.length + exclusionIds.length;
+      if (memberCount >= 2) {
+        String? redoFaceGroupId;
+        _undoStack.push(
+          CallbackUndoableAction(
+            label: 'Ungroup',
+            onUndo: () async {
+              if (exclusionIds.length >= 2) {
+                final assembled =
+                    await persons.assembleExclusions(exclusionIds);
+                redoFaceGroupId = assembled.faceGroupId;
+                _markCollectionDirty();
+                await _reload();
+                if (!mounted) return;
+                setState(() {
+                  _selectedIds
+                    ..clear()
+                    ..addAll(assembled.exclusions.map((e) => e.id));
+                  _selectionTray = FaceCropTray.excluded;
+                  _selectionKind = FaceCropSelectKind.exclusion;
+                  _selectionAnchorId = assembled.exclusions.first.id;
+                });
+              } else {
+                final assembled =
+                    await persons.assembleAppearances(appearanceIds);
+                redoFaceGroupId = assembled.faceGroupId;
+                _markCollectionDirty();
+                await _reload();
+                if (!mounted) return;
+                setState(() {
+                  _selectedIds
+                    ..clear()
+                    ..addAll(assembled.appearances.map((a) => a.id));
+                  _selectionTray = FaceCropTray.unassigned;
+                  _selectionKind = FaceCropSelectKind.appearance;
+                  _selectionAnchorId = assembled.appearances.first.id;
+                });
+              }
+            },
+            onRedo: () async {
+              final fg = redoFaceGroupId;
+              if (fg == null) {
+                throw StateError('No FaceGroup to ungroup after undo');
+              }
+              final again = await persons.ungroupFaceGroup(fg);
+              _markCollectionDirty();
+              await _reload();
+              if (!mounted) return;
+              setState(() {
+                if (again.appearances.isNotEmpty) {
+                  _selectedIds
+                    ..clear()
+                    ..addAll(again.appearances.map((a) => a.id));
+                  _selectionTray = FaceCropTray.unassigned;
+                  _selectionKind = FaceCropSelectKind.appearance;
+                  _selectionAnchorId = again.appearances.first.id;
+                } else if (again.exclusions.isNotEmpty) {
+                  _selectedIds
+                    ..clear()
+                    ..addAll(again.exclusions.map((e) => e.id));
+                  _selectionTray = FaceCropTray.excluded;
+                  _selectionKind = FaceCropSelectKind.exclusion;
+                  _selectionAnchorId = again.exclusions.first.id;
+                }
+              });
+            },
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2373,28 +2641,19 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
 
     // Claim SelectAllTextIntent so app-wide SelectionArea does not steal Cmd+A
     // onto shell text (e.g. folder activity banner). Loose faces only.
-    return Shortcuts(
+    // Cmd/Ctrl+Z is hosted by ActiveUndoShortcuts above SelectableScope
+    // (via ActiveUndoHost) so it still works when SelectionArea holds focus.
+    final facesActive =
+        ref.watch(activeTopLevelTabProvider) == TopLevelTab.faces;
+    return ActiveUndoHost(
+      controller: _undoStack,
+      active: facesActive,
+      child: Shortcuts(
       shortcuts: <ShortcutActivator, Intent>{
         const SingleActivator(LogicalKeyboardKey.keyA, meta: true):
             const SelectAllTextIntent(SelectionChangedCause.keyboard),
         const SingleActivator(LogicalKeyboardKey.keyA, control: true):
             const SelectAllTextIntent(SelectionChangedCause.keyboard),
-        const SingleActivator(LogicalKeyboardKey.keyZ, meta: true):
-            const ScreenUndoIntent(),
-        const SingleActivator(LogicalKeyboardKey.keyZ, control: true):
-            const ScreenUndoIntent(),
-        const SingleActivator(
-          LogicalKeyboardKey.keyZ,
-          meta: true,
-          shift: true,
-        ): const ScreenRedoIntent(),
-        const SingleActivator(
-          LogicalKeyboardKey.keyZ,
-          control: true,
-          shift: true,
-        ): const ScreenRedoIntent(),
-        const SingleActivator(LogicalKeyboardKey.keyY, control: true):
-            const ScreenRedoIntent(),
       },
       child: Actions(
         actions: <Type, Action<Intent>>{
@@ -2404,37 +2663,10 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
               return null;
             },
           ),
-          ScreenUndoIntent: CallbackAction<ScreenUndoIntent>(
-            onInvoke: (_) {
-              if (focusIsInEditableText(context)) return null;
-              if (!_undoStack.canUndo) return null;
-              final messenger = ScaffoldMessenger.maybeOf(context);
-              unawaited(_undoStack.undo().catchError((Object e) {
-                if (!mounted) return;
-                messenger?.showSnackBar(
-                  SnackBar(content: Text('$e')),
-                );
-              }));
-              return null;
-            },
-          ),
-          ScreenRedoIntent: CallbackAction<ScreenRedoIntent>(
-            onInvoke: (_) {
-              if (focusIsInEditableText(context)) return null;
-              if (!_undoStack.canRedo) return null;
-              final messenger = ScaffoldMessenger.maybeOf(context);
-              unawaited(_undoStack.redo().catchError((Object e) {
-                if (!mounted) return;
-                messenger?.showSnackBar(
-                  SnackBar(content: Text('$e')),
-                );
-              }));
-              return null;
-            },
-          ),
         },
         child: SelectionContainer.disabled(
           child: Focus(
+            focusNode: _trayFocusNode,
             autofocus: true,
             onKeyEvent: (node, event) {
               if (event is! KeyDownEvent) return KeyEventResult.ignored;
@@ -2571,6 +2803,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                   ),
                 ),
       ),
+    ),
     ),
     ),
     ),

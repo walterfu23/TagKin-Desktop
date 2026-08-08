@@ -252,7 +252,9 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
           });
         }
 
-        return UndoShortcuts(
+        return ActiveUndoHost(
+          controller: _undoStack,
+          child: UndoShortcuts(
           controller: _undoStack,
           onError: (e) {
             if (!mounted) return;
@@ -387,6 +389,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
               ],
             ],
           ],
+        ),
         ),
         );
       },

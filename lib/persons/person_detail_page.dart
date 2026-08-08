@@ -92,7 +92,9 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
     final controller =
         ref.watch(personDetailControllerProvider(widget.personId));
 
-    return UndoShortcuts(
+    return ActiveUndoHost(
+      controller: _undoStack,
+      child: UndoShortcuts(
       controller: _undoStack,
       onError: (e) {
         if (!mounted) return;
@@ -137,6 +139,7 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
           body: _buildBody(controller),
         );
       },
+    ),
     ),
     );
   }
