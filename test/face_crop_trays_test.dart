@@ -43,6 +43,20 @@ FakeItemsRepository _itemsInAlbum(
   );
 }
 
+String _exclusionIdForTag(FakePersonsRepository persons, String tagId) {
+  for (final e in persons.accountExclusions) {
+    if (e.createdFromTagId == tagId) return e.id;
+  }
+  fail('No exclusion for tag $tagId');
+}
+
+String _unassignedIdForTag(FakePersonsRepository persons, String tagId) {
+  for (final a in persons.unassignedAppearances) {
+    if (a.tagId == tagId) return a.id;
+  }
+  fail('No unassigned appearance for tag $tagId');
+}
+
 void main() {
   setUp(() {
     faceCropLastLeafFolder = null;
@@ -2922,11 +2936,11 @@ void main() {
       isTrue,
     );
     expect(
-      find.byKey(const Key('face-crop-selected-excl_tag_u1')),
+      find.byKey(Key('face-crop-selected-${_exclusionIdForTag(persons, 'tag_u1')}')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const Key('face-crop-selected-excl_tag_u2')),
+      find.byKey(Key('face-crop-selected-${_exclusionIdForTag(persons, 'tag_u2')}')),
       findsOneWidget,
     );
     expect(find.byKey(const Key('face-crop-group-selection')), findsOneWidget);
@@ -3000,42 +3014,47 @@ void main() {
       fromKey: const Key('face-crop-appearance-ap_u1'),
       toTray: const Key('face-crop-tray-excluded'),
     );
+    final exclU1 = _exclusionIdForTag(persons, 'tag_u1');
+    final exclU2 = _exclusionIdForTag(persons, 'tag_u2');
     expect(
-      find.byKey(const Key('face-crop-selected-excl_tag_u1')),
+      find.byKey(Key('face-crop-selected-$exclU1')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const Key('face-crop-selected-excl_tag_u2')),
+      find.byKey(Key('face-crop-selected-$exclU2')),
       findsOneWidget,
     );
 
     // Excluded → Unassigned: faces restored and stay multi-selected.
     await dragSelection(
-      fromKey: const Key('face-crop-exclusion-excl_tag_u1'),
+      fromKey: Key('face-crop-exclusion-$exclU1'),
       toTray: const Key('face-crop-tray-unassigned'),
     );
     expect(persons.accountExclusions, isEmpty);
     expect(persons.unassignedAppearances, hasLength(2));
-    const restored1 = Key('face-crop-selected-ap_restored_excl_tag_u1');
-    const restored2 = Key('face-crop-selected-ap_restored_excl_tag_u2');
-    expect(find.byKey(restored1), findsOneWidget);
-    expect(find.byKey(restored2), findsOneWidget);
+    final restored1 = _unassignedIdForTag(persons, 'tag_u1');
+    final restored2 = _unassignedIdForTag(persons, 'tag_u2');
+    expect(find.byKey(Key('face-crop-selected-$restored1')), findsOneWidget);
+    expect(find.byKey(Key('face-crop-selected-$restored2')), findsOneWidget);
     expect(find.byKey(const Key('face-crop-group-selection')), findsOneWidget);
 
     // Second round-trip: faces must not disappear.
     await dragSelection(
-      fromKey: const Key('face-crop-appearance-ap_restored_excl_tag_u1'),
+      fromKey: Key('face-crop-appearance-$restored1'),
       toTray: const Key('face-crop-tray-excluded'),
     );
     expect(persons.accountExclusions, hasLength(2));
+    final exclU1b = _exclusionIdForTag(persons, 'tag_u1');
     await dragSelection(
-      fromKey: const Key('face-crop-exclusion-excl_tag_u1'),
+      fromKey: Key('face-crop-exclusion-$exclU1b'),
       toTray: const Key('face-crop-tray-unassigned'),
     );
     expect(persons.accountExclusions, isEmpty);
     expect(persons.unassignedAppearances, hasLength(2));
-    expect(find.byKey(restored1), findsOneWidget);
-    expect(find.byKey(restored2), findsOneWidget);
+    final restored1b = _unassignedIdForTag(persons, 'tag_u1');
+    final restored2b = _unassignedIdForTag(persons, 'tag_u2');
+    expect(find.byKey(Key('face-crop-selected-$restored1b')), findsOneWidget);
+    expect(find.byKey(Key('face-crop-selected-$restored2b')), findsOneWidget);
   });
 
   testWidgets(
@@ -3048,10 +3067,22 @@ void main() {
           name: 'Alex',
           appearances: [
             fixtureAppearance(
-              id: 'ap_a',
+              id: 'ap_a1',
               personId: 'person_a',
-              itemId: 'item_a',
-              tagId: 'tag_a',
+              itemId: 'item_a1',
+              tagId: 'tag_a1',
+              region: const TagRegion(
+                yMin: 0.1,
+                xMin: 0.1,
+                yMax: 0.4,
+                xMax: 0.4,
+              ),
+            ),
+            fixtureAppearance(
+              id: 'ap_a2',
+              personId: 'person_a',
+              itemId: 'item_a2',
+              tagId: 'tag_a2',
               region: const TagRegion(
                 yMin: 0.1,
                 xMin: 0.1,
@@ -3081,7 +3112,10 @@ void main() {
         ),
       ],
     );
-    final items = _itemsInAlbum(['item_a', 'item_b'], linkedPersons: persons);
+    final items = _itemsInAlbum(
+      ['item_a1', 'item_a2', 'item_b'],
+      linkedPersons: persons,
+    );
 
     await tester.pumpWidget(
       ProviderScope(
@@ -3094,17 +3128,18 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Cmd+click starts Assigned multi-select in overview (both solos visible).
+    // Auto-focuses first in-folder person (Alex); same-person Cmd+multi.
+    expect(find.byKey(const Key('face-crop-appearance-ap_a1')), findsOneWidget);
+    expect(find.byKey(const Key('face-crop-appearance-ap_b')), findsNothing);
     debugFaceCropMetaPressed = () => true;
-    await tester.tap(find.byKey(const Key('face-crop-appearance-ap_a')));
+    await tester.tap(find.byKey(const Key('face-crop-appearance-ap_a1')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('face-crop-appearance-ap_b')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('face-crop-appearance-ap_b')));
+    await tester.tap(find.byKey(const Key('face-crop-appearance-ap_a2')));
     await tester.pumpAndSettle();
     debugFaceCropMetaPressed = null;
 
     final from = tester.getCenter(
-      find.byKey(const Key('face-crop-appearance-ap_a')),
+      find.byKey(const Key('face-crop-appearance-ap_a1')),
     );
     final to = tester.getCenter(
       find.byKey(const Key('face-crop-tray-excluded')),
@@ -3116,22 +3151,19 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
 
-    expect(persons.unassignAppearancesCalls, isEmpty);
     expect(persons.unlinkCalls, isEmpty);
+    expect(persons.unassignAppearancesCalls, hasLength(1));
     expect(persons.accountExclusions, hasLength(2));
+    // Same-person ≥2 Assigned → Excluded mints GroupFM (not loose).
+    final fgIds = persons.accountExclusions
+        .map((e) => e.faceGroupId)
+        .whereType<String>()
+        .toSet();
+    expect(fgIds, hasLength(1));
     expect(
-      persons.accountExclusions.every((e) => e.faceGroupId == null),
-      isTrue,
-    );
-    expect(
-      find.byKey(const Key('face-crop-selected-excl_tag_a')),
+      find.byKey(Key('face-crop-facegroup-${fgIds.single}')),
       findsOneWidget,
     );
-    expect(
-      find.byKey(const Key('face-crop-selected-excl_tag_b')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const Key('face-crop-group-selection')), findsOneWidget);
   });
 
   testWidgets(
@@ -3139,6 +3171,136 @@ void main() {
       (tester) async {
     final persons = FakePersonsRepository(
       persons: [
+        fixturePersonDetail(
+          id: 'person_a',
+          name: 'Alex',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_a1',
+              personId: 'person_a',
+              itemId: 'item_a1',
+              tagId: 'tag_a1',
+              region: const TagRegion(
+                yMin: 0.1,
+                xMin: 0.1,
+                yMax: 0.4,
+                xMax: 0.4,
+              ),
+            ),
+            fixtureAppearance(
+              id: 'ap_a2',
+              personId: 'person_a',
+              itemId: 'item_a2',
+              tagId: 'tag_a2',
+              region: const TagRegion(
+                yMin: 0.1,
+                xMin: 0.1,
+                yMax: 0.4,
+                xMax: 0.4,
+              ),
+            ),
+          ],
+        ),
+        fixturePersonDetail(
+          id: 'person_b',
+          name: 'Bea',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_b',
+              personId: 'person_b',
+              itemId: 'item_b',
+              tagId: 'tag_b',
+              region: const TagRegion(
+                yMin: 0.1,
+                xMin: 0.1,
+                yMax: 0.4,
+                xMax: 0.4,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+    final items = _itemsInAlbum(
+      ['item_a1', 'item_a2', 'item_b'],
+      linkedPersons: persons,
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          itemsRepositoryProvider.overrideWithValue(items),
+        ],
+        child: const MaterialApp(home: FaceCropTraysPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    debugFaceCropMetaPressed = () => true;
+    await tester.tap(find.byKey(const Key('face-crop-appearance-ap_a1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('face-crop-appearance-ap_a2')));
+    await tester.pumpAndSettle();
+    debugFaceCropMetaPressed = null;
+
+    final from = tester.getCenter(
+      find.byKey(const Key('face-crop-appearance-ap_a1')),
+    );
+    final to = tester.getCenter(
+      find.byKey(const Key('face-crop-tray-unassigned')),
+    );
+    final gesture = await tester.startGesture(from);
+    await tester.pump(const Duration(milliseconds: 50));
+    await gesture.moveTo(to);
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(persons.unlinkCalls, isEmpty);
+    expect(persons.unassignAppearancesCalls, hasLength(1));
+    expect(persons.unassignAppearancesCalls.single.toSet(), {'ap_a1', 'ap_a2'});
+    // Same-person ≥2 → one GroupFM in Unassigned.
+    final fgIds = persons.unassignedAppearances
+        .map((a) => a.faceGroupId)
+        .whereType<String>()
+        .toSet();
+    expect(fgIds, hasLength(1));
+    expect(persons.unassignedAppearances, hasLength(2));
+    expect(
+      find.byKey(Key('face-crop-facegroup-${fgIds.single}')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets(
+      'face crop trays: auto-selects first person; drop assigns without Select a person',
+      (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_b',
+          name: 'Bea',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_b',
+              personId: 'person_b',
+              itemId: 'item_b',
+              tagId: 'tag_b',
+              region: const TagRegion(
+                yMin: 0.1,
+                xMin: 0.1,
+                yMax: 0.4,
+                xMax: 0.4,
+              ),
+            ),
+          ],
+        ),
         fixturePersonDetail(
           id: 'person_a',
           name: 'Alex',
@@ -3157,27 +3319,26 @@ void main() {
             ),
           ],
         ),
-        fixturePersonDetail(
-          id: 'person_b',
-          name: 'Bea',
-          appearances: [
-            fixtureAppearance(
-              id: 'ap_b',
-              personId: 'person_b',
-              itemId: 'item_b',
-              tagId: 'tag_b',
-              region: const TagRegion(
-                yMin: 0.1,
-                xMin: 0.1,
-                yMax: 0.4,
-                xMax: 0.4,
-              ),
-            ),
-          ],
-        ),
       ],
     );
-    final items = _itemsInAlbum(['item_a', 'item_b'], linkedPersons: persons);
+    persons.unassignedAppearances.add(
+      fixtureAppearance(
+        id: 'ap_u',
+        personId: null,
+        itemId: 'item_u',
+        tagId: 'tag_u',
+        region: const TagRegion(
+          yMin: 0.1,
+          xMin: 0.1,
+          yMax: 0.4,
+          xMax: 0.4,
+        ),
+      ),
+    );
+    final items = _itemsInAlbum(
+      ['item_a', 'item_b', 'item_u'],
+      linkedPersons: persons,
+    );
 
     await tester.pumpWidget(
       ProviderScope(
@@ -3190,18 +3351,20 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    debugFaceCropMetaPressed = () => true;
-    await tester.tap(find.byKey(const Key('face-crop-appearance-ap_a')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('face-crop-appearance-ap_b')));
-    await tester.pumpAndSettle();
-    debugFaceCropMetaPressed = null;
+    // Name-sorted first in-folder person is Alex (not overview / Select a person).
+    expect(find.text('Select a person'), findsNothing);
+    expect(
+      find.byKey(const Key('face-crop-person-select-label-person_a')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('face-crop-appearance-ap_a')), findsOneWidget);
+    expect(find.byKey(const Key('face-crop-appearance-ap_b')), findsNothing);
 
     final from = tester.getCenter(
-      find.byKey(const Key('face-crop-appearance-ap_a')),
+      find.byKey(const Key('face-crop-appearance-ap_u')),
     );
     final to = tester.getCenter(
-      find.byKey(const Key('face-crop-tray-unassigned')),
+      find.byKey(const Key('face-crop-tray-assigned')),
     );
     final gesture = await tester.startGesture(from);
     await tester.pump(const Duration(milliseconds: 50));
@@ -3210,19 +3373,15 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
 
-    expect(persons.unassignAppearancesCalls, isEmpty);
-    expect(persons.unlinkCalls.toSet(), {'ap_a', 'ap_b'});
-    expect(persons.unassignedAppearances.map((a) => a.id).toSet(), {
-      'ap_a',
-      'ap_b',
-    });
+    expect(find.textContaining('Select a person before assigning'), findsNothing);
+    expect(persons.unassignedAppearances, isEmpty);
     expect(
-      persons.unassignedAppearances.every((a) => a.faceGroupId == null),
-      isTrue,
+      persons.personDetails
+          .expand((p) => p.appearances)
+          .where((a) => a.personId == 'person_a')
+          .length,
+      2,
     );
-    expect(find.byKey(const Key('face-crop-selected-ap_a')), findsOneWidget);
-    expect(find.byKey(const Key('face-crop-selected-ap_b')), findsOneWidget);
-    expect(find.byKey(const Key('face-crop-group-selection')), findsOneWidget);
   });
 
   testWidgets(

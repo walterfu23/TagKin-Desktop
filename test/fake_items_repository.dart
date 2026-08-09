@@ -35,6 +35,10 @@ class FakeItemsRepository implements ItemsRepository {
   /// linked persons fake (copy faceGroupId, move appearances ↔ exclusions).
   FakePersonsRepository? linkedPersons;
 
+  /// Monotonic suffix so each [createWhoExclusion] remints a unique id
+  /// (matches real API; catches stale undoWhoExclusion after redo).
+  int _whoExclusionSeq = 0;
+
   /// Optional grant factory; defaults to a non-expiring stub URL.
   final UploadGrant Function(String itemId, CreateUploadGrant input)?
       grantFactory;
@@ -277,7 +281,7 @@ class FakeItemsRepository implements ItemsRepository {
     }
 
     final exclusion = WhoExclusion(
-      id: 'excl_$tagId',
+      id: 'excl_${tagId}_${++_whoExclusionSeq}',
       itemId: itemId,
       region: region,
       createdFromTagId: tagId,
