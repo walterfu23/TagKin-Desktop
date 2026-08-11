@@ -1,5 +1,6 @@
 // D4 Client Pre-pass integration: build + POST pre-pass-result against a
 // fake ItemsRepository (mocked API per §5; no live network).
+// Background folder ingest (D3) auto-runs classic pre-pass after create.
 //   flutter test integration_test/prepass_test.dart -d macos   (or -d windows)
 
 import 'dart:io';
@@ -11,6 +12,7 @@ import 'package:image/image.dart' as img;
 import 'package:integration_test/integration_test.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/ingest/folder_picker.dart';
 import 'package:tagkin_desktop/main.dart';
 
@@ -59,15 +61,18 @@ void main() {
     await tester.tap(find.byKey(const Key('add-from-folder')));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('pick-folder-button')));
+    expect(find.byKey(const Key('folder-ingest-status-banner')), findsOneWidget);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(TagKinDesktopApp)),
+    );
+    final queue = container.read(folderIngestQueueProvider);
+    for (var i = 0; i < 200 && queue.hasActiveJobs; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('confirm-ingest-button')));
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const Key('ingest-done')), findsOneWidget);
-    expect(find.byKey(const Key('run-prepass-button')), findsNothing);
-    expect(find.byKey(const Key('prepass-done-summary')), findsOneWidget);
+    expect(repo.created, hasLength(1));
     expect(repo.prePassRecorded, hasLength(1));
     final payload = repo.prePassRecorded.single.input;
     expect(payload.contentHash, isNotNull);
