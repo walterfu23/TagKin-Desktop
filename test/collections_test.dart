@@ -269,5 +269,69 @@ void main() {
       expect(controller.addFolder('/a'), isTrue);
       expect(controller.current.leafFolders, ['/a']);
     });
+
+    test('adoptUnownedFolders batches new leaves; skips other-owned; one dirty',
+        () async {
+      await controller.create(name: 'Trip', seedFolders: ['/a']);
+      final tripId = controller.current.id;
+      expect(await controller.create(name: 'Other', seedFolders: ['/owned']),
+          isTrue);
+      expect(await controller.open(tripId), isTrue);
+      expect(controller.dirty, isFalse);
+      var notifies = 0;
+      controller.addListener(() => notifies++);
+      expect(
+        controller.adoptUnownedFolders(['/a', '/b', '/c', '/owned', '']),
+        isTrue,
+      );
+      expect(controller.current.leafFolders, ['/a', '/b', '/c']);
+      expect(controller.dirty, isTrue);
+      expect(notifies, 1);
+      expect(controller.adoptUnownedFolders(['/b', '/c']), isFalse);
+      expect(notifies, 1);
+    });
+
+    test('claimFoldersForCurrent steals from other collection and persists',
+        () async {
+      final store = CollectionsStore(supportDir: tempDir);
+      final controller = CollectionsController(store: store);
+      await controller.load();
+      await controller.create(name: 'Trip', seedFolders: ['/a']);
+      final tripId = controller.current.id;
+      expect(await controller.create(name: 'Other', seedFolders: ['/owned']),
+          isTrue);
+      expect(await controller.open(tripId), isTrue);
+      expect(controller.ownerCollectionId('/owned'), isNot(tripId));
+      expect(await controller.claimFoldersForCurrent(['/owned', '/b']), isTrue);
+      expect(controller.current.leafFolders, ['/a', '/owned', '/b']);
+      expect(controller.ownerCollectionId('/owned'), tripId);
+      expect(controller.dirty, isFalse);
+      final other = controller.catalog.collections
+          .firstWhere((c) => c.name == 'Other');
+      expect(other.leafFolders, isEmpty);
+      // Survives reload.
+      final reloaded = CollectionsController(store: store);
+      await reloaded.load();
+      expect(await reloaded.open(tripId), isTrue);
+      expect(reloaded.current.leafFolders, containsAll(['/a', '/owned', '/b']));
+      expect(
+        reloaded.catalog.collections
+            .firstWhere((c) => c.name == 'Other')
+            .leafFolders,
+        isEmpty,
+      );
+    });
+
+    test('removeFolders batches removals with one notify', () async {
+      await controller.create(name: 'Trip', seedFolders: ['/a', '/b', '/c']);
+      await controller.save();
+      var notifies = 0;
+      controller.addListener(() => notifies++);
+      expect(controller.removeFolders(['/b', '/missing', '/c']), isTrue);
+      expect(controller.current.leafFolders, ['/a']);
+      expect(notifies, 1);
+      expect(controller.removeFolders(['/b']), isFalse);
+      expect(notifies, 1);
+    });
   });
 }

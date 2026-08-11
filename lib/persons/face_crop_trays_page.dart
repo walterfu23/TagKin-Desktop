@@ -203,6 +203,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   bool _busy = false;
   Object? _error;
 
+  /// When collection membership changes during [_reload], refilter after load.
+  bool _pendingCollectionRefilter = false;
+
   /// Bumped when trays are intentionally resynced ([_reload], drop undo/redo).
   /// Stale [_refreshTraysQuietly] completions must not overwrite newer state.
   int _traySyncEpoch = 0;
@@ -238,6 +241,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   int _lastIngestRefreshTick = 0;
   bool _lastIngestHadActiveJobs = false;
   FolderIngestQueue? _ingestQueue;
+  ProviderSubscription<FolderIngestQueue>? _ingestQueueSub;
 
   /// Last [FaceCropFocusRequest.nonce] applied (avoids re-applying).
   int? _lastFocusNonce;
@@ -250,8 +254,33 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     return [for (final f in all) if (allowed.contains(f)) f];
   }
 
+  /// Adopt unowned library leaves into the open collection, then filter.
+  List<String> _adoptAndFoldersForCollection(List<String> all) {
+    final cols = ref.read(collectionsControllerProvider);
+    if (cols.hasCurrent) {
+      cols.adoptUnownedFolders(all);
+    }
+    return _foldersForCollection(all);
+  }
+
   Future<void> _refilterFromCollection() async {
-    if (!mounted || _loading) return;
+    if (!mounted) return;
+    if (_loading) {
+      _pendingCollectionRefilter = true;
+      return;
+    }
+    final cols = ref.read(collectionsControllerProvider);
+    if (cols.hasCurrent) {
+      final allowed = cols.current.leafFolders.toSet();
+      final missingFromAll = allowed.any(
+        (f) => f.isNotEmpty && !_allLeafFolders.contains(f),
+      );
+      // Membership grew (e.g. ingest claimed a leaf) but Faces never listed it.
+      if (missingFromAll) {
+        await _refreshFoldersQuietly();
+        return;
+      }
+    }
     final visible = _foldersForCollection(_allLeafFolders);
     final prevFolder = _leafFolder;
     final folder = resolveLeafFolderSelection(
@@ -705,6 +734,37 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     );
   }
 
+  void _bindIngestQueue(FolderIngestQueue next) {
+    if (identical(_ingestQueue, next)) return;
+    final hadPrior = _ingestQueue != null;
+    _ingestQueue?.removeListener(_onIngestQueueChanged);
+    _ingestQueue = next;
+    _lastIngestRefreshTick = next.libraryRefreshTick;
+    _lastIngestHadActiveJobs = next.hasActiveJobs;
+    next.addListener(_onIngestQueueChanged);
+    // Provider rebuilt under us — catch up folders/trays from the live queue.
+    // Also refresh if ticks already landed before this page bound.
+    if (hadPrior || next.libraryRefreshTick > 0) {
+      unawaited(_refreshFoldersQuietly());
+    }
+  }
+
+  void _ensureIngestQueueSubscription() {
+    if (_ingestQueueSub != null) return;
+    try {
+      // Resolve once so missing apiClient/jobs overrides fail here (caught),
+      // not inside an async Riverpod listen error zone.
+      _bindIngestQueue(ref.read(folderIngestQueueProvider));
+      _ingestQueueSub = ref.listenManual<FolderIngestQueue>(
+        folderIngestQueueProvider,
+        (previous, next) => _bindIngestQueue(next),
+      );
+    } catch (_) {
+      // Widget tests often omit jobs/api overrides; treat as no active ingest.
+      _ingestQueue = null;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -717,16 +777,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       _autoSelectFirstInFolder = true;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      try {
-        final ingest = ref.read(folderIngestQueueProvider);
-        _ingestQueue = ingest;
-        _lastIngestRefreshTick = ingest.libraryRefreshTick;
-        _lastIngestHadActiveJobs = ingest.hasActiveJobs;
-        ingest.addListener(_onIngestQueueChanged);
-      } catch (_) {
-        // Widget tests often omit jobs/api overrides; treat as no active ingest.
-        _ingestQueue = null;
-      }
+      _ensureIngestQueueSubscription();
       // Consume any focus request published before this page mounted (e.g.
       // Person Detail → Faces before the Faces tab was ever opened).
       unawaited(_applyFocusRequest(ref.read(faceCropFocusRequestProvider)));
@@ -760,6 +811,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   @override
   void dispose() {
     facesSelectAllLooseHandler = null;
+    _ingestQueueSub?.close();
+    _ingestQueueSub = null;
     _ingestQueue?.removeListener(_onIngestQueueChanged);
     _assignedController?.dispose();
     _renameController.dispose();
@@ -781,8 +834,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     }
     _lastIngestRefreshTick = tick;
     _lastIngestHadActiveJobs = active;
-    // Mid-ingest: folders stay hidden via isLoadingPath. When the job
-    // finishes (or a new job starts), quietly refresh the Faces picker.
+    // Mid-ingest: folders stay hidden via isLoadingPath only while
+    // scanning/registering. When registering finishes (or a new job starts),
+    // quietly refresh the Faces picker.
     unawaited(_refreshFoldersQuietly());
   }
 
@@ -805,7 +859,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         for (final f in distinctLeafFolders(items))
           if (ingestQueue == null || !ingestQueue.isLoadingPath(f)) f,
       ];
-      final folders = _foldersForCollection(allFolders);
+      final folders = _adoptAndFoldersForCollection(allFolders);
       final prevFolder = _leafFolder;
       final folder = resolveLeafFolderSelection(
         folders: folders,
@@ -903,13 +957,13 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         }
       }
       final items = await itemsRepo.listItems();
-      // Hide leaf folders still covered by an active ingest job — items exist
-      // from registering, but Faces should wait until load complete.
+      // Hide leaf folders only while scanning/registering — items may exist
+      // once registering finishes; Faces may list them during analyze.
       final allFolders = [
         for (final f in distinctLeafFolders(items))
           if (ingestQueue == null || !ingestQueue.isLoadingPath(f)) f,
       ];
-      final folders = _foldersForCollection(allFolders);
+      final folders = _adoptAndFoldersForCollection(allFolders);
       final folder = resolveLeafFolderSelection(
         folders: folders,
         preferred: _leafFolder ?? faceCropLastLeafFolder,
@@ -1015,12 +1069,20 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         _loading = false;
       });
       if (pid != null) _scrollToCluster(pid);
+      if (_pendingCollectionRefilter) {
+        _pendingCollectionRefilter = false;
+        unawaited(_refilterFromCollection());
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e;
         _loading = false;
       });
+      if (_pendingCollectionRefilter) {
+        _pendingCollectionRefilter = false;
+        unawaited(_refilterFromCollection());
+      }
     }
   }
 
@@ -1248,6 +1310,91 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmUnconfirmedAppearance(PersonAppearance appearance) async {
+    if (_busy) return;
+    if (appearance.assignmentState != 'unconfirmed') return;
+    setState(() => _busy = true);
+    try {
+      final persons = ref.read(personsRepositoryProvider);
+      await persons.confirmAppearanceAssignment(appearance.id);
+      await _reload();
+      _markCollectionDirty();
+      final appearanceId = appearance.id;
+      _undoStack.push(
+        CallbackUndoableAction(
+          label: 'Confirm face',
+          onUndo: () async {
+            await persons.tryRestoreUnconfirmedAssignment(appearanceId);
+            _markCollectionDirty();
+            await _reload();
+          },
+          onRedo: () async {
+            await persons.confirmAppearanceAssignment(appearanceId);
+            _markCollectionDirty();
+            await _reload();
+          },
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          key: const Key('face-crop-trays-error'),
+          content: Text('Confirm failed: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Reject an unconfirmed auto-assignment ("Not this person"). Undo reassigns
+  /// to the same personId and restores unconfirmed when possible.
+  Future<void> _declineUnconfirmedAppearance(PersonAppearance appearance) async {
+    if (_busy) return;
+    if (appearance.assignmentState != 'unconfirmed') return;
+    final personId = appearance.personId;
+    setState(() => _busy = true);
+    try {
+      final persons = ref.read(personsRepositoryProvider);
+      await persons.declineAutoAssignAppearance(appearance.id);
+      await _reload();
+      _markCollectionDirty();
+      final appearanceId = appearance.id;
+      _undoStack.push(
+        CallbackUndoableAction(
+          label: 'Not this person',
+          onUndo: () async {
+            if (personId != null) {
+              await persons.reassignAppearance(
+                appearanceId,
+                personId: personId,
+              );
+              await persons.tryRestoreUnconfirmedAssignment(appearanceId);
+            }
+            _markCollectionDirty();
+            await _reload();
+          },
+          onRedo: () async {
+            await persons.declineAutoAssignAppearance(appearanceId);
+            _markCollectionDirty();
+            await _reload();
+          },
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          key: const Key('face-crop-trays-error'),
+          content: Text('Not this person failed: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   /// Prompts for a name, then assigns [appearanceId] straight to a new
@@ -3671,6 +3818,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                           FaceCropTray.assigned,
                           mode: mode,
                         ),
+                        onConfirmUnconfirmed: _confirmUnconfirmedAppearance,
+                        onDeclineUnconfirmed: _declineUnconfirmedAppearance,
                         onOpenItem: _openItem,
                       ),
                     ),
@@ -3691,6 +3840,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                         FaceCropTray.assigned,
                         mode: mode,
                       ),
+                      onConfirmUnconfirmed: _confirmUnconfirmedAppearance,
+                      onDeclineUnconfirmed: _declineUnconfirmedAppearance,
                       onOpenItem: _openItem,
                     ),
                 ],
@@ -3924,6 +4075,8 @@ class _PersonClusterCard extends StatelessWidget {
     required this.onSelectCluster,
     required this.onSelectAppearance,
     required this.onOpenItem,
+    this.onConfirmUnconfirmed,
+    this.onDeclineUnconfirmed,
   });
 
   final Person person;
@@ -3937,6 +4090,8 @@ class _PersonClusterCard extends StatelessWidget {
   final void Function(PersonAppearance appearance, {required FaceCropSelectMode mode})
       onSelectAppearance;
   final void Function(String itemId) onOpenItem;
+  final Future<void> Function(PersonAppearance appearance)? onConfirmUnconfirmed;
+  final Future<void> Function(PersonAppearance appearance)? onDeclineUnconfirmed;
 
   @override
   Widget build(BuildContext context) {
@@ -4005,6 +4160,8 @@ class _PersonClusterCard extends StatelessWidget {
           tapTracker: tapTracker,
           shrinkWrap: true,
           onSelect: onSelectAppearance,
+          onConfirmUnconfirmed: onConfirmUnconfirmed,
+          onDeclineUnconfirmed: onDeclineUnconfirmed,
           onOpenItem: onOpenItem,
         ),
       ],
@@ -4512,6 +4669,8 @@ class _AppearanceGrid extends StatelessWidget {
     required this.onOpenItem,
     this.onSetName,
     this.onGroupSelection,
+    this.onConfirmUnconfirmed,
+    this.onDeclineUnconfirmed,
     this.shrinkWrap = false,
   });
 
@@ -4527,6 +4686,10 @@ class _AppearanceGrid extends StatelessWidget {
   final void Function(String appearanceId)? onSetName;
   /// When set and ≥2 loose faces selected, shows Group on each selected thumb.
   final VoidCallback? onGroupSelection;
+  /// Assigned tray: Confirm an unconfirmed auto-assignment.
+  final Future<void> Function(PersonAppearance appearance)? onConfirmUnconfirmed;
+  /// Assigned tray: reject an unconfirmed auto-assignment.
+  final Future<void> Function(PersonAppearance appearance)? onDeclineUnconfirmed;
   final bool shrinkWrap;
 
   FaceCropDragData _dragItem(PersonAppearance a) {
@@ -4594,15 +4757,79 @@ class _AppearanceGrid extends StatelessWidget {
       );
     }
     final setNameHandler = onSetName;
-    if (setNameHandler == null) return null;
+    if (setNameHandler != null) {
+      return Positioned(
+        top: 0,
+        right: 0,
+        child: OutlinedButton(
+          key: Key('face-crop-set-name-${a.id}'),
+          onPressed: busy ? null : () => setNameHandler(a.id),
+          style: _faceActionButtonStyle(scheme),
+          child: const Text('Set name'),
+        ),
+      );
+    }
+    final unconfirmed = a.assignmentState == 'unconfirmed' &&
+        a.personId != null &&
+        source == FaceCropTray.assigned;
+    if (!unconfirmed) return null;
+    final confirmHandler = onConfirmUnconfirmed;
+    final declineHandler = onDeclineUnconfirmed;
+    if (confirmHandler == null || declineHandler == null) return null;
     return Positioned(
-      top: 0,
+      left: 0,
       right: 0,
-      child: OutlinedButton(
-        key: Key('face-crop-set-name-${a.id}'),
-        onPressed: busy ? null : () => setNameHandler(a.id),
-        style: _faceActionButtonStyle(scheme),
-        child: const Text('Set name'),
+      bottom: 0,
+      child: Material(
+        color: scheme.surface.withValues(alpha: 0.92),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(2, 2, 2, 2),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  key: Key('face-crop-unconfirmed-badge-${a.id}'),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: scheme.tertiaryContainer,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'Unconfirmed',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onTertiaryContainer,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Wrap(
+                spacing: 2,
+                runSpacing: 2,
+                children: [
+                  OutlinedButton(
+                    key: Key('face-crop-confirm-${a.id}'),
+                    onPressed: busy ? null : () => confirmHandler(a),
+                    style: _faceActionButtonStyle(scheme),
+                    child: const Text('Confirm'),
+                  ),
+                  OutlinedButton(
+                    key: Key('face-crop-decline-${a.id}'),
+                    onPressed: busy ? null : () => declineHandler(a),
+                    style: _faceActionButtonStyle(scheme),
+                    child: const Text('Not this person'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

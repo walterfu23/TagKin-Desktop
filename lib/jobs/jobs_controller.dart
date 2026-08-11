@@ -279,6 +279,10 @@ final jobsControllerProvider =
       jobsRepository: ref.watch(jobsRepositoryProvider),
       whoFaceLinker: WhoFaceLinker(
         items: ref.watch(itemsRepositoryProvider),
+        autoConfirmMinConfidencePercent:
+            prefs.autoConfirmHighConfidencePersonMatches
+                ? prefs.autoConfirmMinConfidencePercent
+                : null,
       ),
       pollInterval: Duration(seconds: prefs.jobsPollIntervalSeconds),
     );

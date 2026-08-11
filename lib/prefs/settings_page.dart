@@ -35,6 +35,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   late double _sceneCutThreshold;
   late double _facesDetectScoreThreshold;
   late int _facesTrayPageLimit;
+  late bool _autoConfirmHighConfidencePersonMatches;
+  late int _autoConfirmMinConfidencePercent;
   late int _jobsPollIntervalSeconds;
   final UndoController _undoStack = UndoController();
 
@@ -60,6 +62,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _sceneCutThreshold = prefs.sceneCutThreshold;
     _facesDetectScoreThreshold = prefs.facesDetectScoreThreshold;
     _facesTrayPageLimit = prefs.facesTrayPageLimit;
+    _autoConfirmHighConfidencePersonMatches =
+        prefs.autoConfirmHighConfidencePersonMatches;
+    _autoConfirmMinConfidencePercent = prefs.autoConfirmMinConfidencePercent;
     _jobsPollIntervalSeconds = prefs.jobsPollIntervalSeconds;
   }
 
@@ -79,6 +84,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _sceneCutThreshold = prefs.sceneCutThreshold;
     _facesDetectScoreThreshold = prefs.facesDetectScoreThreshold;
     _facesTrayPageLimit = prefs.facesTrayPageLimit;
+    _autoConfirmHighConfidencePersonMatches =
+        prefs.autoConfirmHighConfidencePersonMatches;
+    _autoConfirmMinConfidencePercent = prefs.autoConfirmMinConfidencePercent;
     _jobsPollIntervalSeconds = prefs.jobsPollIntervalSeconds;
   }
 
@@ -129,6 +137,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       'video.sceneCutThreshold': _sceneCutThreshold,
       'faces.detectScoreThreshold': _facesDetectScoreThreshold,
       'faces.trayPageLimit': _facesTrayPageLimit,
+      'faces.autoConfirmHighConfidencePersonMatches':
+          _autoConfirmHighConfidencePersonMatches,
+      'faces.autoConfirmMinConfidencePercent':
+          _autoConfirmMinConfidencePercent,
       'jobs.pollIntervalSeconds': _jobsPollIntervalSeconds,
     });
   }
@@ -370,6 +382,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     required int max,
     required int step,
     required ValueChanged<int> onChanged,
+    bool enabled = true,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -391,6 +404,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             min: min,
             max: max,
             step: step,
+            enabled: enabled,
             onChanged: (v) => _mutateDraft(() => onChanged(v)),
           ),
         ],
@@ -615,6 +629,36 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     max: DesktopPrefs.facesTrayPageLimitMax,
                     step: DesktopPrefs.facesTrayPageLimitStep,
                     onChanged: (v) => _facesTrayPageLimit = v,
+                  ),
+                  SwitchListTile(
+                    key: const Key('pref-auto-confirm-high-confidence'),
+                    title: const Text(
+                      'Auto-confirm high-confidence person matches',
+                    ),
+                    subtitle: const Text(
+                      'On (default): after analyze, lookalike faces that match '
+                      'a named person are auto-confirmed when confidence is at '
+                      'or above the percent below. Off: those matches stay '
+                      'Unconfirmed until you Confirm or reject them.',
+                    ),
+                    value: _autoConfirmHighConfidencePersonMatches,
+                    onChanged: (v) => _mutateDraft(
+                      () => _autoConfirmHighConfidencePersonMatches = v,
+                    ),
+                  ),
+                  _intSlider(
+                    key: const Key('pref-auto-confirm-min-confidence'),
+                    label: 'Auto-confirm minimum confidence (%)',
+                    helper:
+                        'Likeness confidence required to auto-confirm a named '
+                        'person match. Lower auto-confirms more matches; raise '
+                        'to review more Unconfirmed faces. Default 90 (0–100).',
+                    value: _autoConfirmMinConfidencePercent,
+                    min: DesktopPrefs.autoConfirmMinConfidencePercentMin,
+                    max: DesktopPrefs.autoConfirmMinConfidencePercentMax,
+                    step: DesktopPrefs.autoConfirmMinConfidencePercentStep,
+                    enabled: _autoConfirmHighConfidencePersonMatches,
+                    onChanged: (v) => _autoConfirmMinConfidencePercent = v,
                   ),
                 ],
               ),

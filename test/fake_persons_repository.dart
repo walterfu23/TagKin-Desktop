@@ -52,6 +52,8 @@ class FakePersonsRepository implements PersonsRepository {
   final List<({String appearanceId, String? personId, String? name})>
       reassignCalls =
       <({String appearanceId, String? personId, String? name})>[];
+  final List<String> confirmAppearanceCalls = <String>[];
+  final List<String> declineAutoAssignCalls = <String>[];
   final List<({String personId, String name})> renameCalls =
       <({String personId, String name})>[];
   final List<String> deleteCalls = <String>[];
@@ -106,6 +108,165 @@ class FakePersonsRepository implements PersonsRepository {
       name: updated.name,
       createdAt: updated.createdAt,
     );
+  }
+
+  /// Replace one appearance wherever it lives (assigned person or unassigned).
+  PersonAppearance? replaceAppearance(PersonAppearance next) {
+    for (var i = 0; i < _persons.length; i++) {
+      final person = _persons[i];
+      final idx = person.appearances.indexWhere((a) => a.id == next.id);
+      if (idx < 0) continue;
+      final remaining = List<PersonAppearance>.from(person.appearances);
+      remaining[idx] = next;
+      _persons[i] = PersonDetail(
+        id: person.id,
+        name: person.name,
+        createdAt: person.createdAt,
+        appearances: remaining,
+      );
+      return next;
+    }
+    final uIdx = unassignedAppearances.indexWhere((a) => a.id == next.id);
+    if (uIdx >= 0) {
+      unassignedAppearances[uIdx] = next;
+      return next;
+    }
+    final aIdx = assignedAppearances.indexWhere((a) => a.id == next.id);
+    if (aIdx >= 0) {
+      assignedAppearances[aIdx] = next;
+      return next;
+    }
+    return null;
+  }
+
+  PersonAppearance? _findAppearance(String appearanceId) {
+    for (final person in _persons) {
+      for (final a in person.appearances) {
+        if (a.id == appearanceId) return a;
+      }
+    }
+    for (final a in unassignedAppearances) {
+      if (a.id == appearanceId) return a;
+    }
+    for (final a in assignedAppearances) {
+      if (a.id == appearanceId) return a;
+    }
+    return null;
+  }
+
+  @override
+  Future<PersonAppearance> confirmAppearanceAssignment(
+    String appearanceId,
+  ) async {
+    confirmAppearanceCalls.add(appearanceId);
+    final found = _findAppearance(appearanceId);
+    if (found == null) {
+      throw ApiException(statusCode: 404, message: 'Not found');
+    }
+    if (found.personId == null) {
+      throw ApiException(
+        statusCode: 400,
+        message: 'Appearance is not assigned to a person',
+      );
+    }
+    if (found.assignmentState == 'confirmed') return found;
+    if (found.assignmentState != 'unconfirmed') {
+      throw ApiException(
+        statusCode: 400,
+        message: 'appearance assignment is not unconfirmed',
+      );
+    }
+    final confirmed = PersonAppearance(
+      id: found.id,
+      personId: found.personId,
+      faceGroupId: found.faceGroupId,
+      faceGroupKind: found.faceGroupKind,
+      assignmentState: 'confirmed',
+      itemId: found.itemId,
+      keyPeriodId: found.keyPeriodId,
+      tagId: found.tagId,
+      region: found.region,
+      createdAt: found.createdAt,
+    );
+    replaceAppearance(confirmed);
+    return confirmed;
+  }
+
+  @override
+  Future<PersonAppearance> declineAutoAssignAppearance(
+    String appearanceId,
+  ) async {
+    declineAutoAssignCalls.add(appearanceId);
+    PersonAppearance? found;
+    for (var i = 0; i < _persons.length; i++) {
+      final person = _persons[i];
+      final idx = person.appearances.indexWhere((a) => a.id == appearanceId);
+      if (idx < 0) continue;
+      found = person.appearances[idx];
+      final remaining = List<PersonAppearance>.from(person.appearances)
+        ..removeAt(idx);
+      _persons[i] = PersonDetail(
+        id: person.id,
+        name: person.name,
+        createdAt: person.createdAt,
+        appearances: remaining,
+      );
+      break;
+    }
+    if (found == null) {
+      final aIdx = assignedAppearances.indexWhere((a) => a.id == appearanceId);
+      if (aIdx >= 0) found = assignedAppearances.removeAt(aIdx);
+    }
+    if (found == null) {
+      throw ApiException(statusCode: 404, message: 'Not found');
+    }
+    if (found.personId == null) {
+      throw ApiException(
+        statusCode: 400,
+        message: 'Appearance is not assigned to a person',
+      );
+    }
+    final declined = PersonAppearance(
+      id: found.id,
+      personId: null,
+      faceGroupId: null,
+      faceGroupKind: null,
+      assignmentState: null,
+      itemId: found.itemId,
+      keyPeriodId: found.keyPeriodId,
+      tagId: found.tagId,
+      region: found.region,
+      createdAt: found.createdAt,
+    );
+    unassignedAppearances.add(declined);
+    assignedAppearances.removeWhere((a) => a.id == appearanceId);
+    return declined;
+  }
+
+  /// Test/undo helper: restore [assignmentState] to unconfirmed on an assigned
+  /// appearance (no real API equivalent yet).
+  @override
+  Future<PersonAppearance?> tryRestoreUnconfirmedAssignment(
+    String appearanceId,
+  ) async {
+    final found = _findAppearance(appearanceId);
+    if (found == null || found.personId == null) {
+      throw ApiException(statusCode: 404, message: 'Not found');
+    }
+    final restored = PersonAppearance(
+      id: found.id,
+      personId: found.personId,
+      faceGroupId: found.faceGroupId,
+      faceGroupKind: found.faceGroupKind,
+      assignmentState: 'unconfirmed',
+      itemId: found.itemId,
+      keyPeriodId: found.keyPeriodId,
+      tagId: found.tagId,
+      region: found.region,
+      createdAt: found.createdAt,
+    );
+    replaceAppearance(restored);
+    return restored;
   }
 
   @override
@@ -220,6 +381,7 @@ class FakePersonsRepository implements PersonsRepository {
       personId: targetPersonId,
       faceGroupId: null,
       faceGroupKind: null,
+      assignmentState: 'confirmed',
       itemId: found.itemId,
       keyPeriodId: found.keyPeriodId,
       tagId: found.tagId,
@@ -282,6 +444,7 @@ class FakePersonsRepository implements PersonsRepository {
           personId: targetPersonId,
           faceGroupId: null,
           faceGroupKind: null,
+          assignmentState: 'confirmed',
           itemId: m.itemId,
           keyPeriodId: m.keyPeriodId,
           tagId: m.tagId,
@@ -584,16 +747,20 @@ PersonAppearance fixtureAppearance({
   String? personId = 'person_1',
   String? faceGroupId,
   FaceGroupKind? faceGroupKind,
+  String? assignmentState,
   String? itemId = 'item_1',
   String? keyPeriodId,
   String? tagId,
   TagRegion? region,
 }) {
+  final resolvedState = assignmentState ??
+      (personId != null ? 'confirmed' : null);
   return PersonAppearance(
     id: id,
     personId: personId,
     faceGroupId: faceGroupId,
     faceGroupKind: faceGroupKind,
+    assignmentState: resolvedState,
     itemId: itemId,
     keyPeriodId: keyPeriodId,
     tagId: tagId,

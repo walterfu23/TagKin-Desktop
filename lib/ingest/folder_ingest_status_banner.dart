@@ -30,11 +30,29 @@ class _FolderIngestStatusBannerState
         final loadingActive = ingest.activeJobCount;
         final removingActive = remove.activeJobCount;
         final active = loadingActive + removingActive;
+        final ingestAlreadyInLibrary = ingest.jobs.isNotEmpty &&
+            ingest.jobs.every(
+              (j) =>
+                  !j.isActive &&
+                  j.phase == FolderIngestJobPhase.done &&
+                  j.createdCount == 0 &&
+                  j.alreadyInLibraryCount > 0,
+            );
+        final ingestNothingNew = ingest.jobs.isNotEmpty &&
+            ingest.jobs.every(
+              (j) =>
+                  !j.isActive &&
+                  j.phase == FolderIngestJobPhase.done &&
+                  j.createdCount == 0 &&
+                  j.alreadyInLibraryCount == 0,
+            );
         final summary = _summary(
           loadingActive: loadingActive,
           removingActive: removingActive,
           ingestFinished: ingest.jobs.isNotEmpty && loadingActive == 0,
           removeFinished: remove.jobs.isNotEmpty && removingActive == 0,
+          ingestNothingNew: ingestNothingNew,
+          ingestAlreadyInLibrary: ingestAlreadyInLibrary,
         );
 
         return SelectionContainer.disabled(
@@ -143,6 +161,8 @@ class _FolderIngestStatusBannerState
     required int removingActive,
     required bool ingestFinished,
     required bool removeFinished,
+    required bool ingestNothingNew,
+    required bool ingestAlreadyInLibrary,
   }) {
     final parts = <String>[];
     if (loadingActive > 0) {
@@ -158,10 +178,22 @@ class _FolderIngestStatusBannerState
     if (parts.isNotEmpty) return parts.join(' · ');
 
     if (ingestFinished && removeFinished) {
-      return 'Folder activity finished';
+      if (ingestAlreadyInLibrary) {
+        return 'Folder activity finished (already in library)';
+      }
+      return ingestNothingNew
+          ? 'Folder activity finished (nothing new)'
+          : 'Folder activity finished';
     }
     if (removeFinished) return 'Folder remove finished';
-    if (ingestFinished) return 'Folder ingest finished';
+    if (ingestFinished) {
+      if (ingestAlreadyInLibrary) {
+        return 'Folder ingest finished (already in library)';
+      }
+      return ingestNothingNew
+          ? 'Folder ingest finished (nothing new)'
+          : 'Folder ingest finished';
+    }
     return 'Folder activity finished';
   }
 }

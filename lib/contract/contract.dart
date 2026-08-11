@@ -1012,6 +1012,7 @@ class PersonAppearance {
     this.personId,
     this.faceGroupId,
     this.faceGroupKind,
+    this.assignmentState,
     this.itemId,
     this.keyPeriodId,
     this.tagId,
@@ -1023,6 +1024,7 @@ class PersonAppearance {
   final String? personId;
   final String? faceGroupId;
   final FaceGroupKind? faceGroupKind;
+  final String? assignmentState;
   final String? itemId;
   final String? keyPeriodId;
   final String? tagId;
@@ -1034,6 +1036,7 @@ class PersonAppearance {
         personId: json['personId'] == null ? null : json['personId'] as String,
         faceGroupId: json['faceGroupId'] == null ? null : json['faceGroupId'] as String,
         faceGroupKind: json['faceGroupKind'] == null ? null : FaceGroupKind.fromWire(json['faceGroupKind'] as String),
+        assignmentState: json['assignmentState'] == null ? null : json['assignmentState'] as String,
         itemId: json['itemId'] == null ? null : json['itemId'] as String,
         keyPeriodId: json['keyPeriodId'] == null ? null : json['keyPeriodId'] as String,
         tagId: json['tagId'] == null ? null : json['tagId'] as String,
@@ -1047,6 +1050,7 @@ class PersonAppearance {
     if (personId != null) json['personId'] = personId;
     if (faceGroupId != null) json['faceGroupId'] = faceGroupId;
     if (faceGroupKind != null) json['faceGroupKind'] = faceGroupKind?.wire;
+    if (assignmentState != null) json['assignmentState'] = assignmentState;
     if (itemId != null) json['itemId'] = itemId;
     if (keyPeriodId != null) json['keyPeriodId'] = keyPeriodId;
     if (tagId != null) json['tagId'] = tagId;
@@ -1764,17 +1768,21 @@ class WhoAppearanceInput {
 class WhoAppearancesRequest {
   const WhoAppearancesRequest({
     required this.appearances,
+    this.autoConfirmMinConfidencePercent,
   });
 
   final List<WhoAppearanceInput> appearances;
+  final int? autoConfirmMinConfidencePercent;
 
   factory WhoAppearancesRequest.fromJson(Map<String, dynamic> json) => WhoAppearancesRequest(
         appearances: (json['appearances'] as List<dynamic>).map((e) => WhoAppearanceInput.fromJson(e as Map<String, dynamic>)).toList(),
+        autoConfirmMinConfidencePercent: json['autoConfirmMinConfidencePercent'] == null ? null : (json['autoConfirmMinConfidencePercent'] as num).toInt(),
       );
 
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{};
     json['appearances'] = appearances.map((e) => e.toJson()).toList();
+    if (autoConfirmMinConfidencePercent != null) json['autoConfirmMinConfidencePercent'] = autoConfirmMinConfidencePercent;
     return json;
   }
 }

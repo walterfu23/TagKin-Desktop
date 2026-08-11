@@ -7,6 +7,7 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/batch_ingest_controller.dart';
 import 'package:tagkin_desktop/ingest/upload_controller.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prepass/prepass_controller.dart';
 
 /// High-level phases of the automatic D4 → D5 → D7 chain after folder ingest.
@@ -201,12 +202,17 @@ class PostIngestPipelineController extends ChangeNotifier {
 final postIngestPipelineControllerProvider =
     Provider.autoDispose<PostIngestPipelineController>(
   (ref) {
+    final prefs = ref.watch(desktopPrefsProvider);
     final controller = PostIngestPipelineController(
       prePass: ref.watch(prePassControllerProvider),
       upload: ref.watch(uploadControllerProvider),
       jobsRepository: ref.watch(jobsRepositoryProvider),
       whoFaceLinker: WhoFaceLinker(
         items: ref.watch(itemsRepositoryProvider),
+        autoConfirmMinConfidencePercent:
+            prefs.autoConfirmHighConfidencePersonMatches
+                ? prefs.autoConfirmMinConfidencePercent
+                : null,
       ),
     );
     ref.onDispose(controller.dispose);
@@ -217,5 +223,6 @@ final postIngestPipelineControllerProvider =
     uploadControllerProvider,
     jobsRepositoryProvider,
     itemsRepositoryProvider,
+    desktopPrefsProvider,
   ],
 );

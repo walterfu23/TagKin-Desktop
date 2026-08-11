@@ -101,6 +101,60 @@ class PersonsRepository {
     return PersonAppearance.fromJson(json);
   }
 
+  /// `POST /persons/appearances/{id}/confirm` — mark an unconfirmed
+  /// auto-assignment as confirmed (R6).
+  Future<PersonAppearance> confirmAppearanceAssignment(
+    String appearanceId,
+  ) async {
+    final response = await _client.post(
+      '/persons/appearances/$appearanceId/confirm',
+    );
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected confirm-appearance response shape',
+      );
+    }
+    return PersonAppearance.fromJson(json);
+  }
+
+  /// `POST /persons/appearances/{id}/decline-auto-assign` — reject an
+  /// auto-assignment ("Not this person"); clears personId (R6).
+  Future<PersonAppearance> declineAutoAssignAppearance(
+    String appearanceId,
+  ) async {
+    final response = await _client.post(
+      '/persons/appearances/$appearanceId/decline-auto-assign',
+    );
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected decline-auto-assign response shape',
+      );
+    }
+    return PersonAppearance.fromJson(json);
+  }
+
+  /// `POST /persons/appearances/{id}/unconfirm` — restore unconfirmed after
+  /// Confirm undo (D12).
+  Future<PersonAppearance?> tryRestoreUnconfirmedAssignment(
+    String appearanceId,
+  ) async {
+    final response = await _client.post(
+      '/persons/appearances/$appearanceId/unconfirm',
+    );
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected unconfirm-appearance response shape',
+      );
+    }
+    return PersonAppearance.fromJson(json);
+  }
+
   /// `POST /persons/face-groups/{id}/assign` — promote a GroupFA/GroupFM into
   /// a named Person (GroupP when ≥2 faces). Prior FaceGroup is deleted (R6).
   /// Exactly one of [personId] / [name] is required.

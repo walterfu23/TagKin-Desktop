@@ -79,14 +79,27 @@ void main() {
       expect(result.skipped, isEmpty);
     });
 
-    test('a hash already in the account library is skipped, not created', () {
+    test('a path already in the account library is skipped, not created', () {
       final result = dedupCandidates(
-        candidates: [_photo('/a.jpg', contentHash: 'already-there')],
-        existingContentHashes: {'already-there'},
+        candidates: [_photo('/a.jpg', contentHash: 'hash-a')],
+        existingSourcePaths: {'/a.jpg'},
       );
 
       expect(result.representatives, isEmpty);
       expect(result.skipped.single.reason, SkipReason.existingInLibrary);
+    });
+
+    test(
+        'same contentHash at a new path still becomes a representative',
+        () {
+      final result = dedupCandidates(
+        candidates: [_photo('/albums/B/a.jpg', contentHash: 'same-bytes')],
+        existingSourcePaths: {'/albums/A/a.jpg'},
+      );
+
+      expect(result.representatives, hasLength(1));
+      expect(result.representatives.single.candidate.path, '/albums/B/a.jpg');
+      expect(result.skipped, isEmpty);
     });
 
     test('videos are never merged by perceptual hash (photo-only in D3)', () {

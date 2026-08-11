@@ -20,6 +20,8 @@ class DesktopPrefs {
     this.sceneCutThreshold = 0.3,
     this.facesDetectScoreThreshold = 0.2,
     this.facesTrayPageLimit = 500,
+    this.autoConfirmHighConfidencePersonMatches = true,
+    this.autoConfirmMinConfidencePercent = 90,
     this.jobsPollIntervalSeconds = 2,
   });
 
@@ -66,6 +68,14 @@ class DesktopPrefs {
   /// Appearances / exclusions list page size on Faces trays.
   final int facesTrayPageLimit;
 
+  /// When true, WhoFaceLinker sends [autoConfirmMinConfidencePercent] so the
+  /// API may auto-confirm high-confidence named-person matches.
+  final bool autoConfirmHighConfidencePersonMatches;
+
+  /// Minimum likeness confidence % for auto-confirm (0–100). Used only when
+  /// [autoConfirmHighConfidencePersonMatches] is true.
+  final int autoConfirmMinConfidencePercent;
+
   /// Job status poll interval while analyze/upload runs.
   final int jobsPollIntervalSeconds;
 
@@ -108,6 +118,10 @@ class DesktopPrefs {
   static const facesTrayPageLimitMax = 500;
   static const facesTrayPageLimitStep = 10;
 
+  static const autoConfirmMinConfidencePercentMin = 0;
+  static const autoConfirmMinConfidencePercentMax = 100;
+  static const autoConfirmMinConfidencePercentStep = 1;
+
   static const jobsPollIntervalSecondsMin = 1;
   static const jobsPollIntervalSecondsMax = 30;
   static const jobsPollIntervalSecondsStep = 1;
@@ -127,6 +141,8 @@ class DesktopPrefs {
     double? sceneCutThreshold,
     double? facesDetectScoreThreshold,
     int? facesTrayPageLimit,
+    bool? autoConfirmHighConfidencePersonMatches,
+    int? autoConfirmMinConfidencePercent,
     int? jobsPollIntervalSeconds,
   }) {
     return DesktopPrefs(
@@ -149,6 +165,11 @@ class DesktopPrefs {
       facesDetectScoreThreshold:
           facesDetectScoreThreshold ?? this.facesDetectScoreThreshold,
       facesTrayPageLimit: facesTrayPageLimit ?? this.facesTrayPageLimit,
+      autoConfirmHighConfidencePersonMatches:
+          autoConfirmHighConfidencePersonMatches ??
+              this.autoConfirmHighConfidencePersonMatches,
+      autoConfirmMinConfidencePercent: autoConfirmMinConfidencePercent ??
+          this.autoConfirmMinConfidencePercent,
       jobsPollIntervalSeconds:
           jobsPollIntervalSeconds ?? this.jobsPollIntervalSeconds,
     );
@@ -169,6 +190,10 @@ class DesktopPrefs {
         'video.sceneCutThreshold': sceneCutThreshold,
         'faces.detectScoreThreshold': facesDetectScoreThreshold,
         'faces.trayPageLimit': facesTrayPageLimit,
+        'faces.autoConfirmHighConfidencePersonMatches':
+            autoConfirmHighConfidencePersonMatches,
+        'faces.autoConfirmMinConfidencePercent':
+            autoConfirmMinConfidencePercent,
         'jobs.pollIntervalSeconds': jobsPollIntervalSeconds,
       };
 
@@ -277,6 +302,16 @@ class DesktopPrefs {
         min: facesTrayPageLimitMin,
         max: facesTrayPageLimitMax,
       ),
+      autoConfirmHighConfidencePersonMatches: flag(
+        'faces.autoConfirmHighConfidencePersonMatches',
+        fallback: true,
+      ),
+      autoConfirmMinConfidencePercent: intVal(
+        'faces.autoConfirmMinConfidencePercent',
+        90,
+        min: autoConfirmMinConfidencePercentMin,
+        max: autoConfirmMinConfidencePercentMax,
+      ),
       jobsPollIntervalSeconds: intVal(
         'jobs.pollIntervalSeconds',
         2,
@@ -303,6 +338,10 @@ class DesktopPrefs {
       other.sceneCutThreshold == sceneCutThreshold &&
       other.facesDetectScoreThreshold == facesDetectScoreThreshold &&
       other.facesTrayPageLimit == facesTrayPageLimit &&
+      other.autoConfirmHighConfidencePersonMatches ==
+          autoConfirmHighConfidencePersonMatches &&
+      other.autoConfirmMinConfidencePercent ==
+          autoConfirmMinConfidencePercent &&
       other.jobsPollIntervalSeconds == jobsPollIntervalSeconds;
 
   @override
@@ -321,6 +360,8 @@ class DesktopPrefs {
         sceneCutThreshold,
         facesDetectScoreThreshold,
         facesTrayPageLimit,
+        autoConfirmHighConfidencePersonMatches,
+        autoConfirmMinConfidencePercent,
         jobsPollIntervalSeconds,
       );
 }

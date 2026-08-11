@@ -10,6 +10,7 @@ class RangeSliderControl extends StatelessWidget {
     required this.max,
     required this.onChanged,
     this.step = 1,
+    this.enabled = true,
     this.labelBuilder,
   })  : assert(min <= max),
         assert(step > 0);
@@ -20,6 +21,7 @@ class RangeSliderControl extends StatelessWidget {
   final int max;
   final int step;
   final ValueChanged<int> onChanged;
+  final bool enabled;
   final String Function(int value)? labelBuilder;
 
   static int snap(int value, int min, int max, int step) {
@@ -52,6 +54,7 @@ class RangeSliderControl extends StatelessWidget {
       divisions: _divisions,
       fraction: _fraction,
       label: labelBuilder?.call(_clamped) ?? '$_clamped',
+      enabled: enabled,
       onChanged: (v) => onChanged(snap(v.round(), min, max, step)),
     );
   }
@@ -67,6 +70,7 @@ class DoubleRangeSliderControl extends StatelessWidget {
     required this.max,
     required this.onChanged,
     required this.step,
+    this.enabled = true,
     this.labelBuilder,
   })  : assert(min <= max),
         assert(step > 0);
@@ -77,6 +81,7 @@ class DoubleRangeSliderControl extends StatelessWidget {
   final double max;
   final double step;
   final ValueChanged<double> onChanged;
+  final bool enabled;
   final String Function(double value)? labelBuilder;
 
   static double snap(double value, double min, double max, double step) {
@@ -111,6 +116,7 @@ class DoubleRangeSliderControl extends StatelessWidget {
       divisions: _divisions,
       fraction: _fraction,
       label: label,
+      enabled: enabled,
       onChanged: (v) => onChanged(snap(v, min, max, step)),
     );
   }
@@ -126,6 +132,7 @@ class _ThumbLabelTrack extends StatelessWidget {
     required this.fraction,
     required this.label,
     required this.onChanged,
+    this.enabled = true,
   });
 
   final Key? sliderKey;
@@ -136,6 +143,7 @@ class _ThumbLabelTrack extends StatelessWidget {
   final double fraction;
   final String label;
   final ValueChanged<double> onChanged;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -168,7 +176,7 @@ class _ThumbLabelTrack extends StatelessWidget {
                   min: min,
                   max: max,
                   divisions: divisions,
-                  onChanged: onChanged,
+                  onChanged: enabled ? onChanged : null,
                 ),
               ),
               Positioned(
@@ -180,6 +188,9 @@ class _ThumbLabelTrack extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w600,
+                    color: enabled
+                        ? null
+                        : theme.colorScheme.onSurface.withValues(alpha: 0.38),
                   ),
                 ),
               ),

@@ -184,6 +184,7 @@ void main() {
     final linker = WhoFaceLinker(
       items: items,
       embedder: _FixedModelEmbedder('onnx-arcface-w600k-r50-v5'),
+      autoConfirmMinConfidencePercent: 90,
     );
     final result = await linker.linkWhoFacesForItem(item);
     expect(result, isNotNull);
@@ -191,6 +192,57 @@ void main() {
     expect(
       items.whoAppearancesRecorded.single.appearances.single.embeddingModelId,
       'onnx-arcface-w600k-r50-v5',
+    );
+    expect(
+      items.whoAppearancesRecorded.single.autoConfirmMinConfidencePercent,
+      90,
+    );
+
+    await dir.delete(recursive: true);
+  });
+
+  test('WhoFaceLinker omits autoConfirm when percent is null', () async {
+    final dir = await Directory.systemTemp.createTemp('who_omit_');
+    final file = File('${dir.path}/face.jpg');
+    await file.writeAsBytes(_solidJpeg());
+
+    final item = fixtureItem(
+      id: 'item_1',
+      type: ItemType.photo,
+      sourceRef: 'file://${file.path}',
+      processingStatus: ProcessingStatus.tagged,
+      contentHash: null,
+    );
+    final items = FakeItemsRepository(items: [item]);
+    items.setKnowledge(
+      item.id,
+      fixtureKnowledge(
+        item: item,
+        tags: [
+          fixtureTag(
+            id: '00000000-0000-4000-8000-000000000002',
+            itemId: item.id,
+            dimension: 'who',
+            value: 'Someone',
+            region: const TagRegion(
+              yMin: 0.2,
+              xMin: 0.2,
+              yMax: 0.6,
+              xMax: 0.6,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final linker = WhoFaceLinker(
+      items: items,
+      embedder: _FixedModelEmbedder('onnx-arcface-w600k-r50-v5'),
+    );
+    await linker.linkWhoFacesForItem(item);
+    expect(
+      items.whoAppearancesRecorded.single.autoConfirmMinConfidencePercent,
+      isNull,
     );
 
     await dir.delete(recursive: true);

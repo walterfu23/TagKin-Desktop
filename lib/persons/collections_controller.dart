@@ -421,6 +421,81 @@ class CollectionsController extends ChangeNotifier {
     return true;
   }
 
+  /// Adopt library leaves that are not yet in membership and not owned by
+  /// another collection. Single notify — safe for AppShell / Faces ingest sync.
+  ///
+  /// Returns true when membership changed.
+  bool adoptUnownedFolders(Iterable<String> folders) {
+    final cur = _current;
+    if (cur == null) return false;
+    final next = List<String>.of(cur.leafFolders);
+    var changed = false;
+    for (final folder in folders) {
+      if (folder.isEmpty || next.contains(folder)) continue;
+      final owner = ownerCollectionId(folder);
+      if (owner != null && owner != cur.id) continue;
+      next.add(folder);
+      changed = true;
+    }
+    if (!changed) return false;
+    _current = cur.copyWith(leafFolders: next);
+    _recomputeDirty();
+    return true;
+  }
+
+  /// Move [folders] onto the open collection, stripping them from any other
+  /// collection (one-folder-one-collection). Persists immediately without *
+  /// — used when Add-from-folder claims leaves for the open collection.
+  ///
+  /// Returns true when membership or another collection changed.
+  Future<bool> claimFoldersForCurrent(Iterable<String> folders) async {
+    final cur = _current;
+    if (cur == null || !sessionReady) return false;
+    final claim = <String>{
+      for (final f in folders)
+        if (f.isNotEmpty) f,
+    };
+    if (claim.isEmpty) return false;
+
+    var catalogChanged = false;
+    final updatedOthers = <Collection>[];
+    for (final c in _catalog.collections) {
+      if (c.id == cur.id) {
+        updatedOthers.add(c);
+        continue;
+      }
+      final nextLeaves = [
+        for (final f in c.leafFolders)
+          if (!claim.contains(f)) f,
+      ];
+      if (nextLeaves.length != c.leafFolders.length) {
+        catalogChanged = true;
+        updatedOthers.add(c.copyWith(leafFolders: nextLeaves));
+      } else {
+        updatedOthers.add(c);
+      }
+    }
+    if (catalogChanged) {
+      _catalog = _catalog.copyWith(collections: updatedOthers);
+    }
+
+    final next = List<String>.of(cur.leafFolders);
+    var membershipChanged = false;
+    for (final f in claim) {
+      if (next.contains(f)) continue;
+      next.add(f);
+      membershipChanged = true;
+    }
+    if (!catalogChanged && !membershipChanged) return false;
+
+    final updated = cur.copyWith(leafFolders: next);
+    _current = updated;
+    await _writeCurrentToCatalog(updated);
+    _captureBaseline();
+    notifyListeners();
+    return true;
+  }
+
   bool removeFolder(String folder) {
     final cur = _current;
     if (cur == null) return false;
@@ -431,6 +506,24 @@ class CollectionsController extends ChangeNotifier {
           if (f != folder) f,
       ],
     );
+    _recomputeDirty();
+    return true;
+  }
+
+  /// Remove several membership paths with a single notify.
+  ///
+  /// Returns true when membership changed.
+  bool removeFolders(Iterable<String> folders) {
+    final cur = _current;
+    if (cur == null) return false;
+    final drop = folders.toSet();
+    if (drop.isEmpty) return false;
+    final next = [
+      for (final f in cur.leafFolders)
+        if (!drop.contains(f)) f,
+    ];
+    if (next.length == cur.leafFolders.length) return false;
+    _current = cur.copyWith(leafFolders: next);
     _recomputeDirty();
     return true;
   }

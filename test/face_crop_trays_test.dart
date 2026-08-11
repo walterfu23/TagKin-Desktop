@@ -2183,6 +2183,77 @@ void main() {
   });
 
   testWidgets(
+      'face crop trays: Refresh adopts new unowned leaf into open collection',
+      (tester) async {
+    final store = MemoryCollectionsStore(
+      const CollectionsFile(
+        collections: [
+          Collection(
+            id: 'c1',
+            name: 'Grow',
+            leafFolders: ['/albums/Trip/Alpha'],
+          ),
+        ],
+        currentCollectionId: 'c1',
+      ),
+    );
+    final items = FakeItemsRepository(
+      items: [
+        fixtureItem(
+          id: 'a1',
+          sourceRef: 'file:///albums/Trip/Alpha/1.jpg',
+          processingStatus: ProcessingStatus.tagged,
+          contentHash: null,
+        ),
+      ],
+    );
+    final persons = FakePersonsRepository(persons: const []);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          itemsRepositoryProvider.overrideWithValue(items),
+          collectionsStoreProvider.overrideWithValue(store),
+        ],
+        child: const MaterialApp(
+          home: FaceCropTraysPage(initialLeafFolder: '/albums/Trip/Alpha'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final cols = ProviderScope.containerOf(
+      tester.element(find.byType(FaceCropTraysPage)),
+    ).read(collectionsControllerProvider);
+    if (!cols.loaded) await cols.load();
+    if (!cols.sessionReady) {
+      expect(await cols.open('c1'), isTrue);
+      await tester.pumpAndSettle();
+    }
+
+    items.addItem(
+      fixtureItem(
+        id: 'b1',
+        sourceRef: 'file:///albums/Trip/Beta/1.jpg',
+        processingStatus: ProcessingStatus.tagged,
+        contentHash: null,
+      ),
+    );
+    await tester.tap(find.byKey(const Key('face-crop-trays-refresh')));
+    await tester.pumpAndSettle();
+
+    expect(
+      cols.current.leafFolders.toSet(),
+      containsAll(['/albums/Trip/Alpha', '/albums/Trip/Beta']),
+    );
+    await tester.tap(find.byKey(const Key('face-crop-folder-select')));
+    await tester.pumpAndSettle();
+    expect(find.text('Alpha').last, findsOneWidget);
+    expect(find.text('Beta').last, findsOneWidget);
+  });
+
+  testWidgets(
       'face crop trays: New Person... and in-folder person when unassigned remain',
       (tester) async {
     final persons = FakePersonsRepository(

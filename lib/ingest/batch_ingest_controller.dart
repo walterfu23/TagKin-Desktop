@@ -10,6 +10,7 @@ import 'package:tagkin_desktop/ingest/folder_picker.dart';
 import 'package:tagkin_desktop/ingest/media_enumerator.dart';
 import 'package:tagkin_desktop/ingest/perceptual_hash.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
+import 'package:tagkin_desktop/review/local_media_resolver.dart';
 
 /// Lifecycle phase of a folder-ingest run.
 enum BatchIngestPhase { idle, scanning, reviewing, ingesting, done, error }
@@ -108,14 +109,15 @@ class BatchIngestController extends ChangeNotifier {
       // Library list for dedup — retry once on transient connection drops
       // (API restart / tsx watch) so a brief blip doesn't fail the whole scan.
       final existingItems = await listItemsWithRetry(itemsRepository);
-      final existingHashes = existingItems
-          .map((item) => item.contentHash)
-          .whereType<String>()
-          .toSet();
+      final existingSourcePaths = <String>{
+        for (final item in existingItems)
+          if (localPathFromSourceRef(item.sourceRef) case final path?)
+            normalizeDedupPath(path),
+      };
 
       final result = dedupCandidates(
         candidates: hashed,
-        existingContentHashes: existingHashes,
+        existingSourcePaths: existingSourcePaths,
         nearDuplicateHammingThreshold: nearDuplicateHammingThreshold,
       );
 

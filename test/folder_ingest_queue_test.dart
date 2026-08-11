@@ -184,8 +184,7 @@ void main() {
     }
   });
 
-  test('isLoadingPath hides ingest root and nested leaf folders while active',
-      () async {
+  test('isLoadingPath only during scanning and registering', () async {
     final items = FakeItemsRepository();
     final jobs = FakeJobsRepository();
     var releaseScan = false;
@@ -204,6 +203,22 @@ void main() {
     );
 
     expect(queue.isLoadingPath('/albums/Trip'), isFalse);
+    expect(
+      FolderIngestQueue.hidesFacesFolder(FolderIngestJobPhase.scanning),
+      isTrue,
+    );
+    expect(
+      FolderIngestQueue.hidesFacesFolder(FolderIngestJobPhase.registering),
+      isTrue,
+    );
+    expect(
+      FolderIngestQueue.hidesFacesFolder(FolderIngestJobPhase.analyze),
+      isFalse,
+    );
+    expect(
+      FolderIngestQueue.hidesFacesFolder(FolderIngestJobPhase.prePass),
+      isFalse,
+    );
 
     await queue.enqueue('/albums');
     expect(queue.isLoadingPath('/albums'), isTrue);
@@ -216,5 +231,62 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
     expect(queue.isLoadingPath('/albums/Trip'), isFalse);
+  });
+
+  test('membership publish runs after registering', () async {
+    final items = FakeItemsRepository();
+    final jobs = FakeJobsRepository();
+    var publishCount = 0;
+    final hooked = FolderIngestQueue(
+      itemsRepository: items,
+      jobsRepository: jobs,
+      isUsageBlocked: () => false,
+      enumerateFolder: (path) async => [_photo('/albums/Paris/a.jpg')],
+      contentHasher: (path) async => 'hash-$path',
+      perceptualHasher: (path) async => null,
+      onLibraryMembershipPublish: (_) async {
+        publishCount++;
+      },
+      prePassFactory: () => PrePassController(
+        itemsRepository: items,
+        buildPayload: ({
+          required path,
+          required type,
+          faceEmbedder,
+          skipFaces = false,
+          maxFrames = 20,
+          minIntervalMs = 1000,
+          maxIntervalMs = 15000,
+          sceneCutThreshold = 0.3,
+        }) async {
+          return PrePassBuildResult(
+            payload: PrePassResult(contentHash: 'hash'),
+          );
+        },
+      ),
+      uploadFactory: () => UploadController(
+        itemsRepository: items,
+        readBytes: (path) async => [0xFF, 0xD8, 0xFF],
+        putBytes: ({
+          required uploadUrl,
+          required bytes,
+          required mimeType,
+          httpClient,
+        }) async {
+          return const ModelHostUploadResult(
+            analysisRef: 'files/test-ref',
+            rawBody: '{}',
+          );
+        },
+      ),
+      whoFaceLinkerFactory: () => WhoFaceLinker(items: items),
+    );
+
+    await hooked.enqueue('/albums/Paris');
+    for (var i = 0; i < 80 && hooked.hasActiveJobs; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(publishCount, greaterThanOrEqualTo(1));
+    expect(items.created, hasLength(1));
   });
 }

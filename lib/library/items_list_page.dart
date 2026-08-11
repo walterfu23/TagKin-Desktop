@@ -42,14 +42,8 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
       // ensureLoaded (not load) dedupes with the shell's own initial
       // ensureLoaded call for Folders-look baseline capture.
       ref.read(libraryTableControllerProvider).ensureLoaded();
-      final ingest = ref.read(folderIngestQueueProvider);
-      _ingestQueue = ingest;
-      _lastIngestRefreshTick = ingest.libraryRefreshTick;
-      ingest.addListener(_onIngestQueueChanged);
-      final remove = ref.read(folderRemoveQueueProvider);
-      _removeQueue = remove;
-      _lastRemoveRefreshTick = remove.libraryRefreshTick;
-      remove.addListener(_onRemoveQueueChanged);
+      _bindIngestQueue(ref.read(folderIngestQueueProvider));
+      _bindRemoveQueue(ref.read(folderRemoveQueueProvider));
     });
   }
 
@@ -58,6 +52,31 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     _ingestQueue?.removeListener(_onIngestQueueChanged);
     _removeQueue?.removeListener(_onRemoveQueueChanged);
     super.dispose();
+  }
+
+  void _bindIngestQueue(FolderIngestQueue next) {
+    if (identical(_ingestQueue, next)) return;
+    final hadPrior = _ingestQueue != null;
+    _ingestQueue?.removeListener(_onIngestQueueChanged);
+    _ingestQueue = next;
+    _lastIngestRefreshTick = next.libraryRefreshTick;
+    next.addListener(_onIngestQueueChanged);
+    // Catch ticks that landed on a new instance while we held a stale one.
+    if (hadPrior || next.libraryRefreshTick > 0) {
+      ref.read(libraryTableControllerProvider).load();
+    }
+  }
+
+  void _bindRemoveQueue(FolderRemoveQueue next) {
+    if (identical(_removeQueue, next)) return;
+    final hadPrior = _removeQueue != null;
+    _removeQueue?.removeListener(_onRemoveQueueChanged);
+    _removeQueue = next;
+    _lastRemoveRefreshTick = next.libraryRefreshTick;
+    next.addListener(_onRemoveQueueChanged);
+    if (hadPrior || next.libraryRefreshTick > 0) {
+      ref.read(libraryTableControllerProvider).load();
+    }
   }
 
   void _onIngestQueueChanged() {
@@ -211,6 +230,12 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<FolderIngestQueue>(folderIngestQueueProvider, (previous, next) {
+      _bindIngestQueue(next);
+    });
+    ref.listen<FolderRemoveQueue>(folderRemoveQueueProvider, (previous, next) {
+      _bindRemoveQueue(next);
+    });
     final usage = ref.watch(usageControllerProvider);
     final table = ref.watch(libraryTableControllerProvider);
     return ListenableBuilder(

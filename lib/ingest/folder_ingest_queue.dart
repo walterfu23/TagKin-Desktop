@@ -15,11 +15,15 @@ import 'package:tagkin_desktop/ingest/media_enumerator.dart';
 import 'package:tagkin_desktop/ingest/perceptual_hash.dart';
 import 'package:tagkin_desktop/ingest/post_ingest_pipeline_controller.dart';
 import 'package:tagkin_desktop/ingest/upload_controller.dart';
+import 'package:tagkin_desktop/library/library_membership_sync.dart';
+import 'package:tagkin_desktop/library/library_table_controller.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/prepass/prepass_controller.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
+import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
 
 /// Phase of one background folder ingest job (full D3→D4→D5→D7 chain).
@@ -52,6 +56,9 @@ class FolderIngestJob {
   int registerTotal = 0;
   int createdCount = 0;
 
+  /// Paths skipped because they were already registered (re-ingest).
+  int alreadyInLibraryCount = 0;
+
   bool get isActive =>
       phase != FolderIngestJobPhase.done && phase != FolderIngestJobPhase.error;
 
@@ -74,9 +81,13 @@ class FolderIngestJob {
       case FolderIngestJobPhase.analyze:
         return 'Analyzing…';
       case FolderIngestJobPhase.done:
-        return createdCount == 0
-            ? 'Done (nothing new)'
-            : 'Done ($createdCount added)';
+        if (createdCount > 0) {
+          return 'Done ($createdCount added)';
+        }
+        if (alreadyInLibraryCount > 0) {
+          return 'Done ($alreadyInLibraryCount already in library)';
+        }
+        return 'Done (nothing new)';
       case FolderIngestJobPhase.error:
         return 'Failed';
     }
@@ -100,6 +111,7 @@ class FolderIngestQueue extends ChangeNotifier {
     this.prePassFactory,
     this.uploadFactory,
     this.whoFaceLinkerFactory,
+    this.onLibraryMembershipPublish,
   });
 
   final ItemsRepository itemsRepository;
@@ -116,6 +128,10 @@ class FolderIngestQueue extends ChangeNotifier {
   final UploadController Function()? uploadFactory;
   final WhoFaceLinker Function()? whoFaceLinkerFactory;
 
+  /// Adopt / claim leaves for the open collection after register (or done).
+  /// Receives the ingest root path so owned-elsewhere leaves can be claimed.
+  final Future<void> Function(String folderPath)? onLibraryMembershipPublish;
+
   List<FolderIngestJob> _jobs = const [];
   int _libraryRefreshTick = 0;
   bool _disposed = false;
@@ -131,20 +147,45 @@ class FolderIngestQueue extends ChangeNotifier {
 
   static String normalizePath(String path) => p.normalize(path);
 
-  /// Whether [path] (ingest root or a nested Faces leaf) is still being loaded.
+  /// Whether Faces should hide [path] while this job is still scanning or
+  /// registering items (not during pre-pass / upload / analyze).
+  static bool hidesFacesFolder(FolderIngestJobPhase phase) =>
+      phase == FolderIngestJobPhase.scanning ||
+      phase == FolderIngestJobPhase.registering;
+
+  /// Whether [path] (ingest root or a nested Faces leaf) is still registering.
   ///
-  /// Active job roots hide themselves and every descendant leaf until the job
-  /// finishes — so Faces only lists a folder after load complete.
+  /// Only scanning/registering hide the folder — once items exist, Faces may
+  /// list the leaf during analyze.
   bool isLoadingPath(String path) {
     final normalized = normalizePath(path);
     return _jobs.any(
-      (j) => j.isActive && pathIsUnderFolder(normalized, j.folderPath),
+      (j) =>
+          hidesFacesFolder(j.phase) &&
+          pathIsUnderFolder(normalized, j.folderPath),
     );
   }
 
   void _safeNotify() {
     if (_disposed) return;
     notifyListeners();
+  }
+
+  Future<void> _publishMembership(String folderPath) async {
+    final hook = onLibraryMembershipPublish;
+    if (hook == null || _disposed) return;
+    try {
+      await hook(folderPath);
+    } catch (e, st) {
+      debugPrint('FolderIngestQueue membership publish failed: $e\n$st');
+    }
+  }
+
+  /// Bump library refresh and adopt membership from an unfiltered item list.
+  Future<void> _bumpLibraryAndPublish(String folderPath) async {
+    _libraryRefreshTick++;
+    await _publishMembership(folderPath);
+    _safeNotify();
   }
 
   @override
@@ -202,16 +243,24 @@ class FolderIngestQueue extends ChangeNotifier {
 
       final existingItems = await itemsRepository.listItems();
       if (_disposed) return;
-      final existingHashes = existingItems
-          .map((item) => item.contentHash)
-          .whereType<String>()
-          .toSet();
+      final existingSourcePaths = <String>{
+        for (final item in existingItems)
+          if (localPathFromSourceRef(item.sourceRef) case final path?)
+            normalizePath(path),
+      };
+
+      final nearDupThreshold = samplingPrefs?.call().nearDuplicateThreshold ??
+          nearDuplicateHammingThreshold;
 
       final result = dedupCandidates(
         candidates: hashed,
-        existingContentHashes: existingHashes,
-        nearDuplicateHammingThreshold: nearDuplicateHammingThreshold,
+        existingSourcePaths: existingSourcePaths,
+        nearDuplicateHammingThreshold: nearDupThreshold,
       );
+
+      job.alreadyInLibraryCount = result.skipped
+          .where((s) => s.reason == SkipReason.existingInLibrary)
+          .length;
 
       job.phase = FolderIngestJobPhase.registering;
       job.registerTotal = result.representatives.length;
@@ -245,12 +294,16 @@ class FolderIngestQueue extends ChangeNotifier {
       final succeeded = outcomes.where((o) => o.succeeded).length;
       if (succeeded == 0) {
         job.phase = FolderIngestJobPhase.done;
-        // Still bump so Faces/Library can reveal folders that were hidden
-        // while this job was active (e.g. items from a prior register).
-        _libraryRefreshTick++;
-        _safeNotify();
+        // Reveal Faces + adopt membership (e.g. prior items under this root).
+        await _bumpLibraryAndPublish(job.folderPath);
         return;
       }
+
+      // Leave registering before publish so isLoadingPath clears and Faces
+      // can list the new leaf during pre-pass / upload / analyze.
+      job.phase = FolderIngestJobPhase.prePass;
+      await _bumpLibraryAndPublish(job.folderPath);
+      if (_disposed) return;
 
       final prePass = prePassFactory?.call() ??
           PrePassController(
@@ -260,7 +313,16 @@ class FolderIngestQueue extends ChangeNotifier {
       final upload = uploadFactory?.call() ??
           UploadController(itemsRepository: itemsRepository);
       final linker = whoFaceLinkerFactory?.call() ??
-          WhoFaceLinker(items: itemsRepository);
+          () {
+            final prefs = samplingPrefs?.call();
+            return WhoFaceLinker(
+              items: itemsRepository,
+              autoConfirmMinConfidencePercent: prefs != null &&
+                      prefs.autoConfirmHighConfidencePersonMatches
+                  ? prefs.autoConfirmMinConfidencePercent
+                  : null,
+            );
+          }();
       final pipeline = PostIngestPipelineController(
         prePass: prePass,
         upload: upload,
@@ -306,32 +368,47 @@ class FolderIngestQueue extends ChangeNotifier {
       } else {
         job.phase = FolderIngestJobPhase.done;
       }
-      _libraryRefreshTick++;
-      _safeNotify();
+      await _bumpLibraryAndPublish(job.folderPath);
     } catch (e) {
       job.phase = FolderIngestJobPhase.error;
       job.error = e;
-      _libraryRefreshTick++;
-      _safeNotify();
+      await _bumpLibraryAndPublish(job.folderPath);
     }
   }
 }
 
 /// Session-scoped ingest queue (survives navigation away from Library).
+///
+/// Must not `watch` churny inputs like [desktopPrefsProvider] — recreating the
+/// queue orphans Folders/Faces listeners that bound a prior instance.
+/// Must not `watch` [usageControllerProvider] either — that pulls apiClient
+/// and fails in Faces widget tests without a signed-in shell.
 final folderIngestQueueProvider = ChangeNotifierProvider<FolderIngestQueue>(
   (ref) {
-    // Keep usage gate alive for isUsageBlocked callbacks during long jobs.
-    ref.watch(usageControllerProvider);
     return FolderIngestQueue(
-      itemsRepository: ref.watch(itemsRepositoryProvider),
-      jobsRepository: ref.watch(jobsRepositoryProvider),
-      isUsageBlocked: () => ref.read(usageControllerProvider).gate.blocked,
-      enumerateFolder: ref.watch(mediaEnumeratorProvider),
-      contentHasher: ref.watch(contentHasherProvider),
-      perceptualHasher: ref.watch(perceptualHasherProvider),
-      nearDuplicateHammingThreshold:
-          ref.watch(desktopPrefsProvider).nearDuplicateThreshold,
+      itemsRepository: ref.read(itemsRepositoryProvider),
+      jobsRepository: ref.read(jobsRepositoryProvider),
+      isUsageBlocked: () {
+        try {
+          return ref.read(usageControllerProvider).gate.blocked;
+        } catch (_) {
+          return false;
+        }
+      },
+      enumerateFolder: ref.read(mediaEnumeratorProvider),
+      contentHasher: ref.read(contentHasherProvider),
+      perceptualHasher: ref.read(perceptualHasherProvider),
       samplingPrefs: () => ref.read(desktopPrefsProvider),
+      onLibraryMembershipPublish: (folderPath) async {
+        final cols = ref.read(collectionsControllerProvider);
+        final table = ref.read(libraryTableControllerProvider);
+        await publishCollectionMembershipFromLibrary(
+          items: ref.read(itemsRepositoryProvider),
+          cols: cols,
+          table: table,
+          claimUnderFolder: folderPath,
+        );
+      },
     );
   },
   dependencies: [
@@ -341,6 +418,7 @@ final folderIngestQueueProvider = ChangeNotifierProvider<FolderIngestQueue>(
     mediaEnumeratorProvider,
     contentHasherProvider,
     perceptualHasherProvider,
-    desktopPrefsProvider,
+    collectionsControllerProvider,
+    libraryTableControllerProvider,
   ],
 );

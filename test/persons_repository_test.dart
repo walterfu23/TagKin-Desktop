@@ -204,6 +204,54 @@ void main() {
       client.close();
     });
 
+    test('confirmAppearanceAssignment posts confirm endpoint', () async {
+      final mock = MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/persons/appearances/ap_1/confirm');
+        return http.Response(
+          jsonEncode({
+            ..._appearanceJson(id: 'ap_1'),
+            'assignmentState': 'confirmed',
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      final client = ApiClient(
+        baseUrl: 'http://api.test',
+        tokenProvider: () => 'tok',
+        httpClient: mock,
+      );
+      final appearance =
+          await PersonsRepository(client).confirmAppearanceAssignment('ap_1');
+      expect(appearance.assignmentState, 'confirmed');
+      client.close();
+    });
+
+    test('declineAutoAssignAppearance posts decline-auto-assign', () async {
+      final mock = MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(
+          request.url.path,
+          '/persons/appearances/ap_1/decline-auto-assign',
+        );
+        return http.Response(
+          jsonEncode(_appearanceJson(id: 'ap_1', personId: null)),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      final client = ApiClient(
+        baseUrl: 'http://api.test',
+        tokenProvider: () => 'tok',
+        httpClient: mock,
+      );
+      final appearance =
+          await PersonsRepository(client).declineAutoAssignAppearance('ap_1');
+      expect(appearance.personId, isNull);
+      client.close();
+    });
+
     test('assignFaceGroup posts name — promotes GroupFA/GroupFM (R6)',
         () async {
       final mock = MockClient((request) async {

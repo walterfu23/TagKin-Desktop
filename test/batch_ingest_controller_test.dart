@@ -115,7 +115,8 @@ void main() {
         'two accounts scanning the same folder never cross-contaminate dedup '
         '(R10)', () async {
       final dir = await _tempFolder();
-      await File('${dir.path}/shared.jpg').writeAsBytes([7, 7, 7]);
+      final shared = File('${dir.path}/shared.jpg');
+      await shared.writeAsBytes([7, 7, 7]);
 
       Future<String> fixedHash(String path) async => 'fixed-shared-hash';
 
@@ -125,6 +126,7 @@ void main() {
             id: 'existing_a',
             type: ItemType.photo,
             sourceType: SourceType.local,
+            sourceRef: Uri.file(shared.path).toString(),
             analysisRefState: AnalysisRefState.pending,
             contentHash: 'fixed-shared-hash',
             processingStatus: ProcessingStatus.pending,
@@ -152,7 +154,7 @@ void main() {
         contentHasher: fixedHash,
       );
       await controllerB.pickAndScan();
-      // Account A's existing hash never suppresses account B's create.
+      // Account A's path never suppresses account B's create.
       expect(controllerB.dedupResult!.representatives, hasLength(1));
     });
 

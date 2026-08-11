@@ -1,3 +1,4 @@
+import 'package:path/path.dart' as p;
 import 'package:tagkin_desktop/ingest/media_enumerator.dart';
 import 'package:tagkin_desktop/ingest/perceptual_hash.dart';
 
@@ -24,8 +25,9 @@ enum SkipReason {
   /// picked as the representative for this batch.
   duplicateInBatch,
 
-  /// `contentHash` already exists in the account's library (fetched via
-  /// `GET /items` before dedup) — already ingested in a prior batch.
+  /// This absolute path is already registered in the account's library
+  /// (fetched via `GET /items` before dedup). Same bytes at a *new* path
+  /// still create an item so the new leaf folder can surface.
   existingInLibrary,
 }
 
@@ -60,17 +62,20 @@ class DedupResult {
 /// API contract — safe to tune without a migration.
 const int kDefaultNearDuplicateThreshold = 4;
 
+/// Normalize a local path for library / batch identity checks.
+String normalizeDedupPath(String path) => p.normalize(path);
+
 /// Groups [candidates] into representatives + skips.
 ///
-/// Order of precedence per candidate: already in the account's library
-/// ([existingContentHashes]) → exact `contentHash` match to an
-/// already-accepted hash in this batch → near-duplicate (dHash Hamming
-/// distance ≤ [nearDuplicateHammingThreshold], same [MediaCandidate.type])
-/// → otherwise it becomes a new representative. Pure function — no I/O, no
-/// network (safe/fast to unit test).
+/// Order of precedence per candidate: path already in the account's library
+/// ([existingSourcePaths]) → exact `contentHash` match to an already-accepted
+/// hash in this batch → near-duplicate (dHash Hamming distance ≤
+/// [nearDuplicateHammingThreshold], same [MediaCandidate.type]) → otherwise
+/// it becomes a new representative. Pure function — no I/O, no network
+/// (safe/fast to unit test).
 DedupResult dedupCandidates({
   required List<HashedCandidate> candidates,
-  Set<String> existingContentHashes = const {},
+  Set<String> existingSourcePaths = const {},
   int nearDuplicateHammingThreshold = kDefaultNearDuplicateThreshold,
 }) {
   final representatives = <HashedCandidate>[];
@@ -79,9 +84,13 @@ DedupResult dedupCandidates({
   // whether it became a representative itself or was folded into a
   // near-duplicate group.
   final hashToRepresentativePath = <String, String>{};
+  final normalizedExisting = {
+    for (final path in existingSourcePaths) normalizeDedupPath(path),
+  };
 
   for (final candidate in candidates) {
-    if (existingContentHashes.contains(candidate.contentHash)) {
+    final path = normalizeDedupPath(candidate.candidate.path);
+    if (normalizedExisting.contains(path)) {
       skipped.add(
         DedupSkip(candidate: candidate, reason: SkipReason.existingInLibrary),
       );

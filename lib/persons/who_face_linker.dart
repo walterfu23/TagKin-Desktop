@@ -126,10 +126,15 @@ class WhoFaceLinker {
   WhoFaceLinker({
     required this._items,
     FaceEmbedder? embedder,
+    this.autoConfirmMinConfidencePercent,
   }) : _embedder = embedder ?? getFaceEmbedder();
 
   final ItemsRepository _items;
   final FaceEmbedder _embedder;
+
+  /// When non-null, sent on who-appearances so high-confidence named matches
+  /// may auto-confirm. Omit (null) to never auto-confirm.
+  final int? autoConfirmMinConfidencePercent;
 
   /// Returns linked appearances, or null if nothing to post / stub skipped.
   Future<WhoAppearancesResponse?> linkWhoFacesForItem(Item item) async {
@@ -194,7 +199,10 @@ class WhoFaceLinker {
 
     return _items.recordWhoAppearances(
       item.id,
-      WhoAppearancesRequest(appearances: inputs),
+      WhoAppearancesRequest(
+        appearances: inputs,
+        autoConfirmMinConfidencePercent: autoConfirmMinConfidencePercent,
+      ),
     );
   }
 }

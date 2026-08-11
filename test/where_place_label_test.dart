@@ -115,6 +115,8 @@ void main() {
       expect(DesktopPrefs.defaults.sceneCutThreshold, 0.3);
       expect(DesktopPrefs.defaults.facesDetectScoreThreshold, 0.2);
       expect(DesktopPrefs.defaults.facesTrayPageLimit, 500);
+      expect(DesktopPrefs.defaults.autoConfirmHighConfidencePersonMatches, isTrue);
+      expect(DesktopPrefs.defaults.autoConfirmMinConfidencePercent, 90);
       expect(DesktopPrefs.defaults.jobsPollIntervalSeconds, 2);
     });
 
@@ -137,6 +139,8 @@ void main() {
         sceneCutThreshold: 0.4,
         facesDetectScoreThreshold: 0.35,
         facesTrayPageLimit: 200,
+        autoConfirmHighConfidencePersonMatches: false,
+        autoConfirmMinConfidencePercent: 75,
         jobsPollIntervalSeconds: 5,
       );
       await store.save(prefs);
