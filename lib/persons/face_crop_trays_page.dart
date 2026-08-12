@@ -42,8 +42,9 @@ class FaceCropFocusRequest {
 int _faceCropFocusNonce = 0;
 
 /// Pending focus for the Faces tab (null when idle).
-final faceCropFocusRequestProvider =
-    StateProvider<FaceCropFocusRequest?>((ref) => null);
+final faceCropFocusRequestProvider = StateProvider<FaceCropFocusRequest?>(
+  (ref) => null,
+);
 
 /// Registered by [FaceCropTraysPage] while mounted; invoked by AppShell Cmd+A
 /// when the Faces tab is active (focus-independent).
@@ -193,8 +194,15 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   List<PersonAppearance> _assignedOverview = const [];
   List<PersonAppearance> _unassigned = const [];
   List<WhoExclusion> _excluded = const [];
+
+  /// Items from the last `listItems()` batch, by id — threaded into face crop
+  /// thumbs so they skip a per-thumb `getItem` network round trip (the
+  /// dominant Faces render-latency cost on large folders).
+  Map<String, Item> _itemsById = const {};
+
   /// Full library leaf folders (before collection filter).
   List<String> _allLeafFolders = const [];
+
   /// Visible folders in the dropdown (filtered when a collection is open).
   List<String> _leafFolders = const [];
   String? _leafFolder;
@@ -227,6 +235,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   final Set<String> _selectedIds = <String>{};
   FaceCropTray? _selectionTray;
   FaceCropSelectKind? _selectionKind;
+
   /// Anchor for Shift+click range (last plain / Cmd click, or cluster select).
   String? _selectionAnchorId;
   final FaceCropTapTracker _faceTapTracker = FaceCropTapTracker();
@@ -251,7 +260,10 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     final cols = ref.read(collectionsControllerProvider);
     if (!cols.hasCurrent) return all;
     final allowed = cols.current.leafFolders.toSet();
-    return [for (final f in all) if (allowed.contains(f)) f];
+    return [
+      for (final f in all)
+        if (allowed.contains(f)) f,
+    ];
   }
 
   /// Adopt unowned library leaves into the open collection, then filter.
@@ -288,7 +300,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       preferred: _leafFolder ?? faceCropLastLeafFolder,
     );
     faceCropLastLeafFolder = folder;
-    final foldersChanged = visible.length != _leafFolders.length ||
+    final foldersChanged =
+        visible.length != _leafFolders.length ||
         !_listEquals(visible, _leafFolders);
     if (!foldersChanged && folder == prevFolder) {
       setState(() {});
@@ -485,7 +498,10 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   }
 
   /// Selects every face in a boxed Unassigned FaceGroup (FA/FM) for dragging.
-  void _selectFaceGroupCluster(String faceGroupId, List<PersonAppearance> faces) {
+  void _selectFaceGroupCluster(
+    String faceGroupId,
+    List<PersonAppearance> faces,
+  ) {
     if (faces.isEmpty) return;
     setState(() {
       _selectedIds
@@ -535,7 +551,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     return const {};
   }
 
-  GlobalKey _clusterKey(String id) => _clusterKeys.putIfAbsent(id, GlobalKey.new);
+  GlobalKey _clusterKey(String id) =>
+      _clusterKeys.putIfAbsent(id, GlobalKey.new);
 
   void _scrollToCluster(String personId) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -581,10 +598,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       ordered.add((person: p, faces: faces));
     }
     for (final entry in byPerson.entries) {
-      ordered.add((
-        person: _personForId(entry.key),
-        faces: entry.value,
-      ));
+      ordered.add((person: _personForId(entry.key), faces: entry.value));
     }
     return ordered;
   }
@@ -593,7 +607,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       _scopedAppearances(_assignedOverview);
 
   /// Person, ≥2 faces in folder — Assigned cluster boxes (GroupP).
-  List<({Person person, List<PersonAppearance> faces})> _assignedMultiClusters() {
+  List<({Person person, List<PersonAppearance> faces})>
+  _assignedMultiClusters() {
     return [
       for (final c in _clustersFrom(_linkedInFolder))
         if (c.faces.length >= 2) c,
@@ -610,7 +625,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
 
   /// FaceGroup (FA/FM), ≥2 faces in folder — Unassigned cluster boxes.
   List<({String faceGroupId, FaceGroupKind kind, List<PersonAppearance> faces})>
-      _faceGroupMultiClusters() {
+  _faceGroupMultiClusters() {
     final byGroup = <String, List<PersonAppearance>>{};
     final kindByGroup = <String, FaceGroupKind>{};
     for (final a in _scopedAppearances(_unassigned)) {
@@ -635,7 +650,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
 
   /// FaceGroup (FA/FM), ≥2 exclusions in folder — Excluded cluster boxes.
   List<({String faceGroupId, FaceGroupKind kind, List<WhoExclusion> faces})>
-      _excludedFaceGroupMultiClusters() {
+  _excludedFaceGroupMultiClusters() {
     final scoped = [
       for (final e in _excluded)
         if (_exclusionInScope(e)) e,
@@ -828,8 +843,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     if (queue == null) return;
     final tick = queue.libraryRefreshTick;
     final active = queue.hasActiveJobs;
-    if (tick == _lastIngestRefreshTick &&
-        active == _lastIngestHadActiveJobs) {
+    if (tick == _lastIngestRefreshTick && active == _lastIngestHadActiveJobs) {
       return;
     }
     _lastIngestRefreshTick = tick;
@@ -866,13 +880,16 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         preferred: _leafFolder ?? faceCropLastLeafFolder,
       );
       faceCropLastLeafFolder = folder;
-      final scopedIds =
-          folder == null ? <String>{} : itemIdsInLeafFolder(items, folder);
+      final scopedIds = folder == null
+          ? <String>{}
+          : itemIdsInLeafFolder(items, folder);
       final folderChanged = folder != prevFolder;
-      final foldersChanged = folders.length != _leafFolders.length ||
+      final foldersChanged =
+          folders.length != _leafFolders.length ||
           !_listEquals(folders, _leafFolders);
       final prevScoped = _scopedItemIds;
-      final scopeChanged = scopedIds.length != prevScoped.length ||
+      final scopeChanged =
+          scopedIds.length != prevScoped.length ||
           !scopedIds.containsAll(prevScoped);
 
       if (!foldersChanged &&
@@ -887,6 +904,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         _leafFolders = folders;
         _leafFolder = folder;
         _scopedItemIds = scopedIds;
+        _itemsById = {for (final it in items) it.id: it};
       });
 
       if (folderChanged || scopeChanged) {
@@ -969,8 +987,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         preferred: _leafFolder ?? faceCropLastLeafFolder,
       );
       faceCropLastLeafFolder = folder;
-      final scopedIds =
-          folder == null ? <String>{} : itemIdsInLeafFolder(items, folder);
+      final scopedIds = folder == null
+          ? <String>{}
+          : itemIdsInLeafFolder(items, folder);
 
       final persons = await personsRepo.listPersons();
       final assignedPage = await personsRepo.listAssignedAppearances(
@@ -1020,8 +1039,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           assignAsNew = false;
         }
       } else {
-        final stillListed =
-            pid != null && persons.any((p) => p.id == pid);
+        final stillListed = pid != null && persons.any((p) => p.id == pid);
         if (pid != null && !stillListed) {
           _assignedController?.dispose();
           _assignedController = null;
@@ -1066,6 +1084,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         _assignedOverview = assignedOverview;
         _unassigned = unassigned;
         _excluded = excluded;
+        _itemsById = {for (final it in items) it.id: it};
         _loading = false;
       });
       if (pid != null) _scrollToCluster(pid);
@@ -1094,7 +1113,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     _clearSelection();
     setState(() => _leafFolder = folder);
     if (!_applyingCollectionFacesUi) {
-      ref.read(collectionsControllerProvider).updateFacesLook(leafFolder: folder);
+      ref
+          .read(collectionsControllerProvider)
+          .updateFacesLook(leafFolder: folder);
     }
     await _reload();
   }
@@ -1197,7 +1218,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   }
 
   /// Display name for chrome / subtitle. Person.name is always non-empty (R2).
-  static String personDisplayName(Person p) => p.name.isNotEmpty ? p.name : p.id;
+  static String personDisplayName(Person p) =>
+      p.name.isNotEmpty ? p.name : p.id;
 
   static String _personDropdownLabel(Person p, {required bool inFolder}) {
     final base = personDisplayName(p);
@@ -1210,15 +1232,11 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     return _personId;
   }
 
-  Future<void> _selectPerson(
-    String? id, {
-    bool recordUndo = true,
-  }) async {
+  Future<void> _selectPerson(String? id, {bool recordUndo = true}) async {
     final prior = _encodedPersonSelection();
     if (id == null) {
       // Never enter overview — resolve to first in-folder person or New Person…
-      final canCreateNew =
-          _unassignedTrayFaceCount > 0 || _excluded.isNotEmpty;
+      final canCreateNew = _unassignedTrayFaceCount > 0 || _excluded.isNotEmpty;
       final resolved = _resolvedAssignedFocus(
         personId: null,
         assignAsNew: false,
@@ -1285,9 +1303,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
 
     if (!mounted) return;
     final next = _encodedPersonSelection();
-    if (recordUndo &&
-        !_applyingCollectionFacesUi &&
-        prior != next) {
+    if (recordUndo && !_applyingCollectionFacesUi && prior != next) {
       _undoStack.push(
         CallbackUndoableAction(
           label: 'Select person',
@@ -1312,26 +1328,46 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     );
   }
 
-  Future<void> _confirmUnconfirmedAppearance(PersonAppearance appearance) async {
+  Future<void> _confirmUnconfirmedAppearance(
+    PersonAppearance appearance,
+  ) async {
+    await _confirmUnconfirmedAppearances([appearance]);
+  }
+
+  /// Confirm one or more unconfirmed auto-assignments as a unit (R6).
+  /// Used for a solo thumb or a whole person-cluster GroupFA cohort.
+  Future<void> _confirmUnconfirmedAppearances(
+    List<PersonAppearance> appearances,
+  ) async {
     if (_busy) return;
-    if (appearance.assignmentState != 'unconfirmed') return;
+    final targets = [
+      for (final a in appearances)
+        if (a.assignmentState == 'unconfirmed') a,
+    ];
+    if (targets.isEmpty) return;
     setState(() => _busy = true);
     try {
       final persons = ref.read(personsRepositoryProvider);
-      await persons.confirmAppearanceAssignment(appearance.id);
+      final ids = [for (final a in targets) a.id];
+      for (final id in ids) {
+        await persons.confirmAppearanceAssignment(id);
+      }
       await _reload();
       _markCollectionDirty();
-      final appearanceId = appearance.id;
       _undoStack.push(
         CallbackUndoableAction(
-          label: 'Confirm face',
+          label: ids.length == 1 ? 'Confirm face' : 'Confirm faces',
           onUndo: () async {
-            await persons.tryRestoreUnconfirmedAssignment(appearanceId);
+            for (final id in ids) {
+              await persons.tryRestoreUnconfirmedAssignment(id);
+            }
             _markCollectionDirty();
             await _reload();
           },
           onRedo: () async {
-            await persons.confirmAppearanceAssignment(appearanceId);
+            for (final id in ids) {
+              await persons.confirmAppearanceAssignment(id);
+            }
             _markCollectionDirty();
             await _reload();
           },
@@ -1352,33 +1388,48 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
 
   /// Reject an unconfirmed auto-assignment ("Not this person"). Undo reassigns
   /// to the same personId and restores unconfirmed when possible.
-  Future<void> _declineUnconfirmedAppearance(PersonAppearance appearance) async {
+  Future<void> _declineUnconfirmedAppearance(
+    PersonAppearance appearance,
+  ) async {
+    await _declineUnconfirmedAppearances([appearance]);
+  }
+
+  /// Decline one or more unconfirmed auto-assignments as a unit (R6).
+  Future<void> _declineUnconfirmedAppearances(
+    List<PersonAppearance> appearances,
+  ) async {
     if (_busy) return;
-    if (appearance.assignmentState != 'unconfirmed') return;
-    final personId = appearance.personId;
+    final targets = [
+      for (final a in appearances)
+        if (a.assignmentState == 'unconfirmed' && a.personId != null) a,
+    ];
+    if (targets.isEmpty) return;
     setState(() => _busy = true);
     try {
       final persons = ref.read(personsRepositoryProvider);
-      await persons.declineAutoAssignAppearance(appearance.id);
+      final snapshots = [
+        for (final a in targets) (id: a.id, personId: a.personId!),
+      ];
+      for (final s in snapshots) {
+        await persons.declineAutoAssignAppearance(s.id);
+      }
       await _reload();
       _markCollectionDirty();
-      final appearanceId = appearance.id;
       _undoStack.push(
         CallbackUndoableAction(
-          label: 'Not this person',
+          label: snapshots.length == 1 ? 'Not this person' : 'Not these people',
           onUndo: () async {
-            if (personId != null) {
-              await persons.reassignAppearance(
-                appearanceId,
-                personId: personId,
-              );
-              await persons.tryRestoreUnconfirmedAssignment(appearanceId);
+            for (final s in snapshots) {
+              await persons.reassignAppearance(s.id, personId: s.personId);
+              await persons.tryRestoreUnconfirmedAssignment(s.id);
             }
             _markCollectionDirty();
             await _reload();
           },
           onRedo: () async {
-            await persons.declineAutoAssignAppearance(appearanceId);
+            for (final s in snapshots) {
+              await persons.declineAutoAssignAppearance(s.id);
+            }
             _markCollectionDirty();
             await _reload();
           },
@@ -1456,8 +1507,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   /// named person (R6).
   Future<void> _setFaceGroupName(String faceGroupId) async {
     if (_busy) return;
-    final name =
-        await showPersonNameDialog(context, title: 'Name this group');
+    final name = await showPersonNameDialog(context, title: 'Name this group');
     if (name == null || !mounted) return;
     setState(() => _busy = true);
     try {
@@ -1531,10 +1581,10 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   }
 
   String _faceDropUndoLabel(FaceCropTray target) => switch (target) {
-        FaceCropTray.unassigned => 'Move to Unassigned',
-        FaceCropTray.assigned => 'Assign faces',
-        FaceCropTray.excluded => 'Exclude faces',
-      };
+    FaceCropTray.unassigned => 'Move to Unassigned',
+    FaceCropTray.assigned => 'Assign faces',
+    FaceCropTray.excluded => 'Exclude faces',
+  };
 
   void _recordFaceDropUndo(
     List<_FaceDropUndoStep> steps,
@@ -1608,7 +1658,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
 
   /// Stable tagIds for the current tray selection (empty if none / incomplete).
   ({List<String> tagIds, FaceCropTray tray, FaceCropSelectKind kind})?
-      _snapshotSelectionByTagIds() {
+  _snapshotSelectionByTagIds() {
     final tray = _selectionTray;
     final kind = _selectionKind;
     if (tray == null || kind == null || _selectedIds.isEmpty) return null;
@@ -1709,9 +1759,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     final ids = <String>[];
     for (final tagId in tagIds) {
       for (final a in _assignedOverview) {
-        if (a.tagId == tagId &&
-            a.personId != null &&
-            a.faceGroupId == null) {
+        if (a.tagId == tagId && a.personId != null && a.faceGroupId == null) {
           ids.add(a.id);
           break;
         }
@@ -1775,9 +1823,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     } else if (tray == FaceCropTray.assigned) {
       for (final tagId in tagIds) {
         for (final a in _assignedOverview) {
-          if (a.tagId == tagId &&
-              a.personId != null &&
-              a.faceGroupId == null) {
+          if (a.tagId == tagId && a.personId != null && a.faceGroupId == null) {
             ids.add(a.id);
             break;
           }
@@ -1786,9 +1832,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     } else {
       for (final tagId in tagIds) {
         for (final a in _unassigned) {
-          if (a.tagId == tagId &&
-              a.personId == null &&
-              a.faceGroupId == null) {
+          if (a.tagId == tagId && a.personId == null && a.faceGroupId == null) {
             ids.add(a.id);
             break;
           }
@@ -1879,8 +1923,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           steps.add(
             _FaceDropUndoStep(
               undo: () async {
-                final created =
-                    await items.createWhoExclusion(itemId, tagId);
+                final created = await items.createWhoExclusion(itemId, tagId);
                 liveExclusionId = created.exclusion.id;
               },
               redo: () => _undoWhoExclusionForTag(
@@ -1968,8 +2011,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                 if (match.personId != null) {
                   await persons.unlinkAppearance(match.id);
                 }
-                final created =
-                    await items.createWhoExclusion(itemId, tagId);
+                final created = await items.createWhoExclusion(itemId, tagId);
                 liveExclusionId = created.exclusion.id;
               },
             ),
@@ -1983,8 +2025,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                 fallbackExclusionId: liveExclusionId,
               ),
               redo: () async {
-                final created =
-                    await items.createWhoExclusion(itemId, tagId);
+                final created = await items.createWhoExclusion(itemId, tagId);
                 liveExclusionId = created.exclusion.id;
               },
             ),
@@ -2004,8 +2045,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
             _FaceDropUndoStep(
               undo: () async {
                 await persons.unlinkAppearance(assigned.id);
-                final created =
-                    await items.createWhoExclusion(itemId, tagId);
+                final created = await items.createWhoExclusion(itemId, tagId);
                 liveExclusionId = created.exclusion.id;
               },
               redo: () async {
@@ -2162,10 +2202,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         // bulk in [_onDrop] via assignFaceGroup.
         if (data.appearanceId != null) {
           final updated = name != null && name.isNotEmpty
-              ? await persons.reassignAppearance(
-                  data.appearanceId!,
-                  name: name,
-                )
+              ? await persons.reassignAppearance(data.appearanceId!, name: name)
               : await persons.reassignAppearance(
                   data.appearanceId!,
                   personId: pid!,
@@ -2193,15 +2230,15 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     return itemId != null && _scopedItemIds.contains(itemId);
   }
 
-  bool _exclusionInScope(WhoExclusion e) =>
-      _scopedItemIds.contains(e.itemId);
+  bool _exclusionInScope(WhoExclusion e) => _scopedItemIds.contains(e.itemId);
 
   /// Same-person ≥2 leaving Assigned → one GroupFM batch; solos / already-loose
   /// stay per-face.
   ({
     List<List<FaceCropDragData>> samePersonBatches,
     List<FaceCropDragData> perFace,
-  }) _partitionLeaveAssignedAppearances(List<FaceCropDragData> items) {
+  })
+  _partitionLeaveAssignedAppearances(List<FaceCropDragData> items) {
     final byPerson = <String, List<FaceCropDragData>>{};
     final perFace = <FaceCropDragData>[];
     for (final d in items) {
@@ -2227,7 +2264,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   _FaceDropSelectionRestore? _applyMoveResults(
     List<_FaceMoveResult> results, {
     ({List<String> tagIds, FaceCropTray tray, FaceCropSelectKind kind})?
-        priorSelection,
+    priorSelection,
   }) {
     if (results.isEmpty) return null;
     String? loadPersonId;
@@ -2265,10 +2302,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         }
         final addedEx = r.addedExclusion;
         if (addedEx != null && _exclusionInScope(addedEx)) {
-          excluded = [
-            ...excluded.where((e) => e.id != addedEx.id),
-            addedEx,
-          ];
+          excluded = [...excluded.where((e) => e.id != addedEx.id), addedEx];
         }
       }
 
@@ -2379,8 +2413,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       // Focused person emptied → land on another in-folder person, or true
       // New Person… empty mode (never overview + New Person… hint).
       final pid = _personId;
-      if (pid != null &&
-          !assigned.any((a) => a.personId == pid)) {
+      if (pid != null && !assigned.any((a) => a.personId == pid)) {
         final next = _firstPersonIdInFolder(_persons, assigned);
         _renaming = false;
         _renameController.clear();
@@ -2392,8 +2425,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           loadPersonId = next;
         } else {
           _personId = null;
-          _assignAsNewPerson =
-              unassigned.isNotEmpty || excluded.isNotEmpty;
+          _assignAsNewPerson = unassigned.isNotEmpty || excluded.isNotEmpty;
           clearFacesPerson = true;
         }
       }
@@ -2506,7 +2538,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       pid = resolved.personId;
       final assignAsNew = resolved.assignAsNew;
       if (pid != null &&
-          (_assignedController == null || _assignedController!.personId != pid)) {
+          (_assignedController == null ||
+              _assignedController!.personId != pid)) {
         unawaited(_controllerFor(pid).load());
       }
 
@@ -2558,8 +2591,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
             if (!(d.isAppearance && d.appearanceId != null)) d,
         ];
         if (appearanceItems.isNotEmpty) {
-          final partitioned =
-              _partitionLeaveAssignedAppearances(appearanceItems);
+          final partitioned = _partitionLeaveAssignedAppearances(
+            appearanceItems,
+          );
           final persons = ref.read(personsRepositoryProvider);
           for (final batch in partitioned.samePersonBatches) {
             try {
@@ -2577,10 +2611,12 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                 ),
               );
               for (final u in updated) {
-                applied.add(_FaceMoveResult(
-                  removedAppearanceId: u.id,
-                  addedAppearance: u,
-                ));
+                applied.add(
+                  _FaceMoveResult(
+                    removedAppearanceId: u.id,
+                    addedAppearance: u,
+                  ),
+                );
               }
             } catch (e) {
               failed += batch.length;
@@ -2600,17 +2636,15 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                     redo: () => persons.unlinkAppearance(id),
                   ),
                 );
-                applied.add(_FaceMoveResult(
-                  removedAppearanceId: id,
-                  addedAppearance: updated,
-                ));
+                applied.add(
+                  _FaceMoveResult(
+                    removedAppearanceId: id,
+                    addedAppearance: updated,
+                  ),
+                );
               } else {
                 applied.add(
-                  await _applyOneDrop(
-                    target,
-                    data,
-                    undoSteps: undoSteps,
-                  ),
+                  await _applyOneDrop(target, data, undoSteps: undoSteps),
                 );
               }
             } catch (e) {
@@ -2661,9 +2695,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
 
               // Promote every known member of the FaceGroup (appearances in
               // Unassigned, or exclusions in Excluded), not just the drag subset.
-              final unassignedMembers = _scopedAppearances(_unassigned)
-                  .where((a) => a.faceGroupId == entry.key)
-                  .toList();
+              final unassignedMembers = _scopedAppearances(
+                _unassigned,
+              ).where((a) => a.faceGroupId == entry.key).toList();
               final excludedMembers = [
                 for (final e in _excluded)
                   if (_exclusionInScope(e) && e.faceGroupId == entry.key) e,
@@ -2677,10 +2711,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
               final assignNameUsed = createName;
               final assignPersonIdUsed = personId;
               final detail = createName != null
-                  ? await persons.assignFaceGroup(
-                      entry.key,
-                      name: createName,
-                    )
+                  ? await persons.assignFaceGroup(entry.key, name: createName)
                   : await persons.assignFaceGroup(
                       entry.key,
                       personId: personId!,
@@ -2699,10 +2730,12 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                   liveAppearanceIds.add(updated.id);
                   final tagId = updated.tagId ?? member.tagId;
                   if (tagId != null) memberTagIds.add(tagId);
-                  applied.add(_FaceMoveResult(
-                    removedAppearanceId: member.id,
-                    addedAppearance: updated,
-                  ));
+                  applied.add(
+                    _FaceMoveResult(
+                      removedAppearanceId: member.id,
+                      addedAppearance: updated,
+                    ),
+                  );
                 }
               }
               // Members restored from Excluded: match by tagId on the detail.
@@ -2720,10 +2753,12 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                 if (updated != null) {
                   liveAppearanceIds.add(updated.id);
                   if (tagId != null) memberTagIds.add(tagId);
-                  applied.add(_FaceMoveResult(
-                    removedAppearanceId: updated.id,
-                    addedAppearance: updated,
-                  ));
+                  applied.add(
+                    _FaceMoveResult(
+                      removedAppearanceId: updated.id,
+                      addedAppearance: updated,
+                    ),
+                  );
                 }
               }
 
@@ -2767,8 +2802,10 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                       final e = liveExclusions[i];
                       final tagId = e.tagId;
                       if (tagId == null) continue;
-                      final created =
-                          await items.createWhoExclusion(e.itemId, tagId);
+                      final created = await items.createWhoExclusion(
+                        e.itemId,
+                        tagId,
+                      );
                       liveExclusions[i] = (
                         itemId: e.itemId,
                         exclusionId: created.exclusion.id,
@@ -2779,14 +2816,12 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                   redo: () async {
                     if (liveExclusions.isNotEmpty) {
                       for (final e in liveExclusions) {
-                        await items.undoWhoExclusion(
-                          e.itemId,
-                          e.exclusionId,
-                        );
+                        await items.undoWhoExclusion(e.itemId, e.exclusionId);
                       }
                     }
                     // Prefer tag resolve — sibling undos/redos remint FaceGroups.
-                    final fg = (memberTagIds.isNotEmpty
+                    final fg =
+                        (memberTagIds.isNotEmpty
                             ? _faceGroupIdForTagIds(memberTagIds)
                             : null) ??
                         liveFaceGroupId;
@@ -2851,8 +2886,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
               applied.isNotEmpty &&
               personId != null &&
               mounted) {
-            final listed =
-                await ref.read(personsRepositoryProvider).listPersons();
+            final listed = await ref
+                .read(personsRepositoryProvider)
+                .listPersons();
             if (!mounted) return;
             _assignAsNewPerson = false;
             _personId = personId;
@@ -2892,8 +2928,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           }
         }
 
-        final partitioned =
-            _partitionLeaveAssignedAppearances(fromAssignedUngrouped);
+        final partitioned = _partitionLeaveAssignedAppearances(
+          fromAssignedUngrouped,
+        );
         final persons = ref.read(personsRepositoryProvider);
         final items = ref.read(itemsRepositoryProvider);
         for (final batch in partitioned.samePersonBatches) {
@@ -2909,8 +2946,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
               if (tagId == null) {
                 throw StateError('Exclude requires a who tag id');
               }
-              final created =
-                  await items.createWhoExclusion(d.itemId, tagId);
+              final created = await items.createWhoExclusion(d.itemId, tagId);
               var liveExclusionId = created.exclusion.id;
               final itemId = d.itemId;
               final personId = d.personId!;
@@ -2937,7 +2973,10 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                         'Could not find appearance after undo exclude',
                       );
                     }
-                    await persons.reassignAppearance(match.id, personId: personId);
+                    await persons.reassignAppearance(
+                      match.id,
+                      personId: personId,
+                    );
                   },
                   redo: () async {
                     final page = await persons.listUnassignedAppearances(
@@ -2951,10 +2990,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                       }
                     }
                     if (match == null) {
-                      final assignedPage =
-                          await persons.listAssignedAppearances(
-                        limit: _trayPageLimit,
-                      );
+                      final assignedPage = await persons
+                          .listAssignedAppearances(limit: _trayPageLimit);
                       for (final a in assignedPage.appearances) {
                         if (a.tagId == tagId) {
                           match = a;
@@ -2970,16 +3007,17 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                     if (match.personId != null) {
                       await persons.unlinkAppearance(match.id);
                     }
-                    final again =
-                        await items.createWhoExclusion(itemId, tagId);
+                    final again = await items.createWhoExclusion(itemId, tagId);
                     liveExclusionId = again.exclusion.id;
                   },
                 ),
               );
-              applied.add(_FaceMoveResult(
-                removedAppearanceId: d.appearanceId,
-                addedExclusion: created.exclusion,
-              ));
+              applied.add(
+                _FaceMoveResult(
+                  removedAppearanceId: d.appearanceId,
+                  addedExclusion: created.exclusion,
+                ),
+              );
             }
           } catch (e) {
             failed += batch.length;
@@ -3145,8 +3183,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           CallbackUndoableAction(
             label: 'Group faces',
             onUndo: () async {
-              final fg =
-                  _faceGroupIdForTagIds(tagIds) ?? liveFaceGroupId;
+              final fg = _faceGroupIdForTagIds(tagIds) ?? liveFaceGroupId;
               final ungrouped = await persons.ungroupFaceGroup(fg);
               liveMemberIds = [for (final a in ungrouped.appearances) a.id];
               _markCollectionDirty();
@@ -3156,8 +3193,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
               final resolved = _unassignedIdsForTagIds(tagIds);
               final memberIds =
                   tagIds.isNotEmpty && resolved.length == tagIds.length
-                      ? resolved
-                      : liveMemberIds;
+                  ? resolved
+                  : liveMemberIds;
               final again = await persons.assembleAppearances(memberIds);
               liveFaceGroupId = again.faceGroupId;
               liveMemberIds = [for (final a in again.appearances) a.id];
@@ -3191,8 +3228,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           CallbackUndoableAction(
             label: 'Group exclusions',
             onUndo: () async {
-              final fg =
-                  _faceGroupIdForTagIds(tagIds) ?? liveFaceGroupId;
+              final fg = _faceGroupIdForTagIds(tagIds) ?? liveFaceGroupId;
               final ungrouped = await persons.ungroupFaceGroup(fg);
               liveMemberIds = [for (final e in ungrouped.exclusions) e.id];
               _markCollectionDirty();
@@ -3202,8 +3238,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
               final resolved = _exclusionIdsForTagIds(tagIds);
               final memberIds =
                   tagIds.isNotEmpty && resolved.length == tagIds.length
-                      ? resolved
-                      : liveMemberIds;
+                  ? resolved
+                  : liveMemberIds;
               final again = await persons.assembleExclusions(memberIds);
               liveFaceGroupId = again.faceGroupId;
               liveMemberIds = [for (final e in again.exclusions) e.id];
@@ -3279,15 +3315,14 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
             onUndo: () async {
               if (exclusionTagIds.length >= 2 || liveExclusionIds.length >= 2) {
                 final resolved = _exclusionIdsForTagIds(exclusionTagIds);
-                final ids = exclusionTagIds.isNotEmpty &&
+                final ids =
+                    exclusionTagIds.isNotEmpty &&
                         resolved.length == exclusionTagIds.length
                     ? resolved
                     : liveExclusionIds;
                 final assembled = await persons.assembleExclusions(ids);
                 redoFaceGroupId = assembled.faceGroupId;
-                liveExclusionIds = [
-                  for (final e in assembled.exclusions) e.id,
-                ];
+                liveExclusionIds = [for (final e in assembled.exclusions) e.id];
                 _markCollectionDirty();
                 await _reload();
                 if (!mounted) return;
@@ -3301,7 +3336,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                 });
               } else {
                 final resolved = _unassignedIdsForTagIds(appearanceTagIds);
-                final ids = appearanceTagIds.isNotEmpty &&
+                final ids =
+                    appearanceTagIds.isNotEmpty &&
                         resolved.length == appearanceTagIds.length
                     ? resolved
                     : liveAppearanceIds;
@@ -3380,8 +3416,10 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     // mid-build asserts "Only one task can be scheduled at a time").
     final controller = _assignedController;
 
-    ref.listen<FaceCropFocusRequest?>(faceCropFocusRequestProvider,
-        (previous, next) {
+    ref.listen<FaceCropFocusRequest?>(faceCropFocusRequestProvider, (
+      previous,
+      next,
+    ) {
       if (next == null) return;
       if (_lastFocusNonce == next.nonce) return;
       unawaited(_applyFocusRequest(next));
@@ -3404,164 +3442,167 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       controller: _undoStack,
       active: facesActive,
       child: Shortcuts(
-      shortcuts: <ShortcutActivator, Intent>{
-        const SingleActivator(LogicalKeyboardKey.keyA, meta: true):
-            const SelectAllTextIntent(SelectionChangedCause.keyboard),
-        const SingleActivator(LogicalKeyboardKey.keyA, control: true):
-            const SelectAllTextIntent(SelectionChangedCause.keyboard),
-      },
-      child: Actions(
-        actions: <Type, Action<Intent>>{
-          SelectAllTextIntent: CallbackAction<SelectAllTextIntent>(
-            onInvoke: (_) {
-              _selectAllInActiveTray();
-              return null;
-            },
-          ),
+        shortcuts: <ShortcutActivator, Intent>{
+          const SingleActivator(LogicalKeyboardKey.keyA, meta: true):
+              const SelectAllTextIntent(SelectionChangedCause.keyboard),
+          const SingleActivator(LogicalKeyboardKey.keyA, control: true):
+              const SelectAllTextIntent(SelectionChangedCause.keyboard),
         },
-        child: SelectionContainer.disabled(
-          child: Focus(
-            focusNode: _trayFocusNode,
-            autofocus: true,
-            onKeyEvent: (node, event) {
-              if (event is! KeyDownEvent) return KeyEventResult.ignored;
-              if (event.logicalKey == LogicalKeyboardKey.escape) {
-                _clearSelection();
-                return KeyEventResult.handled;
-              }
-              if (event.logicalKey == LogicalKeyboardKey.keyA &&
-                  (HardwareKeyboard.instance.isMetaPressed ||
-                      HardwareKeyboard.instance.isControlPressed)) {
+        child: Actions(
+          actions: <Type, Action<Intent>>{
+            SelectAllTextIntent: CallbackAction<SelectAllTextIntent>(
+              onInvoke: (_) {
                 _selectAllInActiveTray();
-                return KeyEventResult.handled;
-              }
-              return KeyEventResult.ignored;
-            },
-            child: Scaffold(
-      appBar: AppBar(
-        title: Row(
-          children: [
-            const Text('Faces'),
-            const SizedBox(width: 8),
-            UndoDepthBadge(controller: _undoStack),
-          ],
-        ),
-        actions: [
-          if (!_loading && _error == null)
-            Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: Center(
-                child: Text(
-                  ref.watch(collectionsControllerProvider).chromeLabel,
-                  key: const Key('face-crop-collection-label'),
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ),
+                return null;
+              },
             ),
-          if (!_loading && _error == null && _leafFolders.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Center(
-                child: SizedBox(
-                  width: 220,
-                  child: DropdownButtonFormField<String>(
-                    key: const Key('face-crop-folder-select'),
-                    // ignore: deprecated_member_use
-                    value: _leafFolder != null &&
-                            _leafFolders.contains(_leafFolder)
-                        ? _leafFolder
-                        : null,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Folder',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                    ),
-                    items: [
-                      for (final folder in _leafFolders)
-                        DropdownMenuItem(
-                          value: folder,
+          },
+          child: SelectionContainer.disabled(
+            child: Focus(
+              focusNode: _trayFocusNode,
+              autofocus: true,
+              onKeyEvent: (node, event) {
+                if (event is! KeyDownEvent) return KeyEventResult.ignored;
+                if (event.logicalKey == LogicalKeyboardKey.escape) {
+                  _clearSelection();
+                  return KeyEventResult.handled;
+                }
+                if (event.logicalKey == LogicalKeyboardKey.keyA &&
+                    (HardwareKeyboard.instance.isMetaPressed ||
+                        HardwareKeyboard.instance.isControlPressed)) {
+                  _selectAllInActiveTray();
+                  return KeyEventResult.handled;
+                }
+                return KeyEventResult.ignored;
+              },
+              child: Scaffold(
+                appBar: AppBar(
+                  title: Row(
+                    children: [
+                      const Text('Faces'),
+                      const SizedBox(width: 8),
+                      UndoDepthBadge(controller: _undoStack),
+                    ],
+                  ),
+                  actions: [
+                    if (!_loading && _error == null)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: Center(
                           child: Text(
-                            leafFolderLabel(folder),
-                            overflow: TextOverflow.ellipsis,
+                            ref
+                                .watch(collectionsControllerProvider)
+                                .chromeLabel,
+                            key: const Key('face-crop-collection-label'),
+                            style: Theme.of(context).textTheme.bodyMedium,
                           ),
                         ),
-                    ],
-                    onChanged: _busy ? null : _selectLeafFolder,
-                  ),
+                      ),
+                    if (!_loading && _error == null && _leafFolders.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Center(
+                          child: SizedBox(
+                            width: 220,
+                            child: DropdownButtonFormField<String>(
+                              key: const Key('face-crop-folder-select'),
+                              // ignore: deprecated_member_use
+                              value:
+                                  _leafFolder != null &&
+                                      _leafFolders.contains(_leafFolder)
+                                  ? _leafFolder
+                                  : null,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Folder',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
+                              ),
+                              items: [
+                                for (final folder in _leafFolders)
+                                  DropdownMenuItem(
+                                    value: folder,
+                                    child: Text(
+                                      leafFolderLabel(folder),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                              ],
+                              onChanged: _busy ? null : _selectLeafFolder,
+                            ),
+                          ),
+                        ),
+                      ),
+                    IconButton(
+                      key: const Key('face-crop-trays-refresh'),
+                      tooltip: 'Refresh',
+                      onPressed: _busy || _loading ? null : _reload,
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ],
                 ),
-              ),
-            ),
-          IconButton(
-            key: const Key('face-crop-trays-refresh'),
-            tooltip: 'Refresh',
-            onPressed: _busy || _loading ? null : _reload,
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
-      body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(
-                key: Key('face-crop-trays-loading'),
-              ),
-            )
-          : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Could not load trays: $_error',
-                          key: const Key('face-crop-trays-error-text'),
+                body: _loading
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                          key: Key('face-crop-trays-loading'),
+                        ),
+                      )
+                    : _error != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Could not load trays: $_error',
+                                key: const Key('face-crop-trays-error-text'),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 16),
+                              FilledButton(
+                                onPressed: _reload,
+                                child: const Text('Retry'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : _leafFolders.isEmpty
+                    ? Center(
+                        child: Text(
+                          _allLeafFolders.isEmpty
+                              ? 'No local folders yet.\n'
+                                    'Add photos from a folder, then open Faces.'
+                              : 'This collection has no folders that match '
+                                    'items you have added.\n'
+                                    'Add folders on the Folders page.',
+                          key: const Key('face-crop-trays-no-folders'),
                           textAlign: TextAlign.center,
                         ),
-                        const SizedBox(height: 16),
-                        FilledButton(
-                          onPressed: _reload,
-                          child: const Text('Retry'),
+                      )
+                    : Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(child: _buildAssignedColumn(controller)),
+                            const SizedBox(width: 8),
+                            Expanded(child: _buildUnassignedColumn()),
+                            const SizedBox(width: 8),
+                            Expanded(child: _buildExcludedColumn()),
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
-                )
-              : _leafFolders.isEmpty
-                  ? Center(
-                      child: Text(
-                        _allLeafFolders.isEmpty
-                            ? 'No local folders yet.\n'
-                                'Add photos from a folder, then open Faces.'
-                            : 'This collection has no folders that match '
-                                'items you have added.\n'
-                                'Add folders on the Folders page.',
-                        key: const Key('face-crop-trays-no-folders'),
-                        textAlign: TextAlign.center,
                       ),
-                    )
-                  : Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(child: _buildAssignedColumn(controller)),
-                      const SizedBox(width: 8),
-                      Expanded(child: _buildUnassignedColumn()),
-                      const SizedBox(width: 8),
-                      Expanded(child: _buildExcludedColumn()),
-                    ],
-                  ),
-                ),
+              ),
+            ),
+          ),
+        ),
       ),
-    ),
-    ),
-    ),
-    ),
     );
   }
 
@@ -3591,8 +3632,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         if (!mounted) return;
         if (ok) {
           setState(() => _renaming = false);
-          final persons =
-              await ref.read(personsRepositoryProvider).listPersons();
+          final persons = await ref
+              .read(personsRepositoryProvider)
+              .listPersons();
           if (mounted) setState(() => _persons = persons);
         }
       },
@@ -3614,7 +3656,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     }
     // Prefer list entry; fall back to controller detail so a just-created
     // person still shows before the next full refresh.
-    final selectedId = pid != null &&
+    final selectedId =
+        pid != null &&
             (selectedPerson != null ||
                 controller?.personId == pid ||
                 controller?.detail?.id == pid)
@@ -3623,16 +3666,15 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     final selectedName = selectedPerson != null
         ? personDisplayName(selectedPerson)
         : (controller?.detail != null && controller!.detail!.id == pid
-            ? personDisplayName(
-                Person(
-                  id: controller.detail!.id,
-                  name: controller.detail!.name,
-                  createdAt: controller.detail!.createdAt,
-                ),
-              )
-            : null);
-    final showNewPerson =
-        _unassignedTrayFaceCount > 0 || _excluded.isNotEmpty;
+              ? personDisplayName(
+                  Person(
+                    id: controller.detail!.id,
+                    name: controller.detail!.name,
+                    createdAt: controller.detail!.createdAt,
+                  ),
+                )
+              : null);
+    final showNewPerson = _unassignedTrayFaceCount > 0 || _excluded.isNotEmpty;
     final allClusters = _assignedMultiClusters();
     final allSolos = _assignedSoloFaces();
     final inFolderIds = <String>{
@@ -3655,10 +3697,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     }
     final dropdownValue = _assignAsNewPerson && showNewPerson
         ? _newPersonSentinel
-        : (selectedId != null &&
-                inFolderPersons.any((p) => p.id == selectedId)
-            ? selectedId
-            : null);
+        : (selectedId != null && inFolderPersons.any((p) => p.id == selectedId)
+              ? selectedId
+              : null);
     // New Person... → empty drop target. Selected person → only that person's
     // faces. Never show all-persons overview without a selection.
     final clusters = _assignAsNewPerson || selectedId == null
@@ -3744,8 +3785,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         : null;
 
     Widget buildTray({required String subtitle}) {
-      final chrome =
-          selectedId != null ? _personChromeWidget(controller) : null;
+      final chrome = selectedId != null
+          ? _personChromeWidget(controller)
+          : null;
       final empty = clusters.isEmpty && solos.isEmpty;
       return _TrayColumn(
         key: const Key('face-crop-tray-assigned'),
@@ -3769,61 +3811,77 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                   _assignAsNewPerson
                       ? 'Drop faces to name a new person'
                       : _unassignedTrayFaceCount == 0 && _excluded.isEmpty
-                          ? 'No faces in this folder yet'
-                          : selectedId != null
-                              ? 'No faces for this person in this folder'
-                              : 'No named people in this folder — group faces '
-                                  'in Unassigned and click Set name, or check '
-                                  'Unassigned',
+                      ? 'No faces in this folder yet'
+                      : selectedId != null
+                      ? 'No faces for this person in this folder'
+                      : 'No named people in this folder — group faces '
+                            'in Unassigned and click Set name, or check '
+                            'Unassigned',
                   key: const Key('face-crop-assigned-empty'),
                   textAlign: TextAlign.center,
                 ),
               )
-            : ListView(
+            : CustomScrollView(
                 controller: _clusterScrollController,
-                padding: const EdgeInsets.all(8),
-                children: [
-                  for (var i = 0; i < clusters.length; i++) ...[
-                    Padding(
-                      key: _clusterKey(clusters[i].person.id),
-                      padding: EdgeInsets.only(
-                        bottom: i == clusters.length - 1 && solos.isEmpty
-                            ? 0
-                            : 10,
-                      ),
-                      child: _PersonClusterCard(
-                        person: clusters[i].person,
-                        faces: clusters[i].faces,
-                        focused: clusters[i].person.id == selectedId,
-                        busy: _busy ||
-                            (clusters[i].person.id == selectedId &&
-                                (controller?.isBusy ?? false)),
-                        selectedIds: _selectionFor(
-                          FaceCropTray.assigned,
-                          FaceCropSelectKind.appearance,
+                slivers: [
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      8,
+                      8,
+                      8,
+                      solos.isEmpty ? 8 : 0,
+                    ),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, i) => Padding(
+                          key: _clusterKey(clusters[i].person.id),
+                          padding: EdgeInsets.only(
+                            bottom: i == clusters.length - 1 ? 0 : 10,
+                          ),
+                          child: _PersonClusterCard(
+                            person: clusters[i].person,
+                            faces: clusters[i].faces,
+                            focused: clusters[i].person.id == selectedId,
+                            busy:
+                                _busy ||
+                                (clusters[i].person.id == selectedId &&
+                                    (controller?.isBusy ?? false)),
+                            selectedIds: _selectionFor(
+                              FaceCropTray.assigned,
+                              FaceCropSelectKind.appearance,
+                            ),
+                            tapTracker: _faceTapTracker,
+                            dragPayload: _clusterDragPayload(
+                              clusters[i].faces,
+                              FaceCropTray.assigned,
+                            ),
+                            onSelectCluster: () => _selectCluster(
+                              clusters[i].person,
+                              clusters[i].faces,
+                              FaceCropTray.assigned,
+                            ),
+                            onSelectAppearance: (a, {required mode}) =>
+                                _selectAppearance(
+                                  a,
+                                  FaceCropTray.assigned,
+                                  mode: mode,
+                                ),
+                            onConfirmUnconfirmedUnit: () =>
+                                _confirmUnconfirmedAppearances(
+                                  clusters[i].faces,
+                                ),
+                            onDeclineUnconfirmedUnit: () =>
+                                _declineUnconfirmedAppearances(
+                                  clusters[i].faces,
+                                ),
+                            onOpenItem: _openItem,
+                            itemsById: _itemsById,
+                          ),
                         ),
-                        tapTracker: _faceTapTracker,
-                        dragPayload: _clusterDragPayload(
-                          clusters[i].faces,
-                          FaceCropTray.assigned,
-                        ),
-                        onSelectCluster: () => _selectCluster(
-                          clusters[i].person,
-                          clusters[i].faces,
-                          FaceCropTray.assigned,
-                        ),
-                        onSelectAppearance: (a, {required mode}) =>
-                            _selectAppearance(
-                          a,
-                          FaceCropTray.assigned,
-                          mode: mode,
-                        ),
-                        onConfirmUnconfirmed: _confirmUnconfirmedAppearance,
-                        onDeclineUnconfirmed: _declineUnconfirmedAppearance,
-                        onOpenItem: _openItem,
+                        childCount: clusters.length,
                       ),
                     ),
-                  ],
+                  ),
                   if (solos.isNotEmpty)
                     _AppearanceGrid(
                       appearances: solos,
@@ -3834,7 +3892,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                         FaceCropSelectKind.appearance,
                       ),
                       tapTracker: _faceTapTracker,
-                      shrinkWrap: true,
+                      asSliver: true,
                       onSelect: (a, {required mode}) => _selectAppearance(
                         a,
                         FaceCropTray.assigned,
@@ -3843,6 +3901,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                       onConfirmUnconfirmed: _confirmUnconfirmedAppearance,
                       onDeclineUnconfirmed: _declineUnconfirmedAppearance,
                       onOpenItem: _openItem,
+                      itemsById: _itemsById,
                     ),
                 ],
               ),
@@ -3869,7 +3928,11 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           subtitle = 'Loading…';
         } else if (detail != null && selectedId == detail.id) {
           subtitle = personDisplayName(
-            Person(id: detail.id, name: detail.name, createdAt: detail.createdAt),
+            Person(
+              id: detail.id,
+              name: detail.name,
+              createdAt: detail.createdAt,
+            ),
           );
         } else {
           subtitle = emptyAssignedSubtitle(clusters, solos);
@@ -3883,8 +3946,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     List<({Person person, List<PersonAppearance> faces})> clusters,
     List<PersonAppearance> solos,
   ) {
-    final faces = clusters.fold<int>(0, (n, c) => n + c.faces.length) +
-        solos.length;
+    final faces =
+        clusters.fold<int>(0, (n, c) => n + c.faces.length) + solos.length;
     if (faces == 0) return 'No faces';
     final groups = clusters.length;
     if (groups == 0) return '$faces ${faces == 1 ? 'face' : 'faces'}';
@@ -3905,46 +3968,53 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           ),
         );
       }
-      return ListView(
-        padding: const EdgeInsets.all(8),
-        children: [
-          for (var i = 0; i < clusters.length; i++)
-            Padding(
-              key: _clusterKey(clusters[i].faceGroupId),
-              padding: EdgeInsets.only(
-                bottom: i == clusters.length - 1 && loose.isEmpty ? 0 : 10,
-              ),
-              child: _FaceGroupClusterCard(
-                faceGroupId: clusters[i].faceGroupId,
-                kind: clusters[i].kind,
-                faces: clusters[i].faces,
-                busy: _busy,
-                selectedIds: _selectionFor(
-                  FaceCropTray.unassigned,
-                  FaceCropSelectKind.appearance,
+      return CustomScrollView(
+        slivers: [
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(8, 8, 8, loose.isEmpty ? 8 : 0),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, i) => Padding(
+                  key: _clusterKey(clusters[i].faceGroupId),
+                  padding: EdgeInsets.only(
+                    bottom: i == clusters.length - 1 ? 0 : 10,
+                  ),
+                  child: _FaceGroupClusterCard(
+                    faceGroupId: clusters[i].faceGroupId,
+                    kind: clusters[i].kind,
+                    faces: clusters[i].faces,
+                    busy: _busy,
+                    selectedIds: _selectionFor(
+                      FaceCropTray.unassigned,
+                      FaceCropSelectKind.appearance,
+                    ),
+                    tapTracker: _faceTapTracker,
+                    dragPayload: _clusterDragPayload(
+                      clusters[i].faces,
+                      FaceCropTray.unassigned,
+                    ),
+                    onSelectCluster: () => _selectFaceGroupCluster(
+                      clusters[i].faceGroupId,
+                      clusters[i].faces,
+                    ),
+                    onSetName: () => _setFaceGroupName(clusters[i].faceGroupId),
+                    onUngroup: clusters[i].kind == FaceGroupKind.fm
+                        ? () => _ungroupFm(clusters[i].faceGroupId)
+                        : null,
+                    onSelectAppearance: (a, {required mode}) =>
+                        _selectAppearance(
+                          a,
+                          FaceCropTray.unassigned,
+                          mode: mode,
+                        ),
+                    onOpenItem: _openItem,
+                    itemsById: _itemsById,
+                  ),
                 ),
-                tapTracker: _faceTapTracker,
-                dragPayload: _clusterDragPayload(
-                  clusters[i].faces,
-                  FaceCropTray.unassigned,
-                ),
-                onSelectCluster: () => _selectFaceGroupCluster(
-                  clusters[i].faceGroupId,
-                  clusters[i].faces,
-                ),
-                onSetName: () => _setFaceGroupName(clusters[i].faceGroupId),
-                onUngroup: clusters[i].kind == FaceGroupKind.fm
-                    ? () => _ungroupFm(clusters[i].faceGroupId)
-                    : null,
-                onSelectAppearance: (a, {required mode}) =>
-                    _selectAppearance(
-                  a,
-                  FaceCropTray.unassigned,
-                  mode: mode,
-                ),
-                onOpenItem: _openItem,
+                childCount: clusters.length,
               ),
             ),
+          ),
           if (loose.isNotEmpty)
             _AppearanceGrid(
               appearances: loose,
@@ -3955,18 +4025,17 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                 FaceCropSelectKind.appearance,
               ),
               tapTracker: _faceTapTracker,
-              shrinkWrap: true,
-              onSelect: (a, {required mode}) => _selectAppearance(
-                a,
-                FaceCropTray.unassigned,
-                mode: mode,
-              ),
+              asSliver: true,
+              onSelect: (a, {required mode}) =>
+                  _selectAppearance(a, FaceCropTray.unassigned, mode: mode),
               onOpenItem: _openItem,
               onSetName: _setNameFromAppearance,
-              onGroupSelection: _canGroupSelection &&
+              onGroupSelection:
+                  _canGroupSelection &&
                       _selectionTray == FaceCropTray.unassigned
                   ? _groupSelection
                   : null,
+              itemsById: _itemsById,
             ),
         ],
       );
@@ -3976,7 +4045,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       key: const Key('face-crop-tray-unassigned'),
       title: 'Unassigned',
       tagline: 'not yet named — includes auto-grouped similar faces',
-      subtitle: '$_unassignedTrayFaceCount '
+      subtitle:
+          '$_unassignedTrayFaceCount '
           '${_unassignedTrayFaceCount == 1 ? 'face' : 'faces'}',
       onAccept: (d) => _onDrop(FaceCropTray.unassigned, d),
       child: body,
@@ -3994,42 +4064,46 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     final body = () {
       if (clusters.isEmpty && loose.isEmpty) {
         return const Center(
-          child: Text(
-            'No excluded faces',
-            textAlign: TextAlign.center,
-          ),
+          child: Text('No excluded faces', textAlign: TextAlign.center),
         );
       }
-      return ListView(
-        padding: const EdgeInsets.all(8),
-        children: [
-          for (var i = 0; i < clusters.length; i++)
-            Padding(
-              key: _clusterKey('ex-${clusters[i].faceGroupId}'),
-              padding: EdgeInsets.only(
-                bottom: i == clusters.length - 1 && loose.isEmpty ? 0 : 10,
-              ),
-              child: _ExcludedFaceGroupClusterCard(
-                faceGroupId: clusters[i].faceGroupId,
-                kind: clusters[i].kind,
-                faces: clusters[i].faces,
-                busy: _busy,
-                selectedIds: _selectionFor(
-                  FaceCropTray.excluded,
-                  FaceCropSelectKind.exclusion,
+      return CustomScrollView(
+        slivers: [
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(8, 8, 8, loose.isEmpty ? 8 : 0),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, i) => Padding(
+                  key: _clusterKey('ex-${clusters[i].faceGroupId}'),
+                  padding: EdgeInsets.only(
+                    bottom: i == clusters.length - 1 ? 0 : 10,
+                  ),
+                  child: _ExcludedFaceGroupClusterCard(
+                    faceGroupId: clusters[i].faceGroupId,
+                    kind: clusters[i].kind,
+                    faces: clusters[i].faces,
+                    busy: _busy,
+                    selectedIds: _selectionFor(
+                      FaceCropTray.excluded,
+                      FaceCropSelectKind.exclusion,
+                    ),
+                    tapTracker: _faceTapTracker,
+                    dragPayload: _excludedClusterDragPayload(clusters[i].faces),
+                    onSelectCluster: () =>
+                        _selectExcludedFaceGroupCluster(clusters[i].faces),
+                    onUngroup: clusters[i].kind == FaceGroupKind.fm
+                        ? () => _ungroupFm(clusters[i].faceGroupId)
+                        : null,
+                    onSelectExclusion: (e, {required mode}) =>
+                        _selectExclusion(e, mode: mode),
+                    onOpenItem: _openItem,
+                    itemsById: _itemsById,
+                  ),
                 ),
-                tapTracker: _faceTapTracker,
-                dragPayload: _excludedClusterDragPayload(clusters[i].faces),
-                onSelectCluster: () =>
-                    _selectExcludedFaceGroupCluster(clusters[i].faces),
-                onUngroup: clusters[i].kind == FaceGroupKind.fm
-                    ? () => _ungroupFm(clusters[i].faceGroupId)
-                    : null,
-                onSelectExclusion: (e, {required mode}) =>
-                    _selectExclusion(e, mode: mode),
-                onOpenItem: _openItem,
+                childCount: clusters.length,
               ),
             ),
+          ),
           if (loose.isNotEmpty)
             _ExclusionGrid(
               exclusions: loose,
@@ -4039,14 +4113,14 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                 FaceCropSelectKind.exclusion,
               ),
               tapTracker: _faceTapTracker,
-              shrinkWrap: true,
-              onSelect: (e, {required mode}) =>
-                  _selectExclusion(e, mode: mode),
+              asSliver: true,
+              onSelect: (e, {required mode}) => _selectExclusion(e, mode: mode),
               onOpenItem: _openItem,
-              onGroupSelection: _canGroupSelection &&
-                      _selectionTray == FaceCropTray.excluded
+              onGroupSelection:
+                  _canGroupSelection && _selectionTray == FaceCropTray.excluded
                   ? _groupSelection
                   : null,
+              itemsById: _itemsById,
             ),
         ],
       );
@@ -4075,8 +4149,9 @@ class _PersonClusterCard extends StatelessWidget {
     required this.onSelectCluster,
     required this.onSelectAppearance,
     required this.onOpenItem,
-    this.onConfirmUnconfirmed,
-    this.onDeclineUnconfirmed,
+    this.onConfirmUnconfirmedUnit,
+    this.onDeclineUnconfirmedUnit,
+    this.itemsById = const {},
   });
 
   final Person person;
@@ -4087,16 +4162,35 @@ class _PersonClusterCard extends StatelessWidget {
   final FaceCropTapTracker tapTracker;
   final FaceCropDragPayload dragPayload;
   final VoidCallback onSelectCluster;
-  final void Function(PersonAppearance appearance, {required FaceCropSelectMode mode})
-      onSelectAppearance;
+  final void Function(
+    PersonAppearance appearance, {
+    required FaceCropSelectMode mode,
+  })
+  onSelectAppearance;
   final void Function(String itemId) onOpenItem;
-  final Future<void> Function(PersonAppearance appearance)? onConfirmUnconfirmed;
-  final Future<void> Function(PersonAppearance appearance)? onDeclineUnconfirmed;
+
+  /// Confirm all unconfirmed faces in this person cluster as one unit.
+  final Future<void> Function()? onConfirmUnconfirmedUnit;
+
+  /// Decline all unconfirmed faces in this person cluster as one unit.
+  final Future<void> Function()? onDeclineUnconfirmedUnit;
+  final Map<String, Item> itemsById;
+
+  List<PersonAppearance> get _unconfirmedFaces => [
+    for (final a in faces)
+      if (a.assignmentState == 'unconfirmed') a,
+  ];
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final label = _FaceCropTraysPageState.personDisplayName(person);
+    final unconfirmed = _unconfirmedFaces;
+    final confirmUnit = onConfirmUnconfirmedUnit;
+    final declineUnit = onDeclineUnconfirmedUnit;
+    final showUnitConfirm =
+        unconfirmed.isNotEmpty && confirmUnit != null && declineUnit != null;
+
     final header = Material(
       color: Colors.transparent,
       child: InkWell(
@@ -4105,19 +4199,68 @@ class _PersonClusterCard extends StatelessWidget {
         borderRadius: const BorderRadius.vertical(top: Radius.circular(7)),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: Text(
-                  '$label · ${faces.length} '
-                  '${faces.length == 1 ? 'face' : 'faces'}',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '$label · ${faces.length} '
+                      '${faces.length == 1 ? 'face' : 'faces'}',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         fontWeight: focused ? FontWeight.w700 : null,
                         color: focused ? scheme.primary : null,
                       ),
-                  overflow: TextOverflow.ellipsis,
-                ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (showUnitConfirm)
+                    Container(
+                      key: Key('face-crop-cluster-unconfirmed-${person.id}'),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: scheme.tertiaryContainer,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        unconfirmed.length == 1
+                            ? 'Unconfirmed'
+                            : 'Unconfirmed · ${unconfirmed.length}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onTertiaryContainer,
+                        ),
+                      ),
+                    ),
+                ],
               ),
+              if (showUnitConfirm) ...[
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  alignment: WrapAlignment.end,
+                  children: [
+                    OutlinedButton(
+                      key: Key('face-crop-cluster-confirm-${person.id}'),
+                      onPressed: busy ? null : confirmUnit,
+                      style: _faceActionButtonStyle(scheme),
+                      child: const Text('Confirm'),
+                    ),
+                    OutlinedButton(
+                      key: Key('face-crop-cluster-decline-${person.id}'),
+                      onPressed: busy ? null : declineUnit,
+                      style: _faceActionButtonStyle(scheme),
+                      child: const Text('Not this person'),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
@@ -4136,8 +4279,10 @@ class _PersonClusterCard extends StatelessWidget {
             feedback: Material(
               elevation: 4,
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: scheme.primaryContainer,
                   borderRadius: BorderRadius.circular(8),
@@ -4160,9 +4305,9 @@ class _PersonClusterCard extends StatelessWidget {
           tapTracker: tapTracker,
           shrinkWrap: true,
           onSelect: onSelectAppearance,
-          onConfirmUnconfirmed: onConfirmUnconfirmed,
-          onDeclineUnconfirmed: onDeclineUnconfirmed,
+          // Unit confirm lives on the cluster header — not per thumb.
           onOpenItem: onOpenItem,
+          itemsById: itemsById,
         ),
       ],
     );
@@ -4200,6 +4345,7 @@ class _FaceGroupClusterCard extends StatelessWidget {
     this.onUngroup,
     required this.onSelectAppearance,
     required this.onOpenItem,
+    this.itemsById = const {},
   });
 
   final String faceGroupId;
@@ -4212,9 +4358,13 @@ class _FaceGroupClusterCard extends StatelessWidget {
   final VoidCallback onSelectCluster;
   final VoidCallback onSetName;
   final VoidCallback? onUngroup;
-  final void Function(PersonAppearance appearance, {required FaceCropSelectMode mode})
-      onSelectAppearance;
+  final void Function(
+    PersonAppearance appearance, {
+    required FaceCropSelectMode mode,
+  })
+  onSelectAppearance;
   final void Function(String itemId) onOpenItem;
+  final Map<String, Item> itemsById;
 
   String get _label =>
       kind == FaceGroupKind.fa ? 'Similar faces' : 'Grouped faces';
@@ -4278,8 +4428,10 @@ class _FaceGroupClusterCard extends StatelessWidget {
             feedback: Material(
               elevation: 4,
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: scheme.primaryContainer,
                   borderRadius: BorderRadius.circular(8),
@@ -4303,6 +4455,7 @@ class _FaceGroupClusterCard extends StatelessWidget {
           shrinkWrap: true,
           onSelect: onSelectAppearance,
           onOpenItem: onOpenItem,
+          itemsById: itemsById,
         ),
       ],
     );
@@ -4334,6 +4487,7 @@ class _ExcludedFaceGroupClusterCard extends StatelessWidget {
     this.onUngroup,
     required this.onSelectExclusion,
     required this.onOpenItem,
+    this.itemsById = const {},
   });
 
   final String faceGroupId;
@@ -4345,9 +4499,13 @@ class _ExcludedFaceGroupClusterCard extends StatelessWidget {
   final FaceCropDragPayload dragPayload;
   final VoidCallback onSelectCluster;
   final VoidCallback? onUngroup;
-  final void Function(WhoExclusion exclusion, {required FaceCropSelectMode mode})
-      onSelectExclusion;
+  final void Function(
+    WhoExclusion exclusion, {
+    required FaceCropSelectMode mode,
+  })
+  onSelectExclusion;
   final void Function(String itemId) onOpenItem;
+  final Map<String, Item> itemsById;
 
   String get _label =>
       kind == FaceGroupKind.fa ? 'Similar faces' : 'Grouped faces';
@@ -4402,8 +4560,10 @@ class _ExcludedFaceGroupClusterCard extends StatelessWidget {
             feedback: Material(
               elevation: 4,
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: scheme.primaryContainer,
                   borderRadius: BorderRadius.circular(8),
@@ -4426,6 +4586,7 @@ class _ExcludedFaceGroupClusterCard extends StatelessWidget {
           shrinkWrap: true,
           onSelect: onSelectExclusion,
           onOpenItem: onOpenItem,
+          itemsById: itemsById,
         ),
       ],
     );
@@ -4591,8 +4752,8 @@ class _TrayColumn extends StatelessWidget {
                 child: Text(
                   tagline,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
               ),
               Padding(
@@ -4617,16 +4778,23 @@ class _TrayColumn extends StatelessWidget {
   }
 }
 
-Widget _appearanceThumb(PersonAppearance a, {bool fill = false, double size = 72}) {
+Widget _appearanceThumb(
+  PersonAppearance a, {
+  bool fill = false,
+  double size = 72,
+  Map<String, Item> itemsById = const {},
+}) {
   final itemId = a.itemId;
   final tagId = a.tagId;
   if (itemId == null) {
     return Icon(Icons.person_outline, size: fill ? 28 : size * 0.45);
   }
+  final item = itemsById[itemId];
   if (a.region != null) {
     return WhoExclusionCropThumb(
       itemId: itemId,
       region: a.region!,
+      item: item,
       size: size,
       fill: fill,
       tooltip: 'Who face',
@@ -4637,6 +4805,7 @@ Widget _appearanceThumb(PersonAppearance a, {bool fill = false, double size = 72
       itemId: itemId,
       tagId: tagId,
       region: a.region,
+      item: item,
       size: size,
       fill: fill,
     );
@@ -4672,25 +4841,46 @@ class _AppearanceGrid extends StatelessWidget {
     this.onConfirmUnconfirmed,
     this.onDeclineUnconfirmed,
     this.shrinkWrap = false,
+    this.itemsById = const {},
+    this.asSliver = false,
   });
 
   final List<PersonAppearance> appearances;
+
+  /// Items from the tray's last `listItems()` batch, by id — passed into
+  /// thumbs to skip a per-thumb `getItem` network round trip.
+  final Map<String, Item> itemsById;
   final FaceCropTray source;
   final bool busy;
   final Set<String> selectedIds;
   final FaceCropTapTracker tapTracker;
-  final void Function(PersonAppearance appearance, {required FaceCropSelectMode mode})
-      onSelect;
+  final void Function(
+    PersonAppearance appearance, {
+    required FaceCropSelectMode mode,
+  })
+  onSelect;
   final void Function(String itemId) onOpenItem;
+
   /// When set (Unassigned tray), shows Set name on each loose thumb (single select).
   final void Function(String appearanceId)? onSetName;
+
   /// When set and ≥2 loose faces selected, shows Group on each selected thumb.
   final VoidCallback? onGroupSelection;
+
   /// Assigned tray: Confirm an unconfirmed auto-assignment.
-  final Future<void> Function(PersonAppearance appearance)? onConfirmUnconfirmed;
+  final Future<void> Function(PersonAppearance appearance)?
+  onConfirmUnconfirmed;
+
   /// Assigned tray: reject an unconfirmed auto-assignment.
-  final Future<void> Function(PersonAppearance appearance)? onDeclineUnconfirmed;
+  final Future<void> Function(PersonAppearance appearance)?
+  onDeclineUnconfirmed;
   final bool shrinkWrap;
+
+  /// When true, builds a [SliverGrid] for direct placement in a
+  /// [CustomScrollView] instead of a boxed, eagerly-built [GridView] — lets
+  /// large flat "loose faces" trays lazily build only near-visible thumbs
+  /// instead of every face in the tray up front.
+  final bool asSliver;
 
   FaceCropDragData _dragItem(PersonAppearance a) {
     return FaceCropDragData.appearance(
@@ -4709,9 +4899,7 @@ class _AppearanceGrid extends StatelessWidget {
     if (selectedIds.contains(a.id)) {
       final items = <FaceCropDragData>[
         for (final x in appearances)
-          if (selectedIds.contains(x.id) &&
-              x.itemId != null &&
-              x.tagId != null)
+          if (selectedIds.contains(x.id) && x.itemId != null && x.tagId != null)
             _dragItem(x),
       ];
       if (items.isNotEmpty) {
@@ -4740,9 +4928,7 @@ class _AppearanceGrid extends StatelessWidget {
     final multi = selectedIds.length >= 2;
     if (multi) {
       final groupHandler = onGroupSelection;
-      if (!selected ||
-          groupHandler == null ||
-          a.id != firstSelectedId) {
+      if (!selected || groupHandler == null || a.id != firstSelectedId) {
         return null;
       }
       return Positioned(
@@ -4769,7 +4955,8 @@ class _AppearanceGrid extends StatelessWidget {
         ),
       );
     }
-    final unconfirmed = a.assignmentState == 'unconfirmed' &&
+    final unconfirmed =
+        a.assignmentState == 'unconfirmed' &&
         a.personId != null &&
         source == FaceCropTray.assigned;
     if (!unconfirmed) return null;
@@ -4792,8 +4979,10 @@ class _AppearanceGrid extends StatelessWidget {
                 alignment: Alignment.centerLeft,
                 child: Container(
                   key: Key('face-crop-unconfirmed-badge-${a.id}'),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 1,
+                  ),
                   decoration: BoxDecoration(
                     color: scheme.tertiaryContainer,
                     borderRadius: BorderRadius.circular(4),
@@ -4834,10 +5023,19 @@ class _AppearanceGrid extends StatelessWidget {
     );
   }
 
+  static const _gridDelegate = SliverGridDelegateWithFixedCrossAxisCount(
+    crossAxisCount: 3,
+    mainAxisSpacing: 6,
+    crossAxisSpacing: 6,
+    childAspectRatio: 1,
+  );
+
   @override
   Widget build(BuildContext context) {
     if (appearances.isEmpty) {
-      return const Center(child: Text('No faces'));
+      return asSliver
+          ? const SliverToBoxAdapter(child: SizedBox.shrink())
+          : const Center(child: Text('No faces'));
     }
     final scheme = Theme.of(context).colorScheme;
     String? firstSelectedId;
@@ -4847,100 +5045,107 @@ class _AppearanceGrid extends StatelessWidget {
         break;
       }
     }
+    if (asSliver) {
+      return SliverPadding(
+        padding: const EdgeInsets.all(8),
+        sliver: SliverGrid(
+          gridDelegate: _gridDelegate,
+          delegate: SliverChildBuilderDelegate(
+            (context, index) => _tile(context, index, scheme, firstSelectedId),
+            childCount: appearances.length,
+          ),
+        ),
+      );
+    }
     return GridView.builder(
       padding: const EdgeInsets.all(8),
       shrinkWrap: shrinkWrap,
       physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 6,
-        crossAxisSpacing: 6,
-        childAspectRatio: 1,
-      ),
+      gridDelegate: _gridDelegate,
       itemCount: appearances.length,
-      itemBuilder: (context, index) {
-        final a = appearances[index];
-        final itemId = a.itemId;
-        final tagId = a.tagId;
-        final canDrag = !busy && itemId != null && tagId != null;
-        final selected = selectedIds.contains(a.id);
-        final thumb = _appearanceThumb(a, size: 72);
-        final faceBody = DecoratedBox(
-          key: selected ? Key('face-crop-selected-${a.id}') : null,
-          decoration: BoxDecoration(
-            border: selected
-                ? Border.all(color: scheme.primary, width: 2)
-                : Border.all(color: Colors.transparent, width: 2),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Center(child: thumb),
-        );
-        final tile = Material(
-          key: Key('face-crop-appearance-${a.id}'),
-          color: Colors.transparent,
-          child: faceBody,
-        );
-        final interactive = GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => _onTap(a),
-          child: tile,
-        );
-        final overlay = _overlayFor(a, scheme, firstSelectedId);
-        if (!canDrag) {
-          return Stack(
-            clipBehavior: Clip.none,
-            children: [
-              interactive,
-              ?overlay,
-            ],
-          );
-        }
-        final payload = _payloadFor(a);
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Draggable<FaceCropDragPayload>(
-              data: payload,
-              feedback: Material(
-                elevation: 4,
-                child: SizedBox(
-                  width: 72,
-                  height: 72,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      _appearanceThumb(a, size: 72),
-                      if (payload.count > 1)
-                        Positioned(
-                          right: -4,
-                          top: -4,
-                          child: CircleAvatar(
-                            radius: 10,
-                            backgroundColor: scheme.primary,
-                            child: Text(
-                              '${payload.count}',
-                              key: Key(
-                                'face-crop-drag-count-${payload.count}',
-                              ),
-                              style: TextStyle(
-                                color: scheme.onPrimary,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+      itemBuilder: (context, index) =>
+          _tile(context, index, scheme, firstSelectedId),
+    );
+  }
+
+  Widget _tile(
+    BuildContext context,
+    int index,
+    ColorScheme scheme,
+    String? firstSelectedId,
+  ) {
+    final a = appearances[index];
+    final itemId = a.itemId;
+    final tagId = a.tagId;
+    final canDrag = !busy && itemId != null && tagId != null;
+    final selected = selectedIds.contains(a.id);
+    final thumb = _appearanceThumb(a, size: 72, itemsById: itemsById);
+    final faceBody = DecoratedBox(
+      key: selected ? Key('face-crop-selected-${a.id}') : null,
+      decoration: BoxDecoration(
+        border: selected
+            ? Border.all(color: scheme.primary, width: 2)
+            : Border.all(color: Colors.transparent, width: 2),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Center(child: thumb),
+    );
+    final tile = Material(
+      key: Key('face-crop-appearance-${a.id}'),
+      color: Colors.transparent,
+      child: faceBody,
+    );
+    final interactive = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _onTap(a),
+      child: tile,
+    );
+    final overlay = _overlayFor(a, scheme, firstSelectedId);
+    if (!canDrag) {
+      return Stack(clipBehavior: Clip.none, children: [interactive, ?overlay]);
+    }
+    final payload = _payloadFor(a);
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Draggable<FaceCropDragPayload>(
+          data: payload,
+          feedback: Material(
+            elevation: 4,
+            child: SizedBox(
+              width: 72,
+              height: 72,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  _appearanceThumb(a, size: 72, itemsById: itemsById),
+                  if (payload.count > 1)
+                    Positioned(
+                      right: -4,
+                      top: -4,
+                      child: CircleAvatar(
+                        radius: 10,
+                        backgroundColor: scheme.primary,
+                        child: Text(
+                          '${payload.count}',
+                          key: Key('face-crop-drag-count-${payload.count}'),
+                          style: TextStyle(
+                            color: scheme.onPrimary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                    ],
-                  ),
-                ),
+                      ),
+                    ),
+                ],
               ),
-              childWhenDragging: Opacity(opacity: 0.35, child: interactive),
-              child: interactive,
             ),
-            ?overlay,
-          ],
-        );
-      },
+          ),
+          childWhenDragging: Opacity(opacity: 0.35, child: interactive),
+          child: interactive,
+        ),
+        ?overlay,
+      ],
     );
   }
 }
@@ -4955,17 +5160,31 @@ class _ExclusionGrid extends StatelessWidget {
     required this.onOpenItem,
     this.onGroupSelection,
     this.shrinkWrap = false,
+    this.itemsById = const {},
+    this.asSliver = false,
   });
 
   final List<WhoExclusion> exclusions;
   final bool busy;
   final Set<String> selectedIds;
   final FaceCropTapTracker tapTracker;
-  final void Function(WhoExclusion exclusion, {required FaceCropSelectMode mode}) onSelect;
+  final void Function(
+    WhoExclusion exclusion, {
+    required FaceCropSelectMode mode,
+  })
+  onSelect;
   final void Function(String itemId) onOpenItem;
+
   /// When set and ≥2 loose exclusions selected, shows Group on each selected thumb.
   final VoidCallback? onGroupSelection;
   final bool shrinkWrap;
+
+  /// Items from the tray's last `listItems()` batch, by id — passed into
+  /// thumbs to skip a per-thumb `getItem` network round trip.
+  final Map<String, Item> itemsById;
+
+  /// See [_AppearanceGrid.asSliver].
+  final bool asSliver;
 
   FaceCropDragData _dragItem(WhoExclusion e) {
     return FaceCropDragData.exclusion(
@@ -4986,10 +5205,7 @@ class _ExclusionGrid extends StatelessWidget {
           if (selectedIds.contains(x.id)) _dragItem(x),
       ];
       if (items.isNotEmpty) {
-        return FaceCropDragPayload(
-          source: FaceCropTray.excluded,
-          items: items,
-        );
+        return FaceCropDragPayload(source: FaceCropTray.excluded, items: items);
       }
     }
     return FaceCropDragPayload.single(_dragItem(e));
@@ -5004,10 +5220,19 @@ class _ExclusionGrid extends StatelessWidget {
     onSelect(e, mode: faceCropSelectMode());
   }
 
+  static const _gridDelegate = SliverGridDelegateWithFixedCrossAxisCount(
+    crossAxisCount: 3,
+    mainAxisSpacing: 6,
+    crossAxisSpacing: 6,
+    childAspectRatio: 1,
+  );
+
   @override
   Widget build(BuildContext context) {
     if (exclusions.isEmpty) {
-      return const Center(child: Text('No excluded faces'));
+      return asSliver
+          ? const SliverToBoxAdapter(child: SizedBox.shrink())
+          : const Center(child: Text('No excluded faces'));
     }
     final scheme = Theme.of(context).colorScheme;
     String? firstSelectedId;
@@ -5017,78 +5242,95 @@ class _ExclusionGrid extends StatelessWidget {
         break;
       }
     }
+    if (asSliver) {
+      return SliverPadding(
+        padding: const EdgeInsets.all(8),
+        sliver: SliverGrid(
+          gridDelegate: _gridDelegate,
+          delegate: SliverChildBuilderDelegate(
+            (context, index) => _tile(context, index, scheme, firstSelectedId),
+            childCount: exclusions.length,
+          ),
+        ),
+      );
+    }
     return GridView.builder(
       padding: shrinkWrap ? EdgeInsets.zero : const EdgeInsets.all(8),
       shrinkWrap: shrinkWrap,
       physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 6,
-        crossAxisSpacing: 6,
-        childAspectRatio: 1,
-      ),
+      gridDelegate: _gridDelegate,
       itemCount: exclusions.length,
-      itemBuilder: (context, index) {
-        final e = exclusions[index];
-        final selected = selectedIds.contains(e.id);
-        final thumb = WhoExclusionCropThumb(
-          itemId: e.itemId,
-          region: e.region,
-          size: 72,
-        );
-        final faceBody = DecoratedBox(
-          key: selected ? Key('face-crop-selected-${e.id}') : null,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(
-              color: selected ? scheme.primary : Colors.transparent,
-              width: 2,
+      itemBuilder: (context, index) =>
+          _tile(context, index, scheme, firstSelectedId),
+    );
+  }
+
+  Widget _tile(
+    BuildContext context,
+    int index,
+    ColorScheme scheme,
+    String? firstSelectedId,
+  ) {
+    final e = exclusions[index];
+    final selected = selectedIds.contains(e.id);
+    final thumb = WhoExclusionCropThumb(
+      itemId: e.itemId,
+      region: e.region,
+      item: itemsById[e.itemId],
+      size: 72,
+    );
+    final faceBody = DecoratedBox(
+      key: selected ? Key('face-crop-selected-${e.id}') : null,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: selected ? scheme.primary : Colors.transparent,
+          width: 2,
+        ),
+      ),
+      child: Center(child: thumb),
+    );
+    final tile = Material(
+      key: Key('face-crop-exclusion-${e.id}'),
+      color: Colors.transparent,
+      child: faceBody,
+    );
+    final interactive = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _onTap(e),
+      child: tile,
+    );
+    final groupHandler = onGroupSelection;
+    final groupOverlay =
+        selectedIds.length >= 2 &&
+            selected &&
+            groupHandler != null &&
+            e.id == firstSelectedId
+        ? Positioned(
+            top: 0,
+            right: 0,
+            child: OutlinedButton(
+              key: const Key('face-crop-group-selection'),
+              onPressed: busy ? null : groupHandler,
+              style: _faceActionButtonStyle(scheme),
+              child: const Text('Group'),
             ),
+          )
+        : null;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Draggable<FaceCropDragPayload>(
+          data: _payloadFor(e),
+          feedback: Material(
+            elevation: 4,
+            child: Opacity(opacity: 0.9, child: thumb),
           ),
-          child: Center(child: thumb),
-        );
-        final tile = Material(
-          key: Key('face-crop-exclusion-${e.id}'),
-          color: Colors.transparent,
-          child: faceBody,
-        );
-        final interactive = GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => _onTap(e),
-          child: tile,
-        );
-        final groupHandler = onGroupSelection;
-        final groupOverlay = selectedIds.length >= 2 &&
-                selected &&
-                groupHandler != null &&
-                e.id == firstSelectedId
-            ? Positioned(
-                top: 0,
-                right: 0,
-                child: OutlinedButton(
-                  key: const Key('face-crop-group-selection'),
-                  onPressed: busy ? null : groupHandler,
-                  style: _faceActionButtonStyle(scheme),
-                  child: const Text('Group'),
-                ),
-              )
-            : null;
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Draggable<FaceCropDragPayload>(
-              data: _payloadFor(e),
-              feedback: Material(
-                elevation: 4,
-                child: Opacity(opacity: 0.9, child: thumb),
-              ),
-              childWhenDragging: Opacity(opacity: 0.35, child: interactive),
-              child: interactive,
-            ),
-            ?groupOverlay,
-          ],
-        );
-      },
+          childWhenDragging: Opacity(opacity: 0.35, child: interactive),
+          child: interactive,
+        ),
+        ?groupOverlay,
+      ],
     );
   }
 }
@@ -5103,8 +5345,9 @@ Future<void> openFaceCropTrays(
 }) async {
   final container = ProviderScope.containerOf(context);
   if (personId != null || leafFolder != null) {
-    container.read(faceCropFocusRequestProvider.notifier).state =
-        FaceCropFocusRequest(
+    container
+        .read(faceCropFocusRequestProvider.notifier)
+        .state = FaceCropFocusRequest(
       personId: personId,
       leafFolder: leafFolder,
       nonce: ++_faceCropFocusNonce,

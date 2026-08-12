@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/persons/face_crop_cache.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 
@@ -19,6 +20,7 @@ class WhoFaceCropThumb extends ConsumerStatefulWidget {
     required this.tagId,
     this.knowledge,
     this.region,
+    this.item,
     this.size = 56,
     this.fill = false,
     this.borderRadius = 6,
@@ -32,6 +34,12 @@ class WhoFaceCropThumb extends ConsumerStatefulWidget {
 
   /// When set (e.g. appearance.region from API), crop without a knowledge fetch.
   final TagRegion? region;
+
+  /// When the caller already has the [Item] (e.g. from a batch `listItems()`
+  /// just before rendering the tray), pass it to skip a per-thumb `getItem`
+  /// network round trip — the dominant Faces render-latency cost on large
+  /// folders. Falls back to fetching by [itemId] when omitted.
+  final Item? item;
 
   final double size;
   final bool fill;
@@ -56,6 +64,7 @@ class _WhoFaceCropThumbState extends ConsumerState<WhoFaceCropThumb> {
     if (oldWidget.itemId != widget.itemId ||
         oldWidget.tagId != widget.tagId ||
         oldWidget.knowledge != widget.knowledge ||
+        oldWidget.item?.contentHash != widget.item?.contentHash ||
         !_sameRegion(oldWidget.region, widget.region)) {
       _future = _load();
     }
@@ -82,21 +91,37 @@ class _WhoFaceCropThumbState extends ConsumerState<WhoFaceCropThumb> {
         region = tag.region;
         whoLabel = tag.value.trim().isEmpty ? null : tag.value.trim();
       }
-      final item = await items.getItem(widget.itemId);
-      final media = await resolveLocalMedia(item);
-      if (!canCropLocalMediaForDisplay(media)) {
-        debugPrint(
-          'WhoFaceCropThumb ${widget.itemId}/${widget.tagId}: media '
-          '${media.status.name} path=${media.path}',
-        );
-        return _CropLoad(bytes: null, whoLabel: whoLabel);
-      }
-      final fileBytes = await media.file!.readAsBytes();
-      final crop = await cropWhoFaceJpegAsync(fileBytes, region!);
+      final resolvedRegion = region!;
+
+      final cachedItem = widget.item;
+      final cached = FaceCropCache.instance.peek(
+        itemId: widget.itemId,
+        contentHash: cachedItem?.contentHash,
+        region: resolvedRegion,
+      );
+      if (cached != null) return _CropLoad(bytes: cached, whoLabel: whoLabel);
+
+      final item = cachedItem ?? await items.getItem(widget.itemId);
+      final crop = await FaceCropCache.instance.getOrCropFace(
+        itemId: widget.itemId,
+        contentHash: item.contentHash,
+        region: resolvedRegion,
+        loadFileBytes: () async {
+          final media = await resolveLocalMedia(item, verifyHash: false);
+          if (!canCropLocalMediaForDisplay(media)) {
+            debugPrint(
+              'WhoFaceCropThumb ${widget.itemId}/${widget.tagId}: media '
+              '${media.status.name} path=${media.path}',
+            );
+            throw StateError('media unavailable: ${media.status.name}');
+          }
+          return media.file!.readAsBytes();
+        },
+      );
       if (crop == null) {
         debugPrint(
           'WhoFaceCropThumb ${widget.itemId}/${widget.tagId}: crop decode '
-          'failed (${fileBytes.length} bytes)',
+          'failed',
         );
       }
       return _CropLoad(bytes: crop, whoLabel: whoLabel);
@@ -118,26 +143,26 @@ class _WhoFaceCropThumbState extends ConsumerState<WhoFaceCropThumb> {
           final iconSide = side * 0.45;
           final child = switch (snapshot.connectionState) {
             ConnectionState.waiting => Center(
-                child: SizedBox(
-                  width: spinnerSide.clamp(12, 24),
-                  height: spinnerSide.clamp(12, 24),
-                  child: const CircularProgressIndicator(strokeWidth: 2),
-                ),
+              child: SizedBox(
+                width: spinnerSide.clamp(12, 24),
+                height: spinnerSide.clamp(12, 24),
+                child: const CircularProgressIndicator(strokeWidth: 2),
               ),
+            ),
             _ when load?.bytes != null => SelectionContainer.disabled(
-                child: Image.memory(
-                  load!.bytes!,
-                  fit: BoxFit.cover,
-                  width: side,
-                  height: side,
-                  gaplessPlayback: true,
-                ),
+              child: Image.memory(
+                load!.bytes!,
+                fit: BoxFit.cover,
+                width: side,
+                height: side,
+                gaplessPlayback: true,
               ),
+            ),
             _ => Icon(
-                Icons.person_outline,
-                size: iconSide.clamp(14, 28),
-                color: scheme.onSurfaceVariant,
-              ),
+              Icons.person_outline,
+              size: iconSide.clamp(14, 28),
+              color: scheme.onSurfaceVariant,
+            ),
           };
           return Tooltip(
             message: load?.whoLabel ?? 'Who face',
@@ -206,8 +231,9 @@ class _PersonListFaceThumbState extends ConsumerState<PersonListFaceThumb> {
   }
 
   Future<PersonAppearance?> _load() async {
-    final detail =
-        await ref.read(personsRepositoryProvider).getPerson(widget.personId);
+    final detail = await ref
+        .read(personsRepositoryProvider)
+        .getPerson(widget.personId);
     for (final a in detail.appearances) {
       if (a.itemId != null && a.tagId != null) return a;
     }

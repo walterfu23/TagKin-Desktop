@@ -67,6 +67,7 @@ dependencies:
   # Intercept macOS/Windows window close so dirty collections can prompt.
   window_manager: ^0.4.3
   uuid: ^4.6.0
+  app_links: ^7.2.1
 
 dev_dependencies:
   flutter_test:

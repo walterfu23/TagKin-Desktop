@@ -53,6 +53,10 @@ class FakeItemsRepository implements ItemsRepository {
   /// Optional ordered grants (e.g. expired then fresh) consumed FIFO.
   final List<UploadGrant> grantSequence = <UploadGrant>[];
 
+  /// Call log for [getItem] — tests use this to assert callers threading an
+  /// already-known [Item] skip the network round trip (D9 Faces perf).
+  final List<String> getItemCalls = <String>[];
+
   final List<CreateItem> created = <CreateItem>[];
   final List<({String itemId, PrePassResult input})> prePassRecorded =
       <({String itemId, PrePassResult input})>[];
@@ -98,6 +102,7 @@ class FakeItemsRepository implements ItemsRepository {
 
   @override
   Future<Item> getItem(String id) async {
+    getItemCalls.add(id);
     if (getItemError != null) throw getItemError!;
     for (final item in _items) {
       if (item.id == id) return item;

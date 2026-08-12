@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:ui' show AppExitResponse;
 
-import 'package:clerk_auth/clerk_auth.dart' show RetryOptions;
+import 'package:app_links/app_links.dart';
+import 'package:clerk_auth/clerk_auth.dart' show RetryOptions, Strategy;
 import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
@@ -118,6 +119,18 @@ class TestSession {
   final Future<void> Function()? onSignOut;
 }
 
+/// Custom URL scheme macOS routes OAuth callbacks back into the app through
+/// (registered in `macos/Runner/Info.plist` `CFBundleURLTypes`).
+const _oauthRedirectScheme = 'tagkindesktop';
+
+/// Deep-link target for [ClerkAuthConfig.redirectionGenerator] — only OAuth
+/// strategies get a bespoke redirect; other strategies (password/email code)
+/// return null so they're unaffected.
+Uri? _oauthRedirectUri(BuildContext context, Strategy strategy) {
+  if (!strategy.isOauth) return null;
+  return Uri(scheme: _oauthRedirectScheme, host: 'oauth', path: '/callback');
+}
+
 /// Auth-gated shell: Clerk sign-in when configured, else a configure prompt;
 /// signed-in users bootstrap `GET /me` then see [signedInHome].
 class AuthShell extends ConsumerWidget {
@@ -155,6 +168,15 @@ class AuthShell extends ConsumerWidget {
         retryOptions: const RetryOptions(maxAttempts: 3),
         sessionTokenPolling: false,
         loading: const _ClerkBootLoading(),
+        // macOS only: send OAuth (Google, etc.) to the system browser instead
+        // of the in-app WKWebView popup. The embedded webview hits an
+        // unresolved Flutter/AppKit bug where an unhandled keyboard event can
+        // be redispatched in an infinite loop, which can peg WindowServer
+        // hard enough to freeze the whole desktop, not just this app (see
+        // flutter/flutter#170316, #184557). Windows uses WebView2, not
+        // WKWebView, so it is not affected and keeps the in-app popup.
+        redirectionGenerator: Platform.isMacOS ? _oauthRedirectUri : null,
+        deepLinkStream: Platform.isMacOS ? AppLinks().uriLinkStream : null,
       ),
       child: ClerkErrorListener(
         child: ClerkAuthBuilder(

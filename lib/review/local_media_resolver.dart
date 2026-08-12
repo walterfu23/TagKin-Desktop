@@ -10,17 +10,14 @@ enum LocalMediaStatus {
   missing,
   hashMismatch,
   unsupported,
+
   /// macOS App Sandbox denied the path (bookmark missing / expired).
   accessDenied,
 }
 
 /// Result of [resolveLocalMedia] — bytes stay on local disk only (R1/R5/R7).
 class LocalMediaResolution {
-  const LocalMediaResolution({
-    required this.status,
-    this.file,
-    this.path,
-  });
+  const LocalMediaResolution({required this.status, this.file, this.path});
 
   final LocalMediaStatus status;
   final File? file;
@@ -57,6 +54,12 @@ bool _isAccessDenied(Object e) {
 /// Resolves [item] to an authorized local file and optionally verifies
 /// [Item.contentHash] against a fresh SHA-256 of the on-disk bytes.
 ///
+/// [verifyHash] defaults to `true` (review/export paths that must detect a
+/// changed/moved-over file). Pass `false` for read-only preview thumbnails
+/// (e.g. Faces crop thumbs) where hundreds of independent full-file re-hashes
+/// per render would dominate wall-clock time for no correctness benefit —
+/// the file's existence is still checked either way.
+///
 /// Never uploads or sends bytes anywhere — local disk only (R1/R5/R7).
 /// On macOS, starts a stored security-scoped bookmark when present.
 Future<LocalMediaResolution> resolveLocalMedia(
@@ -65,6 +68,7 @@ Future<LocalMediaResolution> resolveLocalMedia(
   bool Function(String path)? fileExists,
   FolderBookmarkStore? bookmarks,
   Future<void> Function(String bookmark)? startAccess,
+  bool verifyHash = true,
 }) async {
   if (item.sourceType != SourceType.local) {
     return const LocalMediaResolution(status: LocalMediaStatus.unsupported);
@@ -76,7 +80,8 @@ Future<LocalMediaResolution> resolveLocalMedia(
   }
 
   final store = bookmarks ?? folderBookmarkStore;
-  final start = startAccess ??
+  final start =
+      startAccess ??
       (SecurityScopedBookmarks.isSupported
           ? SecurityScopedBookmarks.startAccess
           : null);
@@ -91,7 +96,8 @@ Future<LocalMediaResolution> resolveLocalMedia(
       }
     }
 
-    final exists = fileExists ??
+    final exists =
+        fileExists ??
         (p) {
           try {
             return File(p).existsSync();
@@ -103,7 +109,10 @@ Future<LocalMediaResolution> resolveLocalMedia(
 
     try {
       if (!exists(path)) {
-        return LocalMediaResolution(status: LocalMediaStatus.missing, path: path);
+        return LocalMediaResolution(
+          status: LocalMediaStatus.missing,
+          path: path,
+        );
       }
     } catch (e) {
       if (_isAccessDenied(e)) {
@@ -115,7 +124,7 @@ Future<LocalMediaResolution> resolveLocalMedia(
       rethrow;
     }
 
-    final expected = item.contentHash;
+    final expected = verifyHash ? item.contentHash : null;
     if (expected != null && expected.isNotEmpty) {
       try {
         final actual = await contentHasher(path);

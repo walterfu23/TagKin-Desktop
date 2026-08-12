@@ -280,6 +280,124 @@ void main() {
   });
 
   testWidgets(
+      'face crop trays: thumbs reuse the listItems() batch, skipping getItem',
+      (tester) async {
+    late final Directory dir;
+    late final Item itemU;
+    late final Item itemE;
+    late final Item itemA;
+
+    await tester.runAsync(() async {
+      dir = await Directory.systemTemp.createTemp('face_crop_trays_getitem_');
+      Future<Item> seedPhoto(String id) async {
+        final file = File('${dir.path}/$id.jpg');
+        await file.writeAsBytes(_solidJpeg());
+        return fixtureItem(
+          id: id,
+          type: ItemType.photo,
+          sourceRef: Uri.file(file.path).toString(),
+          contentHash: null,
+          processingStatus: ProcessingStatus.tagged,
+        );
+      }
+
+      itemU = await seedPhoto('item_u');
+      itemE = await seedPhoto('item_e');
+      itemA = await seedPhoto('item_a');
+    });
+    addTearDown(() async {
+      await tester.runAsync(() async {
+        if (await dir.exists()) await dir.delete(recursive: true);
+      });
+    });
+
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: 'Sam',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_assigned',
+              personId: 'person_1',
+              itemId: itemA.id,
+              tagId: 'tag_a',
+              region: const TagRegion(
+                yMin: 0.1,
+                xMin: 0.1,
+                yMax: 0.5,
+                xMax: 0.5,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+    persons.unassignedAppearances.add(
+      fixtureAppearance(
+        id: 'ap_u',
+        personId: null,
+        itemId: itemU.id,
+        tagId: 'tag_u',
+        region: const TagRegion(
+          yMin: 0.1,
+          xMin: 0.1,
+          yMax: 0.5,
+          xMax: 0.5,
+        ),
+      ),
+    );
+    persons.accountExclusions.add(
+      WhoExclusion(
+        id: 'ex_1',
+        itemId: itemE.id,
+        region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.5, xMax: 0.5),
+        createdFromTagId: 'tag_e',
+        createdAt: '2026-07-26T00:00:00.000Z',
+      ),
+    );
+    final items = FakeItemsRepository(items: [itemU, itemE, itemA]);
+
+    await tester.runAsync(() async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            personsRepositoryProvider.overrideWithValue(persons),
+            itemsRepositoryProvider.overrideWithValue(items),
+          ],
+          child: const MaterialApp(
+            home: FaceCropTraysPage(initialPersonId: 'person_1'),
+          ),
+        ),
+      );
+      await tester.pump(); // post-frame _reload
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await tester.pump(); // trays + thumb FutureBuilders start
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await tester.pump(); // Image.memory after crop
+    });
+
+    // Crops still render (the optimization must not break correctness)...
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('face-crop-appearance-ap_u')),
+        matching: find.byType(Image),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('face-crop-exclusion-ex_1')),
+        matching: find.byType(Image),
+      ),
+      findsOneWidget,
+    );
+    // ...but every face thumb already had its Item from the tray's own
+    // listItems() batch, so no thumb needed a per-face getItem round trip.
+    expect(items.getItemCalls, isEmpty);
+  });
+
+  testWidgets(
       'face crop trays: clears person dropdown when selection leaves the list',
       (tester) async {
     final persons = FakePersonsRepository(
@@ -3702,5 +3820,167 @@ void main() {
 
     expect(persons.reassignCalls, isNotEmpty);
     expect(persons.reassignCalls.last.personId, 'person_1');
+  });
+
+  testWidgets(
+      'face crop trays: unconfirmed GroupFA cohort confirms as one unit',
+      (tester) async {
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: 'Sam',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_old',
+              personId: 'person_1',
+              itemId: 'item_old',
+              tagId: 'tag_old',
+              assignmentState: 'confirmed',
+              region: const TagRegion(
+                yMin: 0.1,
+                xMin: 0.1,
+                yMax: 0.4,
+                xMax: 0.4,
+              ),
+            ),
+            fixtureAppearance(
+              id: 'ap_new1',
+              personId: 'person_1',
+              itemId: 'item_a',
+              tagId: 'tag_a',
+              assignmentState: 'unconfirmed',
+              region: const TagRegion(
+                yMin: 0.1,
+                xMin: 0.1,
+                yMax: 0.4,
+                xMax: 0.4,
+              ),
+            ),
+            fixtureAppearance(
+              id: 'ap_new2',
+              personId: 'person_1',
+              itemId: 'item_b',
+              tagId: 'tag_b',
+              assignmentState: 'unconfirmed',
+              region: const TagRegion(
+                yMin: 0.2,
+                xMin: 0.2,
+                yMax: 0.5,
+                xMax: 0.5,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          itemsRepositoryProvider.overrideWithValue(
+            _itemsInAlbum(['item_old', 'item_a', 'item_b']),
+          ),
+        ],
+        child: const MaterialApp(
+          home: FaceCropTraysPage(initialPersonId: 'person_1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // One cluster-level Confirm — not per-thumb Confirm buttons.
+    expect(
+      find.byKey(const Key('face-crop-cluster-confirm-person_1')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('face-crop-cluster-decline-person_1')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('face-crop-confirm-ap_new1')), findsNothing);
+    expect(find.byKey(const Key('face-crop-confirm-ap_new2')), findsNothing);
+    expect(
+      find.byKey(const Key('face-crop-cluster-unconfirmed-person_1')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('face-crop-cluster-confirm-person_1')));
+    await tester.pumpAndSettle();
+
+    expect(
+      persons.confirmAppearanceCalls.toSet(),
+      {'ap_new1', 'ap_new2'},
+    );
+    expect(persons.confirmAppearanceCalls, hasLength(2));
+    expect(
+      find.byKey(const Key('face-crop-cluster-confirm-person_1')),
+      findsNothing,
+    );
+  });
+
+  testWidgets(
+      'face crop trays: cluster Not this person declines unconfirmed unit',
+      (tester) async {
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: 'Sam',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_new1',
+              personId: 'person_1',
+              itemId: 'item_a',
+              tagId: 'tag_a',
+              assignmentState: 'unconfirmed',
+              region: const TagRegion(
+                yMin: 0.1,
+                xMin: 0.1,
+                yMax: 0.4,
+                xMax: 0.4,
+              ),
+            ),
+            fixtureAppearance(
+              id: 'ap_new2',
+              personId: 'person_1',
+              itemId: 'item_b',
+              tagId: 'tag_b',
+              assignmentState: 'unconfirmed',
+              region: const TagRegion(
+                yMin: 0.2,
+                xMin: 0.2,
+                yMax: 0.5,
+                xMax: 0.5,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          itemsRepositoryProvider.overrideWithValue(
+            _itemsInAlbum(['item_a', 'item_b']),
+          ),
+        ],
+        child: const MaterialApp(
+          home: FaceCropTraysPage(initialPersonId: 'person_1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('face-crop-cluster-decline-person_1')));
+    await tester.pumpAndSettle();
+
+    expect(
+      persons.declineAutoAssignCalls.toSet(),
+      {'ap_new1', 'ap_new2'},
+    );
   });
 }

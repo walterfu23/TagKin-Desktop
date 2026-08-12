@@ -72,6 +72,65 @@ void main() {
     expect(img.decodeImage(crop), isNotNull);
   });
 
+  test('cropManyWhoFacesJpeg decodes once and crops every region', () {
+    final image = img.Image(width: 120, height: 120);
+    img.fill(image, color: img.ColorRgb8(10, 20, 30));
+    // Two distinguishable quadrants so the two crops aren't byte-identical.
+    img.fillRect(
+      image,
+      x1: 60,
+      y1: 0,
+      x2: 119,
+      y2: 119,
+      color: img.ColorRgb8(240, 200, 10),
+    );
+    final bytes = Uint8List.fromList(img.encodeJpg(image));
+    const regionA = TagRegion(yMin: 0.1, xMin: 0.05, yMax: 0.5, xMax: 0.4);
+    const regionB = TagRegion(yMin: 0.1, xMin: 0.6, yMax: 0.5, xMax: 0.95);
+
+    final crops = cropManyWhoFacesJpeg(
+      FaceCropBatchRequest(imageBytes: bytes, regions: [regionA, regionB]),
+    );
+
+    expect(crops, hasLength(2));
+    expect(crops[0], isNotNull);
+    expect(crops[1], isNotNull);
+    expect(img.decodeImage(crops[0]!), isNotNull);
+    expect(img.decodeImage(crops[1]!), isNotNull);
+    // Different source quadrants must not crop to identical bytes.
+    expect(crops[0], isNot(equals(crops[1])));
+  });
+
+  test('cropManyWhoFacesJpeg returns all-null list for undecodable bytes', () {
+    final crops = cropManyWhoFacesJpeg(
+      FaceCropBatchRequest(
+        imageBytes: Uint8List.fromList([1, 2, 3, 4]),
+        regions: const [
+          TagRegion(yMin: 0, xMin: 0, yMax: 0.5, xMax: 0.5),
+          TagRegion(yMin: 0.5, xMin: 0.5, yMax: 1, xMax: 1),
+        ],
+      ),
+    );
+    expect(crops, [null, null]);
+  });
+
+  test('cropManyWhoFacesJpegAsync decodes once and crops every region',
+      () async {
+    final image = img.Image(width: 100, height: 100);
+    img.fill(image, color: img.ColorRgb8(50, 60, 70));
+    final bytes = Uint8List.fromList(img.encodeJpg(image));
+    const regions = [
+      TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
+      TagRegion(yMin: 0.5, xMin: 0.5, yMax: 0.9, xMax: 0.9),
+    ];
+
+    final crops = await cropManyWhoFacesJpegAsync(bytes, regions);
+
+    expect(crops, hasLength(2));
+    expect(crops[0], isNotNull);
+    expect(crops[1], isNotNull);
+  });
+
   test('canCropLocalMediaForDisplay allows available and hashMismatch', () {
     final file = File('/tmp/unused');
     expect(

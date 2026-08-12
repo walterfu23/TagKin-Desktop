@@ -40,7 +40,7 @@ bool canCropLocalMediaForDisplay(LocalMediaResolution media) {
 /// Uses [package:image] only — fine for JPEG/PNG. Prefer
 /// [cropWhoFaceJpegAsync] for UI thumbs (HEIC via Flutter codec on macOS).
 Uint8List? cropWhoFaceJpeg(Uint8List imageBytes, TagRegion region) {
-  final decoded = img.decodeImage(imageBytes);
+  final decoded = _tryDecodeImage(imageBytes);
   if (decoded == null) return null;
   return _cropDecodedToJpeg(decoded, region);
 }
@@ -56,6 +56,59 @@ Future<Uint8List?> cropWhoFaceJpegAsync(
   final decoded = await _decodeWithFlutterCodec(imageBytes);
   if (decoded == null) return null;
   return _cropDecodedToJpeg(decoded, region);
+}
+
+/// Input for [cropManyWhoFacesJpeg] — a single value so it can cross an
+/// isolate boundary via `compute()`.
+class FaceCropBatchRequest {
+  const FaceCropBatchRequest({required this.imageBytes, required this.regions});
+
+  final Uint8List imageBytes;
+  final List<TagRegion> regions;
+}
+
+/// Decodes [request.imageBytes] **once** and crops every region — one photo
+/// with N faces costs one decode, not N. `package:image`-only (safe to run
+/// via `compute()`; `dart:ui` HEIC fallback needs the Flutter engine and
+/// cannot run in a background isolate — see [cropManyWhoFacesJpegAsync]).
+///
+/// Returns a list the same length as [request.regions]; an entry is null when
+/// decode failed (e.g. HEIC, truncated/corrupt bytes) or that region was too
+/// small.
+List<Uint8List?> cropManyWhoFacesJpeg(FaceCropBatchRequest request) {
+  final decoded = _tryDecodeImage(request.imageBytes);
+  if (decoded == null) {
+    return List<Uint8List?>.filled(request.regions.length, null);
+  }
+  return [
+    for (final region in request.regions) _cropDecodedToJpeg(decoded, region),
+  ];
+}
+
+/// Main-isolate fallback for [cropManyWhoFacesJpeg] when `package:image`
+/// cannot decode (e.g. HEIC) — decodes once via the Flutter engine codec and
+/// crops every region from that single decode.
+Future<List<Uint8List?>> cropManyWhoFacesJpegAsync(
+  Uint8List imageBytes,
+  List<TagRegion> regions,
+) async {
+  final sync = _tryDecodeImage(imageBytes);
+  final decoded = sync ?? await _decodeWithFlutterCodec(imageBytes);
+  if (decoded == null) {
+    return List<Uint8List?>.filled(regions.length, null);
+  }
+  return [for (final region in regions) _cropDecodedToJpeg(decoded, region)];
+}
+
+/// `package:image`'s format sniffing can throw (rather than return null) on
+/// truncated/corrupt/too-small byte arrays — treat that the same as "could
+/// not decode" instead of surfacing an error from a batch decode.
+img.Image? _tryDecodeImage(Uint8List bytes) {
+  try {
+    return img.decodeImage(bytes);
+  } catch (_) {
+    return null;
+  }
 }
 
 Uint8List? _cropDecodedToJpeg(img.Image decoded, TagRegion region) {
@@ -94,8 +147,9 @@ Future<img.Image?> _decodeWithFlutterCodec(Uint8List imageBytes) async {
     codec = await ui.instantiateImageCodec(imageBytes);
     final frame = await codec.getNextFrame();
     frameImage = frame.image;
-    final byteData =
-        await frameImage.toByteData(format: ui.ImageByteFormat.rawRgba);
+    final byteData = await frameImage.toByteData(
+      format: ui.ImageByteFormat.rawRgba,
+    );
     if (byteData == null) return null;
     final rgba = byteData.buffer.asUint8List(
       byteData.offsetInBytes,
