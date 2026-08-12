@@ -196,50 +196,82 @@ class FakePersonsRepository implements PersonsRepository {
   Future<PersonAppearance> declineAutoAssignAppearance(
     String appearanceId,
   ) async {
-    declineAutoAssignCalls.add(appearanceId);
-    PersonAppearance? found;
-    for (var i = 0; i < _persons.length; i++) {
-      final person = _persons[i];
-      final idx = person.appearances.indexWhere((a) => a.id == appearanceId);
-      if (idx < 0) continue;
-      found = person.appearances[idx];
-      final remaining = List<PersonAppearance>.from(person.appearances)
-        ..removeAt(idx);
-      _persons[i] = PersonDetail(
-        id: person.id,
-        name: person.name,
-        createdAt: person.createdAt,
-        appearances: remaining,
-      );
-      break;
+    return (await declineAutoAssignAppearances([appearanceId])).single;
+  }
+
+  final List<List<String>> declineAutoAssignAppearancesCalls = <List<String>>[];
+
+  /// `POST /persons/appearances/decline-auto-assign` fake. Two or more
+  /// declined together are restored as one GroupFA, mirroring the API.
+  @override
+  Future<List<PersonAppearance>> declineAutoAssignAppearances(
+    List<String> appearanceIds,
+  ) async {
+    declineAutoAssignAppearancesCalls.add(List<String>.from(appearanceIds));
+    declineAutoAssignCalls.addAll(appearanceIds);
+    final found = <PersonAppearance>[];
+    for (final appearanceId in appearanceIds) {
+      PersonAppearance? match;
+      for (var i = 0; i < _persons.length; i++) {
+        final person = _persons[i];
+        final idx = person.appearances.indexWhere(
+          (a) => a.id == appearanceId,
+        );
+        if (idx < 0) continue;
+        match = person.appearances[idx];
+        final remaining = List<PersonAppearance>.from(person.appearances)
+          ..removeAt(idx);
+        _persons[i] = PersonDetail(
+          id: person.id,
+          name: person.name,
+          createdAt: person.createdAt,
+          appearances: remaining,
+        );
+        break;
+      }
+      if (match == null) {
+        final aIdx = assignedAppearances.indexWhere(
+          (a) => a.id == appearanceId,
+        );
+        if (aIdx >= 0) match = assignedAppearances.removeAt(aIdx);
+      }
+      if (match == null) {
+        throw ApiException(statusCode: 404, message: 'Not found');
+      }
+      if (match.personId == null) {
+        throw ApiException(
+          statusCode: 400,
+          message: 'Appearance is not assigned to a person',
+        );
+      }
+      found.add(match);
     }
-    if (found == null) {
-      final aIdx = assignedAppearances.indexWhere((a) => a.id == appearanceId);
-      if (aIdx >= 0) found = assignedAppearances.removeAt(aIdx);
+
+    String? faceGroupId;
+    FaceGroupKind? faceGroupKind;
+    if (found.length >= 2) {
+      _newFaceGroupCounter += 1;
+      faceGroupId = 'fg_fa_$_newFaceGroupCounter';
+      faceGroupKind = FaceGroupKind.fa;
     }
-    if (found == null) {
-      throw ApiException(statusCode: 404, message: 'Not found');
-    }
-    if (found.personId == null) {
-      throw ApiException(
-        statusCode: 400,
-        message: 'Appearance is not assigned to a person',
-      );
-    }
-    final declined = PersonAppearance(
-      id: found.id,
-      personId: null,
-      faceGroupId: null,
-      faceGroupKind: null,
-      assignmentState: null,
-      itemId: found.itemId,
-      keyPeriodId: found.keyPeriodId,
-      tagId: found.tagId,
-      region: found.region,
-      createdAt: found.createdAt,
-    );
-    unassignedAppearances.add(declined);
-    assignedAppearances.removeWhere((a) => a.id == appearanceId);
+
+    final declined = <PersonAppearance>[
+      for (final a in found)
+        PersonAppearance(
+          id: a.id,
+          personId: null,
+          faceGroupId: faceGroupId,
+          faceGroupKind: faceGroupKind,
+          assignmentState: null,
+          itemId: a.itemId,
+          keyPeriodId: a.keyPeriodId,
+          tagId: a.tagId,
+          region: a.region,
+          createdAt: a.createdAt,
+        ),
+    ];
+    unassignedAppearances.addAll(declined);
+    assignedAppearances.removeWhere((a) => appearanceIds.contains(a.id));
     return declined;
   }
 

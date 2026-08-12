@@ -24,7 +24,7 @@ might want to consider path hiearchy.
 20. use sliders in settings when possible.
 21. Need to consider where persons, faces live. Right now they are under an account, stored in Postgress on the server.
 22. If desktop is running, it prevents the shutdown on match
-23. add undo 
+23. add undo/redo 
 24. look at moving loose faces between trays
-
+25.  default Auto-confirm minimum confidence (%) of 95
 

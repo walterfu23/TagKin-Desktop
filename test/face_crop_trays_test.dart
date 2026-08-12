@@ -3982,5 +3982,235 @@ void main() {
       persons.declineAutoAssignCalls.toSet(),
       {'ap_new1', 'ap_new2'},
     );
+    expect(persons.declineAutoAssignAppearancesCalls, hasLength(1));
+    expect(
+      persons.declineAutoAssignAppearancesCalls.single.toSet(),
+      {'ap_new1', 'ap_new2'},
+    );
+
+    // Declined together → restored as one GroupFA box in Unassigned, not two
+    // scattered loose thumbnails.
+    expect(
+      find.byKey(const Key('face-crop-facegroup-fg_fa_1')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('face-crop-facegroup-fg_fa_1')),
+        matching: find.byKey(const Key('face-crop-appearance-ap_new1')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('face-crop-facegroup-fg_fa_1')),
+        matching: find.byKey(const Key('face-crop-appearance-ap_new2')),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets(
+      'face crop trays: declining a person\'s last in-folder face drops '
+      'them from "in folder" and moves focus to the next in-folder person',
+      (tester) async {
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: 'Sam',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_new1',
+              personId: 'person_1',
+              itemId: 'item_a',
+              tagId: 'tag_a',
+              assignmentState: 'unconfirmed',
+              region: const TagRegion(
+                yMin: 0.1,
+                xMin: 0.1,
+                yMax: 0.4,
+                xMax: 0.4,
+              ),
+            ),
+          ],
+        ),
+        fixturePersonDetail(
+          id: 'person_2',
+          name: 'Alex',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_b',
+              personId: 'person_2',
+              itemId: 'item_b',
+              tagId: 'tag_b',
+              region: const TagRegion(
+                yMin: 0.2,
+                xMin: 0.2,
+                yMax: 0.5,
+                xMax: 0.5,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          itemsRepositoryProvider.overrideWithValue(
+            _itemsInAlbum(['item_a', 'item_b']),
+          ),
+        ],
+        child: const MaterialApp(
+          home: FaceCropTraysPage(initialPersonId: 'person_1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Sam starts out selected and shown as in-folder.
+    expect(
+      find.byKey(const Key('face-crop-person-select-label-person_1')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('face-crop-decline-ap_new1')));
+    await tester.pumpAndSettle();
+
+    expect(persons.declineAutoAssignCalls, ['ap_new1']);
+
+    // Sam has no faces left in this folder: no longer shown as in-folder,
+    // and focus moved to Alex, the only remaining in-folder person.
+    expect(
+      find.byKey(const Key('face-crop-person-select-label-person_1')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const Key('face-crop-person-select-label-person_2')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('face-crop-person-select')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('face-crop-person-option-in-folder-person_1')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const Key('face-crop-person-option-in-folder-person_2')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets(
+      'face crop trays: person dropdown flags unconfirmed faces '
+      'account-wide, even outside the current folder',
+      (tester) async {
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: 'Sam',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_a',
+              personId: 'person_1',
+              itemId: 'item_a',
+              tagId: 'tag_a',
+              region: const TagRegion(
+                yMin: 0.1,
+                xMin: 0.1,
+                yMax: 0.4,
+                xMax: 0.4,
+              ),
+            ),
+            // Unconfirmed, but on an item outside the current folder scope —
+            // still flagged since the marker is account-wide.
+            fixtureAppearance(
+              id: 'ap_out',
+              personId: 'person_1',
+              itemId: 'item_out',
+              tagId: 'tag_out',
+              assignmentState: 'unconfirmed',
+              region: const TagRegion(
+                yMin: 0.5,
+                xMin: 0.5,
+                yMax: 0.8,
+                xMax: 0.8,
+              ),
+            ),
+          ],
+        ),
+        fixturePersonDetail(
+          id: 'person_2',
+          name: 'Alex',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_b',
+              personId: 'person_2',
+              itemId: 'item_b',
+              tagId: 'tag_b',
+              region: const TagRegion(
+                yMin: 0.2,
+                xMin: 0.2,
+                yMax: 0.5,
+                xMax: 0.5,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          itemsRepositoryProvider.overrideWithValue(
+            _itemsInAlbum(['item_a', 'item_b']),
+          ),
+        ],
+        child: const MaterialApp(
+          home: FaceCropTraysPage(initialPersonId: 'person_1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Sam has an unconfirmed face on item_out, which is outside this folder;
+    // the closed dropdown's collapsed selection already flags it.
+    expect(
+      find.text('Sam · in folder · 1 unconfirmed'),
+      findsWidgets,
+    );
+
+    await tester.tap(find.byKey(const Key('face-crop-person-select')));
+    await tester.pumpAndSettle();
+
+    // Alex has no unconfirmed faces anywhere — no suffix added.
+    expect(find.text('Alex · in folder'), findsWidgets);
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(
+              const Key('face-crop-person-option-in-folder-person_1'),
+            ),
+          )
+          .data,
+      'Sam · in folder · 1 unconfirmed',
+    );
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(
+              const Key('face-crop-person-option-in-folder-person_2'),
+            ),
+          )
+          .data,
+      'Alex · in folder',
+    );
   });
 }

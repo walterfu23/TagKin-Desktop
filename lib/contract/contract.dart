@@ -543,6 +543,42 @@ class CreateWhoExclusionResult {
   }
 }
 
+class DeclineAutoAssignAppearances {
+  const DeclineAutoAssignAppearances({
+    required this.appearanceIds,
+  });
+
+  final List<String> appearanceIds;
+
+  factory DeclineAutoAssignAppearances.fromJson(Map<String, dynamic> json) => DeclineAutoAssignAppearances(
+        appearanceIds: (json['appearanceIds'] as List<dynamic>).map((e) => e as String).toList(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['appearanceIds'] = appearanceIds.map((e) => e).toList();
+    return json;
+  }
+}
+
+class DeclineAutoAssignAppearancesResponse {
+  const DeclineAutoAssignAppearancesResponse({
+    required this.appearances,
+  });
+
+  final List<PersonAppearance> appearances;
+
+  factory DeclineAutoAssignAppearancesResponse.fromJson(Map<String, dynamic> json) => DeclineAutoAssignAppearancesResponse(
+        appearances: (json['appearances'] as List<dynamic>).map((e) => PersonAppearance.fromJson(e as Map<String, dynamic>)).toList(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['appearances'] = appearances.map((e) => e.toJson()).toList();
+    return json;
+  }
+}
+
 class EditComment {
   const EditComment({
     required this.body,

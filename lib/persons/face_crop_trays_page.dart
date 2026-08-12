@@ -195,6 +195,12 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   List<PersonAppearance> _unassigned = const [];
   List<WhoExclusion> _excluded = const [];
 
+  /// Unconfirmed auto-assigned face count per person, account-wide (not
+  /// folder-scoped, unlike [_assignedOverview]) — flags anyone needing
+  /// review in the person dropdown even if the unconfirmed face itself is
+  /// on an item outside the current folder.
+  Map<String, int> _unconfirmedCountByPerson = const {};
+
   /// Items from the last `listItems()` batch, by id — threaded into face crop
   /// thumbs so they skip a per-thumb `getItem` network round trip (the
   /// dominant Faces render-latency cost on large folders).
@@ -1005,6 +1011,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       final assignedOverview = assignedPage.appearances
           .where((a) => a.itemId != null && scopedIds.contains(a.itemId))
           .toList();
+      final unconfirmedCountByPerson = _computeUnconfirmedCountByPerson(
+        assignedPage.appearances,
+      );
       final unassigned = unPage.appearances
           .where((a) => a.itemId != null && scopedIds.contains(a.itemId))
           .toList();
@@ -1082,6 +1091,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         _leafFolder = folder;
         _scopedItemIds = scopedIds;
         _assignedOverview = assignedOverview;
+        _unconfirmedCountByPerson = unconfirmedCountByPerson;
         _unassigned = unassigned;
         _excluded = excluded;
         _itemsById = {for (final it in items) it.id: it};
@@ -1165,6 +1175,23 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     return ids;
   }
 
+  /// Count of unconfirmed auto-assigned faces per person, account-wide (not
+  /// folder-scoped) — lets the dropdown flag anyone needing review even if
+  /// the unconfirmed face itself is on an item outside the current folder.
+  /// [assignedAccountWide] must be the *unfiltered* assigned-tray page
+  /// (unlike [_assignedOverview], which is filtered to the current folder).
+  static Map<String, int> _computeUnconfirmedCountByPerson(
+    List<PersonAppearance> assignedAccountWide,
+  ) {
+    final counts = <String, int>{};
+    for (final a in assignedAccountWide) {
+      final pid = a.personId;
+      if (pid == null || a.assignmentState != 'unconfirmed') continue;
+      counts[pid] = (counts[pid] ?? 0) + 1;
+    }
+    return counts;
+  }
+
   /// Sort: in-folder first, then by name (auto-select order).
   static List<Person> _sortPersonsForDropdown(
     List<Person> persons,
@@ -1194,6 +1221,13 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   }
 
   /// No "Select a person" overview: focused person, New Person…, or empty.
+  ///
+  /// A non-null [personId] is always kept even with zero in-folder faces —
+  /// deliberately selecting an empty named person as a drag-assign target
+  /// (or navigating in via `initialPersonId`) is a supported flow. Callers
+  /// that need to drop a selection once it goes empty (e.g. after "Not this
+  /// person" removes someone's last face) must resolve that themselves
+  /// before calling this with `personId: null`.
   static ({String? personId, bool assignAsNew}) _resolvedAssignedFocus({
     required String? personId,
     required bool assignAsNew,
@@ -1221,9 +1255,33 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   static String personDisplayName(Person p) =>
       p.name.isNotEmpty ? p.name : p.id;
 
-  static String _personDropdownLabel(Person p, {required bool inFolder}) {
-    final base = personDisplayName(p);
-    return inFolder ? '$base · in folder' : base;
+  static String _personDropdownLabel(
+    Person p, {
+    required bool inFolder,
+    int unconfirmedCount = 0,
+  }) {
+    final parts = [personDisplayName(p)];
+    if (inFolder) parts.add('in folder');
+    if (unconfirmedCount > 0) {
+      parts.add(
+        unconfirmedCount == 1 ? '1 unconfirmed' : '$unconfirmedCount unconfirmed',
+      );
+    }
+    return parts.join(' · ');
+  }
+
+  /// After removing appearances from [affectedPersonIds] (e.g. "Not this
+  /// person"), drop the Assigned focus if it was on one of them and they now
+  /// have zero faces in this folder — otherwise a declined person's last
+  /// face lingers as a faceless "· in folder" selection forever. Resolves
+  /// via [_selectPerson] (first in-folder person / New Person… / empty),
+  /// same as when a focused person is deleted outright. A no-op if the
+  /// focused person still has other faces here, or wasn't affected.
+  Future<void> _dropFocusIfNowFaceless(Set<String> affectedPersonIds) async {
+    final pid = _personId;
+    if (pid == null || !affectedPersonIds.contains(pid)) return;
+    if (_personIdsFromAppearances(_assignedOverview).contains(pid)) return;
+    await _selectPerson(null, recordUndo: false);
   }
 
   /// Encodes Assigned person dropdown selection for undo (sentinel = New Person…).
@@ -1410,11 +1468,12 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       final snapshots = [
         for (final a in targets) (id: a.id, personId: a.personId!),
       ];
-      for (final s in snapshots) {
-        await persons.declineAutoAssignAppearance(s.id);
-      }
+      await persons.declineAutoAssignAppearances([
+        for (final s in snapshots) s.id,
+      ]);
       await _reload();
       _markCollectionDirty();
+      await _dropFocusIfNowFaceless({for (final s in snapshots) s.personId});
       _undoStack.push(
         CallbackUndoableAction(
           label: snapshots.length == 1 ? 'Not this person' : 'Not these people',
@@ -1427,11 +1486,14 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
             await _reload();
           },
           onRedo: () async {
-            for (final s in snapshots) {
-              await persons.declineAutoAssignAppearance(s.id);
-            }
+            await persons.declineAutoAssignAppearances([
+              for (final s in snapshots) s.id,
+            ]);
             _markCollectionDirty();
             await _reload();
+            await _dropFocusIfNowFaceless(
+              {for (final s in snapshots) s.personId},
+            );
           },
         ),
       );
@@ -2508,6 +2570,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       final assignedOverview = assignedPage.appearances
           .where((a) => a.itemId != null && scopedIds.contains(a.itemId))
           .toList();
+      final unconfirmedCountByPerson = _computeUnconfirmedCountByPerson(
+        assignedPage.appearances,
+      );
       final unassigned = unPage.appearances
           .where((a) => a.itemId != null && scopedIds.contains(a.itemId))
           .toList();
@@ -2549,6 +2614,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         _renaming = pid == null ? false : _renaming;
         _persons = persons;
         _assignedOverview = assignedOverview;
+        _unconfirmedCountByPerson = unconfirmedCountByPerson;
         _unassigned = unassigned;
         _excluded = excluded;
       });
@@ -3715,6 +3781,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
               if (a.personId == selectedId) a,
           ];
     final scheme = Theme.of(context).colorScheme;
+    final unconfirmedByPerson = _unconfirmedCountByPerson;
     final showPersonSelect = showNewPerson || inFolderPersons.isNotEmpty;
     final Widget? personSelect = showPersonSelect
         ? DropdownButtonFormField<String>(
@@ -3741,7 +3808,11 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                   Align(
                     alignment: AlignmentDirectional.centerStart,
                     child: Text(
-                      _personDropdownLabel(p, inFolder: true),
+                      _personDropdownLabel(
+                        p,
+                        inFolder: true,
+                        unconfirmedCount: unconfirmedByPerson[p.id] ?? 0,
+                      ),
                       key: Key('face-crop-person-select-label-${p.id}'),
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -3766,7 +3837,11 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                 DropdownMenuItem(
                   value: p.id,
                   child: Text(
-                    _personDropdownLabel(p, inFolder: true),
+                    _personDropdownLabel(
+                      p,
+                      inFolder: true,
+                      unconfirmedCount: unconfirmedByPerson[p.id] ?? 0,
+                    ),
                     key: Key('face-crop-person-option-in-folder-${p.id}'),
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(

@@ -116,7 +116,7 @@ void main() {
       expect(DesktopPrefs.defaults.facesDetectScoreThreshold, 0.2);
       expect(DesktopPrefs.defaults.facesTrayPageLimit, 500);
       expect(DesktopPrefs.defaults.autoConfirmHighConfidencePersonMatches, isTrue);
-      expect(DesktopPrefs.defaults.autoConfirmMinConfidencePercent, 90);
+      expect(DesktopPrefs.defaults.autoConfirmMinConfidencePercent, 95);
       expect(DesktopPrefs.defaults.jobsPollIntervalSeconds, 2);
     });
 

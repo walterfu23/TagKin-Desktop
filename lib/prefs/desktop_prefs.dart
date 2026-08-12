@@ -21,7 +21,7 @@ class DesktopPrefs {
     this.facesDetectScoreThreshold = 0.2,
     this.facesTrayPageLimit = 500,
     this.autoConfirmHighConfidencePersonMatches = true,
-    this.autoConfirmMinConfidencePercent = 90,
+    this.autoConfirmMinConfidencePercent = 95,
     this.jobsPollIntervalSeconds = 2,
   });
 
@@ -308,7 +308,7 @@ class DesktopPrefs {
       ),
       autoConfirmMinConfidencePercent: intVal(
         'faces.autoConfirmMinConfidencePercent',
-        90,
+        95,
         min: autoConfirmMinConfidencePercentMin,
         max: autoConfirmMinConfidencePercentMax,
       ),

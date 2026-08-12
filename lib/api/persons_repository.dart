@@ -137,6 +137,29 @@ class PersonsRepository {
     return PersonAppearance.fromJson(json);
   }
 
+  /// `POST /persons/appearances/decline-auto-assign` — reject auto-assignment
+  /// ("Not this person") for one or more appearances. Two or more declined
+  /// together are restored as one GroupFA in Unassigned, matching how they
+  /// existed before being auto-assigned; a single face becomes loose (R6).
+  Future<List<PersonAppearance>> declineAutoAssignAppearances(
+    List<String> appearanceIds,
+  ) async {
+    final response = await _client.post(
+      '/persons/appearances/decline-auto-assign',
+      body: DeclineAutoAssignAppearances(
+        appearanceIds: appearanceIds,
+      ).toJson(),
+    );
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected decline-auto-assign response shape',
+      );
+    }
+    return DeclineAutoAssignAppearancesResponse.fromJson(json).appearances;
+  }
+
   /// `POST /persons/appearances/{id}/unconfirm` — restore unconfirmed after
   /// Confirm undo (D12).
   Future<PersonAppearance?> tryRestoreUnconfirmedAssignment(

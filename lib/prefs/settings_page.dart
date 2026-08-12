@@ -652,7 +652,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     helper:
                         'Likeness confidence required to auto-confirm a named '
                         'person match. Lower auto-confirms more matches; raise '
-                        'to review more Unconfirmed faces. Default 90 (0–100).',
+                        'to review more Unconfirmed faces. Default 95 (0–100).',
                     value: _autoConfirmMinConfidencePercent,
                     min: DesktopPrefs.autoConfirmMinConfidencePercentMin,
                     max: DesktopPrefs.autoConfirmMinConfidencePercentMax,
