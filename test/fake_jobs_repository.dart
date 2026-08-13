@@ -16,6 +16,8 @@ class FakeJobsRepository implements JobsRepository {
     this.deleteError,
     this.analyzeDelay,
     this.onDelete,
+    this.onAnalyzed,
+    this.libraryItems,
   })  : item = item ?? fixtureItem(id: itemId),
         _jobs = List<Job>.from(jobs ?? const []);
 
@@ -39,6 +41,13 @@ class FakeJobsRepository implements JobsRepository {
 
   /// Invoked after a successful [deleteItem] (e.g. to update [FakeItemsRepository]).
   final void Function(String itemId)? onDelete;
+
+  /// Invoked after a successful [analyzeItem] with the tagged item.
+  final void Function(Item item)? onAnalyzed;
+
+  /// When set, [analyzeItem] copies identity fields (sourceRef, type, …)
+  /// from the matching library item so folder grouping stays valid.
+  final FakeItemsRepository? libraryItems;
 
   /// Ordered job lists consumed on each [listItemJobs] call (FIFO).
   /// When empty, returns [_jobs].
@@ -68,24 +77,26 @@ class FakeJobsRepository implements JobsRepository {
     if (analyzeError != null) throw analyzeError!;
     // Accept any item id so batch post-ingest analyze can cover multiple
     // photos created in one folder session.
+    final base = libraryItems?.peekItem(id) ?? item;
     final tagged = Item(
       id: id,
-      type: item.type,
-      sourceType: item.sourceType,
-      sourceRef: item.sourceRef,
-      analysisRef: item.analysisRef,
-      analysisRefState: item.analysisRefState,
-      contentHash: item.contentHash,
-      perceptualHash: item.perceptualHash,
-      dedupOfItemId: item.dedupOfItemId,
-      capturedAt: item.capturedAt,
+      type: base.type,
+      sourceType: base.sourceType,
+      sourceRef: base.sourceRef,
+      analysisRef: base.analysisRef,
+      analysisRefState: base.analysisRefState,
+      contentHash: base.contentHash,
+      perceptualHash: base.perceptualHash,
+      dedupOfItemId: base.dedupOfItemId,
+      capturedAt: base.capturedAt,
       processingStatus: ProcessingStatus.tagged,
-      schemaVersion: item.schemaVersion,
-      createdAt: item.createdAt,
+      schemaVersion: base.schemaVersion,
+      createdAt: base.createdAt,
     );
     if (id == itemId) {
       item = tagged;
     }
+    onAnalyzed?.call(tagged);
     final job = fixtureJob(
       id: 'job_analyze_$analyzeCallCount',
       itemId: id,

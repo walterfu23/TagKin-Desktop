@@ -80,5 +80,40 @@ void main() {
     test('leafFolderLabel uses basename', () {
       expect(leafFolderLabel('/albums/Paris'), 'Paris');
     });
+
+    test('minimalCoveringFolders drops nested paths', () {
+      expect(
+        minimalCoveringFolders([
+          '/albums/Paris',
+          '/albums/Paris/day1',
+          '/albums/Rome',
+        ]),
+        ['/albums/Paris', '/albums/Rome'],
+      );
+    });
+
+    test('coveringFoldersForItems prefers bookmarked ancestor', () {
+      final items = [
+        fixtureItem(
+          id: 'a',
+          sourceRef: 'file:///albums/Paris/day1/1.jpg',
+        ),
+        fixtureItem(
+          id: 'b',
+          sourceRef: 'file:///albums/Paris/day2/2.jpg',
+        ),
+      ];
+      expect(
+        coveringFoldersForItems(
+          items,
+          bookmarkedFolders: ['/albums/Paris'],
+        ),
+        ['/albums/Paris'],
+      );
+      expect(
+        coveringFoldersForItems(items),
+        ['/albums/Paris/day1', '/albums/Paris/day2'],
+      );
+    });
   });
 }

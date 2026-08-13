@@ -36,6 +36,7 @@ class _FolderIngestStatusBannerState
                   !j.isActive &&
                   j.phase == FolderIngestJobPhase.done &&
                   j.createdCount == 0 &&
+                  j.continuedCount == 0 &&
                   j.alreadyInLibraryCount > 0,
             );
         final ingestNothingNew = ingest.jobs.isNotEmpty &&

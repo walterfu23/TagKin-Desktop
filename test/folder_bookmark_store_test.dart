@@ -39,4 +39,23 @@ void main() {
       'bookmark-rome',
     );
   });
+
+  test('listFolders and folderForFile use longest prefix', () async {
+    await store.save('/albums/Paris', 'bookmark-paris');
+    await store.save('/albums/Paris/day1', 'bookmark-day1');
+
+    expect(await store.listFolders(), unorderedEquals([
+      '/albums/Paris',
+      '/albums/Paris/day1',
+    ]));
+    expect(
+      await store.folderForFile('/albums/Paris/day1/a.jpg'),
+      '/albums/Paris/day1',
+    );
+    expect(
+      await store.folderForFile('/albums/Paris/other/a.jpg'),
+      '/albums/Paris',
+    );
+    expect(await store.folderForFile('/elsewhere/a.jpg'), isNull);
+  });
 }

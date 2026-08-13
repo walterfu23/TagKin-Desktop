@@ -79,6 +79,25 @@ class FakeItemsRepository implements ItemsRepository {
     _items.removeWhere((i) => i.id == id);
   }
 
+  /// In-memory item by id (no network). Used by [FakeJobsRepository] so batch
+  /// analyze keeps sourceRef / type from the library row.
+  Item? peekItem(String id) {
+    for (final item in _items) {
+      if (item.id == id) return item;
+    }
+    return null;
+  }
+
+  /// Replaces a stored item by id (D7 analyze/retry then library reload).
+  void replaceItem(Item item) {
+    final index = _items.indexWhere((i) => i.id == item.id);
+    if (index < 0) {
+      _items.add(item);
+      return;
+    }
+    _items[index] = item;
+  }
+
   /// Test helper: append an item for reload scenarios (e.g. new sibling folder).
   void addItem(Item item) {
     _items.add(item);

@@ -77,21 +77,32 @@ class PrePassController extends ChangeNotifier {
 
   /// Runs pre-pass for every succeeded ingest outcome. Continues past
   /// individual failures so one bad file doesn't abort the batch.
-  Future<void> run(List<IngestOutcome> ingestOutcomes) async {
+  ///
+  /// When [append] is true, keeps prior [outcomes] and frame samples so a
+  /// per-item pipeline can accumulate results across calls.
+  Future<void> run(
+    List<IngestOutcome> ingestOutcomes, {
+    bool append = false,
+  }) async {
     final succeeded = ingestOutcomes
         .where((o) => o.succeeded && o.item != null)
         .toList();
     if (succeeded.isEmpty) {
       phase = PrePassPhase.done;
-      outcomes = const [];
+      if (!append) {
+        outcomes = const [];
+      }
       notifyListeners();
       return;
     }
 
     phase = PrePassPhase.running;
     error = null;
-    final newOutcomes = <PrePassOutcome>[];
-    frameSamplesByItemId.clear();
+    final newOutcomes =
+        append ? List<PrePassOutcome>.from(outcomes) : <PrePassOutcome>[];
+    if (!append) {
+      frameSamplesByItemId.clear();
+    }
     notifyListeners();
 
     final prefs = _samplingPrefs;

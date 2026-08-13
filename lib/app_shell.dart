@@ -29,6 +29,7 @@ import 'package:tagkin_desktop/persons/face_crop_trays_page.dart';
 import 'package:tagkin_desktop/persons/persons_list_page.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/prefs/settings_navigation.dart';
+import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_status_banner.dart';
 import 'package:tagkin_desktop/shell/quit_navigation.dart';
 import 'package:window_manager/window_manager.dart';
@@ -39,6 +40,10 @@ enum TopLevelTab { folders, faces, persons }
 /// Which top-level tab is visible in [_SignedInScaffold].
 final activeTopLevelTabProvider =
     StateProvider<TopLevelTab>((ref) => TopLevelTab.folders);
+
+/// Signed-in [Account.id] for crash-resume ingest checkpoints. Null until the
+/// signed-in shell's first frame (after `GET /me`).
+final signedInAccountIdProvider = StateProvider<String?>((ref) => null);
 
 /// App-wide config (overridable in tests).
 final appConfigProvider = Provider<AppConfig>((ref) => AppConfig.load());
@@ -551,6 +556,14 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
     WidgetsBinding.instance.addObserver(this);
     HardwareKeyboard.instance.addHandler(_onHardwareKeyForFacesSelectAll);
     unawaited(_enableWindowCloseGate());
+    // Riverpod forbids provider writes in initState. Set account id first,
+    // then restore checkpoints + unfinished library items.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(signedInAccountIdProvider.notifier).state = widget.account.id;
+      if (Platform.environment.containsKey('FLUTTER_TEST')) return;
+      unawaited(ref.read(folderIngestQueueProvider).restoreOnSignIn());
+    });
   }
 
   /// Cmd+A on Faces must expand loose face selection even when focus is not

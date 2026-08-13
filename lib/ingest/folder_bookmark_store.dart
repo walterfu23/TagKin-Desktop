@@ -117,20 +117,37 @@ class FolderBookmarkStore {
     await _persist();
   }
 
+  /// Bookmarked folder paths (normalized).
+  Future<List<String>> listFolders() async {
+    await _ensureLoaded();
+    return _cache.keys.toList(growable: false);
+  }
+
+  /// Longest bookmarked folder prefix of [filePath], or null.
+  Future<String?> folderForFile(String filePath) async {
+    await _ensureLoaded();
+    return _folderForNormalizedFile(p.normalize(filePath));
+  }
+
   /// Longest bookmarked folder prefix of [filePath], if any.
   Future<String?> bookmarkForFile(String filePath) async {
     await _ensureLoaded();
-    final normalized = p.normalize(filePath);
+    final folder = _folderForNormalizedFile(p.normalize(filePath));
+    return folder == null ? null : _cache[folder];
+  }
+
+  String? _folderForNormalizedFile(String normalized) {
     String? best;
     for (final folder in _cache.keys) {
-      final prefix = folder.endsWith(p.separator) ? folder : '$folder${p.separator}';
+      final prefix =
+          folder.endsWith(p.separator) ? folder : '$folder${p.separator}';
       if (normalized == folder || normalized.startsWith(prefix)) {
         if (best == null || folder.length > best.length) {
           best = folder;
         }
       }
     }
-    return best == null ? null : _cache[best];
+    return best;
   }
 }
 

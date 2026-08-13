@@ -6,11 +6,17 @@ import 'package:path/path.dart' as p;
 import 'package:tagkin_desktop/api/items_repository.dart';
 import 'package:tagkin_desktop/api/jobs_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart'
-    show itemsRepositoryProvider, jobsRepositoryProvider;
+    show
+        itemsRepositoryProvider,
+        jobsRepositoryProvider,
+        signedInAccountIdProvider;
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/ingest/active_folder_ingest_store.dart';
 import 'package:tagkin_desktop/ingest/batch_ingest_controller.dart';
 import 'package:tagkin_desktop/ingest/content_hash.dart';
 import 'package:tagkin_desktop/ingest/dedup.dart';
+import 'package:tagkin_desktop/ingest/folder_bookmark_store.dart';
+import 'package:tagkin_desktop/ingest/folder_picker.dart';
 import 'package:tagkin_desktop/ingest/media_enumerator.dart';
 import 'package:tagkin_desktop/ingest/perceptual_hash.dart';
 import 'package:tagkin_desktop/ingest/post_ingest_pipeline_controller.dart';
@@ -33,6 +39,7 @@ enum FolderIngestJobPhase {
   prePass,
   upload,
   analyze,
+  processing,
   done,
   error,
 }
@@ -46,9 +53,15 @@ enum FolderIngestEnqueueResult {
 
 /// One folder's background ingest run.
 class FolderIngestJob {
-  FolderIngestJob({required this.folderPath});
+  FolderIngestJob({
+    required this.folderPath,
+    this.continueExistingOnly = false,
+  });
 
   final String folderPath;
+
+  /// Skip enumerate / create; pipeline incomplete library items under this root.
+  final bool continueExistingOnly;
   FolderIngestJobPhase phase = FolderIngestJobPhase.scanning;
   Object? error;
 
@@ -58,6 +71,14 @@ class FolderIngestJob {
 
   /// Paths skipped because they were already registered (re-ingest).
   int alreadyInLibraryCount = 0;
+
+  /// Existing library items under this folder that were still incomplete
+  /// and went through the post-ingest pipeline (crash resume).
+  int continuedCount = 0;
+
+  /// Post-register pipeline progress (one item at a time).
+  int pipelineDone = 0;
+  int pipelineTotal = 0;
 
   bool get isActive =>
       phase != FolderIngestJobPhase.done && phase != FolderIngestJobPhase.error;
@@ -80,15 +101,23 @@ class FolderIngestJob {
         return 'Uploading…';
       case FolderIngestJobPhase.analyze:
         return 'Analyzing…';
+      case FolderIngestJobPhase.processing:
+        if (pipelineTotal == 0) return 'Processing…';
+        return 'Processing $pipelineDone of $pipelineTotal…';
       case FolderIngestJobPhase.done:
         if (createdCount > 0) {
           return 'Done ($createdCount added)';
+        }
+        if (continuedCount > 0) {
+          return 'Done ($continuedCount continued)';
         }
         if (alreadyInLibraryCount > 0) {
           return 'Done ($alreadyInLibraryCount already in library)';
         }
         return 'Done (nothing new)';
       case FolderIngestJobPhase.error:
+        final msg = error?.toString();
+        if (msg != null && msg.isNotEmpty) return 'Failed — $msg';
         return 'Failed';
     }
   }
@@ -112,6 +141,11 @@ class FolderIngestQueue extends ChangeNotifier {
     this.uploadFactory,
     this.whoFaceLinkerFactory,
     this.onLibraryMembershipPublish,
+    this.onItemUpdated,
+    this.accountId,
+    this.checkpointStore,
+    this.ensureFolderAccess,
+    this.bookmarkedFolders,
   });
 
   final ItemsRepository itemsRepository;
@@ -132,9 +166,29 @@ class FolderIngestQueue extends ChangeNotifier {
   /// Receives the ingest root path so owned-elsewhere leaves can be claimed.
   final Future<void> Function(String folderPath)? onLibraryMembershipPublish;
 
+  /// Live Folders-row patch as upload/analyze finishes (no full table reload).
+  final void Function(Item item)? onItemUpdated;
+
+  /// Current signed-in account (scopes crash-resume checkpoints).
+  final String? Function()? accountId;
+
+  /// When set, persist in-progress folder paths across process death.
+  final ActiveFolderIngestStore? checkpointStore;
+
+  /// Restore sandbox / existence before enumerate. Null skips (unit tests).
+  final Future<void> Function(String folderPath)? ensureFolderAccess;
+
+  /// macOS security-scoped ingest roots (empty on Windows / in most tests).
+  final Future<List<String>> Function()? bookmarkedFolders;
+
   List<FolderIngestJob> _jobs = const [];
   int _libraryRefreshTick = 0;
   bool _disposed = false;
+  bool _restoreStarted = false;
+
+  /// Last [Item.processingStatus] pushed via [onItemUpdated], so upload then
+  /// analyze can both patch the same row without repeating a no-op.
+  final Map<String, ProcessingStatus> _liveStatusById = {};
 
   List<FolderIngestJob> get jobs => List.unmodifiable(_jobs);
 
@@ -148,7 +202,7 @@ class FolderIngestQueue extends ChangeNotifier {
   static String normalizePath(String path) => p.normalize(path);
 
   /// Whether Faces should hide [path] while this job is still scanning or
-  /// registering items (not during pre-pass / upload / analyze).
+  /// registering items (not during per-item processing).
   static bool hidesFacesFolder(FolderIngestJobPhase phase) =>
       phase == FolderIngestJobPhase.scanning ||
       phase == FolderIngestJobPhase.registering;
@@ -181,11 +235,114 @@ class FolderIngestQueue extends ChangeNotifier {
     }
   }
 
+  void _emitItemUpdated(Item item) {
+    if (_disposed) return;
+    if (_liveStatusById[item.id] == item.processingStatus) return;
+    _liveStatusById[item.id] = item.processingStatus;
+    final hook = onItemUpdated;
+    if (hook == null) return;
+    try {
+      hook(item);
+    } catch (e, st) {
+      debugPrint('FolderIngestQueue onItemUpdated failed: $e\n$st');
+    }
+  }
+
   /// Bump library refresh and adopt membership from an unfiltered item list.
   Future<void> _bumpLibraryAndPublish(String folderPath) async {
     _libraryRefreshTick++;
     await _publishMembership(folderPath);
     _safeNotify();
+  }
+
+  Future<void> _checkpointAdd(String folderPath) async {
+    final store = checkpointStore;
+    final id = accountId?.call();
+    if (store == null || id == null || id.isEmpty) return;
+    try {
+      await store.add(id, folderPath);
+    } catch (e, st) {
+      debugPrint('FolderIngestQueue checkpoint add failed: $e\n$st');
+    }
+  }
+
+  Future<void> _checkpointRemove(String folderPath) async {
+    final store = checkpointStore;
+    final id = accountId?.call();
+    if (store == null || id == null || id.isEmpty) return;
+    try {
+      await store.remove(id, folderPath);
+    } catch (e, st) {
+      debugPrint('FolderIngestQueue checkpoint remove failed: $e\n$st');
+    }
+  }
+
+  /// Re-open persisted ingest roots after sign-in (crash resume).
+  ///
+  /// Does not latch [restoreOnSignIn]; callers that need once-per-session
+  /// should use that entry point.
+  Future<void> restoreInterrupted() async {
+    if (_disposed) return;
+    final store = checkpointStore;
+    final id = accountId?.call();
+    if (store == null || id == null || id.isEmpty) return;
+    final paths = await store.listForAccount(id);
+    for (final path in paths) {
+      if (_disposed) return;
+      await enqueue(path);
+    }
+  }
+
+  /// Pipeline unfinished library items on sign-in (no re-scan / re-create).
+  Future<void> restoreIncompleteFromLibrary() async {
+    if (_disposed) return;
+    final items = await itemsRepository.listItems();
+    if (_disposed) return;
+    final incomplete = items.where(_pipelineIncomplete);
+    final bookmarks = await bookmarkedFolders?.call() ?? const <String>[];
+    final roots = coveringFoldersForItems(
+      incomplete,
+      bookmarkedFolders: bookmarks,
+    );
+    for (final root in roots) {
+      if (_disposed) return;
+      if (_hasActiveJobCovering(root)) continue;
+      await enqueue(root, continueExistingOnly: true);
+    }
+  }
+
+  /// Crash checkpoints first, then leftover unfinished items in the library.
+  Future<void> restoreOnSignIn() async {
+    if (_disposed || _restoreStarted) return;
+    final id = accountId?.call();
+    if (id == null || id.isEmpty) return;
+    _restoreStarted = true;
+    await restoreInterrupted();
+    if (_disposed) return;
+    await restoreIncompleteFromLibrary();
+  }
+
+  bool _hasActiveJobCovering(String folderPath) {
+    final normalized = normalizePath(folderPath);
+    return _jobs.any((j) {
+      if (!j.isActive) return false;
+      return j.folderPath == normalized ||
+          pathIsUnderFolder(normalized, j.folderPath) ||
+          pathIsUnderFolder(j.folderPath, normalized);
+    });
+  }
+
+  static bool _pipelineIncomplete(Item item) {
+    switch (item.processingStatus) {
+      case ProcessingStatus.pending:
+      case ProcessingStatus.awaitingModelAccess:
+      case ProcessingStatus.processing:
+      case ProcessingStatus.failed:
+        return true;
+      case ProcessingStatus.tagged:
+      case ProcessingStatus.cancelled:
+        return false;
+    }
   }
 
   @override
@@ -195,14 +352,21 @@ class FolderIngestQueue extends ChangeNotifier {
   }
 
   /// Starts a background job for [folderPath], or refuses if that path is busy.
-  Future<FolderIngestEnqueueResult> enqueue(String folderPath) async {
+  Future<FolderIngestEnqueueResult> enqueue(
+    String folderPath, {
+    bool continueExistingOnly = false,
+  }) async {
     final normalized = normalizePath(folderPath);
     if (_jobs.any((j) => j.folderPath == normalized && j.isActive)) {
       return FolderIngestEnqueueResult.alreadyActive;
     }
-    final job = FolderIngestJob(folderPath: normalized);
+    final job = FolderIngestJob(
+      folderPath: normalized,
+      continueExistingOnly: continueExistingOnly,
+    );
     _jobs = [..._jobs, job];
     _safeNotify();
+    await _checkpointAdd(normalized);
     unawaited(_runJob(job));
     return FolderIngestEnqueueResult.started;
   }
@@ -223,6 +387,18 @@ class FolderIngestQueue extends ChangeNotifier {
       job.phase = FolderIngestJobPhase.scanning;
       job.error = null;
       _safeNotify();
+
+      final ensure = ensureFolderAccess;
+      if (ensure != null) {
+        await ensure(job.folderPath);
+      }
+
+      if (job.continueExistingOnly) {
+        final outcomes = await _continueOutcomes(job);
+        if (_disposed) return;
+        await _finishWithOutcomes(job, outcomes);
+        return;
+      }
 
       final candidates = await enumerateFolder(job.folderPath);
       if (_disposed) return;
@@ -291,17 +467,65 @@ class FolderIngestQueue extends ChangeNotifier {
         _safeNotify();
       }
 
+      final createdPaths = {
+        for (final o in outcomes)
+          if (o.succeeded) normalizePath(o.path),
+      };
+      for (final item in existingItems) {
+        if (!_pipelineIncomplete(item)) continue;
+        final path = localPathFromSourceRef(item.sourceRef);
+        if (path == null || !pathIsUnderFolder(path, job.folderPath)) {
+          continue;
+        }
+        final normalized = normalizePath(path);
+        if (createdPaths.contains(normalized)) continue;
+        outcomes.add(IngestOutcome(path: normalized, item: item));
+        job.continuedCount++;
+      }
+
+      await _finishWithOutcomes(job, outcomes);
+    } catch (e) {
+      job.phase = FolderIngestJobPhase.error;
+      job.error = e;
+      await _checkpointRemove(job.folderPath);
+      await _bumpLibraryAndPublish(job.folderPath);
+    }
+  }
+
+  Future<List<IngestOutcome>> _continueOutcomes(FolderIngestJob job) async {
+    final existingItems = await itemsRepository.listItems();
+    if (_disposed) return const [];
+    final outcomes = <IngestOutcome>[];
+    for (final item in existingItems) {
+      if (!_pipelineIncomplete(item)) continue;
+      final path = localPathFromSourceRef(item.sourceRef);
+      if (path == null || !pathIsUnderFolder(path, job.folderPath)) {
+        continue;
+      }
+      outcomes.add(IngestOutcome(path: normalizePath(path), item: item));
+      job.continuedCount++;
+    }
+    return outcomes;
+  }
+
+  Future<void> _finishWithOutcomes(
+    FolderIngestJob job,
+    List<IngestOutcome> outcomes,
+  ) async {
       final succeeded = outcomes.where((o) => o.succeeded).length;
       if (succeeded == 0) {
         job.phase = FolderIngestJobPhase.done;
+        await _checkpointRemove(job.folderPath);
         // Reveal Faces + adopt membership (e.g. prior items under this root).
         await _bumpLibraryAndPublish(job.folderPath);
         return;
       }
 
       // Leave registering before publish so isLoadingPath clears and Faces
-      // can list the new leaf during pre-pass / upload / analyze.
-      job.phase = FolderIngestJobPhase.prePass;
+      // can list the new leaf during processing.
+      job.phase = FolderIngestJobPhase.processing;
+      job.pipelineDone = 0;
+      job.pipelineTotal = succeeded;
       await _bumpLibraryAndPublish(job.folderPath);
       if (_disposed) return;
 
@@ -330,31 +554,44 @@ class FolderIngestQueue extends ChangeNotifier {
         whoFaceLinker: linker,
       );
 
+      void flushLiveItems() {
+        for (final o in upload.outcomes) {
+          final item = o.item;
+          if (item != null) _emitItemUpdated(item);
+        }
+        for (final o in pipeline.analyzeOutcomes) {
+          final item = o.item;
+          if (item != null) _emitItemUpdated(item);
+        }
+      }
+
       void syncPipelinePhase() {
         final phase = pipeline.phase;
-        if (phase == PostIngestPipelinePhase.runningPrePass) {
-          job.phase = FolderIngestJobPhase.prePass;
-        } else if (phase == PostIngestPipelinePhase.runningUpload) {
-          job.phase = FolderIngestJobPhase.upload;
-        } else if (phase == PostIngestPipelinePhase.runningAnalyze) {
-          job.phase = FolderIngestJobPhase.analyze;
-        } else if (phase == PostIngestPipelinePhase.done ||
-            phase == PostIngestPipelinePhase.skippedUpload) {
-          job.phase = FolderIngestJobPhase.done;
+        job.pipelineDone = pipeline.itemIndex;
+        job.pipelineTotal = pipeline.itemTotal;
+        if (phase == PostIngestPipelinePhase.runningPrePass ||
+            phase == PostIngestPipelinePhase.runningUpload ||
+            phase == PostIngestPipelinePhase.runningAnalyze) {
+          job.phase = FolderIngestJobPhase.processing;
         } else if (phase == PostIngestPipelinePhase.error) {
           job.phase = FolderIngestJobPhase.error;
           job.error = pipeline.error;
         }
+        // Job stays `processing` until start() returns — pipeline `done`
+        // after item 1 must not mark the folder job complete.
+        flushLiveItems();
         _safeNotify();
       }
 
+      upload.addListener(flushLiveItems);
       pipeline.addListener(syncPipelinePhase);
       try {
         await pipeline.start(
           ingestOutcomes: outcomes,
-          usageBlocked: isUsageBlocked(),
+          isUsageBlocked: isUsageBlocked,
         );
       } finally {
+        upload.removeListener(flushLiveItems);
         pipeline.removeListener(syncPipelinePhase);
         pipeline.dispose();
         prePass.dispose();
@@ -368,12 +605,8 @@ class FolderIngestQueue extends ChangeNotifier {
       } else {
         job.phase = FolderIngestJobPhase.done;
       }
+      await _checkpointRemove(job.folderPath);
       await _bumpLibraryAndPublish(job.folderPath);
-    } catch (e) {
-      job.phase = FolderIngestJobPhase.error;
-      job.error = e;
-      await _bumpLibraryAndPublish(job.folderPath);
-    }
   }
 }
 
@@ -409,6 +642,13 @@ final folderIngestQueueProvider = ChangeNotifierProvider<FolderIngestQueue>(
           claimUnderFolder: folderPath,
         );
       },
+      onItemUpdated: (item) {
+        ref.read(libraryTableControllerProvider).adoptItem(item);
+      },
+      accountId: () => ref.read(signedInAccountIdProvider),
+      checkpointStore: activeFolderIngestStore,
+      ensureFolderAccess: ensureIngestFolderAccess,
+      bookmarkedFolders: folderBookmarkStore.listFolders,
     );
   },
   dependencies: [
@@ -420,5 +660,6 @@ final folderIngestQueueProvider = ChangeNotifierProvider<FolderIngestQueue>(
     perceptualHasherProvider,
     collectionsControllerProvider,
     libraryTableControllerProvider,
+    signedInAccountIdProvider,
   ],
 );

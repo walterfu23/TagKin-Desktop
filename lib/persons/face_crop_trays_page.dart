@@ -195,10 +195,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   List<PersonAppearance> _unassigned = const [];
   List<WhoExclusion> _excluded = const [];
 
-  /// Unconfirmed auto-assigned face count per person, account-wide (not
-  /// folder-scoped, unlike [_assignedOverview]) — flags anyone needing
-  /// review in the person dropdown even if the unconfirmed face itself is
-  /// on an item outside the current folder.
+  /// Unconfirmed auto-assigned face count per person in the current folder
+  /// (same set as [_assignedOverview]). Out-of-folder unconfirmed faces are
+  /// not included — selecting the person only shows this folder's faces.
   Map<String, int> _unconfirmedCountByPerson = const {};
 
   /// Items from the last `listItems()` batch, by id — threaded into face crop
@@ -1012,7 +1011,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           .where((a) => a.itemId != null && scopedIds.contains(a.itemId))
           .toList();
       final unconfirmedCountByPerson = _computeUnconfirmedCountByPerson(
-        assignedPage.appearances,
+        assignedOverview,
       );
       final unassigned = unPage.appearances
           .where((a) => a.itemId != null && scopedIds.contains(a.itemId))
@@ -1175,16 +1174,14 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     return ids;
   }
 
-  /// Count of unconfirmed auto-assigned faces per person, account-wide (not
-  /// folder-scoped) — lets the dropdown flag anyone needing review even if
-  /// the unconfirmed face itself is on an item outside the current folder.
-  /// [assignedAccountWide] must be the *unfiltered* assigned-tray page
-  /// (unlike [_assignedOverview], which is filtered to the current folder).
+  /// Count of unconfirmed auto-assigned faces per person in [assignedInFolder]
+  /// — the same folder-scoped list used to render the Assigned cluster, so
+  /// the dropdown suffix matches Confirm / Not this person on that person.
   static Map<String, int> _computeUnconfirmedCountByPerson(
-    List<PersonAppearance> assignedAccountWide,
+    List<PersonAppearance> assignedInFolder,
   ) {
     final counts = <String, int>{};
-    for (final a in assignedAccountWide) {
+    for (final a in assignedInFolder) {
       final pid = a.personId;
       if (pid == null || a.assignmentState != 'unconfirmed') continue;
       counts[pid] = (counts[pid] ?? 0) + 1;
@@ -2571,7 +2568,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           .where((a) => a.itemId != null && scopedIds.contains(a.itemId))
           .toList();
       final unconfirmedCountByPerson = _computeUnconfirmedCountByPerson(
-        assignedPage.appearances,
+        assignedOverview,
       );
       final unassigned = unPage.appearances
           .where((a) => a.itemId != null && scopedIds.contains(a.itemId))

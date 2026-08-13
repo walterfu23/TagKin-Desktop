@@ -17,6 +17,7 @@ might want to consider path hiearchy.
 14. all text displayed must be selectable
 15. use google as an auth provider. add other providers as well
 16. On the faces page, In the folder dropdown, it might be a good idea to separate out folders that have been fully processed from other folders. perhaps more than a simple dropdown?
+
 17. Google consent page shows Clerk wants access to the google account. look at it later. somehow it has to do with google cloud console to create/configure oath client + consent screen with app name. 
 
 18. If several faces are already grouped, because they are alike, there should be a box around them so that actions can be applied to the group, for example making a new person from the group, drag the group between trays 
@@ -27,4 +28,5 @@ might want to consider path hiearchy.
 23. add undo/redo 
 24. look at moving loose faces between trays
 25.  default Auto-confirm minimum confidence (%) of 95
+26. remove/disable the retry button once the retry is in progress. Q: what about two folders doing retry at the same time?
 

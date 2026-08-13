@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
@@ -582,5 +584,144 @@ void main() {
       controller.visibleEntries.whereType<LibraryItemEntry>(),
       hasLength(1),
     );
+  });
+
+  test('adoptItem updates processingStatus and keeps who/what', () async {
+    final failed = fixtureItem(
+      id: 'a',
+      sourceRef: 'file:///albums/x/a.jpg',
+      processingStatus: ProcessingStatus.failed,
+    );
+    final items = FakeItemsRepository(
+      items: [failed],
+      knowledgeByItemId: {
+        'a': fixtureKnowledge(
+          item: failed,
+          tags: [
+            fixtureTag(id: 'w1', itemId: 'a', dimension: 'who', value: 'Sam'),
+            fixtureTag(id: 't1', itemId: 'a', dimension: 'what', value: 'swim'),
+          ],
+        ),
+      },
+    );
+    final controller = LibraryTableController(
+      itemsRepository: items,
+      commentsRepository: FakeCommentsRepository(),
+      thumbCache: LocalThumbCache(),
+      knowledgeConcurrency: 1,
+    );
+    await controller.load();
+    await _awaitKnowledge(controller);
+
+    expect(
+      controller.allRows.single.item.processingStatus,
+      ProcessingStatus.failed,
+    );
+    expect(controller.allRows.single.who, ['Sam']);
+    expect(controller.allRows.single.what, ['swim']);
+
+    controller.adoptItem(
+      fixtureItem(
+        id: 'a',
+        sourceRef: 'file:///albums/x/a.jpg',
+        processingStatus: ProcessingStatus.tagged,
+      ),
+    );
+
+    expect(
+      controller.allRows.single.item.processingStatus,
+      ProcessingStatus.tagged,
+    );
+    expect(controller.allRows.single.who, ['Sam']);
+    expect(controller.allRows.single.what, ['swim']);
+  });
+
+  test('adoptItem insert then load keeps tagged over stale pending fetch',
+      () async {
+    final pending = fixtureItem(
+      id: 'a',
+      sourceRef: 'file:///albums/x/a.jpg',
+      processingStatus: ProcessingStatus.pending,
+    );
+    final items = FakeItemsRepository(items: [pending]);
+    final controller = LibraryTableController(
+      itemsRepository: items,
+      commentsRepository: FakeCommentsRepository(),
+      thumbCache: LocalThumbCache(),
+      knowledgeConcurrency: 1,
+    );
+    await controller.load();
+    expect(
+      controller.allRows.single.item.processingStatus,
+      ProcessingStatus.pending,
+    );
+
+    controller.adoptItem(
+      fixtureItem(
+        id: 'a',
+        sourceRef: 'file:///albums/x/a.jpg',
+        processingStatus: ProcessingStatus.tagged,
+      ),
+    );
+    await controller.load();
+
+    expect(
+      controller.allRows.single.item.processingStatus,
+      ProcessingStatus.tagged,
+    );
+  });
+
+  test('adoptItem inserts a row when the id is not loaded yet', () async {
+    final items = FakeItemsRepository();
+    final controller = LibraryTableController(
+      itemsRepository: items,
+      commentsRepository: FakeCommentsRepository(),
+      thumbCache: LocalThumbCache(),
+      knowledgeConcurrency: 1,
+    );
+    await controller.load();
+    expect(controller.allRows, isEmpty);
+
+    controller.adoptItem(
+      fixtureItem(
+        id: 'new_item',
+        processingStatus: ProcessingStatus.tagged,
+      ),
+    );
+    expect(controller.allRows, hasLength(1));
+    expect(controller.allRows.single.item.id, 'new_item');
+    expect(
+      controller.allRows.single.item.processingStatus,
+      ProcessingStatus.tagged,
+    );
+  });
+
+  test('refresh after first load does not set loading', () async {
+    final pending = fixtureItem(id: 'a');
+    var gate = Completer<void>();
+    var lists = 0;
+    final items = FakeItemsRepository(
+      items: [pending],
+      onListItems: () async {
+        lists++;
+        if (lists > 1) await gate.future;
+      },
+    );
+    final controller = LibraryTableController(
+      itemsRepository: items,
+      commentsRepository: FakeCommentsRepository(),
+      thumbCache: LocalThumbCache(),
+      knowledgeConcurrency: 1,
+    );
+    await controller.load();
+    expect(controller.loading, isFalse);
+    expect(controller.hasLoadedOnce, isTrue);
+
+    final second = controller.load();
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.loading, isFalse);
+    gate.complete();
+    await second;
+    expect(controller.loading, isFalse);
   });
 }

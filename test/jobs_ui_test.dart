@@ -83,6 +83,60 @@ void main() {
     expect(find.byKey(const Key('job-state-completed')), findsOneWidget);
   });
 
+  testWidgets(
+      'Retry failed job refreshes folder table status when returning',
+      (tester) async {
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final item = fixtureItem(
+      id: 'item_fail',
+      analysisRef: 'ref_fail',
+      analysisRefState: AnalysisRefState.ready,
+      processingStatus: ProcessingStatus.failed,
+    );
+    final items = FakeItemsRepository(items: [item]);
+    final jobs = FakeJobsRepository(
+      itemId: 'item_fail',
+      item: item,
+      jobs: [
+        fixtureJob(
+          id: 'job_fail',
+          itemId: 'item_fail',
+          state: JobState.failed,
+        ),
+      ],
+      onAnalyzed: items.replaceItem,
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: _overrides(items: items, jobs: jobs),
+        child: const TagKinDesktopApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('processing-status-failed')), findsOneWidget);
+
+    await tester.ensureVisible(find.byKey(const Key('item-what-item_fail')));
+    await tester.tap(find.byKey(const Key('item-what-item_fail')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('item-retry-job')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('item-retry-job')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('job-state-completed')), findsOneWidget);
+
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('item-row-item_fail')), findsOneWidget);
+    expect(find.byKey(const Key('processing-status-tagged')), findsOneWidget);
+    expect(find.byKey(const Key('processing-status-failed')), findsNothing);
+  });
+
   testWidgets('Analyze is disabled for video items (R9)', (tester) async {
     final item = fixtureItem(id: 'item_v', type: ItemType.video);
     await tester.pumpWidget(

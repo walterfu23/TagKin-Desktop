@@ -4107,7 +4107,7 @@ void main() {
 
   testWidgets(
       'face crop trays: person dropdown flags unconfirmed faces '
-      'account-wide, even outside the current folder',
+      'in the current folder only',
       (tester) async {
     final persons = FakePersonsRepository(
       persons: [
@@ -4127,8 +4127,8 @@ void main() {
                 xMax: 0.4,
               ),
             ),
-            // Unconfirmed, but on an item outside the current folder scope —
-            // still flagged since the marker is account-wide.
+            // Unconfirmed, but on an item outside the current folder —
+            // must not inflate the dropdown (Assigned is folder-scoped).
             fixtureAppearance(
               id: 'ap_out',
               personId: 'person_1',
@@ -4153,6 +4153,7 @@ void main() {
               personId: 'person_2',
               itemId: 'item_b',
               tagId: 'tag_b',
+              assignmentState: 'unconfirmed',
               region: const TagRegion(
                 yMin: 0.2,
                 xMin: 0.2,
@@ -4180,18 +4181,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Sam has an unconfirmed face on item_out, which is outside this folder;
-    // the closed dropdown's collapsed selection already flags it.
-    expect(
-      find.text('Sam · in folder · 1 unconfirmed'),
-      findsWidgets,
-    );
+    // Sam's only in-folder face is confirmed; out-of-folder unconfirmed
+    // does not show on the closed dropdown.
+    expect(find.text('Sam · in folder · 1 unconfirmed'), findsNothing);
+    expect(find.text('Sam · in folder'), findsWidgets);
 
     await tester.tap(find.byKey(const Key('face-crop-person-select')));
     await tester.pumpAndSettle();
 
-    // Alex has no unconfirmed faces anywhere — no suffix added.
-    expect(find.text('Alex · in folder'), findsWidgets);
     expect(
       tester
           .widget<Text>(
@@ -4200,7 +4197,7 @@ void main() {
             ),
           )
           .data,
-      'Sam · in folder · 1 unconfirmed',
+      'Sam · in folder',
     );
     expect(
       tester
@@ -4210,7 +4207,7 @@ void main() {
             ),
           )
           .data,
-      'Alex · in folder',
+      'Alex · in folder · 1 unconfirmed',
     );
   });
 }

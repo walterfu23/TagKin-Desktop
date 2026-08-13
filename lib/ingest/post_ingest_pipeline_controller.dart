@@ -38,8 +38,11 @@ class AnalyzeOutcome {
 
 /// Chains client pre-pass → upload → photo analyze after batch `POST /items`.
 ///
-/// Upload + analyze are skipped when [usageBlocked] is true (D6). Analyze is
-/// photo-only (R9). Continues past per-item failures within each stage.
+/// One item at a time (pre-pass → upload → analyze) so peak memory stays
+/// near a single file and the first tagged row can appear before later
+/// items start. Upload + analyze are skipped when [usageBlocked] is true
+/// (D6). Analyze is photo-only (R9). Continues past per-item failures
+/// within each stage.
 class PostIngestPipelineController extends ChangeNotifier {
   PostIngestPipelineController({
     required this.prePass,
@@ -57,6 +60,10 @@ class PostIngestPipelineController extends ChangeNotifier {
   List<AnalyzeOutcome> analyzeOutcomes = const [];
   Object? error;
   bool _started = false;
+
+  /// 1-based index of the item currently in the chain; 0 before start.
+  int itemIndex = 0;
+  int itemTotal = 0;
 
   bool get isBusy =>
       phase == PostIngestPipelinePhase.runningPrePass ||
@@ -77,71 +84,97 @@ class PostIngestPipelineController extends ChangeNotifier {
           phase == PostIngestPipelinePhase.error) &&
       (hasStageFailures || phase == PostIngestPipelinePhase.skippedUpload);
 
-  /// Starts the chain once per ingest session. No-ops if already started or
-  /// there are no successful creates.
+  /// Starts the chain once per ingest session. Processes one item fully
+  /// (pre-pass → upload → analyze) before the next so peak memory stays
+  /// near a single file. No-ops if already started.
   Future<void> start({
     required List<IngestOutcome> ingestOutcomes,
-    required bool usageBlocked,
+    bool usageBlocked = false,
+    bool Function()? isUsageBlocked,
   }) async {
     if (_started || phase != PostIngestPipelinePhase.idle) return;
     _started = true;
     await _run(
       ingestOutcomes: ingestOutcomes,
-      usageBlocked: usageBlocked,
+      isUsageBlocked: () => usageBlocked || (isUsageBlocked?.call() ?? false),
     );
   }
 
   /// Re-runs the full chain after a partial failure or usage skip.
   Future<void> retryFailed({
     required List<IngestOutcome> ingestOutcomes,
-    required bool usageBlocked,
+    bool usageBlocked = false,
+    bool Function()? isUsageBlocked,
   }) async {
     if (isBusy || !canRetry) return;
     prePass.reset();
     upload.reset();
     analyzeOutcomes = const [];
+    itemIndex = 0;
+    itemTotal = 0;
     error = null;
     _started = true;
     phase = PostIngestPipelinePhase.idle;
     notifyListeners();
     await _run(
       ingestOutcomes: ingestOutcomes,
-      usageBlocked: usageBlocked,
+      isUsageBlocked: () => usageBlocked || (isUsageBlocked?.call() ?? false),
     );
   }
 
   Future<void> _run({
     required List<IngestOutcome> ingestOutcomes,
-    required bool usageBlocked,
+    required bool Function() isUsageBlocked,
   }) async {
     final succeeded =
         ingestOutcomes.where((o) => o.succeeded && o.item != null).toList();
+    itemTotal = succeeded.length;
+    itemIndex = 0;
     if (succeeded.isEmpty) {
       phase = PostIngestPipelinePhase.done;
       notifyListeners();
       return;
     }
 
-    try {
-      phase = PostIngestPipelinePhase.runningPrePass;
-      notifyListeners();
-      await prePass.run(ingestOutcomes);
+    prePass.reset();
+    upload.reset();
+    analyzeOutcomes = const [];
+    var skipPaid = isUsageBlocked();
+    var anyPaid = false;
 
-      if (usageBlocked) {
-        phase = PostIngestPipelinePhase.skippedUpload;
+    try {
+      for (final one in succeeded) {
+        itemIndex++;
+        phase = PostIngestPipelinePhase.runningPrePass;
         notifyListeners();
-        return;
+        await prePass.run([one], append: true);
+
+        skipPaid = skipPaid || isUsageBlocked();
+        if (skipPaid) {
+          prePass.frameSamplesByItemId.clear();
+          continue;
+        }
+
+        phase = PostIngestPipelinePhase.runningUpload;
+        notifyListeners();
+        await upload.run(
+          prePass.outcomes
+              .where((o) => o.itemId == one.item!.id)
+              .toList(),
+          prePass.frameSamplesByItemId,
+          append: true,
+        );
+        anyPaid = true;
+
+        phase = PostIngestPipelinePhase.runningAnalyze;
+        notifyListeners();
+        await _analyzePhotos([one]);
+        prePass.frameSamplesByItemId.clear();
       }
 
-      phase = PostIngestPipelinePhase.runningUpload;
-      notifyListeners();
-      await upload.run(prePass.outcomes, prePass.frameSamplesByItemId);
-
-      phase = PostIngestPipelinePhase.runningAnalyze;
-      notifyListeners();
-      await _analyzePhotos(ingestOutcomes);
-
-      phase = PostIngestPipelinePhase.done;
+      phase = !anyPaid && skipPaid
+          ? PostIngestPipelinePhase.skippedUpload
+          : PostIngestPipelinePhase.done;
       notifyListeners();
     } catch (e) {
       error = e;
@@ -155,28 +188,34 @@ class PostIngestPipelineController extends ChangeNotifier {
       for (final o in ingestOutcomes)
         if (o.item != null) o.item!.id: o.item!.type,
     };
+    final currentIds = typeById.keys.toSet();
     final photoUploads = upload.outcomes
         .where(
-          (o) => o.succeeded && typeById[o.itemId] == ItemType.photo,
+          (o) =>
+              o.succeeded &&
+              currentIds.contains(o.itemId) &&
+              typeById[o.itemId] == ItemType.photo,
         )
         .toList();
 
-    final newOutcomes = <AnalyzeOutcome>[];
+    final newOutcomes = List<AnalyzeOutcome>.from(analyzeOutcomes);
     for (final uploadOutcome in photoUploads) {
       try {
         final result =
             await jobsRepository.analyzeItem(uploadOutcome.itemId);
-        try {
-          await whoFaceLinker.linkWhoFacesForItem(result.item);
-        } catch (_) {
-          // Best-effort; analyze already succeeded.
-        }
         newOutcomes.add(
           AnalyzeOutcome(
             itemId: uploadOutcome.itemId,
             item: result.item,
           ),
         );
+        analyzeOutcomes = List.unmodifiable(newOutcomes);
+        notifyListeners();
+        try {
+          await whoFaceLinker.linkWhoFacesForItem(result.item);
+        } catch (_) {
+          // Best-effort; analyze already succeeded.
+        }
       } catch (e) {
         newOutcomes.add(
           AnalyzeOutcome(
@@ -184,9 +223,9 @@ class PostIngestPipelineController extends ChangeNotifier {
             error: e,
           ),
         );
+        analyzeOutcomes = List.unmodifiable(newOutcomes);
+        notifyListeners();
       }
-      analyzeOutcomes = List.unmodifiable(newOutcomes);
-      notifyListeners();
     }
   }
 
@@ -194,6 +233,8 @@ class PostIngestPipelineController extends ChangeNotifier {
     _started = false;
     phase = PostIngestPipelinePhase.idle;
     analyzeOutcomes = const [];
+    itemIndex = 0;
+    itemTotal = 0;
     error = null;
     notifyListeners();
   }

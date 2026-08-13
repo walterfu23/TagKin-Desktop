@@ -183,22 +183,29 @@ class UploadController extends ChangeNotifier {
 
   /// Runs upload for every succeeded pre-pass outcome. Continues past
   /// individual failures so one bad file doesn't abort the batch.
+  ///
+  /// When [append] is true, keeps prior [outcomes] so a per-item pipeline
+  /// can accumulate results across calls.
   Future<void> run(
     List<PrePassOutcome> prePassOutcomes,
-    Map<String, List<FrameSample>> frameSamplesByItemId,
-  ) async {
+    Map<String, List<FrameSample>> frameSamplesByItemId, {
+    bool append = false,
+  }) async {
     final succeeded =
         prePassOutcomes.where((o) => o.succeeded).toList();
     if (succeeded.isEmpty) {
       phase = UploadPhase.done;
-      outcomes = const [];
+      if (!append) {
+        outcomes = const [];
+      }
       notifyListeners();
       return;
     }
 
     phase = UploadPhase.running;
     error = null;
-    final newOutcomes = <UploadOutcome>[];
+    final newOutcomes =
+        append ? List<UploadOutcome>.from(outcomes) : <UploadOutcome>[];
     notifyListeners();
 
     for (final prePass in succeeded) {

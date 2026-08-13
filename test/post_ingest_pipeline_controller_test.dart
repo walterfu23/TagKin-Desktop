@@ -100,6 +100,74 @@ void main() {
       expect(pipeline.canRetry, isFalse);
     });
 
+    test('finishes one item before the next pre-pass', () async {
+      final photo = fixtureItem(id: 'item_1', type: ItemType.photo);
+      final photo2 = fixtureItem(id: 'item_3', type: ItemType.photo);
+      final items = FakeItemsRepository(items: [photo, photo2]);
+      final events = <String>[];
+      final jobs = _SelectiveAnalyzeJobs(
+        onAnalyze: (id) async {
+          events.add('analyze:$id');
+          return AnalyzeResultResponse(
+            item: fixtureItem(id: id, type: ItemType.photo),
+            tagIds: const [],
+            provider: 'stub',
+            modelId: 'stub',
+            escalated: false,
+          );
+        },
+      );
+      final prePass = PrePassController(
+        itemsRepository: items,
+        buildPayload: ({
+          required path,
+          required type,
+          faceEmbedder,
+          skipFaces = false,
+          maxFrames = 20,
+          minIntervalMs = 1000,
+          maxIntervalMs = 15000,
+          sceneCutThreshold = 0.3,
+        }) async {
+          events.add('prepass:$path');
+          return PrePassBuildResult(
+            payload: PrePassResult(
+              contentHash: 'hash',
+              appearances: [
+                PrePassAppearanceInput(
+                  embedding: List<double>.filled(512, 0.0),
+                  embeddingModelId: 'stub-face-embed-v1',
+                ),
+              ],
+            ),
+          );
+        },
+      );
+      final pipeline = PostIngestPipelineController(
+        prePass: prePass,
+        upload: _stubUpload(items),
+        jobsRepository: jobs,
+        whoFaceLinker: WhoFaceLinker(items: items),
+      );
+
+      await pipeline.start(
+        ingestOutcomes: [
+          _ingest(item: photo, path: '/a.jpg'),
+          _ingest(item: photo2, path: '/c.jpg'),
+        ],
+      );
+
+      expect(events, [
+        'prepass:/a.jpg',
+        'analyze:item_1',
+        'prepass:/c.jpg',
+        'analyze:item_3',
+      ]);
+      expect(prePass.frameSamplesByItemId, isEmpty);
+      expect(pipeline.itemIndex, 2);
+      expect(pipeline.itemTotal, 2);
+    });
+
     test('skips upload and analyze when usage is blocked', () async {
       final photo = fixtureItem(id: 'item_1', type: ItemType.photo);
       final items = FakeItemsRepository(items: [photo]);

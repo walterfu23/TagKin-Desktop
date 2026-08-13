@@ -226,6 +226,10 @@ class LibraryTableController extends ChangeNotifier {
 
   int? _loadGeneration;
 
+  /// Live ingest/retry patches. [load] must not revert these to a stale
+  /// `GET /items` snapshot (pending overlapping an in-flight analyze).
+  final Map<String, Item> _adoptedById = {};
+
   List<LibraryTableRow> get allRows => _rows;
 
   List<LibraryTableRow> get filteredSorted {
@@ -291,6 +295,45 @@ class LibraryTableController extends ChangeNotifier {
     return all.sublist(start, end);
   }
 
+  /// Replace a loaded row's [Item] (folder Retry, ingest upload/analyze).
+  /// Preserves thumbs / who / what / where already on the row.
+  /// Inserts a row when the id is not loaded yet (first fetch still in flight).
+  void adoptItem(Item item) {
+    _adoptedById[item.id] = item;
+    final idx = _rows.indexWhere((r) => r.item.id == item.id);
+    if (idx < 0) {
+      _rows = [..._rows, LibraryTableRow(item: item)];
+      notifyListeners();
+      return;
+    }
+    _replaceRow(item.id, (r) => r.copyWith(item: item));
+  }
+
+  static int _processingRank(ProcessingStatus status) {
+    switch (status) {
+      case ProcessingStatus.pending:
+        return 0;
+      case ProcessingStatus.awaitingModelAccess:
+        return 1;
+      case ProcessingStatus.processing:
+        return 2;
+      case ProcessingStatus.tagged:
+      case ProcessingStatus.failed:
+      case ProcessingStatus.cancelled:
+        return 3;
+    }
+  }
+
+  Item _resolveLiveItem(Item fetched) {
+    final adopted = _adoptedById[fetched.id];
+    if (adopted == null) return fetched;
+    if (_processingRank(adopted.processingStatus) >=
+        _processingRank(fetched.processingStatus)) {
+      return adopted;
+    }
+    return fetched;
+  }
+
   /// Item rows on the current visible page (excludes path group headers).
   List<LibraryTableRow> get pageRows {
     return [
@@ -302,9 +345,14 @@ class LibraryTableController extends ChangeNotifier {
   Future<void> load() async {
     final gen = DateTime.now().microsecondsSinceEpoch;
     _loadGeneration = gen;
-    loading = true;
-    error = null;
-    notifyListeners();
+    final showSpinner = !hasLoadedOnce;
+    if (showSpinner) {
+      loading = true;
+      error = null;
+      notifyListeners();
+    } else {
+      error = null;
+    }
 
     try {
       try {
@@ -314,8 +362,14 @@ class LibraryTableController extends ChangeNotifier {
         expandedWho.clear();
         expandedWhere.clear();
         expandedComments.clear();
+        final previousById = {for (final r in _rows) r.item.id: r};
         // Keep folder expand/collapse across reload (e.g. after delete).
-        _rows = items.map((item) => LibraryTableRow(item: item)).toList();
+        // Prefer live-adopted status so an overlapping GET cannot revert tagged.
+        _rows = [
+          for (final item in items)
+            previousById[item.id]?.copyWith(item: _resolveLiveItem(item)) ??
+                LibraryTableRow(item: _resolveLiveItem(item)),
+        ];
         _pruneExpandedSourceDirs();
         _autoExpandSiblingFolderParents(filteredSorted);
         pageIndex = 0;

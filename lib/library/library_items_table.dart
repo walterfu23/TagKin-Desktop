@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/processing_status_view.dart';
+import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/where/where_label_resolver.dart';
@@ -42,7 +43,10 @@ class LibraryItemsTable extends ConsumerWidget {
     required this.onDelete,
     required this.onRemoveFolder,
     required this.onRevealSource,
+    this.onRetryFolder,
     this.isFolderRemoving,
+    this.isFolderRetrying,
+    this.retryEnabled = true,
   });
 
   final LibraryTableController controller;
@@ -50,7 +54,10 @@ class LibraryItemsTable extends ConsumerWidget {
   final void Function(Item item) onDelete;
   final void Function(String dir, int count) onRemoveFolder;
   final void Function(Item item) onRevealSource;
+  final void Function(String dir)? onRetryFolder;
   final bool Function(String dir)? isFolderRemoving;
+  final bool Function(String dir)? isFolderRetrying;
+  final bool retryEnabled;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -110,13 +117,25 @@ class LibraryItemsTable extends ConsumerWidget {
                                             count: count,
                                             collapsed: collapsed,
                                             depth: depth,
+                                            failedCount: _failedCountUnder(
+                                              controller,
+                                              dir,
+                                            ),
                                             onToggle: () => controller
                                                 .toggleCollapseSourceDir(dir),
                                             onRemoveFolder: () =>
                                                 onRemoveFolder(dir, count),
+                                            onRetryFolder: onRetryFolder ==
+                                                    null
+                                                ? null
+                                                : () => onRetryFolder!(dir),
                                             removing: isFolderRemoving
                                                     ?.call(dir) ??
                                                 false,
+                                            retrying: isFolderRetrying
+                                                    ?.call(dir) ??
+                                                false,
+                                            retryEnabled: retryEnabled,
                                           ),
                                         LibraryItemEntry(
                                           :final row,
@@ -146,6 +165,19 @@ class LibraryItemsTable extends ConsumerWidget {
       },
     );
   }
+}
+
+int _failedCountUnder(LibraryTableController controller, String dir) {
+  final items = [for (final row in controller.allRows) row.item];
+  final ids = itemIdsUnderFolder(items, dir);
+  var n = 0;
+  for (final item in items) {
+    if (ids.contains(item.id) &&
+        item.processingStatus == ProcessingStatus.failed) {
+      n++;
+    }
+  }
+  return n;
 }
 
 class _HeaderRow extends StatelessWidget {
@@ -320,9 +352,13 @@ class _PathGroupHeader extends StatelessWidget {
     required this.count,
     required this.collapsed,
     required this.depth,
+    required this.failedCount,
     required this.onToggle,
     required this.onRemoveFolder,
+    this.onRetryFolder,
     required this.removing,
+    required this.retrying,
+    required this.retryEnabled,
   });
 
   final int index;
@@ -331,9 +367,13 @@ class _PathGroupHeader extends StatelessWidget {
   final int count;
   final bool collapsed;
   final int depth;
+  final int failedCount;
   final VoidCallback onToggle;
   final VoidCallback onRemoveFolder;
+  final VoidCallback? onRetryFolder;
   final bool removing;
+  final bool retrying;
+  final bool retryEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -427,20 +467,48 @@ class _PathGroupHeader extends StatelessWidget {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         ),
                       )
-                    : SureActionButton(
-                        idleKey: Key('source-group-remove-$dir'),
-                        confirmKey: Key('source-group-remove-confirm-$dir'),
-                        tooltip: 'Remove folder',
-                        confirmSemanticsLabel: 'Confirm remove folder',
-                        icon: const Icon(Icons.folder_off_outlined, size: 18),
-                        iconSize: 18,
-                        visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 32,
-                          minHeight: 32,
-                        ),
-                        onConfirm: onRemoveFolder,
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (retrying)
+                            const SizedBox(
+                              width: 32,
+                              height: 32,
+                              child: Padding(
+                                padding: EdgeInsets.all(8),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            )
+                          else if (failedCount > 0)
+                            TextButton(
+                              key: Key('source-group-retry-$dir'),
+                              onPressed: retryEnabled
+                                  ? onRetryFolder
+                                  : null,
+                              child: const Text('Retry'),
+                            ),
+                          SureActionButton(
+                            idleKey: Key('source-group-remove-$dir'),
+                            confirmKey:
+                                Key('source-group-remove-confirm-$dir'),
+                            tooltip: 'Remove folder',
+                            confirmSemanticsLabel: 'Confirm remove folder',
+                            icon: const Icon(
+                              Icons.folder_off_outlined,
+                              size: 18,
+                            ),
+                            iconSize: 18,
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
+                            onConfirm: onRemoveFolder,
+                          ),
+                        ],
                       ),
               ],
             ),

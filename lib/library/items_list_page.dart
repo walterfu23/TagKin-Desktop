@@ -11,6 +11,8 @@ import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/source_reveal.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
+import 'package:tagkin_desktop/persons/who_face_linker.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/usage/usage_banner.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
@@ -33,6 +35,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
   int _lastRemoveRefreshTick = 0;
   FolderIngestQueue? _ingestQueue;
   FolderRemoveQueue? _removeQueue;
+  final Set<String> _retryingFolders = {};
 
   @override
   void initState() {
@@ -104,7 +107,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
 
   Future<void> _openDetail(Item item) async {
     final container = ProviderScope.containerOf(context);
-    final deleted = await Navigator.of(context).push<bool>(
+    await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
         builder: (_) => SelectableScope(
           child: UncontrolledProviderScope(
@@ -114,9 +117,12 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
         ),
       ),
     );
-    if (deleted == true) {
-      _retry();
-    }
+    if (!mounted) return;
+    // Always reload: Retry/Analyze/Cancel/Re-upload change processingStatus
+    // on the server, but this table still holds the Item from the last
+    // listItems(). Reloading only after delete left the folder view showing
+    // "failed" after a successful retry.
+    _retry();
   }
 
   Future<void> _removeItemFromList(Item item) async {
@@ -174,6 +180,86 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
         ),
       );
     }
+  }
+
+  Future<void> _retryFailedInFolder(String dir) async {
+    if (_retryingFolders.contains(dir)) return;
+    final usage = ref.read(usageControllerProvider);
+    if (usage.gate.blocked) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          key: Key('folder-retry-blocked'),
+          content: Text('Budget pause blocks new analyze.'),
+        ),
+      );
+      return;
+    }
+
+    final table = ref.read(libraryTableControllerProvider);
+    final items = [for (final row in table.allRows) row.item];
+    final ids = itemIdsUnderFolder(items, dir);
+    final toRetry = [
+      for (final item in items)
+        if (ids.contains(item.id) &&
+            item.processingStatus == ProcessingStatus.failed &&
+            item.type == ItemType.photo &&
+            item.analysisRefState == AnalysisRefState.ready)
+          item,
+    ];
+    if (toRetry.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          key: Key('folder-retry-none'),
+          content: Text('No failed photos in this folder to retry.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _retryingFolders.add(dir));
+    final jobs = ref.read(jobsRepositoryProvider);
+    final prefs = ref.read(desktopPrefsProvider);
+    final linker = WhoFaceLinker(
+      items: ref.read(itemsRepositoryProvider),
+      autoConfirmMinConfidencePercent:
+          prefs.autoConfirmHighConfidencePersonMatches
+              ? prefs.autoConfirmMinConfidencePercent
+              : null,
+    );
+    var succeeded = 0;
+    var stillFailed = 0;
+    for (final item in toRetry) {
+      try {
+        final result = await jobs.analyzeItem(item.id);
+        succeeded++;
+        if (!mounted) return;
+        // Flip this row failed → tagged before face-link / the rest of the
+        // batch so the Folders table does not wait for the whole retry.
+        table.adoptItem(result.item);
+        try {
+          await linker.linkWhoFacesForItem(result.item);
+        } catch (_) {
+          // Linking is best-effort; analyze already succeeded.
+        }
+      } catch (_) {
+        stillFailed++;
+      }
+    }
+    if (!mounted) return;
+    setState(() => _retryingFolders.remove(dir));
+    _retry();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        key: const Key('folder-retry-done'),
+        content: Text(
+          stillFailed == 0
+              ? 'Retried $succeeded item(s).'
+              : 'Retried $succeeded item(s); $stillFailed still failed.',
+        ),
+      ),
+    );
   }
 
   Future<void> _revealSource(Item item) async {
@@ -282,7 +368,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
                   ],
                 ),
               ),
-              Expanded(child: _buildBody(table)),
+              Expanded(child: _buildBody(table, retryEnabled: !blocked)),
             ],
           ),
         );
@@ -290,7 +376,10 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     );
   }
 
-  Widget _buildBody(LibraryTableController table) {
+  Widget _buildBody(
+    LibraryTableController table, {
+    required bool retryEnabled,
+  }) {
     if (table.loading && table.allRows.isEmpty) {
       return const Center(
         child: CircularProgressIndicator(key: Key('items-loading')),
@@ -339,7 +428,10 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
           onDelete: _removeItemFromList,
           onRemoveFolder: _removeFolderFromList,
           onRevealSource: _revealSource,
+          onRetryFolder: _retryFailedInFolder,
           isFolderRemoving: removeQueue.isRemoving,
+          isFolderRetrying: _retryingFolders.contains,
+          retryEnabled: retryEnabled,
         );
       },
     );

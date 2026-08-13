@@ -81,3 +81,47 @@ String leafFolderLabel(String folder) {
   final base = p.basename(folder);
   return base.isEmpty ? folder : base;
 }
+
+/// Drop folders that sit under another selected folder.
+List<String> minimalCoveringFolders(Iterable<String> folders) {
+  final unique = {
+    for (final f in folders)
+      if (f.isNotEmpty) p.normalize(f),
+  }.toList()
+    ..sort();
+  return [
+    for (final folder in unique)
+      if (!unique.any(
+        (other) => other != folder && pathIsUnderFolder(folder, other),
+      ))
+        folder,
+  ];
+}
+
+/// Ingest roots that cover [items]: longest bookmarked ancestor, else leaf
+/// parent, then collapsed so nested paths are not separate jobs.
+List<String> coveringFoldersForItems(
+  Iterable<Item> items, {
+  Iterable<String> bookmarkedFolders = const [],
+}) {
+  final bookmarks = [
+    for (final f in bookmarkedFolders)
+      if (f.isNotEmpty) p.normalize(f),
+  ];
+  final roots = <String>{};
+  for (final item in items) {
+    final path = localPathFromSourceRef(item.sourceRef);
+    if (path == null || path.isEmpty) continue;
+    final normalized = p.normalize(path);
+    String? best;
+    for (final folder in bookmarks) {
+      if (pathIsUnderFolder(normalized, folder)) {
+        if (best == null || folder.length > best.length) best = folder;
+      }
+    }
+    final leaf = leafFolderFromSourceRef(item.sourceRef);
+    final root = best ?? leaf;
+    if (root != null && root.isNotEmpty) roots.add(root);
+  }
+  return minimalCoveringFolders(roots);
+}

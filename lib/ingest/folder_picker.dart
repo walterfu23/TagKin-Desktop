@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +8,36 @@ import 'package:tagkin_desktop/ingest/folder_bookmark_store.dart';
 /// Opens a native "choose folder" dialog; resolves to the picked absolute
 /// path, or `null` when the user cancels.
 typedef FolderPicker = Future<String?> Function();
+
+/// macOS sandbox / missing-folder failure while resuming ingest.
+class FolderAccessException implements Exception {
+  FolderAccessException(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
+
+/// Restore read access before scan/hash/upload (crash resume).
+///
+/// macOS: start the persisted security-scoped bookmark. Windows: folder
+/// must still exist.
+Future<void> ensureIngestFolderAccess(String folderPath) async {
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
+    final bookmark = await folderBookmarkStore.bookmarkForFile(folderPath);
+    if (bookmark == null) {
+      throw FolderAccessException(
+        'Add this folder again to continue ingest.',
+      );
+    }
+    await SecurityScopedBookmarks.startAccess(bookmark);
+    return;
+  }
+  if (!Directory(folderPath).existsSync()) {
+    throw FolderAccessException(
+      'Add this folder again to continue ingest.',
+    );
+  }
+}
 
 /// macOS: NSOpenPanel + security-scoped bookmark persistence.
 /// Other platforms: [FilePicker.platform.getDirectoryPath].
