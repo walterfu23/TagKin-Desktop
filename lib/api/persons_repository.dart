@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 
@@ -16,13 +14,7 @@ class PersonsRepository {
   /// `GET /persons` — owner-scoped (R10).
   Future<List<Person>> listPersons() async {
     final response = await _client.get('/persons');
-    final json = jsonDecode(response.body);
-    if (json is! List<dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected /persons response shape',
-      );
-    }
+    final json = _client.decodeList(response, '/persons');
     return json
         .map((e) => Person.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -32,13 +24,7 @@ class PersonsRepository {
   /// Never returns likeness vectors (R1).
   Future<PersonDetail> getPerson(String personId) async {
     final response = await _client.get('/persons/$personId');
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected /persons/{id} response shape',
-      );
-    }
+    final json = _client.decodeMap(response, '/persons/{id}');
     return PersonDetail.fromJson(json);
   }
 
@@ -49,13 +35,7 @@ class PersonsRepository {
       '/persons/$personId',
       body: RenamePerson(name: name).toJson(),
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected rename-person response shape',
-      );
-    }
+    final json = _client.decodeMap(response, 'rename-person');
     return Person.fromJson(json);
   }
 
@@ -65,13 +45,7 @@ class PersonsRepository {
     final response = await _client.post(
       '/persons/appearances/$appearanceId/unlink',
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected unlink-appearance response shape',
-      );
-    }
+    final json = _client.decodeMap(response, 'unlink-appearance');
     return PersonAppearance.fromJson(json);
   }
 
@@ -91,13 +65,7 @@ class PersonsRepository {
       '/persons/appearances/$appearanceId/reassign',
       body: ReassignAppearance(personId: personId, name: name).toJson(),
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected reassign-appearance response shape',
-      );
-    }
+    final json = _client.decodeMap(response, 'reassign-appearance');
     return PersonAppearance.fromJson(json);
   }
 
@@ -109,13 +77,7 @@ class PersonsRepository {
     final response = await _client.post(
       '/persons/appearances/$appearanceId/confirm',
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected confirm-appearance response shape',
-      );
-    }
+    final json = _client.decodeMap(response, 'confirm-appearance');
     return PersonAppearance.fromJson(json);
   }
 
@@ -127,13 +89,7 @@ class PersonsRepository {
     final response = await _client.post(
       '/persons/appearances/$appearanceId/decline-auto-assign',
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected decline-auto-assign response shape',
-      );
-    }
+    final json = _client.decodeMap(response, 'decline-auto-assign');
     return PersonAppearance.fromJson(json);
   }
 
@@ -150,13 +106,7 @@ class PersonsRepository {
         appearanceIds: appearanceIds,
       ).toJson(),
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected decline-auto-assign response shape',
-      );
-    }
+    final json = _client.decodeMap(response, 'decline-auto-assign');
     return DeclineAutoAssignAppearancesResponse.fromJson(json).appearances;
   }
 
@@ -168,13 +118,7 @@ class PersonsRepository {
     final response = await _client.post(
       '/persons/appearances/$appearanceId/unconfirm',
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected unconfirm-appearance response shape',
-      );
-    }
+    final json = _client.decodeMap(response, 'unconfirm-appearance');
     return PersonAppearance.fromJson(json);
   }
 
@@ -194,13 +138,7 @@ class PersonsRepository {
       '/persons/face-groups/$faceGroupId/assign',
       body: AssignFaceGroup(personId: personId, name: name).toJson(),
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected assign-face-group response shape',
-      );
-    }
+    final json = _client.decodeMap(response, 'assign-face-group');
     return PersonDetail.fromJson(json);
   }
 
@@ -213,13 +151,7 @@ class PersonsRepository {
       '/persons/appearances/unassign',
       body: UnassignAppearances(appearanceIds: appearanceIds).toJson(),
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected unassign-appearances response shape',
-      );
-    }
+    final json = _client.decodeMap(response, 'unassign-appearances');
     return UnassignAppearancesResponse.fromJson(json).appearances;
   }
 
@@ -231,13 +163,7 @@ class PersonsRepository {
       '/persons/appearances/assemble',
       body: AssembleAppearances(appearanceIds: appearanceIds).toJson(),
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected assemble-appearances response shape',
-      );
-    }
+    final json = _client.decodeMap(response, 'assemble-appearances');
     return AssembleAppearancesResponse.fromJson(json);
   }
 
@@ -249,13 +175,7 @@ class PersonsRepository {
       '/persons/exclusions/assemble',
       body: AssembleExclusions(exclusionIds: exclusionIds).toJson(),
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected assemble-exclusions response shape',
-      );
-    }
+    final json = _client.decodeMap(response, 'assemble-exclusions');
     return AssembleExclusionsResponse.fromJson(json);
   }
 
@@ -264,13 +184,7 @@ class PersonsRepository {
     final response = await _client.post(
       '/persons/face-groups/$faceGroupId/ungroup',
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected ungroup-face-group response shape',
-      );
-    }
+    final json = _client.decodeMap(response, 'ungroup-face-group');
     return UngroupFaceGroupResponse.fromJson(json);
   }
 
@@ -286,13 +200,7 @@ class PersonsRepository {
         'offset': '$offset',
       },
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected unassigned-appearances response shape',
-      );
-    }
+    final json = _client.decodeMap(response, 'unassigned-appearances');
     return UnassignedAppearancesPage.fromJson(json);
   }
 
@@ -308,13 +216,7 @@ class PersonsRepository {
         'offset': '$offset',
       },
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected assigned-appearances response shape',
-      );
-    }
+    final json = _client.decodeMap(response, 'assigned-appearances');
     return AssignedAppearancesPage.fromJson(json);
   }
 
@@ -330,18 +232,26 @@ class PersonsRepository {
         'offset': '$offset',
       },
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected account-exclusions response shape',
-      );
-    }
+    final json = _client.decodeMap(response, 'account-exclusions');
     return AccountWhoExclusionsPage.fromJson(json);
   }
 
   /// `DELETE /persons/{id}` — dissolve person; appearances become unassigned (R6).
   Future<void> deletePerson(String personId) async {
     await _client.delete('/persons/$personId');
+  }
+
+  /// `POST /persons/{id}/merge` — move every appearance onto [targetPersonId],
+  /// then delete this person (R6). Does not unassign faces.
+  Future<PersonDetail> mergePerson(
+    String personId,
+    String targetPersonId,
+  ) async {
+    final response = await _client.post(
+      '/persons/$personId/merge',
+      body: MergePerson(targetPersonId: targetPersonId).toJson(),
+    );
+    final json = _client.decodeMap(response, 'merge-person');
+    return PersonDetail.fromJson(json);
   }
 }

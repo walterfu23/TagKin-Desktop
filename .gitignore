@@ -48,6 +48,6 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Face ONNX weights (fetch via mac/103_fetch_face_models.sh)
+# Face ONNX weights (fetch via mac/119_fetch_face_models.sh)
 assets/models/*.onnx
 

@@ -515,6 +515,283 @@ void main() {
       find.byKey(const Key('face-crop-person-rename-start')),
       findsOneWidget,
     );
+    expect(persons.renameCalls, isNotEmpty);
+    expect(persons.renameCalls.single.personId, 'person_named');
+  });
+
+  testWidgets(
+      'face crop trays: rename in folder2 splits shared person',
+      (tester) async {
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: 'Person1',
+          appearances: [
+            fixtureAppearance(
+              id: 'faces1',
+              personId: 'person_1',
+              itemId: 'item_f1',
+              tagId: 'tag_f1',
+            ),
+            fixtureAppearance(
+              id: 'faces2',
+              personId: 'person_1',
+              itemId: 'item_f2',
+              tagId: 'tag_f2',
+            ),
+          ],
+        ),
+      ],
+    );
+    final items = FakeItemsRepository(
+      items: [
+        fixtureItem(
+          id: 'item_f1',
+          sourceRef: 'file:///albums/folder1/a.jpg',
+          processingStatus: ProcessingStatus.tagged,
+          contentHash: null,
+        ),
+        fixtureItem(
+          id: 'item_f2',
+          sourceRef: 'file:///albums/folder2/b.jpg',
+          processingStatus: ProcessingStatus.tagged,
+          contentHash: null,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          itemsRepositoryProvider.overrideWithValue(items),
+        ],
+        child: const MaterialApp(
+          home: FaceCropTraysPage(
+            initialPersonId: 'person_1',
+            initialLeafFolder: '/albums/folder2',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('face-crop-person-rename-start')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('face-crop-person-rename')),
+      'Person2',
+    );
+    await tester.tap(find.byKey(const Key('face-crop-person-rename-done')));
+    await tester.pumpAndSettle();
+
+    expect(persons.renameCalls, isEmpty);
+    final original = await persons.getPerson('person_1');
+    expect(original.name, 'Person1');
+    expect(original.appearances.map((a) => a.id), ['faces1']);
+    expect(find.byKey(const Key('face-crop-person-name')), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('face-crop-person-name'))).data,
+      'Person2',
+    );
+    expect(
+      persons.personDetails.where((p) => p.name == 'Person2'),
+      hasLength(1),
+    );
+    final minted = persons.personDetails.singleWhere((p) => p.name == 'Person2');
+    expect(minted.appearances.map((a) => a.id), ['faces2']);
+  });
+
+  testWidgets(
+      'face crop trays: rename collision merges folder faces only',
+      (tester) async {
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: 'Person1',
+          appearances: [
+            fixtureAppearance(
+              id: 'faces1',
+              personId: 'person_1',
+              itemId: 'item_f1',
+              tagId: 'tag_f1',
+            ),
+            fixtureAppearance(
+              id: 'faces2',
+              personId: 'person_1',
+              itemId: 'item_f2',
+              tagId: 'tag_f2',
+            ),
+          ],
+        ),
+        fixturePersonDetail(
+          id: 'person_2',
+          name: 'Person2',
+          appearances: [
+            fixtureAppearance(
+              id: 'faces_p2',
+              personId: 'person_2',
+              itemId: 'item_f2b',
+              tagId: 'tag_f2b',
+            ),
+          ],
+        ),
+      ],
+    );
+    final items = FakeItemsRepository(
+      items: [
+        fixtureItem(
+          id: 'item_f1',
+          sourceRef: 'file:///albums/folder1/a.jpg',
+          processingStatus: ProcessingStatus.tagged,
+          contentHash: null,
+        ),
+        fixtureItem(
+          id: 'item_f2',
+          sourceRef: 'file:///albums/folder2/b.jpg',
+          processingStatus: ProcessingStatus.tagged,
+          contentHash: null,
+        ),
+        fixtureItem(
+          id: 'item_f2b',
+          sourceRef: 'file:///albums/folder2/c.jpg',
+          processingStatus: ProcessingStatus.tagged,
+          contentHash: null,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          itemsRepositoryProvider.overrideWithValue(items),
+        ],
+        child: const MaterialApp(
+          home: FaceCropTraysPage(
+            initialPersonId: 'person_1',
+            initialLeafFolder: '/albums/folder2',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('face-crop-person-rename-start')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('face-crop-person-rename')),
+      'person2',
+    );
+    await tester.tap(find.byKey(const Key('face-crop-person-rename-done')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('face-crop-rename-collision')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('face-crop-rename-collision-merge')));
+    await tester.pumpAndSettle();
+
+    expect(persons.mergeCalls, isEmpty);
+    final original = await persons.getPerson('person_1');
+    expect(original.name, 'Person1');
+    expect(original.appearances.map((a) => a.id), ['faces1']);
+    final target = await persons.getPerson('person_2');
+    expect(target.appearances.map((a) => a.id), containsAll(['faces_p2', 'faces2']));
+    expect(persons.personDetails.where((p) => p.id.startsWith('person_new')), isEmpty);
+  });
+
+  testWidgets(
+      'face crop trays: rename collision other name stays in rename',
+      (tester) async {
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: 'Person1',
+          appearances: [
+            fixtureAppearance(
+              id: 'faces1',
+              personId: 'person_1',
+              itemId: 'item_f1',
+              tagId: 'tag_f1',
+            ),
+            fixtureAppearance(
+              id: 'faces2',
+              personId: 'person_1',
+              itemId: 'item_f2',
+              tagId: 'tag_f2',
+            ),
+          ],
+        ),
+        fixturePersonDetail(
+          id: 'person_2',
+          name: 'Person2',
+          appearances: [
+            fixtureAppearance(
+              id: 'faces_p2',
+              personId: 'person_2',
+              itemId: 'item_f2b',
+              tagId: 'tag_f2b',
+            ),
+          ],
+        ),
+      ],
+    );
+    final items = FakeItemsRepository(
+      items: [
+        fixtureItem(
+          id: 'item_f1',
+          sourceRef: 'file:///albums/folder1/a.jpg',
+          processingStatus: ProcessingStatus.tagged,
+          contentHash: null,
+        ),
+        fixtureItem(
+          id: 'item_f2',
+          sourceRef: 'file:///albums/folder2/b.jpg',
+          processingStatus: ProcessingStatus.tagged,
+          contentHash: null,
+        ),
+        fixtureItem(
+          id: 'item_f2b',
+          sourceRef: 'file:///albums/folder2/c.jpg',
+          processingStatus: ProcessingStatus.tagged,
+          contentHash: null,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          itemsRepositoryProvider.overrideWithValue(items),
+        ],
+        child: const MaterialApp(
+          home: FaceCropTraysPage(
+            initialPersonId: 'person_1',
+            initialLeafFolder: '/albums/folder2',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('face-crop-person-rename-start')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('face-crop-person-rename')),
+      'Person2',
+    );
+    await tester.tap(find.byKey(const Key('face-crop-person-rename-done')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const Key('face-crop-rename-collision-other-name')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('face-crop-person-rename')), findsOneWidget);
+    expect(persons.reassignCalls, isEmpty);
+    expect(persons.renameCalls, isEmpty);
   });
 
   testWidgets(

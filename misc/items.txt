@@ -1,32 +1,44 @@
-1. the full folder path and file names should remain in the desktop, perhaps as table columns.
+Status vs current code (2026-08-12). [not yet implemented] = not in the tree. [done] = in the tree (product still under development).
+
+1. [not yet implemented] the full folder path and file names should remain in the desktop, perhaps as table columns.
 table columns: path, file name, vid/photo, len, tags, ingestion date, status
 might want to consider path hiearchy.
 
-2. direct edit any entry in the table
-3. does not seem to work. what about manual linking
-4. no square box associating person with the box. 
-5. where: should show city, state, and country (if different than the current country)
-6. where: restaurant. should also show city, state.
-7. when add from folder is used to add items, should automatically run client pre-pass, upload for analysis, done, and analyze for all items. the user should not have to explicitly initiate these tasks
-8. The number of lines per-page: needs to be a setting 
-9. include user first name, last name from clerk
-10. add tagging of videos. add settings about sample duration.
-11. after removing an item, everything collapses
-12. faces vs face crops
-13. faces from the same folder, they are more likely to be assigned to persons from the same folder as well.
-14. all text displayed must be selectable
-15. use google as an auth provider. add other providers as well
-16. On the faces page, In the folder dropdown, it might be a good idea to separate out folders that have been fully processed from other folders. perhaps more than a simple dropdown?
+2. [not yet implemented] direct edit any entry in the table
+3. [not yet implemented] does not seem to work. what about manual linking
+4. [done] no square box associating person with the box. (review overlays when Tag.region is present; Settings default on)
+5. [not yet implemented] where: should show city, state, and country (if different than the current country) — needs GPS reverse-geocode
+6. [not yet implemented] where: restaurant. should also show city, state. — needs GPS reverse-geocode
+7. [done] when add from folder is used to add items, should automatically run client pre-pass, upload for analysis, done, and analyze for all items. the user should not have to explicitly initiate these tasks (photos; videos still skip analyze)
+8. [done] The number of lines per-page: needs to be a setting
+9. [not yet implemented] include user first name, last name from clerk
+10. [not yet implemented] add tagging of videos. [done] add settings about sample duration.
+11. [not yet implemented] after removing an item, everything collapses
+12. [done] faces vs face crops
+13. [not yet implemented] faces from the same folder, they are more likely to be assigned to persons from the same folder as well.
+14. [done] all text displayed must be selectable
+15. [not yet implemented] use google as an auth provider. add other providers as well (Google via Clerk is in tree; additional IdPs are not)
+16. [not yet implemented] On the faces page, In the folder dropdown, it might be a good idea to separate out folders that have been fully processed from other folders. perhaps more than a simple dropdown?
 
-17. Google consent page shows Clerk wants access to the google account. look at it later. somehow it has to do with google cloud console to create/configure oath client + consent screen with app name. 
+17. [not yet implemented] Google consent page shows Clerk wants access to the google account. look at it later. somehow it has to do with google cloud console to create/configure oath client + consent screen with app name.
 
-18. If several faces are already grouped, because they are alike, there should be a box around them so that actions can be applied to the group, for example making a new person from the group, drag the group between trays 
-19. add more into settings.
-20. use sliders in settings when possible.
+18. [done] If several faces are already grouped, because they are alike, there should be a box around them so that actions can be applied to the group, for example making a new person from the group, drag the group between trays
+19. [not yet implemented] add more into settings.
+20. [done] use sliders in settings when possible.
 21. Need to consider where persons, faces live. Right now they are under an account, stored in Postgress on the server.
-22. If desktop is running, it prevents the shutdown on match
-23. add undo/redo 
-24. look at moving loose faces between trays
-25.  default Auto-confirm minimum confidence (%) of 95
-26. remove/disable the retry button once the retry is in progress. Q: what about two folders doing retry at the same time?
+22. [not yet implemented] If desktop is running, it prevents the shutdown on match
+23. [done] add undo/redo
+24. [done] look at moving loose faces between trays
+25. [done] default Auto-confirm minimum confidence (%) of 95
+26. [done] remove/disable the retry button once the retry is in progress. Q: what about two folders doing retry at the same time?
 
+From Specs.md (not yet implemented; not already covered above):
+- user-cloud ingest (Specs 6.2B)
+- browse / filter / search by person, activity, place, date, key period, comment text, source, state
+- comment search (CRUD exists)
+- item title, duration, dimensions
+- account deletion; retention controls
+- voiceprint on PersonAppearance
+- 2FA as a TagKin-enforced path
+- OpenAI / Mistral / Claude TaggingProviders (Gemini only)
+- soft budget warn → pause; usage spent/reserved/limit meters

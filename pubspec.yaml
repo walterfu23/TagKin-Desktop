@@ -38,8 +38,6 @@ dependencies:
   # Shared state management (D0 foundation; see .cursorrules Architecture).
   flutter_riverpod: ^2.5.1
 
-  # Reads the shared @tagkin/contract OpenAPI for the Dart model generator (R2).
-  yaml: ^3.1.2
   http: ^1.6.0
   flutter_secure_storage: ^10.3.1
   clerk_auth: 0.0.18-beta
@@ -83,6 +81,8 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  # Reads the shared @tagkin/contract OpenAPI for the Dart model generator (R2).
+  yaml: ^3.1.2
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -95,7 +95,7 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # Face models (ONNX weights gitignored — fetch via mac/117_fetch_face_models.sh,
+  # Face models (ONNX weights gitignored — fetch via mac/119_fetch_face_models.sh,
   # then full rebuild so Flutter bundles them for sandboxed macOS).
   assets:
     - assets/models/README.md

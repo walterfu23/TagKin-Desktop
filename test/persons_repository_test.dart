@@ -350,6 +350,36 @@ void main() {
       }
       client.close();
     });
+
+    test('mergePerson posts targetPersonId — no owner (R10)', () async {
+      final mock = MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/persons/person_1/merge');
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body.keys.toSet(), {'targetPersonId'});
+        expect(body['targetPersonId'], 'person_2');
+        expect(body.containsKey('ownerUserId'), isFalse);
+        return http.Response(
+          jsonEncode(_personDetailJson(id: 'person_2', name: 'Alex')),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      final client = ApiClient(
+        baseUrl: 'http://api.test',
+        tokenProvider: () => 'tok',
+        httpClient: mock,
+      )..recordRequests = true;
+      final detail = await PersonsRepository(client).mergePerson(
+        'person_1',
+        'person_2',
+      );
+      expect(detail.id, 'person_2');
+      for (final r in client.recordedRequests) {
+        expect(r.bodyContainsOwnerField, isFalse);
+      }
+      client.close();
+    });
   });
 
   group('ItemsRepository.linkPeopleForItem', () {

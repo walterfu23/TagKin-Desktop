@@ -92,8 +92,12 @@ enum AnalysisRefState {
 
   final String wire;
 
-  static AnalysisRefState fromWire(String value) =>
-      values.firstWhere((e) => e.wire == value);
+  static AnalysisRefState fromWire(String value) {
+    for (final e in values) {
+      if (e.wire == value) return e;
+    }
+    throw FormatException('Unknown AnalysisRefState: $value');
+  }
 
   @override
   String toString() => wire;
@@ -645,8 +649,12 @@ enum FaceGroupKind {
 
   final String wire;
 
-  static FaceGroupKind fromWire(String value) =>
-      values.firstWhere((e) => e.wire == value);
+  static FaceGroupKind fromWire(String value) {
+    for (final e in values) {
+      if (e.wire == value) return e;
+    }
+    throw FormatException('Unknown FaceGroupKind: $value');
+  }
 
   @override
   String toString() => wire;
@@ -786,8 +794,12 @@ enum ItemType {
 
   final String wire;
 
-  static ItemType fromWire(String value) =>
-      values.firstWhere((e) => e.wire == value);
+  static ItemType fromWire(String value) {
+    for (final e in values) {
+      if (e.wire == value) return e;
+    }
+    throw FormatException('Unknown ItemType: $value');
+  }
 
   @override
   String toString() => wire;
@@ -846,8 +858,12 @@ enum JobKind {
 
   final String wire;
 
-  static JobKind fromWire(String value) =>
-      values.firstWhere((e) => e.wire == value);
+  static JobKind fromWire(String value) {
+    for (final e in values) {
+      if (e.wire == value) return e;
+    }
+    throw FormatException('Unknown JobKind: $value');
+  }
 
   @override
   String toString() => wire;
@@ -867,8 +883,12 @@ enum JobState {
 
   final String wire;
 
-  static JobState fromWire(String value) =>
-      values.firstWhere((e) => e.wire == value);
+  static JobState fromWire(String value) {
+    for (final e in values) {
+      if (e.wire == value) return e;
+    }
+    throw FormatException('Unknown JobState: $value');
+  }
 
   @override
   String toString() => wire;
@@ -991,8 +1011,12 @@ enum KnowledgeSource {
 
   final String wire;
 
-  static KnowledgeSource fromWire(String value) =>
-      values.firstWhere((e) => e.wire == value);
+  static KnowledgeSource fromWire(String value) {
+    for (final e in values) {
+      if (e.wire == value) return e;
+    }
+    throw FormatException('Unknown KnowledgeSource: $value');
+  }
 
   @override
   String toString() => wire;
@@ -1012,6 +1036,24 @@ class LinkPeopleResponse {
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{};
     json['appearances'] = appearances.map((e) => e.toJson()).toList();
+    return json;
+  }
+}
+
+class MergePerson {
+  const MergePerson({
+    required this.targetPersonId,
+  });
+
+  final String targetPersonId;
+
+  factory MergePerson.fromJson(Map<String, dynamic> json) => MergePerson(
+        targetPersonId: json['targetPersonId'] as String,
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['targetPersonId'] = targetPersonId;
     return json;
   }
 }
@@ -1280,8 +1322,12 @@ enum ProcessingStatus {
 
   final String wire;
 
-  static ProcessingStatus fromWire(String value) =>
-      values.firstWhere((e) => e.wire == value);
+  static ProcessingStatus fromWire(String value) {
+    for (final e in values) {
+      if (e.wire == value) return e;
+    }
+    throw FormatException('Unknown ProcessingStatus: $value');
+  }
 
   @override
   String toString() => wire;
@@ -1404,8 +1450,12 @@ enum SourceType {
 
   final String wire;
 
-  static SourceType fromWire(String value) =>
-      values.firstWhere((e) => e.wire == value);
+  static SourceType fromWire(String value) {
+    for (final e in values) {
+      if (e.wire == value) return e;
+    }
+    throw FormatException('Unknown SourceType: $value');
+  }
 
   @override
   String toString() => wire;
@@ -1564,8 +1614,12 @@ enum TagStatus {
 
   final String wire;
 
-  static TagStatus fromWire(String value) =>
-      values.firstWhere((e) => e.wire == value);
+  static TagStatus fromWire(String value) {
+    for (final e in values) {
+      if (e.wire == value) return e;
+    }
+    throw FormatException('Unknown TagStatus: $value');
+  }
 
   @override
   String toString() => wire;

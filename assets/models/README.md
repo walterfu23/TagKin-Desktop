@@ -3,10 +3,10 @@
 Run from `TagKin-Desktop/mac/`:
 
 ```bash
-./117_fetch_face_models.sh
+./119_fetch_face_models.sh
 ```
 
-(Windows: `TagKin-Desktop/win/117_fetch_face_models.ps1`.)
+(Windows: `TagKin-Desktop/win/119_fetch_face_models.ps1`.)
 
 Then **fully rebuild** the app (`./11_dev.sh` / quit + relaunch) so Flutter
 bundles the weights. Hot reload/restart is **not** enough after a first fetch.

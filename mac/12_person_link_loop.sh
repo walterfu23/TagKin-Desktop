@@ -13,7 +13,7 @@
 # Success: one suggested person has appearances on every loop item (cross-item
 # consolidation). Extra suggested persons from other faces in group shots OK.
 #
-# Prerequisites: API stack up, Gemini configured, face ONNX via 117_fetch_face_models.sh.
+# Prerequisites: API stack up, Gemini configured, face ONNX via 119_fetch_face_models.sh.
 # Does not confirm persons (R6). Never commits tokens.
 #
 # Note: macOS App Sandbox cannot write the shell's /tmp status file. The Dart

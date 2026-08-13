@@ -14,13 +14,7 @@ Write-Host '==> flutter test (unit/widget + D12 undo)'
 flutter test test/undo/undo_controller_test.dart test/review_controller_test.dart test/knowledge_corrections_ui_test.dart
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host '==> R8 secret scan (lib/ must not contain sk_test_/sk_live_/CLERK_SECRET_KEY)'
-$hits = Select-String -Path (Join-Path $global:TagKinDesktopRoot 'lib\**\*.dart') -Pattern 'sk_test_|sk_live_|CLERK_SECRET_KEY|GEMINI_API_KEY' -ErrorAction SilentlyContinue
-if ($hits) {
-  Write-Host 'error: forbidden secret pattern found under lib/'
-  $hits | ForEach-Object { Write-Host $_ }
-  exit 1
-}
+Invoke-TagKinR8SecretScan
 
 Write-Host '==> integration smoke (knowledge corrections + screen undo on Windows)'
 flutter test integration_test/knowledge_corrections_test.dart -d windows

@@ -10,6 +10,7 @@ import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/where/where_label_resolver.dart';
 import 'package:tagkin_desktop/where/where_place_label.dart';
+import 'package:tagkin_desktop/ui/design_tokens.dart';
 import 'package:tagkin_desktop/widgets/sure_action_button.dart';
 
 const double _kThumbSize = 56;
@@ -32,7 +33,7 @@ const double _kTableMinWidth = _kColFile +
     _kColActions;
 
 /// Slight grey for even (1-based) rows — index.isOdd in 0-based list.
-const Color _kZebraRow = Color(0xFFF3F4F6);
+const Color _kZebraRow = TagKinTokens.zebraRow;
 
 /// Wide multi-column library table (D2 post-v1).
 class LibraryItemsTable extends ConsumerWidget {

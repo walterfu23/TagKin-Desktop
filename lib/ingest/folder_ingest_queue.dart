@@ -185,6 +185,11 @@ class FolderIngestQueue extends ChangeNotifier {
   int _libraryRefreshTick = 0;
   bool _disposed = false;
   bool _restoreStarted = false;
+  static const int _maxParallelJobs = 2;
+  int _inFlightJobs = 0;
+  final List<Completer<void>> _jobWaiters = [];
+  List<Item>? _itemsCache;
+  DateTime? _itemsCacheAt;
 
   /// Last [Item.processingStatus] pushed via [onItemUpdated], so upload then
   /// analyze can both patch the same row without repeating a no-op.
@@ -201,16 +206,15 @@ class FolderIngestQueue extends ChangeNotifier {
 
   static String normalizePath(String path) => p.normalize(path);
 
-  /// Whether Faces should hide [path] while this job is still scanning or
-  /// registering items (not during per-item processing).
-  static bool hidesFacesFolder(FolderIngestJobPhase phase) =>
-      phase == FolderIngestJobPhase.scanning ||
-      phase == FolderIngestJobPhase.registering;
-
-  /// Whether [path] (ingest root or a nested Faces leaf) is still registering.
+  /// Whether Faces should hide a folder for this job phase.
   ///
-  /// Only scanning/registering hide the folder — once items exist, Faces may
-  /// list the leaf during analyze.
+  /// True for every in-flight phase; Faces lists the leaf only after `done`
+  /// or `error` (failed jobs should still reveal whatever items exist).
+  static bool hidesFacesFolder(FolderIngestJobPhase phase) =>
+      phase != FolderIngestJobPhase.done &&
+      phase != FolderIngestJobPhase.error;
+
+  /// Whether [path] (ingest root or a nested Faces leaf) is still ingesting.
   bool isLoadingPath(String path) {
     final normalized = normalizePath(path);
     return _jobs.any(
@@ -296,7 +300,7 @@ class FolderIngestQueue extends ChangeNotifier {
   /// Pipeline unfinished library items on sign-in (no re-scan / re-create).
   Future<void> restoreIncompleteFromLibrary() async {
     if (_disposed) return;
-    final items = await itemsRepository.listItems();
+    final items = await _listItemsCached();
     if (_disposed) return;
     final incomplete = items.where(_pipelineIncomplete);
     final bookmarks = await bookmarkedFolders?.call() ?? const <String>[];
@@ -348,6 +352,10 @@ class FolderIngestQueue extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    for (final waiter in _jobWaiters) {
+      if (!waiter.isCompleted) waiter.complete();
+    }
+    _jobWaiters.clear();
     super.dispose();
   }
 
@@ -367,8 +375,49 @@ class FolderIngestQueue extends ChangeNotifier {
     _jobs = [..._jobs, job];
     _safeNotify();
     await _checkpointAdd(normalized);
-    unawaited(_runJob(job));
+    unawaited(_runJobGuarded(job));
     return FolderIngestEnqueueResult.started;
+  }
+
+  Future<void> _acquireJobSlot() async {
+    if (_inFlightJobs < _maxParallelJobs) {
+      _inFlightJobs++;
+      return;
+    }
+    final waiter = Completer<void>();
+    _jobWaiters.add(waiter);
+    await waiter.future;
+    _inFlightJobs++;
+  }
+
+  void _releaseJobSlot() {
+    _inFlightJobs--;
+    if (_jobWaiters.isNotEmpty) {
+      _jobWaiters.removeAt(0).complete();
+    }
+  }
+
+  Future<void> _runJobGuarded(FolderIngestJob job) async {
+    await _acquireJobSlot();
+    try {
+      if (_disposed) return;
+      await _runJob(job);
+    } finally {
+      _releaseJobSlot();
+    }
+  }
+
+  Future<List<Item>> _listItemsCached() async {
+    final now = DateTime.now();
+    if (_itemsCache != null &&
+        _itemsCacheAt != null &&
+        now.difference(_itemsCacheAt!) < const Duration(seconds: 5)) {
+      return _itemsCache!;
+    }
+    final items = await itemsRepository.listItems();
+    _itemsCache = items;
+    _itemsCacheAt = now;
+    return items;
   }
 
   void dismissJob(FolderIngestJob job) {
@@ -417,7 +466,7 @@ class FolderIngestQueue extends ChangeNotifier {
         );
       }
 
-      final existingItems = await itemsRepository.listItems();
+      final existingItems = await _listItemsCached();
       if (_disposed) return;
       final existingSourcePaths = <String>{
         for (final item in existingItems)
@@ -448,6 +497,8 @@ class FolderIngestQueue extends ChangeNotifier {
         if (_disposed) return;
         final path = candidate.candidate.path;
         try {
+          _itemsCache = null;
+          _itemsCacheAt = null;
           final item = await itemsRepository.createItem(
             CreateItem(
               type: candidate.candidate.type,
@@ -493,7 +544,7 @@ class FolderIngestQueue extends ChangeNotifier {
   }
 
   Future<List<IngestOutcome>> _continueOutcomes(FolderIngestJob job) async {
-    final existingItems = await itemsRepository.listItems();
+    final existingItems = await _listItemsCached();
     if (_disposed) return const [];
     final outcomes = <IngestOutcome>[];
     for (final item in existingItems) {
@@ -521,8 +572,8 @@ class FolderIngestQueue extends ChangeNotifier {
         return;
       }
 
-      // Leave registering before publish so isLoadingPath clears and Faces
-      // can list the new leaf during processing.
+      // Adopt collection membership now; Faces still hides via isLoadingPath
+      // until this job reaches done/error.
       job.phase = FolderIngestJobPhase.processing;
       job.pipelineDone = 0;
       job.pipelineTotal = succeeded;

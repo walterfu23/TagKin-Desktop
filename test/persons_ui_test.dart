@@ -44,6 +44,42 @@ void main() {
     expect(find.byKey(const Key('person-row-person_c')), findsOneWidget);
   });
 
+  testWidgets(
+      'persons list reloads when returning to the Persons tab after a rename',
+      (tester) async {
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(id: 'person_s', name: 'Sam'),
+      ],
+    );
+    final container = ProviderContainer(
+      overrides: [
+        personsRepositoryProvider.overrideWithValue(persons),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: PersonsListPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Sam'), findsOneWidget);
+
+    await persons.renamePerson('person_s', 'Riley');
+    container.read(activeTopLevelTabProvider.notifier).state =
+        TopLevelTab.faces;
+    await tester.pump();
+    container.read(activeTopLevelTabProvider.notifier).state =
+        TopLevelTab.persons;
+    await tester.pumpAndSettle();
+
+    expect(find.text('Riley'), findsOneWidget);
+    expect(find.text('Sam'), findsNothing);
+  });
+
   testWidgets('person detail: rename round-trips', (tester) async {
     final persons = FakePersonsRepository(
       persons: [
@@ -77,6 +113,57 @@ void main() {
 
     expect(find.text('Samantha'), findsOneWidget);
     expect(persons.renameCalls.single.name, 'Samantha');
+  });
+
+  testWidgets('person detail: rename onto existing name offers merge',
+      (tester) async {
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: 'Sam',
+          appearances: [
+            fixtureAppearance(id: 'ap_s', personId: 'person_1'),
+          ],
+        ),
+        fixturePersonDetail(
+          id: 'person_2',
+          name: 'Alex',
+          appearances: [
+            fixtureAppearance(id: 'ap_a', personId: 'person_2'),
+          ],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+        ],
+        child: const MaterialApp(
+          home: PersonDetailPage(personId: 'person_1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('person-rename')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('person-rename-field')),
+      'alex',
+    );
+    await tester.tap(find.byKey(const Key('person-rename-done')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('face-crop-rename-collision')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('face-crop-rename-collision-merge')));
+    await tester.pumpAndSettle();
+
+    expect(persons.mergeCalls, hasLength(1));
+    expect(persons.mergeCalls.single.personId, 'person_1');
+    expect(persons.mergeCalls.single.targetPersonId, 'person_2');
+    expect(persons.renameCalls, isEmpty);
   });
 
   testWidgets('person detail: rename requires a non-empty name (R2)',

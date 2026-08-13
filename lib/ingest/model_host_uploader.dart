@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -35,15 +36,17 @@ Future<ModelHostUploadResult> putBytesToUploadUrl({
   final ownsClient = httpClient == null;
   try {
     final uri = Uri.parse(uploadUrl);
-    final response = await client.put(
-      uri,
-      headers: {
-        'Content-Type': mimeType,
-        'X-Goog-Upload-Command': 'upload, finalize',
-        'X-Goog-Upload-Offset': '0',
-      },
-      body: bytes,
-    );
+    final response = await client
+        .put(
+          uri,
+          headers: {
+            'Content-Type': mimeType,
+            'X-Goog-Upload-Command': 'upload, finalize',
+            'X-Goog-Upload-Offset': '0',
+          },
+          body: bytes,
+        )
+        .timeout(const Duration(minutes: 2));
     final rawBody = response.body;
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ModelHostUploadException(

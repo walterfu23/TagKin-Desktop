@@ -8,7 +8,7 @@ MAC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=_env.sh
 source "${MAC_DIR}/_env.sh"
 
-"${MAC_DIR}/111_clear_secure_store.sh"
+"${MAC_DIR}/118_clear_secure_store.sh"
 
 ENV_FILE="${TAGKIN_DESKTOP_ROOT}/.env"
 if [[ -f "${ENV_FILE}" ]]; then

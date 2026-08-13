@@ -27,7 +27,7 @@ Do **not** run `_env.ps1` — it is dot-sourced by the numbered scripts.
 
 ## Naming: subsystem test scripts
 
-Subsystem regression entry points use **`NNN_test_dN.ps1`** (`d0`, `d1`, … `d11`) in the **101+** band, matching the desktop subsystems in [`../../TagKin/Docs/Desktop_Subsystems_v1.md`](../../TagKin/Docs/Desktop_Subsystems_v1.md). Keep the `win/*.ps1` and `mac/*.sh` sets at identical numbers. Examples: `106_test_d0.ps1`, `107_test_d1.ps1`.
+Subsystem regression entry points use **`NNN_test_dN.ps1`** (`d0`, `d1`, … `d12`) in the **101+** band, matching the desktop subsystems in [`../../TagKin/Docs/Desktop_Subsystems_v1.md`](../../TagKin/Docs/Desktop_Subsystems_v1.md). Keep the `win/*.ps1` and `mac/*.sh` sets at identical numbers. Examples: `106_test_d0.ps1`, `107_test_d1.ps1`, `117_test_d12.ps1`. D11 (packaging/signing) has no bar yet.
 
 ## Scripts
 
@@ -38,9 +38,11 @@ Subsystem regression entry points use **`NNN_test_dN.ps1`** (`d0`, `d1`, … `d1
 | [`103_clerk-env.ps1`](./103_clerk-env.ps1) | Interactive Clerk publishable-key + API URL into `.env` (D1; never secret key). |
 | [`104_analyze.ps1`](./104_analyze.ps1) | Static analysis bar (`flutter analyze`). |
 | [`105_fetch_ffmpeg.ps1`](./105_fetch_ffmpeg.ps1) | Download ffmpeg+ffprobe into `third_party/ffmpeg/windows/` for embedding next to the exe (D4; end users never install ffmpeg). |
-| [`111_clear_secure_store.ps1`](./111_clear_secure_store.ps1) | Wipe Credential Manager entries for `tagkin.desktop.secure` (D1; force clean sign-in). |
+| [`118_clear_secure_store.ps1`](./118_clear_secure_store.ps1) | Wipe Credential Manager entries for `tagkin.desktop.secure` (D1; force clean sign-in). |
+| [`119_fetch_face_models.ps1`](./119_fetch_face_models.ps1) | Download InsightFace ONNX weights for cross-photo person linking (optional; large). |
 | [`122_wipe_Devtime.ps1`](./122_wipe_Devtime.ps1) | **Devtime only.** Wipe collections, prefs, bookmarks, and Credential Manager session (`CONFIRM=1`). Pair with `TagKin/mac/122_wipe_Devtime.sh` for Postgres. Does not delete media or face models. |
-| [`11_dev.ps1`](./11_dev.ps1) | Run the app on Windows (`flutter run -d windows`). |
+| [`11_dev.ps1`](./11_dev.ps1) | Clear secure store, then run the app on Windows (`flutter run -d windows`). |
+| [`12_person_link_loop.ps1`](./12_person_link_loop.ps1) | Ops: delete suggested persons → re-analyze item ids → who-face link; repeat until Persons consolidate (max 20). Needs `TAGKIN_API_TOKEN` + `TAGKIN_LOOP_ITEM_IDS`. |
 | [`51_test_all.ps1`](./51_test_all.ps1) | All completed desktop subsystem bars in order (`106_test_d0`, `107_test_d1`, `108_test_d2`, …). Before a PR. |
 | [`106_test_d0.ps1`](./106_test_d0.ps1) | D0 Foundation regression bar alone. |
 | [`107_test_d1.ps1`](./107_test_d1.ps1) | D1 Auth & Account regression bar alone. |
@@ -53,3 +55,4 @@ Subsystem regression entry points use **`NNN_test_dN.ps1`** (`d0`, `d1`, … `d1
 | [`114_test_d8.ps1`](./114_test_d8.ps1) | D8 Review UI (item detail + key-period scrub) regression bar alone. |
 | [`115_test_d9.ps1`](./115_test_d9.ps1) | D9 Person Linking UI regression bar alone. |
 | [`116_test_d10.ps1`](./116_test_d10.ps1) | D10 Knowledge Corrections & Comments UI regression bar alone. |
+| [`117_test_d12.ps1`](./117_test_d12.ps1) | D12 Per-screen Undo/Redo regression bar alone. |

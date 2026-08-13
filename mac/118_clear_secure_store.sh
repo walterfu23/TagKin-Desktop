@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 111_clear_secure_store.sh — wipe D1 Keychain entries for
+# 118_clear_secure_store.sh — wipe D1 Keychain entries for
 # service "tagkin.desktop.secure" (FlutterSecureStorage / Clerk session).
 #
 # Use when macOS keeps prompting for Keychain access, after a bad session,

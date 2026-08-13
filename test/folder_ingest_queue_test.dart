@@ -206,7 +206,7 @@ void main() {
     }
   });
 
-  test('isLoadingPath only during scanning and registering', () async {
+  test('isLoadingPath while any ingest phase is still active', () async {
     final items = FakeItemsRepository();
     final jobs = FakeJobsRepository();
     var releaseScan = false;
@@ -235,14 +235,26 @@ void main() {
     );
     expect(
       FolderIngestQueue.hidesFacesFolder(FolderIngestJobPhase.analyze),
-      isFalse,
+      isTrue,
     );
     expect(
       FolderIngestQueue.hidesFacesFolder(FolderIngestJobPhase.processing),
-      isFalse,
+      isTrue,
     );
     expect(
       FolderIngestQueue.hidesFacesFolder(FolderIngestJobPhase.prePass),
+      isTrue,
+    );
+    expect(
+      FolderIngestQueue.hidesFacesFolder(FolderIngestJobPhase.upload),
+      isTrue,
+    );
+    expect(
+      FolderIngestQueue.hidesFacesFolder(FolderIngestJobPhase.done),
+      isFalse,
+    );
+    expect(
+      FolderIngestQueue.hidesFacesFolder(FolderIngestJobPhase.error),
       isFalse,
     );
 

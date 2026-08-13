@@ -69,8 +69,31 @@ jobs:
       - name: unit / widget tests
         run: flutter test
 
-      - name: integration smoke (foundation boot)
-        run: flutter test integration_test/app_test.dart -d ${{ matrix.flutter_device }}
+      # Local bars (`51_test_all`) re-run analyze + unit tests per subsystem.
+      # CI runs those once, then the unique bar coverage: R8 + every integration_test.
+      - name: R8 secret scan
+        shell: bash
+        run: |
+          if grep -R -n -E 'sk_test_|sk_live_|CLERK_SECRET_KEY|GEMINI_API_KEY' lib/ >/dev/null 2>&1; then
+            echo "error: forbidden secret pattern found under lib/" >&2
+            grep -R -n -E 'sk_test_|sk_live_|CLERK_SECRET_KEY|GEMINI_API_KEY' lib/ >&2 || true
+            exit 1
+          fi
+
+      - name: integration tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          tests=( integration_test/*.dart )
+          if [[ ${#tests[@]} -eq 0 ]]; then
+            echo "error: no integration_test/*.dart files found" >&2
+            exit 1
+          fi
+          for f in "${tests[@]}"; do
+            echo "==> $f"
+            flutter test "$f" -d ${{ matrix.flutter_device }}
+          done
 
       - name: build smoke
         run: flutter build ${{ matrix.build_target }} --debug

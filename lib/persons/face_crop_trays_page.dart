@@ -4,15 +4,20 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
+import 'package:tagkin_desktop/persons/confirm_remove_person_dialog.dart';
+import 'package:tagkin_desktop/persons/face_crop/face_crop_focus.dart';
 import 'package:tagkin_desktop/persons/face_crop_drag.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/persons/person_detail_controller.dart';
+import 'package:tagkin_desktop/persons/person_name.dart';
+import 'package:tagkin_desktop/persons/person_name_collision_dialog.dart';
 import 'package:tagkin_desktop/persons/person_name_dialog.dart';
 import 'package:tagkin_desktop/persons/who_exclusion_crop_thumb.dart';
 import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
@@ -21,34 +26,7 @@ import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 import 'package:tagkin_desktop/undo/undoable_action.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
-/// Menu actions for the Faces collection chrome.
-/// Request to focus the (already-mounted) Faces trays on a person / folder.
-///
-/// Written by [openFaceCropTrays]; consumed by [FaceCropTraysPage] via
-/// [faceCropFocusRequestProvider]. [nonce] makes repeated identical focuses
-/// distinguishable so the listener always fires.
-class FaceCropFocusRequest {
-  const FaceCropFocusRequest({
-    this.personId,
-    this.leafFolder,
-    required this.nonce,
-  });
-
-  final String? personId;
-  final String? leafFolder;
-  final int nonce;
-}
-
-int _faceCropFocusNonce = 0;
-
-/// Pending focus for the Faces tab (null when idle).
-final faceCropFocusRequestProvider = StateProvider<FaceCropFocusRequest?>(
-  (ref) => null,
-);
-
-/// Registered by [FaceCropTraysPage] while mounted; invoked by AppShell Cmd+A
-/// when the Faces tab is active (focus-independent).
-VoidCallback? facesSelectAllLooseHandler;
+export 'face_crop/face_crop_focus.dart';
 
 /// One successful tray move — enough to patch local lists without a full reload.
 class _FaceMoveResult {
@@ -853,9 +831,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     }
     _lastIngestRefreshTick = tick;
     _lastIngestHadActiveJobs = active;
-    // Mid-ingest: folders stay hidden via isLoadingPath only while
-    // scanning/registering. When registering finishes (or a new job starts),
-    // quietly refresh the Faces picker.
+    // Mid-ingest: folders stay hidden via isLoadingPath until the job
+    // finishes. When a job ends (or a new one starts), quietly refresh.
     unawaited(_refreshFoldersQuietly());
   }
 
@@ -980,8 +957,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         }
       }
       final items = await itemsRepo.listItems();
-      // Hide leaf folders only while scanning/registering — items may exist
-      // once registering finishes; Faces may list them during analyze.
+      // Hide leaf folders until the covering ingest job finishes.
       final allFolders = [
         for (final f in distinctLeafFolders(items))
           if (ingestQueue == null || !ingestQueue.isLoadingPath(f)) f,
@@ -1512,14 +1488,15 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   /// "unnamed" mint step.
   Future<void> _setNameFromAppearance(String appearanceId) async {
     if (_busy) return;
-    final name = await showPersonNameDialog(context);
-    if (name == null || !mounted) return;
+    final resolved = await _promptUniquePersonName();
+    if (resolved == null || !mounted) return;
     setState(() => _busy = true);
     try {
       final persons = ref.read(personsRepositoryProvider);
       final updated = await persons.reassignAppearance(
         appearanceId,
-        name: name,
+        name: resolved.name,
+        personId: resolved.personId,
       );
       final newId = updated.personId;
       if (newId != null) {
@@ -1538,7 +1515,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           onRedo: () async {
             final restored = await persons.reassignAppearance(
               appearanceId,
-              name: name,
+              name: resolved.name,
+              personId: resolved.personId,
             );
             final pid = restored.personId;
             if (pid != null && mounted) {
@@ -1566,12 +1544,16 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   /// named person (R6).
   Future<void> _setFaceGroupName(String faceGroupId) async {
     if (_busy) return;
-    final name = await showPersonNameDialog(context, title: 'Name this group');
-    if (name == null || !mounted) return;
+    final resolved = await _promptUniquePersonName(title: 'Name this group');
+    if (resolved == null || !mounted) return;
     setState(() => _busy = true);
     try {
       final persons = ref.read(personsRepositoryProvider);
-      final detail = await persons.assignFaceGroup(faceGroupId, name: name);
+      final detail = await persons.assignFaceGroup(
+        faceGroupId,
+        name: resolved.name,
+        personId: resolved.personId,
+      );
       _personId = detail.id;
       final appearanceIds = [for (final a in detail.appearances) a.id];
       final tagIds = [
@@ -1611,7 +1593,11 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
             if (fg == null) {
               throw StateError('No FaceGroup to re-assign after undo');
             }
-            final again = await persons.assignFaceGroup(fg, name: name);
+            final again = await persons.assignFaceGroup(
+              fg,
+              name: resolved.name,
+              personId: resolved.personId,
+            );
             liveAppearanceIds = [for (final a in again.appearances) a.id];
             redoFaceGroupId = null;
             if (mounted) {
@@ -2733,8 +2719,12 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         var personId = _personId;
         String? createName;
         if (_assignAsNewPerson) {
-          createName = await showPersonNameDialog(context);
-          if (createName == null || !mounted) return;
+          final resolved = await _promptUniquePersonName();
+          if (resolved == null || !mounted) return;
+          createName = resolved.name;
+          if (resolved.personId != null) {
+            personId = resolved.personId;
+          }
         } else if (personId == null) {
           failed = toApply.length;
           lastError = StateError('Select a person before assigning');
@@ -3115,6 +3105,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         }
       }
 
+      if (!mounted) return;
       if (applied.isNotEmpty) {
         final selectionRestore = _applyMoveResults(
           applied,
@@ -3139,7 +3130,6 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           _selectionAnchorId = null;
         });
       }
-      if (!mounted) return;
       if (failed > 0) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -3158,29 +3148,15 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   }
 
   Future<void> _confirmRemovePerson(PersonDetailController controller) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await confirmRemovePerson(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Remove person?'),
-        content: const Text(
+      confirmKey: const Key('face-crop-person-unassign-confirm'),
+      body:
           'Removes this person. Its faces move to Unassigned '
           'so you can assign them again. To detach one face only, '
           'drag it to Unassigned.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            key: const Key('face-crop-person-unassign-confirm'),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
     final ok = await controller.unassignPerson();
     if (ok && mounted) {
       _markCollectionDirty();
@@ -3690,20 +3666,327 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           _renameController.text = detail.name;
         });
       },
-      onDoneRename: () async {
-        final ok = await controller.rename(_renameController.text);
-        if (!mounted) return;
-        if (ok) {
-          setState(() => _renaming = false);
-          final persons = await ref
-              .read(personsRepositoryProvider)
-              .listPersons();
-          if (mounted) setState(() => _persons = persons);
-        }
-      },
+      onDoneRename: () => _commitAssignedPersonName(controller),
       onCancelRename: () => setState(() => _renaming = false),
       onRemovePerson: () => _confirmRemovePerson(controller),
     );
+  }
+
+  /// Folder-local split when this person also has faces elsewhere; otherwise
+  /// PATCH rename. A taken name asks merge vs a different name.
+  Future<void> _commitAssignedPersonName(
+    PersonDetailController controller,
+  ) async {
+    final detail = controller.detail;
+    if (detail == null || _busy || controller.isBusy) return;
+    final next = _renameController.text.trim();
+    if (next.isEmpty) return;
+    if (next == detail.name) {
+      setState(() => _renaming = false);
+      return;
+    }
+
+    final inFolder = [
+      for (final a in detail.appearances)
+        if (a.itemId != null && _scopedItemIds.contains(a.itemId)) a,
+    ];
+    final elsewhere = [
+      for (final a in detail.appearances)
+        if (a.itemId == null || !_scopedItemIds.contains(a.itemId)) a,
+    ];
+    final clash = findPersonByName(_persons, next, excludeId: detail.id);
+    final split = inFolder.isNotEmpty && elsewhere.isNotEmpty;
+
+    if (clash != null) {
+      final choice = await showPersonNameCollisionDialog(
+        context,
+        existingName: clash.name,
+        mergeLabel: split
+            ? "Merge this folder's faces into them"
+            : 'Merge this person into them',
+      );
+      if (!mounted) return;
+      if (choice == PersonNameCollisionChoice.merge) {
+        if (split) {
+          await _reassignFolderFaces(
+            appearanceIds: [for (final a in inFolder) a.id],
+            fromPersonId: detail.id,
+            toPersonId: clash.id,
+            label: 'Merge folder faces',
+          );
+        } else {
+          await _mergeWholePerson(
+            sourceId: detail.id,
+            targetId: clash.id,
+            sourceName: detail.name,
+            appearanceIds: [for (final a in detail.appearances) a.id],
+          );
+        }
+      }
+      return;
+    }
+
+    if (split) {
+      await _splitFolderFacesToName(
+        appearanceIds: [for (final a in inFolder) a.id],
+        fromPersonId: detail.id,
+        name: next,
+      );
+      return;
+    }
+
+    final prior = detail.name;
+    final ok = await controller.rename(next);
+    if (!mounted) return;
+    if (!ok) return;
+    setState(() => _renaming = false);
+    final persons = await ref.read(personsRepositoryProvider).listPersons();
+    if (mounted) setState(() => _persons = persons);
+    _markCollectionDirty();
+    _undoStack.push(
+      CallbackUndoableAction(
+        label: 'Rename person',
+        onUndo: () async {
+          await controller.rename(prior);
+          _markCollectionDirty();
+          if (mounted) {
+            final list = await ref.read(personsRepositoryProvider).listPersons();
+            if (mounted) setState(() => _persons = list);
+          }
+        },
+        onRedo: () async {
+          await controller.rename(next);
+          _markCollectionDirty();
+          if (mounted) {
+            final list = await ref.read(personsRepositoryProvider).listPersons();
+            if (mounted) setState(() => _persons = list);
+          }
+        },
+      ),
+    );
+  }
+
+  Future<void> _splitFolderFacesToName({
+    required List<String> appearanceIds,
+    required String fromPersonId,
+    required String name,
+  }) async {
+    if (appearanceIds.isEmpty || _busy) return;
+    setState(() => _busy = true);
+    try {
+      final persons = ref.read(personsRepositoryProvider);
+      final first = await persons.reassignAppearance(
+        appearanceIds.first,
+        name: name,
+      );
+      var newId = first.personId;
+      if (newId == null) {
+        throw StateError('Split did not create a person');
+      }
+      for (final id in appearanceIds.skip(1)) {
+        await persons.reassignAppearance(id, personId: newId);
+      }
+      _assignedController?.dispose();
+      _assignedController = null;
+      _personId = newId;
+      _renaming = false;
+      await _reload();
+      _markCollectionDirty();
+      var liveIds = List<String>.from(appearanceIds);
+      var liveNewId = newId;
+      _undoStack.push(
+        CallbackUndoableAction(
+          label: 'Rename in folder',
+          onUndo: () async {
+            for (final id in liveIds) {
+              await persons.reassignAppearance(id, personId: fromPersonId);
+            }
+            try {
+              await persons.deletePerson(liveNewId);
+            } on ApiException catch (e) {
+              if (e.statusCode != 404) rethrow;
+            }
+            _personId = fromPersonId;
+            _markCollectionDirty();
+            await _reload();
+          },
+          onRedo: () async {
+            final created = await persons.reassignAppearance(
+              liveIds.first,
+              name: name,
+            );
+            liveNewId = created.personId ?? liveNewId;
+            liveIds = [created.id, ...liveIds.skip(1)];
+            for (final id in liveIds.skip(1)) {
+              await persons.reassignAppearance(id, personId: liveNewId);
+            }
+            _personId = liveNewId;
+            _markCollectionDirty();
+            await _reload();
+          },
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          key: const Key('face-crop-trays-error'),
+          content: Text('Rename failed: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _reassignFolderFaces({
+    required List<String> appearanceIds,
+    required String fromPersonId,
+    required String toPersonId,
+    required String label,
+  }) async {
+    if (appearanceIds.isEmpty || _busy) return;
+    setState(() => _busy = true);
+    try {
+      final persons = ref.read(personsRepositoryProvider);
+      for (final id in appearanceIds) {
+        await persons.reassignAppearance(id, personId: toPersonId);
+      }
+      _assignedController?.dispose();
+      _assignedController = null;
+      _personId = toPersonId;
+      _renaming = false;
+      await _reload();
+      _markCollectionDirty();
+      _undoStack.push(
+        CallbackUndoableAction(
+          label: label,
+          onUndo: () async {
+            for (final id in appearanceIds) {
+              await persons.reassignAppearance(id, personId: fromPersonId);
+            }
+            _personId = fromPersonId;
+            _markCollectionDirty();
+            await _reload();
+          },
+          onRedo: () async {
+            for (final id in appearanceIds) {
+              await persons.reassignAppearance(id, personId: toPersonId);
+            }
+            _personId = toPersonId;
+            _markCollectionDirty();
+            await _reload();
+          },
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          key: const Key('face-crop-trays-error'),
+          content: Text('Merge failed: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _mergeWholePerson({
+    required String sourceId,
+    required String targetId,
+    required String sourceName,
+    required List<String> appearanceIds,
+  }) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final persons = ref.read(personsRepositoryProvider);
+      await persons.mergePerson(sourceId, targetId);
+      _assignedController?.dispose();
+      _assignedController = null;
+      _personId = targetId;
+      _renaming = false;
+      await _reload();
+      _markCollectionDirty();
+      var liveSourceId = sourceId;
+      var liveIds = List<String>.from(appearanceIds);
+      _undoStack.push(
+        CallbackUndoableAction(
+          label: 'Merge person',
+          onUndo: () async {
+            if (liveIds.isEmpty) return;
+            final first = await persons.reassignAppearance(
+              liveIds.first,
+              name: sourceName,
+            );
+            liveSourceId = first.personId ?? liveSourceId;
+            liveIds = [first.id, ...liveIds.skip(1)];
+            for (final id in liveIds.skip(1)) {
+              await persons.reassignAppearance(id, personId: liveSourceId);
+            }
+            _personId = liveSourceId;
+            _markCollectionDirty();
+            await _reload();
+          },
+          onRedo: () async {
+            await persons.mergePerson(liveSourceId, targetId);
+            _personId = targetId;
+            _markCollectionDirty();
+            await _reload();
+          },
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          key: const Key('face-crop-trays-error'),
+          content: Text('Merge failed: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Free name to mint, existing [personId] to assign to, or null if cancelled.
+  Future<({String? name, String? personId})?> _resolveTypedPersonName(
+    String typed, {
+    String mergeLabel = 'Merge these faces into them',
+  }) async {
+    final clash = findPersonByName(_persons, typed);
+    if (clash == null) return (name: typed, personId: null);
+    final choice = await showPersonNameCollisionDialog(
+      context,
+      existingName: clash.name,
+      mergeLabel: mergeLabel,
+    );
+    if (choice == PersonNameCollisionChoice.merge) {
+      return (name: null, personId: clash.id);
+    }
+    return null;
+  }
+
+  Future<({String? name, String? personId})?> _promptUniquePersonName({
+    String? title,
+    String? initialName,
+  }) async {
+    var typed = await showPersonNameDialog(
+      context,
+      title: title ?? 'Name this person',
+      initialName: initialName,
+    );
+    while (typed != null && mounted) {
+      final resolved = await _resolveTypedPersonName(typed);
+      if (resolved != null) return resolved;
+      typed = await showPersonNameDialog(
+        context,
+        title: title ?? 'Name this person',
+        initialName: typed,
+      );
+    }
+    return null;
   }
 
   Widget _buildAssignedColumn(PersonDetailController? controller) {
@@ -5422,7 +5705,7 @@ Future<void> openFaceCropTrays(
         .state = FaceCropFocusRequest(
       personId: personId,
       leafFolder: leafFolder,
-      nonce: ++_faceCropFocusNonce,
+      nonce: ++faceCropFocusNonce,
     );
   }
   container.read(activeTopLevelTabProvider.notifier).state = TopLevelTab.faces;

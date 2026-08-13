@@ -56,6 +56,8 @@ class FakePersonsRepository implements PersonsRepository {
   final List<String> declineAutoAssignCalls = <String>[];
   final List<({String personId, String name})> renameCalls =
       <({String personId, String name})>[];
+  final List<({String personId, String targetPersonId})> mergeCalls =
+      <({String personId, String targetPersonId})>[];
   final List<String> deleteCalls = <String>[];
   final List<({String faceGroupId, String? personId, String? name})>
       assignFaceGroupCalls =
@@ -88,9 +90,23 @@ class FakePersonsRepository implements PersonsRepository {
     throw ApiException(statusCode: 404, message: 'Not found');
   }
 
+  bool _nameTaken(String name, {String? excludeId}) {
+    final key = name.trim().toLowerCase();
+    return _persons.any(
+      (p) =>
+          p.id != excludeId && p.name.trim().toLowerCase() == key,
+    );
+  }
+
   @override
   Future<Person> renamePerson(String personId, String name) async {
     renameCalls.add((personId: personId, name: name));
+    if (_nameTaken(name, excludeId: personId)) {
+      throw ApiException(
+        statusCode: 400,
+        message: 'A person with this name already exists',
+      );
+    }
     final index = _persons.indexWhere((p) => p.id == personId);
     if (index < 0) {
       throw ApiException(statusCode: 404, message: 'Not found');
@@ -391,6 +407,12 @@ class FakePersonsRepository implements PersonsRepository {
           message: 'reassign requires personId or name',
         );
       }
+      if (_nameTaken(name)) {
+        throw ApiException(
+          statusCode: 400,
+          message: 'A person with this name already exists',
+        );
+      }
       _newPersonCounter += 1;
       targetPersonId = 'person_new_$_newPersonCounter';
       _persons.add(
@@ -451,6 +473,12 @@ class FakePersonsRepository implements PersonsRepository {
         throw ApiException(
           statusCode: 400,
           message: 'assign requires personId or name',
+        );
+      }
+      if (_nameTaken(name)) {
+        throw ApiException(
+          statusCode: 400,
+          message: 'A person with this name already exists',
         );
       }
       _newPersonCounter += 1;
@@ -718,6 +746,50 @@ class FakePersonsRepository implements PersonsRepository {
       );
     }
     _persons.removeAt(index);
+  }
+
+  @override
+  Future<PersonDetail> mergePerson(
+    String personId,
+    String targetPersonId,
+  ) async {
+    mergeCalls.add((personId: personId, targetPersonId: targetPersonId));
+    if (personId == targetPersonId) {
+      throw ApiException(
+        statusCode: 400,
+        message: 'Cannot merge a person into itself',
+      );
+    }
+    final sourceIndex = _persons.indexWhere((p) => p.id == personId);
+    final targetIndex = _persons.indexWhere((p) => p.id == targetPersonId);
+    if (sourceIndex < 0 || targetIndex < 0) {
+      throw ApiException(statusCode: 404, message: 'Not found');
+    }
+    final source = _persons[sourceIndex];
+    final target = _persons[targetIndex];
+    final moved = [
+      for (final a in source.appearances)
+        PersonAppearance(
+          id: a.id,
+          personId: targetPersonId,
+          faceGroupId: null,
+          faceGroupKind: null,
+          assignmentState: 'confirmed',
+          itemId: a.itemId,
+          keyPeriodId: a.keyPeriodId,
+          tagId: a.tagId,
+          region: a.region,
+          createdAt: a.createdAt,
+        ),
+    ];
+    _persons[targetIndex] = PersonDetail(
+      id: target.id,
+      name: target.name,
+      createdAt: target.createdAt,
+      appearances: [...target.appearances, ...moved],
+    );
+    _persons.removeAt(sourceIndex);
+    return _persons.firstWhere((p) => p.id == targetPersonId);
   }
 
   final List<PersonAppearance> unassignedAppearances = <PersonAppearance>[];

@@ -44,6 +44,7 @@ class ApiClient {
     required this.baseUrl,
     required this.tokenProvider,
     http.Client? httpClient,
+    this.timeout = const Duration(seconds: 30),
   }) : _http = httpClient ?? http.Client();
 
   /// tagkin-api origin, no trailing slash.
@@ -53,6 +54,9 @@ class ApiClient {
   final TokenProvider tokenProvider;
 
   final http.Client _http;
+
+  /// Per-request timeout for tagkin-api calls.
+  final Duration timeout;
 
   /// Outgoing request log for tests (method, path, headers, body).
   final List<ApiRequestRecord> recordedRequests = <ApiRequestRecord>[];
@@ -103,7 +107,7 @@ class ApiClient {
     final uri = _uri(path, query);
     final headers = await _headers();
     _record(method: 'GET', uri: uri, headers: headers);
-    final response = await _http.get(uri, headers: headers);
+    final response = await _timed(_http.get(uri, headers: headers));
     return _guard(response);
   }
 
@@ -116,7 +120,7 @@ class ApiClient {
     final encoded = body == null ? null : jsonEncode(body);
     final headers = await _headers(jsonBody: body != null);
     _record(method: 'POST', uri: uri, headers: headers, body: encoded);
-    final response = await _http.post(uri, headers: headers, body: encoded);
+    final response = await _timed(_http.post(uri, headers: headers, body: encoded));
     return _guard(response);
   }
 
@@ -129,7 +133,7 @@ class ApiClient {
     final encoded = body == null ? null : jsonEncode(body);
     final headers = await _headers(jsonBody: body != null);
     _record(method: 'PATCH', uri: uri, headers: headers, body: encoded);
-    final response = await _http.patch(uri, headers: headers, body: encoded);
+    final response = await _timed(_http.patch(uri, headers: headers, body: encoded));
     return _guard(response);
   }
 
@@ -142,8 +146,20 @@ class ApiClient {
     final encoded = body == null ? null : jsonEncode(body);
     final headers = await _headers(jsonBody: body != null);
     _record(method: 'DELETE', uri: uri, headers: headers, body: encoded);
-    final response = await _http.delete(uri, headers: headers, body: encoded);
+    final response = await _timed(_http.delete(uri, headers: headers, body: encoded));
     return _guard(response);
+  }
+
+  Future<http.Response> _timed(Future<http.Response> future) async {
+    try {
+      return await future.timeout(timeout);
+    } on TimeoutException {
+      throw ApiException(
+        statusCode: 0,
+        message: 'Request timed out',
+        code: 'timeout',
+      );
+    }
   }
 
   http.Response _guard(http.Response response) {
@@ -182,6 +198,30 @@ class ApiClient {
       return null;
     }
     return null;
+  }
+
+  /// Decode a JSON object body; throws [ApiException] on a non-object shape.
+  Map<String, dynamic> decodeMap(http.Response response, String label) {
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected $label response shape',
+      );
+    }
+    return json;
+  }
+
+  /// Decode a JSON array body; throws [ApiException] on a non-list shape.
+  List<dynamic> decodeList(http.Response response, String label) {
+    final json = jsonDecode(response.body);
+    if (json is! List<dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected $label response shape',
+      );
+    }
+    return json;
   }
 
   void close() => _http.close();

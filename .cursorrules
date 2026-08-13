@@ -11,7 +11,7 @@
 # Canonical documentation (required)
 - Read and obey (via sibling path or multi-root workspace):
   - `tagkin/Docs/Rules.md` (hard constraints R1–R10)
-  - `tagkin/Docs/Specs_Initial.md`
+  - `tagkin/Docs/Specs.md`
   - `tagkin/Docs/Tech_Solutions.md`
   - `tagkin/Docs/System_Design.md` (includes client strategy, §2.1)
 - This repo keeps only a thin `README.md` for desktop build/run. Do **not** copy

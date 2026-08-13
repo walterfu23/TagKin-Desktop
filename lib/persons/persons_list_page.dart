@@ -75,6 +75,12 @@ class _PersonsListPageState extends ConsumerState<PersonsListPage> {
 
   @override
   Widget build(BuildContext context) {
+    // IndexedStack keeps this page mounted; reload when returning from Faces.
+    ref.listen<TopLevelTab>(activeTopLevelTabProvider, (previous, next) {
+      if (next == TopLevelTab.persons && previous != next) {
+        _retry();
+      }
+    });
     return Scaffold(
       appBar: AppBar(
         title: const Text('Persons'),

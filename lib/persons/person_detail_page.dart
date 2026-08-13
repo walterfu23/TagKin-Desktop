@@ -5,8 +5,11 @@ import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
+import 'package:tagkin_desktop/persons/confirm_remove_person_dialog.dart';
 import 'package:tagkin_desktop/persons/face_crop_trays_page.dart';
 import 'package:tagkin_desktop/persons/person_detail_controller.dart';
+import 'package:tagkin_desktop/persons/person_name.dart';
+import 'package:tagkin_desktop/persons/person_name_collision_dialog.dart';
 import 'package:tagkin_desktop/persons/person_name_dialog.dart';
 import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
 import 'package:tagkin_desktop/undo/undo_controller.dart';
@@ -61,6 +64,29 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
     final next = _renameController.text.trim();
     if (next == prior) {
       if (mounted) setState(() => _renaming = false);
+      return;
+    }
+    final clash = findPersonByName(
+      controller.otherPersons,
+      next,
+      excludeId: controller.personId,
+    );
+    if (clash != null) {
+      final choice = await showPersonNameCollisionDialog(
+        context,
+        existingName: clash.name,
+        mergeLabel: 'Merge this person into them',
+      );
+      if (choice != PersonNameCollisionChoice.merge || !mounted) return;
+      await ref.read(personsRepositoryProvider).mergePerson(
+            controller.personId,
+            clash.id,
+          );
+      if (!mounted) return;
+      ref.read(collectionsControllerProvider).markDirty();
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
       return;
     }
     final ok = await controller.rename(_renameController.text);
@@ -145,29 +171,15 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
   }
 
   Future<void> _confirmRemovePerson(PersonDetailController controller) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await confirmRemovePerson(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Remove person?'),
-        content: const Text(
+      confirmKey: const Key('person-unassign-confirm'),
+      body:
           'Removes this person. Its faces move to Unassigned '
           'so you can assign them again. To detach one face only, '
           'use Unassign on that face.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            key: const Key('person-unassign-confirm'),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
     final ok = await controller.unassignPerson();
     if (ok && mounted) {
       ref.read(collectionsControllerProvider).markDirty();
@@ -358,8 +370,44 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
                 String? newPersonName;
                 String? targetPersonId;
                 if (target == _AppearanceCard.newPersonSentinel) {
-                  newPersonName = await showPersonNameDialog(context);
-                  if (newPersonName == null || !mounted) return;
+                  var typed = await showPersonNameDialog(context);
+                  while (typed != null && mounted) {
+                    final clash = findPersonByName(
+                      [
+                        ...controller.otherPersons,
+                        if (controller.detail != null)
+                          Person(
+                            id: controller.detail!.id,
+                            name: controller.detail!.name,
+                            createdAt: controller.detail!.createdAt,
+                          ),
+                      ],
+                      typed,
+                    );
+                    if (clash == null) {
+                      newPersonName = typed;
+                      break;
+                    }
+                    if (!mounted) return;
+                    final choice = await showPersonNameCollisionDialog(
+                      context,
+                      existingName: clash.name,
+                      mergeLabel: 'Merge this face into them',
+                    );
+                    if (choice == PersonNameCollisionChoice.merge) {
+                      targetPersonId = clash.id;
+                      break;
+                    }
+                    if (!mounted) return;
+                    typed = await showPersonNameDialog(
+                      context,
+                      initialName: typed,
+                    );
+                  }
+                  if ((newPersonName == null && targetPersonId == null) ||
+                      !mounted) {
+                    return;
+                  }
                 } else {
                   targetPersonId = target;
                 }

@@ -1,7 +1,10 @@
-# Fetch InsightFace buffalo_l ONNX weights for on-device face embed (R1).
+# 119_fetch_face_models.ps1 — Fetch InsightFace buffalo_l ONNX weights for
+# on-device face embed (R1). Mirror of mac/119_fetch_face_models.sh.
 $ErrorActionPreference = "Stop"
-$Root = Split-Path -Parent $PSScriptRoot
-$Dest = if ($env:TAGKIN_FACE_MODELS_DIR) { $env:TAGKIN_FACE_MODELS_DIR } else { Join-Path $Root "assets\models" }
+$winDir = Split-Path -Parent $PSCommandPath
+. (Join-Path $winDir '_env.ps1')
+
+$Dest = if ($env:TAGKIN_FACE_MODELS_DIR) { $env:TAGKIN_FACE_MODELS_DIR } else { Join-Path $global:TagKinDesktopRoot "assets\models" }
 New-Item -ItemType Directory -Force -Path $Dest | Out-Null
 
 # Runtime lookup (packaged app cwd is not the repo) — always install here too.

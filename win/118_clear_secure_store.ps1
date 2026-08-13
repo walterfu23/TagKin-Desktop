@@ -1,6 +1,6 @@
-# 111_clear_secure_store.ps1 — wipe D1 Windows Credential Manager entries
+# 118_clear_secure_store.ps1 — wipe D1 Windows Credential Manager entries
 # written by FlutterSecureStorage (service / target name containing
-# tagkin.desktop.secure). Mirror of mac/111_clear_secure_store.sh.
+# tagkin.desktop.secure). Mirror of mac/118_clear_secure_store.sh.
 $ErrorActionPreference = 'Stop'
 $winDir = Split-Path -Parent $PSCommandPath
 . (Join-Path $winDir '_env.ps1')

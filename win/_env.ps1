@@ -28,3 +28,14 @@ or add its bin\ to PATH, then re-run.
 
 # Ensure desktop is enabled (idempotent, cheap).
 flutter config --enable-windows-desktop | Out-Null
+
+# R8: no long-lived secrets in client source. Used by NNN_test_dN bars and CI.
+function Invoke-TagKinR8SecretScan {
+  Write-Host '==> R8 secret scan (lib/ must not contain sk_test_/sk_live_/CLERK_SECRET_KEY)'
+  $hits = Select-String -Path (Join-Path $global:TagKinDesktopRoot 'lib\**\*.dart') -Pattern 'sk_test_|sk_live_|CLERK_SECRET_KEY|GEMINI_API_KEY' -ErrorAction SilentlyContinue
+  if ($hits) {
+    Write-Host 'error: forbidden secret pattern found under lib/'
+    $hits | ForEach-Object { Write-Host $_ }
+    exit 1
+  }
+}

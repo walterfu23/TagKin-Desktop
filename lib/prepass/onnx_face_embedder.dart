@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -31,40 +30,6 @@ img.Image letterboxToSquare(img.Image src, {int padValue = 127}) {
   final dy = ((side - h) / 2).floor();
   img.compositeImage(out, src, dstX: dx, dstY: dy);
   return out;
-}
-
-void _agentLog(String hypothesisId, String location, String message, Map<String, Object?> data) {
-  // #region agent log
-  debugPrint('OnnxFaceEmbedder[$hypothesisId] $message $data');
-  try {
-    final payload = jsonEncode({
-      'sessionId': '242c65',
-      'runId': 'post-align',
-      'hypothesisId': hypothesisId,
-      'location': location,
-      'message': message,
-      'data': data,
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
-    });
-    // Sandboxed macOS app cannot write the workspace debug file — POST instead.
-    final client = HttpClient();
-    client
-        .postUrl(
-          Uri.parse(
-            'http://127.0.0.1:7354/ingest/6b694349-3b46-4da2-bf90-b5c14f959906',
-          ),
-        )
-        .then((req) {
-          req.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
-          req.headers.set('X-Debug-Session-Id', '242c65');
-          req.add(utf8.encode(payload));
-          return req.close();
-        })
-        .then((res) => res.drain<void>())
-        .catchError((_) {})
-        .whenComplete(() => client.close(force: true));
-  } catch (_) {}
-  // #endregion
 }
 
 /// Resolves on-disk paths for face ONNX weights (R1 — local only).
@@ -350,17 +315,9 @@ class OnnxFaceEmbedder implements FaceEmbedder {
     if (decoded == null) return const [];
     final aligned = await _tryAlignWithScrfd(decoded);
     if (aligned == null) {
-      // #region agent log
-      _agentLog('A', 'onnx_face_embedder.dart:embed', 'skip — no SCRFD face', {
-        'cropW': decoded.width,
-        'cropH': decoded.height,
-        'modelId': modelId,
-        'hasDet': _det != null,
-      });
-      // #endregion
       return const [];
     }
-    return _embedAligned(aligned, alignMode: 'scrfd', src: decoded);
+    return _embedAligned(aligned);
   }
 
   /// Full-frame SCRFD, constrained to the who [region], then ArcFace.
@@ -385,7 +342,6 @@ class OnnxFaceEmbedder implements FaceEmbedder {
     // Match who_face_linker light inset via caller — region already refined.
 
     img.Image? face112;
-    var alignMode = 'none';
 
     final fullFaces = await _detectFaces(decoded);
     final inRegion = bestScrfdFaceInRegion(
@@ -399,68 +355,21 @@ class OnnxFaceEmbedder implements FaceEmbedder {
     );
     if (inRegion != null) {
       face112 = normCropArcFace(decoded, inRegion.landmarks);
-      alignMode = 'scrfd-full';
-      // #region agent log
-      _agentLog('B', 'onnx_face_embedder.dart:embedWhoRegion', 'full-frame', {
-        'score': inRegion.score,
-        'imgW': decoded.width,
-        'imgH': decoded.height,
-        'facesInFrame': fullFaces.length,
-      });
-      // #endregion
     } else {
       // Crop fallback (tight boxes where full-frame may miss tiny faces).
       final crop = _cropRegion(decoded, refined);
       if (crop != null) {
-        final cropAligned = await _tryAlignWithScrfd(crop);
-        if (cropAligned != null) {
-          face112 = cropAligned;
-          alignMode = 'scrfd-crop';
-        }
+        face112 = await _tryAlignWithScrfd(crop);
       }
-      // #region agent log
-      _agentLog('B', 'onnx_face_embedder.dart:embedWhoRegion', 'no full-frame', {
-        'facesInFrame': fullFaces.length,
-        'cropFallback': face112 != null,
-        'imgW': decoded.width,
-        'imgH': decoded.height,
-      });
-      // #endregion
     }
 
     if (face112 == null) {
-      // #region agent log
-      _agentLog(
-        'A',
-        'onnx_face_embedder.dart:embedWhoRegion',
-        'skip — no SCRFD face in who region',
-        {
-          'imgW': decoded.width,
-          'imgH': decoded.height,
-          'modelId': modelId,
-        },
-      );
-      // #endregion
       return const [];
     }
-    return _embedAligned(face112, alignMode: alignMode, src: decoded);
+    return _embedAligned(face112);
   }
 
-  Future<List<FaceAppearance>> _embedAligned(
-    img.Image face112, {
-    required String alignMode,
-    required img.Image src,
-  }) async {
-    // #region agent log
-    _agentLog('A', 'onnx_face_embedder.dart:_embedAligned', 'preprocess', {
-      'srcW': src.width,
-      'srcH': src.height,
-      'alignMode': alignMode,
-      'modelId': modelId,
-      'hasDet': _det != null,
-    });
-    // #endregion
-
+  Future<List<FaceAppearance>> _embedAligned(img.Image face112) async {
     final input = _toNchwFloat(face112);
     final inputName = _recog.inputNames.isNotEmpty
         ? _recog.inputNames.first
@@ -533,21 +442,8 @@ class OnnxFaceEmbedder implements FaceEmbedder {
     final faces = await _detectFaces(crop);
     final best = bestScrfdFace(faces);
     if (best == null) {
-      // #region agent log
-      _agentLog('B', 'onnx_face_embedder.dart:_tryAlignWithScrfd', 'no face', {
-        'cropW': crop.width,
-        'cropH': crop.height,
-      });
-      // #endregion
       return null;
     }
-    // #region agent log
-    _agentLog('B', 'onnx_face_embedder.dart:_tryAlignWithScrfd', 'aligned', {
-      'score': best.score,
-      'cropW': crop.width,
-      'cropH': crop.height,
-    });
-    // #endregion
     return normCropArcFace(crop, best.landmarks);
   }
 
@@ -579,15 +475,6 @@ class OnnxFaceEmbedder implements FaceEmbedder {
         raw.add(await _ortToFloat32Shaped(v));
         await v.dispose();
       }
-
-      // #region agent log
-      _agentLog('D', 'onnx_face_embedder.dart:_detectFaces', 'det outs', {
-        'names': names,
-        'shapes': [for (final r in raw) r.shape.join('x')],
-        'imgW': image.width,
-        'imgH': image.height,
-      });
-      // #endregion
 
       final ordered = orderScrfdOutputsByShape(raw, detSize: _detSize);
       if (ordered == null) {

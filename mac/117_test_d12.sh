@@ -14,12 +14,7 @@ flutter analyze
 echo "==> flutter test (unit/widget + D12 undo)"
 flutter test test/undo/undo_controller_test.dart test/review_controller_test.dart test/knowledge_corrections_ui_test.dart
 
-echo "==> R8 secret scan (lib/ must not contain sk_test_/sk_live_/CLERK_SECRET_KEY)"
-if grep -R -n -E 'sk_test_|sk_live_|CLERK_SECRET_KEY|GEMINI_API_KEY' lib/ >/dev/null 2>&1; then
-  echo "error: forbidden secret pattern found under lib/" >&2
-  grep -R -n -E 'sk_test_|sk_live_|CLERK_SECRET_KEY|GEMINI_API_KEY' lib/ >&2 || true
-  exit 1
-fi
+tagkin_r8_secret_scan
 
 echo "==> integration smoke (knowledge corrections + screen undo on macOS)"
 flutter test integration_test/knowledge_corrections_test.dart -d macos

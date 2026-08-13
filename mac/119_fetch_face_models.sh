@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Fetch InsightFace buffalo_l ONNX weights for on-device face embed (R1).
-# Models are NOT committed — run after clone / when likeness matching is needed.
+# 119_fetch_face_models.sh — Fetch InsightFace buffalo_l ONNX weights for
+# on-device face embed (R1). Models are NOT committed — run after clone /
+# when likeness matching is needed.
 set -euo pipefail
+MAC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=_env.sh
+source "${MAC_DIR}/_env.sh"
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DEST="${TAGKIN_FACE_MODELS_DIR:-$ROOT/assets/models}"
+DEST="${TAGKIN_FACE_MODELS_DIR:-$TAGKIN_DESKTOP_ROOT/assets/models}"
 mkdir -p "$DEST"
 
 # Runtime lookup (macOS app cwd is not the repo) — always install here too.

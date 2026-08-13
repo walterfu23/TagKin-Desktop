@@ -155,6 +155,12 @@ class _WhoFaceCropThumbState extends ConsumerState<WhoFaceCropThumb> {
                 fit: BoxFit.cover,
                 width: side,
                 height: side,
+                cacheWidth: (side * MediaQuery.devicePixelRatioOf(context))
+                    .round()
+                    .clamp(32, 512),
+                cacheHeight: (side * MediaQuery.devicePixelRatioOf(context))
+                    .round()
+                    .clamp(32, 512),
                 gaplessPlayback: true,
               ),
             ),
