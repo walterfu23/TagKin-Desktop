@@ -3980,6 +3980,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     while (typed != null && mounted) {
       final resolved = await _resolveTypedPersonName(typed);
       if (resolved != null) return resolved;
+      if (!mounted) return null;
       typed = await showPersonNameDialog(
         context,
         title: title ?? 'Name this person',

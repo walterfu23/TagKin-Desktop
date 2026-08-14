@@ -12,9 +12,11 @@ import 'package:image/image.dart' as img;
 import 'package:integration_test/integration_test.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/ingest/batch_ingest_controller.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/ingest/folder_picker.dart';
 import 'package:tagkin_desktop/main.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 
 import '../test/fake_items_repository.dart';
 import '../test/fake_jobs_repository.dart';
@@ -52,6 +54,20 @@ void main() {
           usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
           jobsRepositoryProvider.overrideWithValue(FakeJobsRepository()),
           folderPickerProvider.overrideWithValue(() async => dir.path),
+          // Fake picker returns a temp dir with no security-scoped bookmark.
+          // Production pickFolderNative always persists one; skip restore so
+          // scan/create/pre-pass still run (D3 stubs the whole queue).
+          folderIngestQueueProvider.overrideWith((ref) {
+            return FolderIngestQueue(
+              itemsRepository: repo,
+              jobsRepository: ref.read(jobsRepositoryProvider),
+              isUsageBlocked: () => false,
+              enumerateFolder: ref.read(mediaEnumeratorProvider),
+              contentHasher: ref.read(contentHasherProvider),
+              perceptualHasher: ref.read(perceptualHasherProvider),
+              samplingPrefs: () => ref.read(desktopPrefsProvider),
+            );
+          }),
         ],
         child: const TagKinDesktopApp(),
       ),
