@@ -4,6 +4,7 @@ import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prefs/range_slider_control.dart';
+import 'package:tagkin_desktop/ui/format_local_datetime.dart';
 import 'package:tagkin_desktop/undo/undo_controller.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 import 'package:tagkin_desktop/undo/undoable_action.dart';
@@ -38,6 +39,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   late bool _autoConfirmHighConfidencePersonMatches;
   late int _autoConfirmMinConfidencePercent;
   late int _jobsPollIntervalSeconds;
+  late DateTimeDisplayFormat _dateTimeFormat;
   final UndoController _undoStack = UndoController();
 
   @override
@@ -66,6 +68,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         prefs.autoConfirmHighConfidencePersonMatches;
     _autoConfirmMinConfidencePercent = prefs.autoConfirmMinConfidencePercent;
     _jobsPollIntervalSeconds = prefs.jobsPollIntervalSeconds;
+    _dateTimeFormat = prefs.dateTimeFormatOrLocal;
   }
 
   /// Restore draft fields without recreating text controllers (undo/redo).
@@ -88,6 +91,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         prefs.autoConfirmHighConfidencePersonMatches;
     _autoConfirmMinConfidencePercent = prefs.autoConfirmMinConfidencePercent;
     _jobsPollIntervalSeconds = prefs.jobsPollIntervalSeconds;
+    _dateTimeFormat = prefs.dateTimeFormatOrLocal;
   }
 
   void _mutateDraft(VoidCallback change, {String label = 'Edit setting'}) {
@@ -142,6 +146,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       'faces.autoConfirmMinConfidencePercent':
           _autoConfirmMinConfidencePercent,
       'jobs.pollIntervalSeconds': _jobsPollIntervalSeconds,
+      'ui.dateTimeFormat': _dateTimeFormat.wire,
     });
   }
 
@@ -488,6 +493,46 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             padding: const EdgeInsets.all(24),
             children: [
               _settingsIntro(),
+              _settingsGroup(
+                title: 'Display',
+                subtitle:
+                    'How dates and times appear. Values are still stored in UTC.',
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: 'Date and time format',
+                        helperText:
+                            'Default is this computer’s locale. Example: '
+                            '${formatLocalDateTime(DateTime.now().toUtc().toIso8601String(), format: _dateTimeFormat)}',
+                        border: const OutlineInputBorder(),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<DateTimeDisplayFormat>(
+                          key: const Key('pref-date-time-format'),
+                          value: _dateTimeFormat,
+                          isExpanded: true,
+                          items: [
+                            for (final f in DateTimeDisplayFormat.values)
+                              DropdownMenuItem(
+                                value: f,
+                                child: Text(f.settingsLabel),
+                              ),
+                          ],
+                          onChanged: (v) {
+                            if (v == null) return;
+                            _mutateDraft(() => _dateTimeFormat = v);
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
               _settingsGroup(
                 title: 'Where labels',
                 subtitle:

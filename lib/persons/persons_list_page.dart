@@ -201,11 +201,6 @@ class _PersonTile extends StatelessWidget {
         person.name,
         key: Key('person-name-${person.id}'),
       ),
-      subtitle: Text(
-        person.id,
-        key: Key('person-id-${person.id}'),
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
       onTap: onTap,
     );
   }

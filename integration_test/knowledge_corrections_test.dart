@@ -1,5 +1,5 @@
-// D10 Knowledge Corrections & Comments UI integration: tag add/undo +
-// comment create against mocked API (§5).
+// D10 Knowledge Corrections & Comments UI integration: comments +
+// read-only knowledge against mocked API (§5).
 //   flutter test integration_test/knowledge_corrections_test.dart -d macos
 //   flutter test integration_test/knowledge_corrections_test.dart -d windows
 
@@ -11,7 +11,6 @@ import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/main.dart';
-import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 
 import '../test/fake_comments_repository.dart';
 import '../test/fake_corrections_repository.dart';
@@ -24,7 +23,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-      'corrections: add tag → undo; comment author from server; foreign 404',
+      'comments author from server; knowledge is read-only; foreign 404',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1200, 2200);
     tester.view.devicePixelRatio = 1.0;
@@ -98,35 +97,21 @@ void main() {
     expect(find.byKey(const Key('item-review')), findsOneWidget);
     expect(find.byKey(const Key('knowledge-view')), findsOneWidget);
     expect(find.text('picnic'), findsOneWidget);
-    expect(find.byKey(const Key('correction-undo-corr_seed')), findsNothing);
-
-    // Add a where tag, then undo via screen LIFO (D12).
-    await tester.ensureVisible(find.byKey(const Key('tag-add-where')));
-    await tester.tap(find.byKey(const Key('tag-add-where')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('tag-edit-dialog')), findsOneWidget);
-    await tester.enterText(find.byKey(const Key('tag-value-field')), 'park');
-    await tester.tap(find.byKey(const Key('tag-edit-save')));
-    await tester.pumpAndSettle();
-    expect(corrections.addTagCalls, hasLength(1));
-    expect(find.text('park'), findsWidgets);
-
-    final undoContext = tester.element(find.byKey(const Key('item-review')));
-    Actions.invoke(undoContext, const ScreenUndoIntent());
-    await tester.pumpAndSettle();
-    expect(corrections.undoCalls, isNotEmpty);
+    expect(find.byKey(const Key('tag-add-where')), findsNothing);
+    expect(find.byKey(const Key('corrections-history')), findsNothing);
 
     // Add a comment — author stamped by server fake.
-    await tester.ensureVisible(find.byKey(const Key('comment-body-field')));
+    await tester.ensureVisible(find.byKey(const Key('item-comment-field')));
     await tester.enterText(
-      find.byKey(const Key('comment-body-field')),
+      find.byKey(const Key('item-comment-field')),
       'integration note',
     );
-    await tester.tap(find.byKey(const Key('comment-add')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('item-detail-save')));
     await tester.pumpAndSettle();
     expect(comments.createItemCalls, hasLength(1));
-    expect(find.text('integration note'), findsOneWidget);
-    expect(find.textContaining('acc_integration'), findsWidgets);
+    expect(find.text('integration note'), findsWidgets);
+    expect(find.textContaining('acc_integration'), findsNothing);
 
     // Foreign account knowledge stays 404 (tenant isolation).
     expect(

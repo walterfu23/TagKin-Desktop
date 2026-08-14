@@ -107,11 +107,11 @@ class UploadController extends ChangeNotifier {
       if (!resolution.isAvailable || resolution.file == null) {
         final message = switch (resolution.status) {
           LocalMediaStatus.missing =>
-            'Local media not found at sourceRef.',
+            'Local media not found.',
           LocalMediaStatus.accessDenied =>
             'macOS blocked access to this file. Re-select the folder (bookmark).',
           LocalMediaStatus.hashMismatch =>
-            'Local file contentHash does not match the item record.',
+            'This file does not match the library record.',
           _ => 'Local media is not available for re-upload.',
         };
         final outcome = UploadOutcome(

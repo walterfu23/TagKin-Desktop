@@ -12,6 +12,7 @@ import 'package:tagkin_desktop/usage/usage_gate.dart';
 
 import 'fake_items_repository.dart';
 import 'fake_jobs_repository.dart';
+import 'fake_persons_repository.dart';
 import 'fake_usage_repository.dart';
 
 Account _account(String id) => Account(
@@ -34,6 +35,7 @@ List<Override> _overrides({
     ),
     usageRepositoryProvider.overrideWithValue(usage),
     jobsRepositoryProvider.overrideWithValue(FakeJobsRepository()),
+    personsRepositoryProvider.overrideWithValue(FakePersonsRepository()),
     collectionsStoreProvider.overrideWithValue(MemoryCollectionsStore()),
   ];
 }

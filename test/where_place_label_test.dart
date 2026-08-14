@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_store.dart';
+import 'package:tagkin_desktop/ui/format_local_datetime.dart';
 import 'package:tagkin_desktop/where/reverse_geocoder.dart';
 import 'package:tagkin_desktop/where/where_label_resolver.dart';
 import 'package:tagkin_desktop/where/where_place_label.dart';
@@ -118,6 +119,10 @@ void main() {
       expect(DesktopPrefs.defaults.autoConfirmHighConfidencePersonMatches, isTrue);
       expect(DesktopPrefs.defaults.autoConfirmMinConfidencePercent, 95);
       expect(DesktopPrefs.defaults.jobsPollIntervalSeconds, 2);
+      expect(
+        DesktopPrefs.defaults.dateTimeFormat,
+        DateTimeDisplayFormat.local,
+      );
     });
 
     test('round-trips through JSON including new prefs', () async {
@@ -142,6 +147,7 @@ void main() {
         autoConfirmHighConfidencePersonMatches: false,
         autoConfirmMinConfidencePercent: 75,
         jobsPollIntervalSeconds: 5,
+        dateTimeFormat: DateTimeDisplayFormat.iso24,
       );
       await store.save(prefs);
       expect(await store.load(), prefs);
@@ -155,6 +161,8 @@ void main() {
       expect(prefs.showFaceOverlays, isTrue);
       expect(prefs.recentCollectionsLimit, 20);
       expect(prefs.libraryPageSize, 50);
+      expect(prefs.dateTimeFormat, DateTimeDisplayFormat.local);
+      expect(prefs.dateTimeFormatOrLocal, DateTimeDisplayFormat.local);
     });
 
     test('fromJson migrates where.homeState to familiarRegions', () {

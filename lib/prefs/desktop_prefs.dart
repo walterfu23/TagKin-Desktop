@@ -1,3 +1,4 @@
+import 'package:tagkin_desktop/ui/format_local_datetime.dart';
 import 'package:tagkin_desktop/where/where_place_label.dart';
 
 /// User preferences for tagkin-desktop (app-wide Settings).
@@ -23,6 +24,7 @@ class DesktopPrefs {
     this.autoConfirmHighConfidencePersonMatches = true,
     this.autoConfirmMinConfidencePercent = 95,
     this.jobsPollIntervalSeconds = 2,
+    this.dateTimeFormat = DateTimeDisplayFormat.local,
   });
 
   /// When true, include country even if place country matches device locale.
@@ -78,6 +80,19 @@ class DesktopPrefs {
 
   /// Job status poll interval while analyze/upload runs.
   final int jobsPollIntervalSeconds;
+
+  /// How Captured / Added / When / comment timestamps are shown.
+  final DateTimeDisplayFormat dateTimeFormat;
+
+  /// [dateTimeFormat] with a hot-reload fallback (new non-null fields read
+  /// as null on instances created before the field existed).
+  DateTimeDisplayFormat get dateTimeFormatOrLocal {
+    try {
+      return dateTimeFormat;
+    } on TypeError {
+      return DateTimeDisplayFormat.local;
+    }
+  }
 
   static const defaults = DesktopPrefs();
 
@@ -144,6 +159,7 @@ class DesktopPrefs {
     bool? autoConfirmHighConfidencePersonMatches,
     int? autoConfirmMinConfidencePercent,
     int? jobsPollIntervalSeconds,
+    DateTimeDisplayFormat? dateTimeFormat,
   }) {
     return DesktopPrefs(
       showCountryWhenSameCountry:
@@ -172,6 +188,7 @@ class DesktopPrefs {
           this.autoConfirmMinConfidencePercent,
       jobsPollIntervalSeconds:
           jobsPollIntervalSeconds ?? this.jobsPollIntervalSeconds,
+      dateTimeFormat: dateTimeFormat ?? dateTimeFormatOrLocal,
     );
   }
 
@@ -195,6 +212,7 @@ class DesktopPrefs {
         'faces.autoConfirmMinConfidencePercent':
             autoConfirmMinConfidencePercent,
         'jobs.pollIntervalSeconds': jobsPollIntervalSeconds,
+        'ui.dateTimeFormat': dateTimeFormatOrLocal.wire,
       };
 
   factory DesktopPrefs.fromJson(Map<String, dynamic> json) {
@@ -318,6 +336,7 @@ class DesktopPrefs {
         min: jobsPollIntervalSecondsMin,
         max: jobsPollIntervalSecondsMax,
       ),
+      dateTimeFormat: DateTimeDisplayFormat.parse(json['ui.dateTimeFormat']),
     );
   }
 
@@ -342,7 +361,8 @@ class DesktopPrefs {
           autoConfirmHighConfidencePersonMatches &&
       other.autoConfirmMinConfidencePercent ==
           autoConfirmMinConfidencePercent &&
-      other.jobsPollIntervalSeconds == jobsPollIntervalSeconds;
+      other.jobsPollIntervalSeconds == jobsPollIntervalSeconds &&
+      other.dateTimeFormatOrLocal == dateTimeFormatOrLocal;
 
   @override
   int get hashCode => Object.hash(
@@ -363,5 +383,6 @@ class DesktopPrefs {
         autoConfirmHighConfidencePersonMatches,
         autoConfirmMinConfidencePercent,
         jobsPollIntervalSeconds,
+        dateTimeFormatOrLocal,
       );
 }

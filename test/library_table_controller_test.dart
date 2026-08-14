@@ -10,6 +10,7 @@ import 'package:tagkin_desktop/where/where_place_label.dart';
 
 import 'fake_comments_repository.dart';
 import 'fake_items_repository.dart';
+import 'fake_persons_repository.dart';
 
 Future<void> _awaitKnowledge(LibraryTableController c) async {
   for (var i = 0; i < 20; i++) {
@@ -723,5 +724,132 @@ void main() {
     gate.complete();
     await second;
     expect(controller.loading, isFalse);
+  });
+
+  test('Who column stays who-tag values when no assigned persons', () async {
+    final item = fixtureItem(
+      id: 'a',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {
+        'a': fixtureKnowledge(
+          item: item,
+          tags: [
+            fixtureTag(
+              id: 'w1',
+              itemId: 'a',
+              dimension: 'who',
+              value: 'toddler',
+            ),
+          ],
+        ),
+      },
+    );
+    final controller = LibraryTableController(
+      itemsRepository: items,
+      commentsRepository: FakeCommentsRepository(),
+      personsRepository: FakePersonsRepository(),
+      thumbCache: LocalThumbCache(),
+      knowledgeConcurrency: 1,
+    );
+    await controller.load();
+    await _awaitKnowledge(controller);
+    expect(controller.allRows.single.who, ['toddler']);
+  });
+
+  test('Who column is person names only when appearances are assigned',
+      () async {
+    final item = fixtureItem(
+      id: 'a',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {
+        'a': fixtureKnowledge(
+          item: item,
+          tags: [
+            fixtureTag(
+              id: 'w1',
+              itemId: 'a',
+              dimension: 'who',
+              value: 'toddler',
+            ),
+          ],
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_1',
+              personId: 'person_alex',
+              itemId: 'a',
+              tagId: 'w1',
+            ),
+          ],
+        ),
+      },
+    );
+    final controller = LibraryTableController(
+      itemsRepository: items,
+      commentsRepository: FakeCommentsRepository(),
+      personsRepository: FakePersonsRepository(
+        persons: [
+          fixturePersonDetail(id: 'person_alex', name: 'Alex'),
+        ],
+      ),
+      thumbCache: LocalThumbCache(),
+      knowledgeConcurrency: 1,
+    );
+    await controller.load();
+    await _awaitKnowledge(controller);
+    expect(controller.allRows.single.who, ['Alex']);
+  });
+
+  test('Who column dedupes two faces of the same person to one name',
+      () async {
+    final item = fixtureItem(
+      id: 'a',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {
+        'a': fixtureKnowledge(
+          item: item,
+          tags: [
+            fixtureTag(id: 'w1', itemId: 'a', dimension: 'who', value: 'boy'),
+            fixtureTag(id: 'w2', itemId: 'a', dimension: 'who', value: 'child'),
+          ],
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_1',
+              personId: 'person_alex',
+              itemId: 'a',
+              tagId: 'w1',
+            ),
+            fixtureAppearance(
+              id: 'ap_2',
+              personId: 'person_alex',
+              itemId: 'a',
+              tagId: 'w2',
+            ),
+          ],
+        ),
+      },
+    );
+    final controller = LibraryTableController(
+      itemsRepository: items,
+      commentsRepository: FakeCommentsRepository(),
+      personsRepository: FakePersonsRepository(
+        persons: [
+          fixturePersonDetail(id: 'person_alex', name: 'Alex'),
+        ],
+      ),
+      thumbCache: LocalThumbCache(),
+      knowledgeConcurrency: 1,
+    );
+    await controller.load();
+    await _awaitKnowledge(controller);
+    expect(controller.allRows.single.who, ['Alex']);
   });
 }

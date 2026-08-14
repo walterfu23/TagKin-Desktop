@@ -3,13 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
-import 'package:tagkin_desktop/ingest/upload_controller.dart';
-import 'package:tagkin_desktop/jobs/job_state_view.dart';
 import 'package:tagkin_desktop/jobs/jobs_controller.dart';
-import 'package:tagkin_desktop/library/processing_status_view.dart';
+import 'package:tagkin_desktop/library/item_detail_edits.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/review/item_review_page.dart';
-import 'package:tagkin_desktop/usage/usage_controller.dart';
 import 'package:tagkin_desktop/widgets/sure_action_button.dart';
 
 /// Item detail (D2 metadata + D7 tagging/jobs + D8 review).
@@ -24,6 +21,8 @@ class ItemDetailPage extends ConsumerStatefulWidget {
 
 class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
   late Future<Item> _future;
+  final ItemDetailEdits _edits = ItemDetailEdits();
+  final GlobalKey _reviewKey = GlobalKey();
 
   @override
   void initState() {
@@ -32,6 +31,12 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(jobsControllerProvider(widget.itemId)).refreshJobs();
     });
+  }
+
+  @override
+  void dispose() {
+    _edits.dispose();
+    super.dispose();
   }
 
   Future<Item> _load() {
@@ -53,369 +58,120 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
     }
   }
 
-  /// First analyze runs immediately; re-analyze on a tagged item warns, then
-  /// re-uploads the local file to Gemini before analyze (no re-import).
-  Future<void> _onAnalyzePressed(JobsController jobs, Item item) async {
-    final needsReupload =
-        item.processingStatus == ProcessingStatus.tagged ||
-            item.analysisRefState == AnalysisRefState.expired ||
-            item.analysisRefState == AnalysisRefState.unavailable;
-
-    if (item.processingStatus == ProcessingStatus.tagged) {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          key: const Key('reanalyze-warning-dialog'),
-          title: const Text('Analyze again?'),
-          content: const Text(
-            'Previous analyze tags will be overwritten. '
-            'Your manual tags will be kept. '
-            'The local file will be re-uploaded to the model host first.',
-          ),
-          actions: [
-            TextButton(
-              key: const Key('reanalyze-cancel'),
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              key: const Key('reanalyze-confirm'),
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Analyze'),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true || !mounted) return;
-    }
-
-    if (needsReupload) {
-      final ok = await _reuploadLocal(jobs, item);
-      if (!ok || !mounted) return;
-    }
-    await jobs.analyze(itemType: item.type);
-  }
-
-  Future<bool> _reuploadLocal(JobsController jobs, Item item) async {
-    final upload = ref.read(uploadControllerProvider);
-    final outcome = await upload.uploadItemFromLocal(item);
-    if (!mounted) return false;
-    if (!outcome.succeeded) {
-      jobs.surfaceError(outcome.error ?? StateError('Re-upload failed'));
-      return false;
-    }
-    if (outcome.item != null) {
-      jobs.adoptItem(outcome.item!);
-    }
-    setState(() {
-      _future = Future.value(outcome.item ?? item);
-    });
-    return true;
-  }
-
-  Future<void> _onReuploadPressed(JobsController jobs, Item item) async {
-    final ok = await _reuploadLocal(jobs, item);
-    if (!ok || !mounted) return;
-  }
-
   @override
   Widget build(BuildContext context) {
     final jobs = ref.watch(jobsControllerProvider(widget.itemId));
-    final usage = ref.watch(usageControllerProvider);
-    final upload = ref.watch(uploadControllerProvider);
 
     return ListenableBuilder(
-      listenable: Listenable.merge([jobs, usage, upload]),
+      listenable: jobs,
       builder: (context, _) {
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('Item'),
-            actions: [
-              SureActionButton(
-                idleKey: const Key('item-delete'),
-                confirmKey: const Key('item-remove-confirm'),
-                tooltip: 'Remove item',
-                confirmSemanticsLabel: 'Confirm remove item',
-                icon: const Icon(Icons.remove_circle_outline),
-                enabled: !jobs.deleted,
-                onConfirm: () => _removeItem(jobs),
-              ),
-            ],
-          ),
-          body: FutureBuilder<Item>(
-            future: _future,
-            builder: (context, snapshot) {
-              final item = jobs.item ?? snapshot.data;
-              if (item == null) {
-                if (snapshot.connectionState != ConnectionState.done) {
-                  return const Center(
-                    child: CircularProgressIndicator(
-                      key: Key('item-detail-loading'),
-                    ),
-                  );
-                }
-                if (snapshot.hasError) {
-                  final error = snapshot.error!;
-                  final isNotFound =
-                      error is ApiException && error.statusCode == 404;
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            isNotFound
-                                ? 'Item not found'
-                                : 'Could not load item: $error',
-                            key: isNotFound
-                                ? const Key('item-detail-not-found')
-                                : const Key('item-detail-error'),
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          if (!isNotFound) ...[
-                            const SizedBox(height: 16),
-                            FilledButton(
-                              key: const Key('item-detail-retry'),
-                              onPressed: _retry,
-                              child: const Text('Retry'),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  );
-                }
-                return const SizedBox.shrink();
+        final body = FutureBuilder<Item>(
+          future: _future,
+          builder: (context, snapshot) {
+            final item = jobs.item ?? snapshot.data;
+            if (item == null) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const Center(
+                  child: CircularProgressIndicator(
+                    key: Key('item-detail-loading'),
+                  ),
+                );
               }
-
-              final blocked = usage.gate.blocked;
-              final isPhoto = item.type == ItemType.photo;
-              final uploading = upload.phase == UploadPhase.running;
-              final canAnalyze = isPhoto &&
-                  !blocked &&
-                  !jobs.isBusy &&
-                  !jobs.deleted &&
-                  !uploading &&
-                  item.processingStatus != ProcessingStatus.processing;
-              final needsReuploadButton =
-                  isPhoto &&
-                      !blocked &&
-                      !jobs.isBusy &&
-                      !jobs.deleted &&
-                      !uploading &&
-                      (item.analysisRefState == AnalysisRefState.expired ||
-                          item.analysisRefState ==
-                              AnalysisRefState.unavailable ||
-                          (jobs.error is ApiException &&
-                              (jobs.error as ApiException).code ==
-                                  'analysis_ref_expired'));
-
-              return ListView(
-                key: const Key('item-detail'),
-                padding: const EdgeInsets.all(24),
-                children: [
-                  _DetailRow(label: 'id', value: item.id, valueKey: 'item-id'),
-                  _DetailRow(
-                    label: 'type',
-                    value: item.type.wire,
-                    valueKey: 'item-type',
-                  ),
-                  _DetailRow(
-                    label: 'sourceType',
-                    value: item.sourceType.wire,
-                    valueKey: 'item-source-type',
-                  ),
-                  _DetailRow(
-                    label: 'capturedAt',
-                    value: item.capturedAt ?? '—',
-                    valueKey: 'item-captured-at',
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+              if (snapshot.hasError) {
+                final error = snapshot.error!;
+                final isNotFound =
+                    error is ApiException && error.statusCode == 404;
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        SizedBox(
-                          width: 140,
-                          child: Text(
-                            'processingStatus',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.copyWith(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                ),
-                          ),
+                        Text(
+                          isNotFound
+                              ? 'Item not found'
+                              : 'Could not load item: $error',
+                          key: isNotFound
+                              ? const Key('item-detail-not-found')
+                              : const Key('item-detail-error'),
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.titleMedium,
                         ),
-                        Expanded(
-                          child: ProcessingStatusBadge(
-                            status: item.processingStatus,
+                        if (!isNotFound) ...[
+                          const SizedBox(height: 16),
+                          FilledButton(
+                            key: const Key('item-detail-retry'),
+                            onPressed: _retry,
+                            child: const Text('Retry'),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),
-                  _DetailRow(
-                    label: 'createdAt',
-                    value: item.createdAt,
-                    valueKey: 'item-created-at',
-                  ),
-                  if (item.sourceRef != null)
-                    _DetailRow(
-                      label: 'sourceRef',
-                      value: item.sourceRef!,
-                      valueKey: 'item-source-ref',
+                );
+              }
+              return const SizedBox.shrink();
+            }
+
+            return ListView(
+              key: const Key('item-detail'),
+              padding: const EdgeInsets.all(24),
+              children: [
+                ItemReviewSection(
+                  key: _reviewKey,
+                  itemId: widget.itemId,
+                  item: item,
+                  edits: _edits,
+                  embedSaveButton: false,
+                ),
+              ],
+            );
+          },
+        );
+
+        return ListenableBuilder(
+          listenable: _edits,
+          builder: (context, _) {
+            return PopScope(
+              canPop: !_edits.isDirty,
+              onPopInvokedWithResult: (didPop, result) async {
+                if (didPop) return;
+                final ok = await _edits.confirmLeave?.call() ?? true;
+                if (ok && context.mounted) {
+                  Navigator.of(context).pop(result);
+                }
+              },
+              child: Scaffold(
+                appBar: AppBar(
+                  title: const Text('Item'),
+                  actions: [
+                    FilledButton(
+                      key: const Key('item-detail-save'),
+                      onPressed: _edits.isDirty &&
+                              !_edits.saving &&
+                              _edits.save != null
+                          ? () => _edits.save!()
+                          : null,
+                      child: const Text('Save'),
                     ),
-                  if (item.contentHash != null)
-                    _DetailRow(
-                      label: 'contentHash',
-                      value: item.contentHash!,
-                      valueKey: 'item-content-hash',
+                    const SizedBox(width: 8),
+                    SureActionButton(
+                      idleKey: const Key('item-delete'),
+                      confirmKey: const Key('item-remove-confirm'),
+                      tooltip: 'Remove item',
+                      confirmSemanticsLabel: 'Confirm remove item',
+                      icon: const Icon(Icons.remove_circle_outline),
+                      enabled: !jobs.deleted,
+                      onConfirm: () => _removeItem(jobs),
                     ),
-                  const SizedBox(height: 24),
-                  Text(
-                    'Tagging & jobs',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 12),
-                  if (jobs.latestJob != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Row(
-                        key: const Key('job-progress'),
-                        children: [
-                          if (jobs.isBusy) ...[
-                            const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                            const SizedBox(width: 8),
-                          ],
-                          JobStateBadge(state: jobs.latestJob!.state),
-                        ],
-                      ),
-                    ),
-                  if (jobs.error != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Text(
-                        '${jobs.error}',
-                        key: const Key('jobs-error'),
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                        ),
-                      ),
-                    ),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      FilledButton(
-                        key: const Key('item-analyze'),
-                        onPressed: canAnalyze
-                            ? () => _onAnalyzePressed(jobs, item)
-                            : null,
-                        child: Text(
-                          uploading ? 'Re-uploading…' : 'Analyze',
-                        ),
-                      ),
-                      if (needsReuploadButton)
-                        OutlinedButton(
-                          key: const Key('item-reupload'),
-                          onPressed: () => _onReuploadPressed(jobs, item),
-                          child: const Text('Re-upload'),
-                        ),
-                      if (jobs.canCancel)
-                        OutlinedButton(
-                          key: const Key('item-cancel-job'),
-                          onPressed: () => jobs.cancel(),
-                          child: const Text('Cancel'),
-                        ),
-                      if (jobs.canRetry)
-                        OutlinedButton(
-                          key: const Key('item-retry-job'),
-                          onPressed: () =>
-                              jobs.retry(itemType: item.type),
-                          child: const Text('Retry'),
-                        ),
-                    ],
-                  ),
-                  if (needsReuploadButton)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: Text(
-                        'Model-host file expired. Re-upload the local file, then Analyze.',
-                        key: Key('reupload-hint'),
-                      ),
-                    ),
-                  if (!isPhoto)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: Text(
-                        'Analyze is photo-only in v1 (sample-frame tagging).',
-                        key: Key('analyze-photo-only-hint'),
-                      ),
-                    ),
-                  if (blocked && isPhoto)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: Text(
-                        'Budget pause blocks new analyze.',
-                        key: Key('analyze-budget-blocked-hint'),
-                      ),
-                    ),
-                  const SizedBox(height: 32),
-                  ItemReviewSection(itemId: widget.itemId),
-                ],
-              );
-            },
-          ),
+                  ],
+                ),
+                body: body,
+              ),
+            );
+          },
         );
       },
-    );
-  }
-}
-
-class _DetailRow extends StatelessWidget {
-  const _DetailRow({
-    required this.label,
-    required this.value,
-    required this.valueKey,
-  });
-
-  final String label;
-  final String value;
-  final String valueKey;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 140,
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              key: Key(valueKey),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

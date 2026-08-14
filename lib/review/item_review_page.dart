@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
@@ -6,37 +8,53 @@ import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/app_shell.dart'
     show itemsRepositoryProvider, personsRepositoryProvider;
 import 'package:tagkin_desktop/contract/contract.dart';
-import 'package:tagkin_desktop/knowledge/comments_view.dart';
-import 'package:tagkin_desktop/knowledge/corrections_history_view.dart';
 import 'package:tagkin_desktop/knowledge/tag_edit_dialog.dart';
+import 'package:tagkin_desktop/library/item_detail_edits.dart';
+import 'package:tagkin_desktop/library/item_fields_group.dart';
 import 'package:tagkin_desktop/persons/person_detail_page.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/review/key_period_scrubber.dart';
 import 'package:tagkin_desktop/review/knowledge_view.dart';
+import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/review/media_viewer.dart';
 import 'package:tagkin_desktop/review/review_controller.dart';
 import 'package:tagkin_desktop/undo/undo_controller.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
+import 'package:tagkin_desktop/undo/undoable_action.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
 /// Review screen: local media + approved knowledge + corrections/comments.
 ///
 /// Embedded below D2/D7 metadata on the item detail screen. D9 adds
-/// Find person matches + appearance → person navigation. D10 owns tag /
-/// captured-at / key-period corrections and comments. D12 owns per-screen
+/// per-crop / whole-item person assign. D10 owns tag /
+/// key-period corrections and comments. D12 owns per-screen
 /// LIFO undo/redo (Cmd/Ctrl+Z) for this Review page.
 class ItemReviewSection extends ConsumerStatefulWidget {
   const ItemReviewSection({
     super.key,
     required this.itemId,
+    this.item,
     this.openVideo = true,
+    this.edits,
+    this.embedSaveButton = true,
   });
 
   final String itemId;
 
+  /// When set, the Status / Type / Captured / Added / File group can render
+  /// before knowledge loads (Who–Where show — until then).
+  final Item? item;
+
   /// When false, skips native media_kit open (widget tests).
   final bool openVideo;
+
+  /// Shared dirty/Save hooks for the item AppBar. When null, this section
+  /// owns a local [ItemDetailEdits] and [embedSaveButton] shows Save here.
+  final ItemDetailEdits? edits;
+
+  /// Show an in-body Save when the AppBar is not hosting one.
+  final bool embedSaveButton;
 
   @override
   ConsumerState<ItemReviewSection> createState() => _ItemReviewSectionState();
@@ -46,22 +64,66 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
   Player? _player;
   VideoController? _videoController;
   String? _openedPath;
-  bool _linking = false;
-  String? _linkStatus;
+  bool _saving = false;
+  String? _assignError;
   late final UndoController _undoStack = UndoController();
+  late final ItemDetailEdits _edits = widget.edits ?? ItemDetailEdits();
+  bool _ownsEdits = false;
+  List<Person> _persons = const [];
+  Map<String, String> _personNamesById = {};
+  String _comment = '';
+  String _commentBaseline = '';
+  final Map<String, PersonAssignIntent> _cropIntents = {};
+  final Map<String, PersonAssignIntent> _appearanceIntents = {};
+  final List<PersonAssignIntent> _pendingItemAssigns = [];
+  bool _baselineReady = false;
 
   @override
   void initState() {
     super.initState();
+    _ownsEdits = widget.edits == null;
+    _edits.save = _save;
+    _edits.discard = _discard;
+    _edits.confirmLeave = _confirmLeave;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final review = ref.read(reviewControllerProvider(widget.itemId));
       review.undoStack = _undoStack;
       review.load();
+      unawaited(_loadPersonNames());
     });
   }
 
   @override
+  void didUpdateWidget(covariant ItemReviewSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _edits.save = _save;
+    _edits.discard = _discard;
+    _edits.confirmLeave = _confirmLeave;
+  }
+
+  Future<void> _loadPersonNames() async {
+    try {
+      final people = await ref.read(personsRepositoryProvider).listPersons();
+      if (!mounted) return;
+      setState(() {
+        _persons = people;
+        _personNamesById = {for (final p in people) p.id: p.name};
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _persons = const [];
+        _personNamesById = {};
+      });
+    }
+  }
+
+  @override
   void dispose() {
+    _edits.save = null;
+    _edits.discard = null;
+    _edits.confirmLeave = null;
+    if (_ownsEdits) _edits.dispose();
     _undoStack.dispose();
     _disposePlayer();
     super.dispose();
@@ -102,53 +164,466 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     }
   }
 
-  Future<void> _linkPeople() async {
-    if (_linking) return;
+  PersonAssignIntent _baselineCrop(ItemKnowledge knowledge, String tagId) {
+    final appearance = appearanceForWhoTag(knowledge, tagId);
+    return PersonAssignIntent(personId: appearance?.personId);
+  }
+
+  PersonAssignIntent _baselineAppearance(PersonAppearance appearance) {
+    return PersonAssignIntent(personId: appearance.personId);
+  }
+
+  bool get _isDirty {
+    final review = ref.read(reviewControllerProvider(widget.itemId));
+    final knowledge = review.knowledge;
+    if (_comment.trim() != _commentBaseline.trim()) return true;
+    if (_pendingItemAssigns.isNotEmpty) return true;
+    if (knowledge == null) return _cropIntents.isNotEmpty || _appearanceIntents.isNotEmpty;
+    for (final e in _cropIntents.entries) {
+      if (!e.value.sameAs(_baselineCrop(knowledge, e.key))) return true;
+    }
+    for (final e in _appearanceIntents.entries) {
+      PersonAppearance? appearance;
+      for (final a in knowledge.appearances) {
+        if (a.id == e.key) {
+          appearance = a;
+          break;
+        }
+      }
+      if (appearance == null) return true;
+      if (!e.value.sameAs(_baselineAppearance(appearance))) return true;
+    }
+    return false;
+  }
+
+  void _publishDirty() {
+    _edits.update(dirty: _isDirty, saving: _saving);
+  }
+
+  void _adoptBaseline(ReviewController review) {
+    if (_baselineReady) return;
+    if (_isDirty) {
+      _baselineReady = true;
+      return;
+    }
     setState(() {
-      _linking = true;
-      _linkStatus = null;
+      _comment = review.itemComments.firstOrNull?.body ?? '';
+      _commentBaseline = _comment;
+      _cropIntents.clear();
+      _appearanceIntents.clear();
+      _pendingItemAssigns.clear();
+      _baselineReady = true;
     });
+    _publishDirty();
+  }
+
+  void _mutateDraft(VoidCallback change, {required String label}) {
+    final beforeComment = _comment;
+    final beforeCrops = Map<String, PersonAssignIntent>.from(_cropIntents);
+    final beforeAppearances =
+        Map<String, PersonAssignIntent>.from(_appearanceIntents);
+    final beforePending = List<PersonAssignIntent>.from(_pendingItemAssigns);
+    setState(change);
+    final afterComment = _comment;
+    final afterCrops = Map<String, PersonAssignIntent>.from(_cropIntents);
+    final afterAppearances =
+        Map<String, PersonAssignIntent>.from(_appearanceIntents);
+    final afterPending = List<PersonAssignIntent>.from(_pendingItemAssigns);
+    if (beforeComment == afterComment &&
+        _mapEquals(beforeCrops, afterCrops) &&
+        _mapEquals(beforeAppearances, afterAppearances) &&
+        _listEquals(beforePending, afterPending)) {
+      _publishDirty();
+      return;
+    }
+    _undoStack.push(
+      CallbackUndoableAction(
+        label: label,
+        onUndo: () async {
+          setState(() {
+            _comment = beforeComment;
+            _cropIntents
+              ..clear()
+              ..addAll(beforeCrops);
+            _appearanceIntents
+              ..clear()
+              ..addAll(beforeAppearances);
+            _pendingItemAssigns
+              ..clear()
+              ..addAll(beforePending);
+          });
+          _publishDirty();
+        },
+        onRedo: () async {
+          setState(() {
+            _comment = afterComment;
+            _cropIntents
+              ..clear()
+              ..addAll(afterCrops);
+            _appearanceIntents
+              ..clear()
+              ..addAll(afterAppearances);
+            _pendingItemAssigns
+              ..clear()
+              ..addAll(afterPending);
+          });
+          _publishDirty();
+        },
+      ),
+    );
+    _publishDirty();
+  }
+
+  bool _mapEquals(
+    Map<String, PersonAssignIntent> a,
+    Map<String, PersonAssignIntent> b,
+  ) {
+    if (a.length != b.length) return false;
+    for (final e in a.entries) {
+      final other = b[e.key];
+      if (other == null || !e.value.sameAs(other)) return false;
+    }
+    return true;
+  }
+
+  bool _listEquals(List<PersonAssignIntent> a, List<PersonAssignIntent> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (!a[i].sameAs(b[i])) return false;
+    }
+    return true;
+  }
+
+  Future<void> _assignCrop(
+    String tagId, {
+    String? personId,
+    String? name,
+  }) async {
+    _mutateDraft(
+      () {
+        _cropIntents[tagId] = PersonAssignIntent(
+          personId: personId,
+          name: name,
+        );
+      },
+      label: 'Assign face',
+    );
+  }
+
+  Future<void> _assignItem({String? personId, String? name}) async {
+    _mutateDraft(
+      () {
+        _pendingItemAssigns.add(
+          PersonAssignIntent(personId: personId, name: name),
+        );
+      },
+      label: 'Assign item',
+    );
+  }
+
+  Future<void> _reassignAppearance(
+    String appearanceId, {
+    String? personId,
+    String? name,
+  }) async {
+    _mutateDraft(
+      () {
+        _appearanceIntents[appearanceId] = PersonAssignIntent(
+          personId: personId,
+          name: name,
+        );
+      },
+      label: 'Reassign',
+    );
+  }
+
+  Future<void> _unassignAppearance(String appearanceId) async {
+    _mutateDraft(
+      () {
+        final knowledge =
+            ref.read(reviewControllerProvider(widget.itemId)).knowledge;
+        var fromCrop = false;
+        if (knowledge != null) {
+          for (final tag in whoFaceCropTags(knowledge)) {
+            final ap = appearanceForWhoTag(knowledge, tag.id);
+            if (ap?.id == appearanceId) {
+              _cropIntents[tag.id] = const PersonAssignIntent(unassign: true);
+              fromCrop = true;
+            }
+          }
+        }
+        if (!fromCrop) {
+          _appearanceIntents[appearanceId] =
+              const PersonAssignIntent(unassign: true);
+        }
+      },
+      label: 'Unassign',
+    );
+  }
+
+  Future<void> _excludeCrop(String tagId) async {
+    _mutateDraft(
+      () {
+        _cropIntents[tagId] = const PersonAssignIntent(exclude: true);
+      },
+      label: 'Exclude face',
+    );
+  }
+
+  Future<void> _save() async {
+    if (_saving || !_isDirty) return;
+    final review = ref.read(reviewControllerProvider(widget.itemId));
+    final knowledge = review.knowledge;
+    final previousComment = _commentBaseline;
+    final previousCrop = knowledge == null
+        ? const <String, PersonAssignIntent>{}
+        : {
+            for (final tag in whoFaceCropTags(knowledge))
+              tag.id: _baselineCrop(knowledge, tag.id),
+          };
+    final previousAppearances = knowledge == null
+        ? const <String, PersonAssignIntent>{}
+        : {
+            for (final a in itemLevelPersonAssignments(knowledge))
+              a.id: _baselineAppearance(a),
+          };
+    final forwardComment = _comment;
+    final forwardCrops = Map<String, PersonAssignIntent>.from(_cropIntents);
+    final forwardAppearances =
+        Map<String, PersonAssignIntent>.from(_appearanceIntents);
+    final forwardPending = List<PersonAssignIntent>.from(_pendingItemAssigns);
+    final createdExclusionIds = <String>[];
+
+    setState(() {
+      _saving = true;
+      _assignError = null;
+    });
+    _publishDirty();
     try {
-      final items = ref.read(itemsRepositoryProvider);
-      final persons = ref.read(personsRepositoryProvider);
-      final result = await items.linkPeopleForItem(widget.itemId);
-      if (!mounted) return;
-
-      // Auto-likeness assigns matches to an existing named person, or leaves
-      // the appearance in FaceGroup FA (personId null) for a human to name
-      // later in the Faces trays — never mints an unnamed Person (R2).
-      final personIds = result.appearances
-          .map((a) => a.personId)
-          .whereType<String>()
-          .toSet();
-      final named = <String>[];
-      for (final personId in personIds) {
-        final detail = await persons.getPerson(personId);
-        if (!mounted) return;
-        named.add(detail.name);
+      if (review.knowledge == null) {
+        await review.load();
       }
-
-      if (!mounted) return;
-      final linkCount = result.appearances.length;
-      final status = StringBuffer('Found $linkCount appearance link(s)');
-      if (named.isNotEmpty) {
-        status.write(' — ${named.join(', ')}');
+      if (forwardCrops.isNotEmpty ||
+          forwardAppearances.isNotEmpty ||
+          forwardPending.isNotEmpty) {
+        createdExclusionIds.addAll(
+          await _applyPersonIntents(
+            knowledge: review.knowledge ?? knowledge,
+            cropIntents: forwardCrops,
+            appearanceIntents: forwardAppearances,
+            pendingItemAssigns: forwardPending,
+          ),
+        );
       }
-      setState(() => _linkStatus = status.toString());
-      await ref.read(reviewControllerProvider(widget.itemId)).load();
+      await review.saveItemComment(forwardComment);
+      if (!mounted) return;
+      await _loadPersonNames();
+      await review.load();
+      if (!mounted) return;
+      _comment = review.itemComments.firstOrNull?.body ?? '';
+      _commentBaseline = _comment;
+      _cropIntents.clear();
+      _appearanceIntents.clear();
+      _pendingItemAssigns.clear();
+      _baselineReady = true;
+      _undoStack.clear();
+      _undoStack.push(
+        CallbackUndoableAction(
+          label: 'Save item',
+          onUndo: () async {
+            final items = ref.read(itemsRepositoryProvider);
+            for (final id in createdExclusionIds) {
+              await items.undoWhoExclusion(widget.itemId, id);
+            }
+            if (previousCrop.isNotEmpty || previousAppearances.isNotEmpty) {
+              await _applyPersonIntents(
+                knowledge: ref.read(reviewControllerProvider(widget.itemId)).knowledge,
+                cropIntents: previousCrop,
+                appearanceIntents: previousAppearances,
+                pendingItemAssigns: const [],
+              );
+            }
+            await review.saveItemComment(previousComment);
+            if (!mounted) return;
+            await _loadPersonNames();
+            await review.load();
+            if (!mounted) return;
+            setState(() {
+              _comment = previousComment;
+              _commentBaseline = previousComment;
+              _cropIntents.clear();
+              _appearanceIntents.clear();
+              _pendingItemAssigns.clear();
+            });
+            _publishDirty();
+          },
+          onRedo: () async {
+            if (forwardCrops.isNotEmpty ||
+                forwardAppearances.isNotEmpty ||
+                forwardPending.isNotEmpty) {
+              await _applyPersonIntents(
+                knowledge: ref.read(reviewControllerProvider(widget.itemId)).knowledge,
+                cropIntents: forwardCrops,
+                appearanceIntents: forwardAppearances,
+                pendingItemAssigns: forwardPending,
+              );
+            }
+            await review.saveItemComment(forwardComment);
+            if (!mounted) return;
+            await _loadPersonNames();
+            await review.load();
+            if (!mounted) return;
+            setState(() {
+              _comment = forwardComment;
+              _commentBaseline = forwardComment;
+              _cropIntents.clear();
+              _appearanceIntents.clear();
+              _pendingItemAssigns.clear();
+            });
+            _publishDirty();
+          },
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _linkStatus = 'Find person matches failed: $e';
-      });
+      setState(() => _assignError = '$e');
     } finally {
       if (mounted) {
-        setState(() => _linking = false);
+        setState(() => _saving = false);
+        _publishDirty();
       }
     }
   }
 
+  Future<List<String>> _applyPersonIntents({
+    required ItemKnowledge? knowledge,
+    required Map<String, PersonAssignIntent> cropIntents,
+    required Map<String, PersonAssignIntent> appearanceIntents,
+    required List<PersonAssignIntent> pendingItemAssigns,
+  }) async {
+    final items = ref.read(itemsRepositoryProvider);
+    final persons = ref.read(personsRepositoryProvider);
+    final unlinked = <String>{};
+    final createdExclusionIds = <String>[];
+    for (final e in cropIntents.entries) {
+      final intent = e.value;
+      final appearance =
+          knowledge == null ? null : appearanceForWhoTag(knowledge, e.key);
+      if (intent.exclude) {
+        final created = await items.createWhoExclusion(widget.itemId, e.key);
+        createdExclusionIds.add(created.exclusion.id);
+        continue;
+      }
+      if (intent.unassign) {
+        if (appearance?.id != null) {
+          await persons.unlinkAppearance(appearance!.id);
+          unlinked.add(appearance.id);
+        }
+        continue;
+      }
+      if (!intent.hasTarget) continue;
+      if (appearance?.id != null &&
+          intent.personId != null &&
+          intent.name == null) {
+        await persons.reassignAppearance(
+          appearance!.id,
+          personId: intent.personId,
+        );
+      } else {
+        await items.assignPersonToItem(
+          widget.itemId,
+          personId: intent.personId,
+          name: intent.name,
+          tagId: e.key,
+        );
+      }
+    }
+    for (final e in appearanceIntents.entries) {
+      final intent = e.value;
+      if (intent.unassign) {
+        if (!unlinked.contains(e.key)) {
+          await persons.unlinkAppearance(e.key);
+        }
+        continue;
+      }
+      if (!intent.hasTarget) continue;
+      await persons.reassignAppearance(
+        e.key,
+        personId: intent.personId,
+        name: intent.name,
+      );
+    }
+    for (final intent in pendingItemAssigns) {
+      if (!intent.hasTarget) continue;
+      await items.assignPersonToItem(
+        widget.itemId,
+        personId: intent.personId,
+        name: intent.name,
+      );
+    }
+    return createdExclusionIds;
+  }
+
+  void _discard() {
+    setState(() {
+      _comment = _commentBaseline;
+      _cropIntents.clear();
+      _appearanceIntents.clear();
+      _pendingItemAssigns.clear();
+    });
+    _undoStack.clear();
+    _publishDirty();
+  }
+
+  Future<bool> _confirmLeave() async {
+    if (!_isDirty) return true;
+    if (!mounted) return false;
+    final choice = await showDialog<_ItemDetailLeaveChoice>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        key: const Key('item-detail-dirty-dialog'),
+        title: const Text('Save item?'),
+        content: const Text(
+          'You have unsaved changes. Save before leaving?',
+        ),
+        actions: [
+          TextButton(
+            key: const Key('item-detail-dirty-discard'),
+            onPressed: () =>
+                Navigator.pop(ctx, _ItemDetailLeaveChoice.discard),
+            child: const Text('Discard'),
+          ),
+          TextButton(
+            key: const Key('item-detail-dirty-cancel'),
+            onPressed: () =>
+                Navigator.pop(ctx, _ItemDetailLeaveChoice.cancel),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('item-detail-dirty-save'),
+            onPressed: () => Navigator.pop(ctx, _ItemDetailLeaveChoice.save),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return false;
+    switch (choice) {
+      case _ItemDetailLeaveChoice.discard:
+        _discard();
+        return true;
+      case _ItemDetailLeaveChoice.save:
+        await _save();
+        return !_isDirty;
+      case _ItemDetailLeaveChoice.cancel:
+      case null:
+        return false;
+    }
+  }
+
   Future<void> _openPerson(String personId) async {
+    final ok = await _confirmLeave();
+    if (!ok || !mounted) return;
     final container = ProviderScope.containerOf(context);
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
@@ -163,27 +638,6 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     if (mounted) {
       await ref.read(reviewControllerProvider(widget.itemId)).load();
     }
-  }
-
-  Future<void> _addTag(ReviewController review, String dimension) async {
-    final result = await showTagEditDialog(
-      context,
-      initialDimension: dimension,
-      lockDimension: true,
-    );
-    if (result == null) return;
-    await review.addTag(dimension: result.dimension, value: result.value);
-  }
-
-  Future<void> _editTag(ReviewController review, Tag tag) async {
-    final result = await showTagEditDialog(
-      context,
-      initialDimension: tag.dimension,
-      initialValue: tag.value,
-      lockDimension: true,
-    );
-    if (result == null) return;
-    await review.editTag(tag.id, result.value);
   }
 
   Future<void> _editBounds(
@@ -203,36 +657,57 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     );
   }
 
-  Future<void> _editCapturedAt(ReviewController review) async {
-    final current = review.knowledge?.item.capturedAt;
-    DateTime initial = DateTime.now();
-    if (current != null) {
-      initial = DateTime.tryParse(current) ?? initial;
+  List<String> _whoCsvNames(ItemKnowledge knowledge) {
+    final names = <String>[];
+    final seen = <String>{};
+    void add(String? raw) {
+      final n = raw?.trim();
+      if (n == null || n.isEmpty || !seen.add(n)) return;
+      names.add(n);
     }
-    final date = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: DateTime(1970),
-      lastDate: DateTime(2100),
-    );
-    if (date == null || !mounted) return;
-    final time = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(initial),
-    );
-    if (time == null || !mounted) return;
-    final combined = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      time.hour,
-      time.minute,
-    ).toUtc();
-    await review.correctCapturedAt(combined.toIso8601String());
+
+    final crops = whoFaceCropTags(knowledge);
+    if (crops.isNotEmpty) {
+      for (final tag in crops) {
+        final appearance = appearanceForWhoTag(knowledge, tag.id);
+        final intent = _cropIntents[tag.id];
+        if (intent?.unassign == true || intent?.exclude == true) continue;
+        if (intent?.name != null) {
+          add(intent!.name);
+        } else if (intent?.personId != null) {
+          add(_personNamesById[intent!.personId]);
+        } else {
+          add(_personNamesById[appearance?.personId]);
+        }
+      }
+    } else {
+      for (final appearance in itemLevelPersonAssignments(knowledge)) {
+        final intent = _appearanceIntents[appearance.id];
+        if (intent?.unassign == true) continue;
+        if (intent?.name != null) {
+          add(intent!.name);
+        } else if (intent?.personId != null) {
+          add(_personNamesById[intent!.personId]);
+        } else {
+          add(_personNamesById[appearance.personId]);
+        }
+      }
+      for (final pending in _pendingItemAssigns) {
+        if (pending.name != null) {
+          add(pending.name);
+        } else {
+          add(_personNamesById[pending.personId]);
+        }
+      }
+    }
+    return names;
   }
 
   @override
   Widget build(BuildContext context) {
+    _edits.save = _save;
+    _edits.discard = _discard;
+    _edits.confirmLeave = _confirmLeave;
     final review = ref.watch(reviewControllerProvider(widget.itemId));
     final showFaceOverlays =
         ref.watch(desktopPrefsProvider).showFaceOverlays;
@@ -252,6 +727,14 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
           });
         }
 
+        final fieldsItem = knowledge?.item ?? widget.item;
+        if (review.phase == ReviewPhase.ready ||
+            review.phase == ReviewPhase.busy) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _adoptBaseline(review);
+          });
+        }
+
         return ActiveUndoHost(
           controller: _undoStack,
           child: UndoShortcuts(
@@ -266,16 +749,89 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
           key: const Key('item-review'),
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Text(
-                  'Review',
-                  style: Theme.of(context).textTheme.titleMedium,
+            if (widget.embedSaveButton) ...[
+              Align(
+                alignment: Alignment.centerRight,
+                child: ListenableBuilder(
+                  listenable: _edits,
+                  builder: (context, _) {
+                    return FilledButton(
+                      key: const Key('item-detail-save'),
+                      onPressed: _edits.isDirty && !_edits.saving ? _save : null,
+                      child: const Text('Save'),
+                    );
+                  },
                 ),
-                const SizedBox(width: 8),
-                UndoDepthBadge(controller: _undoStack),
-              ],
-            ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            if (fieldsItem != null) ...[
+              ItemFieldsGroup(
+                item: fieldsItem,
+                knowledge: knowledge,
+                personNamesById: _personNamesById,
+                whoPersonNames:
+                    knowledge == null ? null : _whoCsvNames(knowledge),
+                omittedWhoTagIds: {
+                  for (final e in _cropIntents.entries)
+                    if (e.value.exclude) e.key,
+                },
+                commentText: _comment,
+                commentEnabled: !review.isBusy && !_saving,
+                onCommentChanged: (value) {
+                  setState(() => _comment = value);
+                  _publishDirty();
+                },
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (knowledge != null) ...[
+              KnowledgeView(
+                knowledge: knowledge,
+                itemId: knowledge.item.id,
+                personNamesById: _personNamesById,
+                persons: _persons,
+                assignEnabled: !_saving,
+                cropIntents: _cropIntents,
+                appearanceIntents: _appearanceIntents,
+                pendingItemAssigns: _pendingItemAssigns,
+                onPersonTap: _openPerson,
+                onAssignCrop: _assignCrop,
+                onAssignItem: _assignItem,
+                onReassignAppearance: _reassignAppearance,
+                onUnassign: _unassignAppearance,
+                onExcludeCrop: _excludeCrop,
+                onRemovePendingItemAssign: (index) {
+                  _mutateDraft(
+                    () => _pendingItemAssigns.removeAt(index),
+                    label: 'Unassign',
+                  );
+                },
+              ),
+              Builder(
+                builder: (context) {
+                  final draftExcluded = [
+                    for (final tag in whoFaceCropTags(knowledge))
+                      if (_cropIntents[tag.id]?.exclude == true) tag,
+                  ];
+                  if (knowledge.whoExclusions.isEmpty &&
+                      draftExcluded.isEmpty) {
+                    return const SizedBox.shrink();
+                  }
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 12),
+                      ExcludedFacesStrip(
+                        knowledge: knowledge,
+                        draftExcludedCrops: draftExcluded,
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ],
+            UndoDepthBadge(controller: _undoStack),
             const SizedBox(height: 12),
             if (review.phase == ReviewPhase.loading)
               const Padding(
@@ -292,8 +848,10 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
                 onRetry: () => review.load(),
               )
             else if (knowledge != null && media != null) ...[
-              _MediaStatusBanner(resolution: media),
-              const SizedBox(height: 12),
+              if (media.status != LocalMediaStatus.available) ...[
+                _MediaStatusBanner(resolution: media),
+                const SizedBox(height: 12),
+              ],
               MediaViewer(
                 itemType: knowledge.item.type,
                 resolution: media,
@@ -310,35 +868,14 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
                         .toList()
                     : const [],
               ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'capturedAt: ${knowledge.item.capturedAt ?? '—'}',
-                      key: const Key('review-captured-at'),
-                    ),
-                  ),
-                  TextButton(
-                    key: const Key('captured-at-edit'),
-                    onPressed: review.isBusy
-                        ? null
-                        : () => _editCapturedAt(review),
-                    child: const Text('Edit'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              KnowledgeView(
-                knowledge: knowledge,
-                itemId: knowledge.item.id,
-                onPersonTap: _openPerson,
-                onAddTag: (d) => _addTag(review, d),
-                onEditTag: (t) => _editTag(review, t),
-                onRemoveTag: (t) => review.removeTag(t.id),
-                onExcludeWho: (t) => review.excludeWhoFace(t.id),
-                correctionsEnabled: !review.isBusy,
-              ),
+              if (_assignError != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _assignError!,
+                  key: const Key('item-assign-error'),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
               if (review.mutationError != null) ...[
                 const SizedBox(height: 8),
                 Text(
@@ -347,33 +884,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ],
-              const SizedBox(height: 16),
-              CorrectionsHistoryView(
-                corrections: knowledge.corrections,
-              ),
-              const SizedBox(height: 16),
-              CommentsView(
-                comments: review.itemComments,
-                onAdd: review.addItemComment,
-                onEdit: review.editComment,
-                onDelete: review.deleteComment,
-                enabled: !review.isBusy,
-              ),
               const SizedBox(height: 12),
-              OutlinedButton(
-                key: const Key('item-link-people'),
-                onPressed: _linking ? null : _linkPeople,
-                child: Text(
-                  _linking ? 'Finding matches…' : 'Find person matches',
-                ),
-              ),
-              if (_linkStatus != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  _linkStatus!,
-                  key: const Key('link-people-status'),
-                ),
-              ],
               if (knowledge.item.type == ItemType.video) ...[
                 const SizedBox(height: 16),
                 KeyPeriodScrubber(
@@ -396,6 +907,8 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     );
   }
 }
+
+enum _ItemDetailLeaveChoice { save, discard, cancel }
 
 class _ReviewError extends StatelessWidget {
   const _ReviewError({required this.error, required this.onRetry});
@@ -442,8 +955,7 @@ class _MediaStatusBanner extends StatelessWidget {
     final Key key;
     switch (resolution.status) {
       case LocalMediaStatus.available:
-        label = 'Local media verified (contentHash match).';
-        key = const Key('media-status-available');
+        return const SizedBox.shrink();
       case LocalMediaStatus.missing:
         label = 'Local media missing.';
         key = const Key('media-status-missing');
@@ -452,7 +964,7 @@ class _MediaStatusBanner extends StatelessWidget {
             'Local media access denied (macOS sandbox). Re-select the folder.';
         key = const Key('media-status-access-denied');
       case LocalMediaStatus.hashMismatch:
-        label = 'Local media contentHash mismatch.';
+        label = 'This file does not match the library record.';
         key = const Key('media-status-hash-mismatch');
       case LocalMediaStatus.unsupported:
         label = 'Local media not supported for this source.';

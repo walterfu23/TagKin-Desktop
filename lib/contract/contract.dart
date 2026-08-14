@@ -239,6 +239,32 @@ class AssignFaceGroup {
   }
 }
 
+class AssignPerson {
+  const AssignPerson({
+    this.personId,
+    this.name,
+    this.tagId,
+  });
+
+  final String? personId;
+  final String? name;
+  final String? tagId;
+
+  factory AssignPerson.fromJson(Map<String, dynamic> json) => AssignPerson(
+        personId: json['personId'] == null ? null : json['personId'] as String,
+        name: json['name'] == null ? null : json['name'] as String,
+        tagId: json['tagId'] == null ? null : json['tagId'] as String,
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    if (personId != null) json['personId'] = personId;
+    if (name != null) json['name'] = name;
+    if (tagId != null) json['tagId'] = tagId;
+    return json;
+  }
+}
+
 class AssignedAppearancesPage {
   const AssignedAppearancesPage({
     required this.appearances,

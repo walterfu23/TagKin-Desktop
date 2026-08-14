@@ -15,7 +15,7 @@ import 'package:tagkin_desktop/widgets/sure_action_button.dart';
 
 const double _kThumbSize = 56;
 const double _kColThumb = 72;
-const double _kColWho = 160;
+const double _kColWho = 280;
 const double _kColWhat = 180;
 const double _kColWhere = 160;
 const double _kColComment = 200;
@@ -579,8 +579,7 @@ class _DataRow extends ConsumerWidget {
                     width: _kColWho,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: _ExpandableValues(
-                        keyPrefix: 'who',
+                      child: _WhoValues(
                         itemId: item.id,
                         values: row.who,
                         expanded: controller.expandedWho.contains(item.id),
@@ -898,6 +897,120 @@ class _WhereEntryLine extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Horizontal space left for Who names after the cell's 8px padding.
+const double _kWhoTextWidth = _kColWho - 16;
+const int _kWhoCollapsedMaxLines = 2;
+
+/// How many leading [names] fit on [maxLines] at [maxWidth] without wrapping
+/// past the last line. Always at least 1 when [names] is non-empty.
+int _whoNamesFitting({
+  required List<String> names,
+  required TextStyle style,
+  required double maxWidth,
+  required int maxLines,
+}) {
+  if (names.isEmpty) return 0;
+  for (var n = names.length; n >= 1; n--) {
+    final painter = TextPainter(
+      text: TextSpan(text: names.take(n).join(', '), style: style),
+      maxLines: maxLines,
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: maxWidth);
+    final fits = !painter.didExceedMaxLines;
+    painter.dispose();
+    if (fits) return n;
+  }
+  return 1;
+}
+
+/// Library Who: as many names as fit, tooltip lists every name, +N more on overflow.
+class _WhoValues extends StatelessWidget {
+  const _WhoValues({
+    required this.itemId,
+    required this.values,
+    required this.expanded,
+    required this.loading,
+    required this.onToggle,
+  });
+
+  final String itemId;
+  final List<String> values;
+  final bool expanded;
+  final bool loading;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading && values.isEmpty) {
+      return Text(
+        '…',
+        key: Key('item-who-loading-$itemId'),
+        style: Theme.of(context).textTheme.bodySmall,
+      );
+    }
+    if (values.isEmpty) {
+      return Text(
+        '—',
+        key: Key('item-who-empty-$itemId'),
+        style: Theme.of(context).textTheme.bodySmall,
+      );
+    }
+    final style = DefaultTextStyle.of(context).style;
+    final collapsedFit = _whoNamesFitting(
+      names: values,
+      style: style,
+      maxWidth: _kWhoTextWidth,
+      maxLines: _kWhoCollapsedMaxLines,
+    );
+    final overflowCount = values.length - collapsedFit;
+    final shown = expanded ? values : values.take(collapsedFit).toList();
+    final allNames = values.join(', ');
+    final cell = ClipRect(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            shown.join(', '),
+            key: Key('item-who-$itemId'),
+            maxLines: expanded ? null : _kWhoCollapsedMaxLines,
+            overflow: expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+          ),
+          if (!expanded && overflowCount > 0)
+            TextButton(
+              key: Key('item-who-more-$itemId'),
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: onToggle,
+              child: Text('+$overflowCount more'),
+            ),
+          if (expanded && overflowCount > 0)
+            TextButton(
+              key: Key('item-who-less-$itemId'),
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: onToggle,
+              child: const Text('Show less'),
+            ),
+        ],
+      ),
+    );
+    return Tooltip(
+      key: Key('item-who-tooltip-$itemId'),
+      message: allNames,
+      waitDuration: Duration.zero,
+      child: cell,
     );
   }
 }

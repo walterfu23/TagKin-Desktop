@@ -412,4 +412,38 @@ void main() {
       client.close();
     });
   });
+
+  group('ItemsRepository.assignPersonToItem', () {
+    test('posts personId and tagId to /items/{id}/assign-person (R10)',
+        () async {
+      final mock = MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/items/item_1/assign-person');
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['personId'], 'person_1');
+        expect(body['tagId'], 'tag_who');
+        expect(body.containsKey('ownerUserId'), isFalse);
+        return http.Response(
+          jsonEncode(_appearanceJson(id: 'ap_1', personId: 'person_1')),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      final client = ApiClient(
+        baseUrl: 'http://api.test',
+        tokenProvider: () => 'tok',
+        httpClient: mock,
+      )..recordRequests = true;
+      final result = await ItemsRepository(client).assignPersonToItem(
+        'item_1',
+        personId: 'person_1',
+        tagId: 'tag_who',
+      );
+      expect(result.id, 'ap_1');
+      for (final r in client.recordedRequests) {
+        expect(r.bodyContainsOwnerField, isFalse);
+      }
+      client.close();
+    });
+  });
 }

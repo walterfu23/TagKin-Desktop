@@ -21,6 +21,7 @@ import 'fake_comments_repository.dart';
 import 'fake_corrections_repository.dart';
 import 'fake_items_repository.dart';
 import 'fake_jobs_repository.dart';
+import 'fake_persons_repository.dart';
 import 'fake_usage_repository.dart';
 
 Account _account(String id) => Account(
@@ -51,6 +52,7 @@ List<Override> _sessionOverrides({
     jobsRepositoryProvider.overrideWithValue(
       jobs ?? FakeJobsRepository(),
     ),
+    personsRepositoryProvider.overrideWithValue(FakePersonsRepository()),
     collectionsStoreProvider.overrideWithValue(MemoryCollectionsStore()),
   ];
 }
@@ -176,8 +178,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('item-detail')), findsOneWidget);
-    expect(find.byKey(const Key('item-id')), findsOneWidget);
-    expect(find.text('item_nav'), findsWidgets);
+    expect(find.byKey(const Key('item-type')), findsOneWidget);
+    expect(find.text('item_nav'), findsNothing);
   });
 
   testWidgets('tap thumb opens item detail', (tester) async {
@@ -209,7 +211,7 @@ void main() {
     expect(find.byKey(const Key('item-row-item_src')), findsOneWidget);
   });
 
-  testWidgets('who more expands remaining names', (tester) async {
+  testWidgets('who column shows multiple names without more', (tester) async {
     final item = fixtureItem(
       id: 'item_who',
       processingStatus: ProcessingStatus.tagged,
@@ -239,14 +241,66 @@ void main() {
         },
       ),
     );
-    // Wait for knowledge warm.
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Sam'), findsWidgets);
+    expect(find.textContaining('Ada'), findsWidgets);
+    expect(find.byKey(const Key('item-who-more-item_who')), findsNothing);
+    expect(
+      tester
+          .widget<Tooltip>(find.byKey(const Key('item-who-tooltip-item_who')))
+          .message,
+      'Sam, Ada',
+    );
+  });
+
+  testWidgets('who more expands remaining names', (tester) async {
+    final item = fixtureItem(
+      id: 'item_who',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    const names = [
+      'Bartholomew Montgomery',
+      'Alexandria Wellington',
+      'Maximilian Harrington',
+      'Marguerite Fitzgerald',
+      'Christopher Bartholomew',
+      'Anastasia Montgomery',
+    ];
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(
+        items: [item],
+        knowledgeByItemId: {
+          'item_who': fixtureKnowledge(
+            item: item,
+            tags: [
+              for (var i = 0; i < names.length; i++)
+                fixtureTag(
+                  id: 'w$i',
+                  itemId: 'item_who',
+                  dimension: 'who',
+                  value: names[i],
+                ),
+            ],
+          ),
+        },
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 50));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('item-who-more-item_who')), findsOneWidget);
+    expect(
+      tester
+          .widget<Tooltip>(find.byKey(const Key('item-who-tooltip-item_who')))
+          .message,
+      names.join(', '),
+    );
     await tester.tap(find.byKey(const Key('item-who-more-item_who')));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Ada'), findsWidgets);
+    expect(find.textContaining(names.last), findsWidgets);
     expect(find.byKey(const Key('item-who-less-item_who')), findsOneWidget);
   });
 

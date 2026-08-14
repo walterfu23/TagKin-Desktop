@@ -291,6 +291,28 @@ void main() {
     controller.dispose();
   });
 
+  test('saveItemComment replaces the single item comment', () async {
+    final item = fixtureItem(id: 'item_1');
+    final knowledge = fixtureKnowledge(item: item, tags: const []);
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {'item_1': knowledge},
+    );
+    final comments = FakeCommentsRepository(authorUserId: 'acc_server');
+    final controller = _controller(items: items, comments: comments);
+    await controller.load();
+    await controller.saveItemComment('first');
+    expect(controller.itemComments, hasLength(1));
+    await controller.saveItemComment('second');
+    expect(controller.itemComments, hasLength(1));
+    expect(controller.itemComments.single.body, 'second');
+    expect(comments.createItemCalls, hasLength(1));
+    expect(comments.editCalls, hasLength(1));
+    await controller.saveItemComment('  ');
+    expect(controller.itemComments, isEmpty);
+    controller.dispose();
+  });
+
   test('mutation failure rolls back optimistic tag (R6)', () async {
     final item = fixtureItem(id: 'item_1');
     final knowledge = fixtureKnowledge(

@@ -14,6 +14,7 @@ import '../test/fake_comments_repository.dart';
 import '../test/fake_corrections_repository.dart';
 import '../test/fake_items_repository.dart';
 import '../test/fake_jobs_repository.dart';
+import '../test/fake_persons_repository.dart';
 import '../test/fake_usage_repository.dart';
 
 void main() {
@@ -53,6 +54,7 @@ void main() {
           ),
           usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
           jobsRepositoryProvider.overrideWithValue(FakeJobsRepository()),
+          personsRepositoryProvider.overrideWithValue(FakePersonsRepository()),
         ],
         child: const TagKinDesktopApp(),
       ),
@@ -69,6 +71,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('item-detail')), findsOneWidget);
-    expect(find.byKey(const Key('item-id')), findsOneWidget);
+    expect(find.byKey(const Key('item-type')), findsOneWidget);
   });
 }

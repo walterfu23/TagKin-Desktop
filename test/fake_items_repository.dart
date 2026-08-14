@@ -39,6 +39,9 @@ class FakeItemsRepository implements ItemsRepository {
   /// (matches real API; catches stale undoWhoExclusion after redo).
   int _whoExclusionSeq = 0;
 
+  final List<({String itemId, String tagId})> createWhoExclusionCalls =
+      <({String itemId, String tagId})>[];
+
   /// Optional grant factory; defaults to a non-expiring stub URL.
   final UploadGrant Function(String itemId, CreateUploadGrant input)?
       grantFactory;
@@ -254,6 +257,80 @@ class FakeItemsRepository implements ItemsRepository {
     return LinkPeopleResponse(appearances: List.from(linkPeopleResult));
   }
 
+  final List<({String itemId, String? personId, String? name, String? tagId})>
+      assignPersonCalls =
+      <({String itemId, String? personId, String? name, String? tagId})>[];
+
+  Object? assignPersonError;
+
+  @override
+  Future<PersonAppearance> assignPersonToItem(
+    String itemId, {
+    String? personId,
+    String? name,
+    String? tagId,
+  }) async {
+    await getItem(itemId);
+    assignPersonCalls.add(
+      (itemId: itemId, personId: personId, name: name, tagId: tagId),
+    );
+    if (assignPersonError != null) throw assignPersonError!;
+    final existing = _knowledgeByItemId[itemId];
+    if (tagId == null && existing != null) {
+      final hasCrop = existing.tags.any(
+        (t) =>
+            t.dimension == 'who' &&
+            t.status == TagStatus.active &&
+            t.region != null,
+      );
+      if (hasCrop) {
+        throw ApiException(
+          statusCode: 409,
+          message: 'item_has_face_crops',
+        );
+      }
+    }
+    var pid = personId;
+    if (pid == null) {
+      final n = name ?? 'Person';
+      pid = 'person_${n.toLowerCase().replaceAll(' ', '_')}';
+      final linked = linkedPersons;
+      if (linked != null &&
+          !linked.personDetails.any((p) => p.id == pid)) {
+        linked.personDetails.add(
+          fixturePersonDetail(id: pid, name: n, appearances: const []),
+        );
+      }
+    }
+    final appearance = PersonAppearance(
+      id: 'ap_assign_${tagId ?? itemId}_$pid',
+      personId: pid,
+      itemId: itemId,
+      tagId: tagId,
+      assignmentState: 'confirmed',
+      createdAt: '2026-08-13T00:00:00.000Z',
+    );
+    if (existing != null) {
+      final next = [
+        for (final a in existing.appearances)
+          if (tagId == null
+              ? a.personId != pid || a.tagId != null
+              : a.tagId != tagId)
+            a,
+        appearance,
+      ];
+      _knowledgeByItemId[itemId] = ItemKnowledge(
+        item: existing.item,
+        tags: existing.tags,
+        keyPeriods: existing.keyPeriods,
+        appearances: next,
+        corrections: existing.corrections,
+        whoExclusions: existing.whoExclusions,
+      );
+    }
+    return appearance;
+  }
+
   final List<WhoAppearancesRequest> whoAppearancesRecorded =
       <WhoAppearancesRequest>[];
 
@@ -287,6 +364,7 @@ class FakeItemsRepository implements ItemsRepository {
     String tagId,
   ) async {
     await getItem(itemId);
+    createWhoExclusionCalls.add((itemId: itemId, tagId: tagId));
 
     String? faceGroupId;
     FaceGroupKind? faceGroupKind;

@@ -47,7 +47,7 @@ class MediaViewer extends StatelessWidget {
     if (resolution.status == LocalMediaStatus.missing) {
       return const _MediaBanner(
         key: Key('media-missing'),
-        message: 'Local media not found at sourceRef.',
+        message: 'Local media not found.',
       );
     }
     if (resolution.status == LocalMediaStatus.accessDenied) {
@@ -61,7 +61,7 @@ class MediaViewer extends StatelessWidget {
     if (resolution.status == LocalMediaStatus.hashMismatch) {
       return const _MediaBanner(
         key: Key('media-hash-mismatch'),
-        message: 'Local file contentHash does not match the item record.',
+        message: 'This file does not match the library record.',
       );
     }
     if (resolution.status == LocalMediaStatus.unsupported ||

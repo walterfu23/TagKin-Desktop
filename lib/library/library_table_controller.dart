@@ -5,8 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:tagkin_desktop/api/comments_repository.dart';
 import 'package:tagkin_desktop/api/items_repository.dart';
+import 'package:tagkin_desktop/api/persons_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart'
-    show commentsRepositoryProvider, itemsRepositoryProvider;
+    show
+        commentsRepositoryProvider,
+        itemsRepositoryProvider,
+        personsRepositoryProvider;
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/local_thumb_cache.dart';
 import 'package:tagkin_desktop/persons/collection.dart';
@@ -157,6 +161,7 @@ class LibraryTableController extends ChangeNotifier {
   LibraryTableController({
     required this.itemsRepository,
     required this.commentsRepository,
+    this.personsRepository,
     LocalThumbCache? thumbCache,
     WhereLabelResolver? whereLabelResolver,
     this._pageSize = 50,
@@ -166,8 +171,10 @@ class LibraryTableController extends ChangeNotifier {
 
   final ItemsRepository itemsRepository;
   final CommentsRepository commentsRepository;
+  final PersonsRepository? personsRepository;
   final LocalThumbCache _thumbCache;
   final WhereLabelResolver _whereLabels;
+  Map<String, String> _personNamesById = {};
   int _pageSize;
   final int knowledgeConcurrency;
 
@@ -376,6 +383,9 @@ class LibraryTableController extends ChangeNotifier {
         loading = false;
         hasLoadedOnce = true;
         notifyListeners();
+
+        await _refreshPersonNames();
+        if (_loadGeneration != gen) return;
 
         unawaited(_warmThumbs(gen));
         unawaited(_warmKnowledge(gen));
@@ -615,6 +625,20 @@ class LibraryTableController extends ChangeNotifier {
     return out;
   }
 
+  Future<void> _refreshPersonNames() async {
+    final repo = personsRepository;
+    if (repo == null) {
+      _personNamesById = {};
+      return;
+    }
+    try {
+      final people = await repo.listPersons();
+      _personNamesById = {for (final p in people) p.id: p.name};
+    } catch (_) {
+      _personNamesById = {};
+    }
+  }
+
   Future<void> _warmThumbs(int gen) async {
     final snapshot = List<LibraryTableRow>.from(_rows);
     for (final row in snapshot) {
@@ -646,7 +670,7 @@ class LibraryTableController extends ChangeNotifier {
           _replaceRow(
             id,
             (r) => r.copyWith(
-              who: grouped['who']!.map((t) => t.value).toList(),
+              who: whoColumnValues(knowledge, _personNamesById),
               what: grouped['what']!.map((t) => t.value).toList(),
               whereEntries: whereEntries,
               whereRaw: whereRaw,
@@ -750,6 +774,7 @@ final libraryTableControllerProvider =
     return LibraryTableController(
       itemsRepository: ref.watch(itemsRepositoryProvider),
       commentsRepository: ref.watch(commentsRepositoryProvider),
+      personsRepository: ref.watch(personsRepositoryProvider),
       whereLabelResolver: ref.watch(whereLabelResolverProvider),
       pageSize: ref.read(desktopPrefsProvider).libraryPageSize,
     );
@@ -757,6 +782,7 @@ final libraryTableControllerProvider =
   dependencies: [
     itemsRepositoryProvider,
     commentsRepositoryProvider,
+    personsRepositoryProvider,
     whereLabelResolverProvider,
     desktopPrefsProvider,
   ],

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
+import 'package:tagkin_desktop/ui/format_local_datetime.dart';
 
 /// Item or key-period comment list with create / edit / delete (D10 / S9).
 ///
 /// Author + timestamps come from the server; the client never fabricates
 /// `authorUserId` (R10).
-class CommentsView extends StatefulWidget {
+class CommentsView extends ConsumerStatefulWidget {
   const CommentsView({
     super.key,
     required this.comments,
@@ -28,10 +31,10 @@ class CommentsView extends StatefulWidget {
   final Key? listKey;
 
   @override
-  State<CommentsView> createState() => _CommentsViewState();
+  ConsumerState<CommentsView> createState() => _CommentsViewState();
 }
 
-class _CommentsViewState extends State<CommentsView> {
+class _CommentsViewState extends ConsumerState<CommentsView> {
   final _body = TextEditingController();
 
   @override
@@ -58,6 +61,7 @@ class _CommentsViewState extends State<CommentsView> {
           key: const Key('comment-edit-field'),
           controller: controller,
           autofocus: true,
+          maxLength: 128,
           maxLines: 3,
         ),
         actions: [
@@ -80,6 +84,7 @@ class _CommentsViewState extends State<CommentsView> {
 
   @override
   Widget build(BuildContext context) {
+    final format = ref.watch(desktopPrefsProvider).dateTimeFormatOrLocal;
     return Column(
       key: widget.listKey ?? const Key('comments-view'),
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -106,7 +111,7 @@ class _CommentsViewState extends State<CommentsView> {
                     key: Key('comment-body-${comment.id}'),
                   ),
                   Text(
-                    '${comment.authorUserId} · ${comment.createdAt}',
+                    '${comment.authorUserId} · ${formatLocalDateTime(comment.createdAt, format: format)}',
                     key: Key('comment-meta-${comment.id}'),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color:
@@ -145,6 +150,8 @@ class _CommentsViewState extends State<CommentsView> {
                   key: const Key('comment-body-field'),
                   controller: _body,
                   enabled: widget.enabled,
+                  maxLength: 128,
+                  maxLines: 3,
                   decoration: const InputDecoration(
                     labelText: 'Add a comment',
                   ),

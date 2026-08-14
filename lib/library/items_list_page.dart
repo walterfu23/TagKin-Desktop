@@ -118,7 +118,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
       ),
     );
     if (!mounted) return;
-    // Always reload: Retry/Analyze/Cancel/Re-upload change processingStatus
+    // Always reload: Folders Retry / ingest can change processingStatus
     // on the server, but this table still holds the Item from the last
     // listItems(). Reloading only after delete left the folder view showing
     // "failed" after a successful retry.

@@ -532,7 +532,7 @@ class _AppearanceCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (appearance.itemId != null && appearance.tagId != null) ...[
+              if (appearance.itemId != null && appearance.tagId != null)
                 InkWell(
                   key: Key('appearance-open-item-${appearance.id}'),
                   onTap: busy ? null : onOpenItem,
@@ -542,38 +542,12 @@ class _AppearanceCard extends StatelessWidget {
                     region: appearance.region,
                     size: 72,
                   ),
+                )
+              else if (appearance.itemId != null)
+                Text(
+                  'This photo',
+                  key: Key('appearance-item-level-${appearance.id}'),
                 ),
-                const SizedBox(width: 12),
-              ],
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'appearance ${appearance.id}',
-                      key: Key('appearance-id-${appearance.id}'),
-                    ),
-                    if (appearance.itemId != null)
-                      Text(
-                        'item ${appearance.itemId}',
-                        key: Key('appearance-item-${appearance.id}'),
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    if (appearance.tagId != null)
-                      Text(
-                        'who tag ${appearance.tagId}',
-                        key: Key('appearance-tag-${appearance.id}'),
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    if (appearance.keyPeriodId != null)
-                      Text(
-                        'key period ${appearance.keyPeriodId}',
-                        key: Key('appearance-key-period-${appearance.id}'),
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                  ],
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 8),

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
-import 'package:tagkin_desktop/ingest/upload_controller.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/main.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
@@ -13,7 +12,7 @@ import 'fake_comments_repository.dart';
 import 'fake_corrections_repository.dart';
 import 'fake_items_repository.dart';
 import 'fake_jobs_repository.dart';
-import 'fake_upload_controller.dart';
+import 'fake_persons_repository.dart';
 import 'fake_usage_repository.dart';
 
 Account _account(String id) => Account(
@@ -26,7 +25,6 @@ List<Override> _overrides({
   required FakeItemsRepository items,
   required FakeJobsRepository jobs,
   FakeUsageRepository? usage,
-  FakeUploadController? upload,
 }) {
   return [
     testSessionProvider.overrideWithValue(
@@ -41,14 +39,13 @@ List<Override> _overrides({
       usage ?? FakeUsageRepository(),
     ),
     jobsRepositoryProvider.overrideWithValue(jobs),
+    personsRepositoryProvider.overrideWithValue(FakePersonsRepository()),
     collectionsStoreProvider.overrideWithValue(MemoryCollectionsStore()),
-    if (upload != null)
-      uploadControllerProvider.overrideWithValue(upload),
   ];
 }
 
 void main() {
-  testWidgets('Analyze on photo reaches completed job state', (tester) async {
+  testWidgets('photo detail has no Analyze button', (tester) async {
     tester.view.physicalSize = const Size(1440, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -60,12 +57,11 @@ void main() {
       analysisRefState: AnalysisRefState.ready,
       processingStatus: ProcessingStatus.awaitingModelAccess,
     );
-    final jobs = FakeJobsRepository(itemId: 'item_1', item: item);
     await tester.pumpWidget(
       ProviderScope(
         overrides: _overrides(
           items: FakeItemsRepository(items: [item]),
-          jobs: jobs,
+          jobs: FakeJobsRepository(itemId: 'item_1', item: item),
         ),
         child: const TagKinDesktopApp(),
       ),
@@ -75,16 +71,17 @@ void main() {
     await tester.tap(find.byKey(const Key('item-what-item_1')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('item-analyze')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('item-analyze')));
-    await tester.pumpAndSettle();
-
-    expect(jobs.analyzeCallCount, 1);
-    expect(find.byKey(const Key('job-state-completed')), findsOneWidget);
+    expect(find.byKey(const Key('item-analyze')), findsNothing);
+    expect(find.byKey(const Key('reanalyze-warning-dialog')), findsNothing);
+    expect(find.text('Tagging & jobs'), findsNothing);
+    expect(find.byKey(const Key('job-progress')), findsNothing);
+    expect(
+      find.byKey(const Key('processing-status-awaiting_model_access')),
+      findsOneWidget,
+    );
   });
 
-  testWidgets(
-      'Retry failed job refreshes folder table status when returning',
+  testWidgets('failed photo detail shows Folders status; no job Retry',
       (tester) async {
     tester.view.physicalSize = const Size(1440, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -97,22 +94,12 @@ void main() {
       analysisRefState: AnalysisRefState.ready,
       processingStatus: ProcessingStatus.failed,
     );
-    final items = FakeItemsRepository(items: [item]);
-    final jobs = FakeJobsRepository(
-      itemId: 'item_fail',
-      item: item,
-      jobs: [
-        fixtureJob(
-          id: 'job_fail',
-          itemId: 'item_fail',
-          state: JobState.failed,
-        ),
-      ],
-      onAnalyzed: items.replaceItem,
-    );
     await tester.pumpWidget(
       ProviderScope(
-        overrides: _overrides(items: items, jobs: jobs),
+        overrides: _overrides(
+          items: FakeItemsRepository(items: [item]),
+          jobs: FakeJobsRepository(itemId: 'item_fail', item: item),
+        ),
         child: const TagKinDesktopApp(),
       ),
     );
@@ -124,20 +111,14 @@ void main() {
     await tester.tap(find.byKey(const Key('item-what-item_fail')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('item-retry-job')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('item-retry-job')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('job-state-completed')), findsOneWidget);
-
-    await tester.tap(find.byType(BackButton));
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const Key('item-row-item_fail')), findsOneWidget);
-    expect(find.byKey(const Key('processing-status-tagged')), findsOneWidget);
-    expect(find.byKey(const Key('processing-status-failed')), findsNothing);
+    expect(find.byKey(const Key('processing-status-failed')), findsOneWidget);
+    expect(find.byKey(const Key('item-retry-job')), findsNothing);
+    expect(find.byKey(const Key('item-cancel-job')), findsNothing);
+    expect(find.byKey(const Key('item-reupload')), findsNothing);
+    expect(find.text('Tagging & jobs'), findsNothing);
   });
 
-  testWidgets('Analyze is disabled for video items (R9)', (tester) async {
+  testWidgets('video detail has no Analyze button', (tester) async {
     final item = fixtureItem(id: 'item_v', type: ItemType.video);
     await tester.pumpWidget(
       ProviderScope(
@@ -152,11 +133,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final button = tester.widget<FilledButton>(
-      find.byKey(const Key('item-analyze')),
-    );
-    expect(button.onPressed, isNull);
-    expect(find.byKey(const Key('analyze-photo-only-hint')), findsOneWidget);
+    expect(find.byKey(const Key('item-analyze')), findsNothing);
+    expect(find.byKey(const Key('analyze-photo-only-hint')), findsNothing);
   });
 
   testWidgets('Delete confirms and pops with deleted result', (tester) async {
@@ -198,39 +176,7 @@ void main() {
     expect(find.byKey(const Key('item-row-item_del')), findsNothing);
   });
 
-  testWidgets('Cancel during polling reflects cancelled', (tester) async {
-    final item = fixtureItem(id: 'item_c');
-    final jobs = FakeJobsRepository(
-      itemId: 'item_c',
-      item: item,
-      jobs: [fixtureJob(id: 'j1', itemId: 'item_c', state: JobState.processing)],
-    );
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: _overrides(
-          items: FakeItemsRepository(items: [item]),
-          jobs: jobs,
-        ),
-        child: const MaterialApp(
-          home: ItemDetailPage(itemId: 'item_c'),
-        ),
-      ),
-    );
-    // Non-terminal job keeps a progress indicator animating — avoid pumpAndSettle.
-    await tester.pump();
-    await tester.pump(); // post-frame refreshJobs
-    await tester.pump(); // listItemJobs completes → polling + Cancel visible
-
-    expect(find.byKey(const Key('item-cancel-job')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('item-cancel-job')));
-    await tester.pump();
-    await tester.pump();
-
-    expect(jobs.cancelCallCount, 1);
-    expect(find.byKey(const Key('job-state-cancelled')), findsOneWidget);
-  });
-
-  testWidgets('Re-analyze on tagged item warns; cancel skips analyze',
+  testWidgets('tagged photo has no Analyze or re-analyze dialog',
       (tester) async {
     final item = fixtureItem(
       id: 'item_tagged',
@@ -239,13 +185,11 @@ void main() {
       processingStatus: ProcessingStatus.tagged,
     );
     final jobs = FakeJobsRepository(itemId: 'item_tagged', item: item);
-    final upload = FakeUploadController();
     await tester.pumpWidget(
       ProviderScope(
         overrides: _overrides(
           items: FakeItemsRepository(items: [item]),
           jobs: jobs,
-          upload: upload,
         ),
         child: const MaterialApp(
           home: ItemDetailPage(itemId: 'item_tagged'),
@@ -254,56 +198,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('item-analyze')));
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const Key('reanalyze-warning-dialog')), findsOneWidget);
-    expect(
-      find.textContaining('Previous analyze tags will be overwritten'),
-      findsOneWidget,
-    );
-    await tester.tap(find.byKey(const Key('reanalyze-cancel')));
-    await tester.pumpAndSettle();
-
-    expect(jobs.analyzeCallCount, 0);
-    expect(upload.uploadCallCount, 0);
+    expect(find.byKey(const Key('item-analyze')), findsNothing);
     expect(find.byKey(const Key('reanalyze-warning-dialog')), findsNothing);
+    expect(jobs.analyzeCallCount, 0);
   });
 
-  testWidgets('Re-analyze confirm re-uploads then analyzes', (tester) async {
-    final item = fixtureItem(
-      id: 'item_tagged2',
-      analysisRef: 'ref_1',
-      analysisRefState: AnalysisRefState.ready,
-      processingStatus: ProcessingStatus.tagged,
-      sourceRef: 'file:///tmp/photo.jpg',
-    );
-    final jobs = FakeJobsRepository(itemId: 'item_tagged2', item: item);
-    final upload = FakeUploadController();
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: _overrides(
-          items: FakeItemsRepository(items: [item]),
-          jobs: jobs,
-          upload: upload,
-        ),
-        child: const MaterialApp(
-          home: ItemDetailPage(itemId: 'item_tagged2'),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byKey(const Key('item-analyze')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('reanalyze-confirm')));
-    await tester.pumpAndSettle();
-
-    expect(upload.uploadCallCount, 1);
-    expect(jobs.analyzeCallCount, 1);
-  });
-
-  testWidgets('Expired analysisRef shows Re-upload button', (tester) async {
+  testWidgets('photo detail has no Re-upload or job controls', (tester) async {
     final item = fixtureItem(
       id: 'item_exp',
       analysisRef: 'files/old',
@@ -315,7 +215,6 @@ void main() {
         overrides: _overrides(
           items: FakeItemsRepository(items: [item]),
           jobs: FakeJobsRepository(itemId: 'item_exp', item: item),
-          upload: FakeUploadController(),
         ),
         child: const MaterialApp(
           home: ItemDetailPage(itemId: 'item_exp'),
@@ -324,7 +223,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('item-reupload')), findsOneWidget);
-    expect(find.byKey(const Key('reupload-hint')), findsOneWidget);
+    expect(find.byKey(const Key('processing-status-tagged')), findsOneWidget);
+    expect(find.byKey(const Key('item-reupload')), findsNothing);
+    expect(find.byKey(const Key('reupload-hint')), findsNothing);
+    expect(find.byKey(const Key('item-retry-job')), findsNothing);
+    expect(find.byKey(const Key('item-cancel-job')), findsNothing);
+    expect(find.text('Tagging & jobs'), findsNothing);
   });
 }

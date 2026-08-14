@@ -5,7 +5,7 @@ import 'dart:ui' show AppExitResponse;
 import 'package:app_links/app_links.dart';
 import 'package:clerk_auth/clerk_auth.dart' show RetryOptions, Strategy;
 import 'package:clerk_flutter/clerk_flutter.dart';
-import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -186,16 +186,7 @@ class AuthShell extends ConsumerWidget {
       child: ClerkErrorListener(
         child: ClerkAuthBuilder(
           signedOutBuilder: (context, authState) {
-            return const Scaffold(
-              body: SafeArea(
-                child: Center(
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.all(24),
-                    child: ClerkAuthentication(),
-                  ),
-                ),
-              ),
-            );
+            return _ClerkSignedOutPage(authState: authState);
           },
           signedInBuilder: (context, authState) {
             return _ClerkSignedInHost(
@@ -209,6 +200,78 @@ class AuthShell extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Signed-out Clerk form, or a spinner while FAPI env is still empty.
+///
+/// `clerk_auth` times out the *first* `/environment` + `/client` fetch at 1s.
+/// `./11_dev.sh` wipes the Keychain cache, so a slightly slow Clerk reply
+/// leaves [ClerkAuthentication] with `isNotAvailable` (blank widget) and
+/// only retries every 10s — still with that 1s cap. Refresh here uses the
+/// 15s HTTP timeout instead.
+class _ClerkSignedOutPage extends StatelessWidget {
+  const _ClerkSignedOutPage({required this.authState});
+
+  final ClerkAuthState authState;
+
+  @override
+  Widget build(BuildContext context) {
+    if (authState.isNotAvailable) {
+      return _ClerkEnvRetry(authState: authState);
+    }
+    return const Scaffold(
+      body: SelectionContainer.disabled(
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.all(24),
+              child: ClerkAuthentication(),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ClerkEnvRetry extends StatefulWidget {
+  const _ClerkEnvRetry({required this.authState});
+
+  final ClerkAuthState authState;
+
+  @override
+  State<_ClerkEnvRetry> createState() => _ClerkEnvRetryState();
+}
+
+class _ClerkEnvRetryState extends State<_ClerkEnvRetry> {
+  static const _retryDelay = Duration(seconds: 2);
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_retryUntilReady());
+  }
+
+  Future<void> _retryUntilReady() async {
+    while (mounted && widget.authState.isNotAvailable) {
+      try {
+        await widget.authState.refreshEnvironment();
+        if (!mounted) return;
+        if (widget.authState.client.isEmpty) {
+          await widget.authState.resetClient();
+        } else {
+          await widget.authState.refreshClient();
+        }
+      } catch (e, st) {
+        debugPrint('Clerk env retry failed: $e\n$st');
+      }
+      if (!mounted || !widget.authState.isNotAvailable) return;
+      await Future<void>.delayed(_retryDelay);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => const _ClerkBootLoading();
 }
 
 /// Shown immediately while Clerk SDK initializes (network + secure store).

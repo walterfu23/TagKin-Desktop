@@ -443,6 +443,24 @@ class ReviewController extends ChangeNotifier {
     );
   }
 
+  /// Create, replace, or clear the single item-level comment (max 128).
+  Future<void> saveItemComment(String body) async {
+    if (!canMutate) return;
+    final trimmed = body.trim();
+    if (trimmed.length > 128) return;
+    final existing = itemComments.firstOrNull;
+    if (trimmed.isEmpty) {
+      if (existing != null) await deleteComment(existing.id);
+      return;
+    }
+    if (existing != null) {
+      if (existing.body == trimmed) return;
+      await editComment(existing.id, trimmed);
+      return;
+    }
+    await addItemComment(trimmed);
+  }
+
   /// Create an item-level comment; optimistic insert, splice server result.
   Future<void> addItemComment(String body) async {
     if (!canMutate) return;

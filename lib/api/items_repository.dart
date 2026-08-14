@@ -141,8 +141,8 @@ class ItemsRepository {
 
   /// `POST /items/{id}/link-people` — run server-side likeness matching (D9).
   ///
-  /// Produces `suggested` links only — never an automatic `confirmed` merge
-  /// (R6). No media bytes; similarity stays server-side (R1/R8).
+  /// Ingest still uses this after analyze. Item detail no longer exposes a
+  /// button; humans assign via [assignPersonToItem] (R6).
   Future<LinkPeopleResponse> linkPeopleForItem(String itemId) async {
     final response = await _client.post('/items/$itemId/link-people');
     final json = jsonDecode(response.body);
@@ -153,6 +153,36 @@ class ItemsRepository {
       );
     }
     return LinkPeopleResponse.fromJson(json);
+  }
+
+  /// `POST /items/{id}/assign-person` — assign a face crop (`tagId`) or, when
+  /// the item has no crops, the whole item to an existing or new named person.
+  Future<PersonAppearance> assignPersonToItem(
+    String itemId, {
+    String? personId,
+    String? name,
+    String? tagId,
+  }) async {
+    assert(
+      personId != null || name != null,
+      'assignPersonToItem requires personId or name',
+    );
+    final response = await _client.post(
+      '/items/$itemId/assign-person',
+      body: AssignPerson(
+        personId: personId,
+        name: name,
+        tagId: tagId,
+      ).toJson(),
+    );
+    final json = jsonDecode(response.body);
+    if (json is! Map<String, dynamic>) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Unexpected assign-person response shape',
+      );
+    }
+    return PersonAppearance.fromJson(json);
   }
 
   /// `POST /items/{id}/who-appearances` — face-crop embeddings for who tags,
