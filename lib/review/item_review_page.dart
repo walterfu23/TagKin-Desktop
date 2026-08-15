@@ -75,6 +75,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
   String _commentBaseline = '';
   final Map<String, PersonAssignIntent> _cropIntents = {};
   final Map<String, PersonAssignIntent> _appearanceIntents = {};
+  final Map<String, PersonAssignIntent> _exclusionIntents = {};
   final List<PersonAssignIntent> _pendingItemAssigns = [];
   bool _baselineReady = false;
 
@@ -178,6 +179,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     final knowledge = review.knowledge;
     if (_comment.trim() != _commentBaseline.trim()) return true;
     if (_pendingItemAssigns.isNotEmpty) return true;
+    if (_exclusionIntents.isNotEmpty) return true;
     if (knowledge == null) return _cropIntents.isNotEmpty || _appearanceIntents.isNotEmpty;
     for (final e in _cropIntents.entries) {
       if (!e.value.sameAs(_baselineCrop(knowledge, e.key))) return true;
@@ -211,6 +213,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
       _commentBaseline = _comment;
       _cropIntents.clear();
       _appearanceIntents.clear();
+      _exclusionIntents.clear();
       _pendingItemAssigns.clear();
       _baselineReady = true;
     });
@@ -222,16 +225,21 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     final beforeCrops = Map<String, PersonAssignIntent>.from(_cropIntents);
     final beforeAppearances =
         Map<String, PersonAssignIntent>.from(_appearanceIntents);
+    final beforeExclusions =
+        Map<String, PersonAssignIntent>.from(_exclusionIntents);
     final beforePending = List<PersonAssignIntent>.from(_pendingItemAssigns);
     setState(change);
     final afterComment = _comment;
     final afterCrops = Map<String, PersonAssignIntent>.from(_cropIntents);
     final afterAppearances =
         Map<String, PersonAssignIntent>.from(_appearanceIntents);
+    final afterExclusions =
+        Map<String, PersonAssignIntent>.from(_exclusionIntents);
     final afterPending = List<PersonAssignIntent>.from(_pendingItemAssigns);
     if (beforeComment == afterComment &&
         _mapEquals(beforeCrops, afterCrops) &&
         _mapEquals(beforeAppearances, afterAppearances) &&
+        _mapEquals(beforeExclusions, afterExclusions) &&
         _listEquals(beforePending, afterPending)) {
       _publishDirty();
       return;
@@ -248,6 +256,9 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
             _appearanceIntents
               ..clear()
               ..addAll(beforeAppearances);
+            _exclusionIntents
+              ..clear()
+              ..addAll(beforeExclusions);
             _pendingItemAssigns
               ..clear()
               ..addAll(beforePending);
@@ -263,6 +274,9 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
             _appearanceIntents
               ..clear()
               ..addAll(afterAppearances);
+            _exclusionIntents
+              ..clear()
+              ..addAll(afterExclusions);
             _pendingItemAssigns
               ..clear()
               ..addAll(afterPending);
@@ -370,6 +384,51 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     );
   }
 
+  Future<void> _includeDraftCrop(String tagId) async {
+    _mutateDraft(
+      () {
+        _cropIntents.remove(tagId);
+      },
+      label: 'Include face',
+    );
+  }
+
+  Future<void> _includeExclusion(String exclusionId) async {
+    _mutateDraft(
+      () {
+        _exclusionIntents[exclusionId] =
+            const PersonAssignIntent(include: true);
+      },
+      label: 'Include face',
+    );
+  }
+
+  Future<void> _assignIncludedExclusion(
+    String exclusionId, {
+    String? personId,
+    String? name,
+  }) async {
+    _mutateDraft(
+      () {
+        _exclusionIntents[exclusionId] = PersonAssignIntent(
+          include: true,
+          personId: personId,
+          name: name,
+        );
+      },
+      label: 'Assign face',
+    );
+  }
+
+  Future<void> _excludeIncludedExclusion(String exclusionId) async {
+    _mutateDraft(
+      () {
+        _exclusionIntents.remove(exclusionId);
+      },
+      label: 'Exclude face',
+    );
+  }
+
   Future<void> _save() async {
     if (_saving || !_isDirty) return;
     final review = ref.read(reviewControllerProvider(widget.itemId));
@@ -391,8 +450,11 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     final forwardCrops = Map<String, PersonAssignIntent>.from(_cropIntents);
     final forwardAppearances =
         Map<String, PersonAssignIntent>.from(_appearanceIntents);
+    final forwardExclusions =
+        Map<String, PersonAssignIntent>.from(_exclusionIntents);
     final forwardPending = List<PersonAssignIntent>.from(_pendingItemAssigns);
     final createdExclusionIds = <String>[];
+    final includedExclusionTagIds = <({String exclusionId, String? tagId})>[];
 
     setState(() {
       _saving = true;
@@ -402,6 +464,34 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     try {
       if (review.knowledge == null) {
         await review.load();
+      }
+      final liveKnowledge = review.knowledge ?? knowledge;
+      if (forwardExclusions.isNotEmpty) {
+        final items = ref.read(itemsRepositoryProvider);
+        for (final e in forwardExclusions.entries) {
+          if (!e.value.include) continue;
+          WhoExclusion? exclusion;
+          if (liveKnowledge != null) {
+            for (final x in liveKnowledge.whoExclusions) {
+              if (x.id == e.key) {
+                exclusion = x;
+                break;
+              }
+            }
+          }
+          includedExclusionTagIds.add(
+            (exclusionId: e.key, tagId: exclusion?.createdFromTagId),
+          );
+          await items.undoWhoExclusion(widget.itemId, e.key);
+          if (e.value.hasTarget && exclusion?.createdFromTagId != null) {
+            await items.assignPersonToItem(
+              widget.itemId,
+              personId: e.value.personId,
+              name: e.value.name,
+              tagId: exclusion!.createdFromTagId,
+            );
+          }
+        }
       }
       if (forwardCrops.isNotEmpty ||
           forwardAppearances.isNotEmpty ||
@@ -424,6 +514,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
       _commentBaseline = _comment;
       _cropIntents.clear();
       _appearanceIntents.clear();
+      _exclusionIntents.clear();
       _pendingItemAssigns.clear();
       _baselineReady = true;
       _undoStack.clear();
@@ -434,6 +525,12 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
             final items = ref.read(itemsRepositoryProvider);
             for (final id in createdExclusionIds) {
               await items.undoWhoExclusion(widget.itemId, id);
+            }
+            for (final included in includedExclusionTagIds) {
+              final tagId = included.tagId;
+              if (tagId != null) {
+                await items.createWhoExclusion(widget.itemId, tagId);
+              }
             }
             if (previousCrop.isNotEmpty || previousAppearances.isNotEmpty) {
               await _applyPersonIntents(
@@ -453,11 +550,48 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
               _commentBaseline = previousComment;
               _cropIntents.clear();
               _appearanceIntents.clear();
+              _exclusionIntents.clear();
               _pendingItemAssigns.clear();
             });
             _publishDirty();
           },
           onRedo: () async {
+            if (forwardExclusions.isNotEmpty) {
+              final items = ref.read(itemsRepositoryProvider);
+              final live =
+                  ref.read(reviewControllerProvider(widget.itemId)).knowledge;
+              for (final e in forwardExclusions.entries) {
+                if (!e.value.include) continue;
+                String? tagId;
+                for (final included in includedExclusionTagIds) {
+                  if (included.exclusionId == e.key) {
+                    tagId = included.tagId;
+                    break;
+                  }
+                }
+                WhoExclusion? exclusion;
+                if (live != null) {
+                  for (final x in live.whoExclusions) {
+                    if (x.id == e.key ||
+                        (tagId != null && x.createdFromTagId == tagId)) {
+                      exclusion = x;
+                      break;
+                    }
+                  }
+                }
+                if (exclusion == null) continue;
+                await items.undoWhoExclusion(widget.itemId, exclusion.id);
+                if (e.value.hasTarget &&
+                    exclusion.createdFromTagId != null) {
+                  await items.assignPersonToItem(
+                    widget.itemId,
+                    personId: e.value.personId,
+                    name: e.value.name,
+                    tagId: exclusion.createdFromTagId,
+                  );
+                }
+              }
+            }
             if (forwardCrops.isNotEmpty ||
                 forwardAppearances.isNotEmpty ||
                 forwardPending.isNotEmpty) {
@@ -478,6 +612,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
               _commentBaseline = forwardComment;
               _cropIntents.clear();
               _appearanceIntents.clear();
+              _exclusionIntents.clear();
               _pendingItemAssigns.clear();
             });
             _publishDirty();
@@ -569,6 +704,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
       _comment = _commentBaseline;
       _cropIntents.clear();
       _appearanceIntents.clear();
+      _exclusionIntents.clear();
       _pendingItemAssigns.clear();
     });
     _undoStack.clear();
@@ -700,6 +836,14 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
         }
       }
     }
+    for (final intent in _exclusionIntents.values) {
+      if (!intent.include) continue;
+      if (intent.name != null) {
+        add(intent.name);
+      } else {
+        add(_personNamesById[intent.personId]);
+      }
+    }
     return names;
   }
 
@@ -794,6 +938,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
                 assignEnabled: !_saving,
                 cropIntents: _cropIntents,
                 appearanceIntents: _appearanceIntents,
+                exclusionIntents: _exclusionIntents,
                 pendingItemAssigns: _pendingItemAssigns,
                 onPersonTap: _openPerson,
                 onAssignCrop: _assignCrop,
@@ -801,6 +946,8 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
                 onReassignAppearance: _reassignAppearance,
                 onUnassign: _unassignAppearance,
                 onExcludeCrop: _excludeCrop,
+                onAssignIncludedExclusion: _assignIncludedExclusion,
+                onExcludeIncludedExclusion: _excludeIncludedExclusion,
                 onRemovePendingItemAssign: (index) {
                   _mutateDraft(
                     () => _pendingItemAssigns.removeAt(index),
@@ -810,12 +957,17 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
               ),
               Builder(
                 builder: (context) {
+                  final includedIds = {
+                    for (final e in _exclusionIntents.entries)
+                      if (e.value.include) e.key,
+                  };
                   final draftExcluded = [
                     for (final tag in whoFaceCropTags(knowledge))
                       if (_cropIntents[tag.id]?.exclude == true) tag,
                   ];
-                  if (knowledge.whoExclusions.isEmpty &&
-                      draftExcluded.isEmpty) {
+                  final visibleSaved = knowledge.whoExclusions
+                      .where((e) => !includedIds.contains(e.id));
+                  if (visibleSaved.isEmpty && draftExcluded.isEmpty) {
                     return const SizedBox.shrink();
                   }
                   return Column(
@@ -825,6 +977,10 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
                       ExcludedFacesStrip(
                         knowledge: knowledge,
                         draftExcludedCrops: draftExcluded,
+                        includedExclusionIds: includedIds,
+                        onIncludeExclusion: _includeExclusion,
+                        onIncludeDraftCrop: _includeDraftCrop,
+                        includeEnabled: !_saving,
                       ),
                     ],
                   );

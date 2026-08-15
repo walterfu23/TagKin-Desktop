@@ -41,6 +41,9 @@ class FakeItemsRepository implements ItemsRepository {
 
   final List<({String itemId, String tagId})> createWhoExclusionCalls =
       <({String itemId, String tagId})>[];
+  final List<({String itemId, String exclusionId})> undoWhoExclusionCalls =
+      <({String itemId, String exclusionId})>[];
+  final Map<String, Tag> _excludedWhoTagsByTagId = {};
 
   /// Optional grant factory; defaults to a non-expiring stub URL.
   final UploadGrant Function(String itemId, CreateUploadGrant input)?
@@ -395,6 +398,12 @@ class FakeItemsRepository implements ItemsRepository {
 
     final existing = _knowledgeByItemId[itemId];
     if (existing != null) {
+      for (final tag in existing.tags) {
+        if (tag.id == tagId) {
+          _excludedWhoTagsByTagId[tagId] = tag;
+          break;
+        }
+      }
       _knowledgeByItemId[itemId] = ItemKnowledge(
         item: existing.item,
         tags: existing.tags.where((t) => t.id != tagId).toList(),
@@ -417,15 +426,37 @@ class FakeItemsRepository implements ItemsRepository {
     String exclusionId,
   ) async {
     await getItem(itemId);
+    undoWhoExclusionCalls.add((itemId: itemId, exclusionId: exclusionId));
     final existing = _knowledgeByItemId[itemId];
     WhoExclusion? found;
     if (existing != null) {
       for (final e in existing.whoExclusions) {
         if (e.id == exclusionId) found = e;
       }
+      Tag? restoredTag;
+      final tagId = found?.createdFromTagId;
+      if (tagId != null) {
+        restoredTag = _excludedWhoTagsByTagId.remove(tagId);
+        restoredTag ??= Tag(
+          id: tagId,
+          itemId: itemId,
+          dimension: 'who',
+          value: 'face',
+          source: KnowledgeSource.model,
+          status: TagStatus.active,
+          region: found!.region,
+          schemaVersion: 1,
+          createdAt: found.createdAt,
+        );
+      }
+      final alreadyHasTag = restoredTag != null &&
+          existing.tags.any((t) => t.id == restoredTag!.id);
       _knowledgeByItemId[itemId] = ItemKnowledge(
         item: existing.item,
-        tags: existing.tags,
+        tags: [
+          ...existing.tags,
+          if (restoredTag != null && !alreadyHasTag) restoredTag,
+        ],
         keyPeriods: existing.keyPeriods,
         appearances: existing.appearances,
         corrections: existing.corrections,

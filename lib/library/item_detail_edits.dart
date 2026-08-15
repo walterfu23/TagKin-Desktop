@@ -7,12 +7,14 @@ class PersonAssignIntent {
     this.name,
     this.unassign = false,
     this.exclude = false,
+    this.include = false,
   });
 
   final String? personId;
   final String? name;
   final bool unassign;
   final bool exclude;
+  final bool include;
 
   bool get hasTarget =>
       !unassign &&
@@ -24,7 +26,8 @@ class PersonAssignIntent {
     return personId == other.personId &&
         name == other.name &&
         unassign == other.unassign &&
-        exclude == other.exclude;
+        exclude == other.exclude &&
+        include == other.include;
   }
 }
 
