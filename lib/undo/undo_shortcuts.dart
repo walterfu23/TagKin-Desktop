@@ -247,13 +247,15 @@ class UndoDepthBadge extends StatelessWidget {
       builder: (context, _) {
         final depth = controller.undoDepth;
         if (depth == 0) return const SizedBox.shrink();
-        final style = Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            );
+        final base = DefaultTextStyle.of(context).style;
         return Text(
           '$depth',
           key: const Key('undo-depth'),
-          style: style,
+          style: base.copyWith(
+            color: (base.color ??
+                    Theme.of(context).colorScheme.onSurfaceVariant)
+                .withValues(alpha: 0.65),
+          ),
         );
       },
     );

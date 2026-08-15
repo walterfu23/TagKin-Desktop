@@ -7,6 +7,7 @@ import 'package:tagkin_desktop/jobs/jobs_controller.dart';
 import 'package:tagkin_desktop/library/item_detail_edits.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/review/item_review_page.dart';
+import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 import 'package:tagkin_desktop/widgets/sure_action_button.dart';
 
 /// Item detail (D2 metadata + D7 tagging/jobs + D8 review).
@@ -145,6 +146,21 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
                 appBar: AppBar(
                   title: const Text('Item'),
                   actions: [
+                    ListenableBuilder(
+                      listenable: _edits.undo,
+                      builder: (context, _) {
+                        if (_edits.undo.undoDepth == 0) {
+                          return const SizedBox.shrink();
+                        }
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            UndoDepthBadge(controller: _edits.undo),
+                            const SizedBox(width: 8),
+                          ],
+                        );
+                      },
+                    ),
                     FilledButton(
                       key: const Key('item-detail-save'),
                       onPressed: _edits.isDirty &&

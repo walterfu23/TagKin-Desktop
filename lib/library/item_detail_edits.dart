@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:tagkin_desktop/undo/undo_controller.dart';
 
 /// One intended person change on item detail (not written until Save).
 class PersonAssignIntent {
@@ -34,15 +35,27 @@ class PersonAssignIntent {
 /// Dirty flag + Save/Discard hooks so the item AppBar / back gate can
 /// commit drafts owned by [ItemReviewSection].
 class ItemDetailEdits extends ChangeNotifier {
+  ItemDetailEdits() {
+    undo.addListener(notifyListeners);
+  }
+
   bool _dirty = false;
   bool _saving = false;
 
   Future<void> Function()? save;
   VoidCallback? discard;
   Future<bool> Function()? confirmLeave;
+  final UndoController undo = UndoController();
 
   bool get isDirty => _dirty;
   bool get saving => _saving;
+
+  @override
+  void dispose() {
+    undo.removeListener(notifyListeners);
+    undo.dispose();
+    super.dispose();
+  }
 
   void update({bool? dirty, bool? saving}) {
     var changed = false;

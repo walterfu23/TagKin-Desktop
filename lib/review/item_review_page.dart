@@ -65,8 +65,8 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
   String? _openedPath;
   bool _saving = false;
   String? _assignError;
-  late final UndoController _undoStack = UndoController();
   late final ItemDetailEdits _edits = widget.edits ?? ItemDetailEdits();
+  UndoController get _undoStack => _edits.undo;
   bool _ownsEdits = false;
   List<Person> _persons = const [];
   Map<String, String> _personNamesById = {};
@@ -124,7 +124,6 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     _edits.discard = null;
     _edits.confirmLeave = null;
     if (_ownsEdits) _edits.dispose();
-    _undoStack.dispose();
     _disposePlayer();
     super.dispose();
   }
@@ -894,18 +893,23 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (widget.embedSaveButton) ...[
-              Align(
-                alignment: Alignment.centerRight,
-                child: ListenableBuilder(
-                  listenable: _edits,
-                  builder: (context, _) {
-                    return FilledButton(
-                      key: const Key('item-detail-save'),
-                      onPressed: _edits.isDirty && !_edits.saving ? _save : null,
-                      child: const Text('Save'),
-                    );
-                  },
-                ),
+              Row(
+                children: [
+                  const Spacer(),
+                  UndoDepthBadge(controller: _undoStack),
+                  const SizedBox(width: 8),
+                  ListenableBuilder(
+                    listenable: _edits,
+                    builder: (context, _) {
+                      return FilledButton(
+                        key: const Key('item-detail-save'),
+                        onPressed:
+                            _edits.isDirty && !_edits.saving ? _save : null,
+                        child: const Text('Save'),
+                      );
+                    },
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
             ],
@@ -987,7 +991,6 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
                 },
               ),
             ],
-            UndoDepthBadge(controller: _undoStack),
             const SizedBox(height: 12),
             if (review.phase == ReviewPhase.loading)
               const Padding(

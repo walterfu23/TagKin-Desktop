@@ -438,6 +438,13 @@ void main() {
 
     expect(find.byKey(const Key('who-exclusion-draft-tag_who')), findsOneWidget);
     expect(find.byKey(const Key('undo-depth')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byKey(const Key('undo-depth')),
+      ),
+      findsOneWidget,
+    );
     expect(items.createWhoExclusionCalls, isEmpty);
 
     // Do not retarget focus onto SelectionArea — after Exclude, focus is
