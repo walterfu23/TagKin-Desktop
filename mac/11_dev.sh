@@ -39,5 +39,13 @@ if [[ -n "${TAGKIN_API_URL:-}" ]]; then
   defines+=(--dart-define="TAGKIN_API_URL=${TAGKIN_API_URL}")
 fi
 
+# So Safari can offer Allow / Always Allow for tagkindesktop:// after Clerk Continue.
+DEBUG_APP="${TAGKIN_DESKTOP_ROOT}/build/macos/Build/Products/Debug/tagkin_desktop.app"
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+if [[ -d "${DEBUG_APP}" && -x "${LSREGISTER}" ]]; then
+  echo "==> lsregister ${DEBUG_APP}"
+  "${LSREGISTER}" -f "${DEBUG_APP}" || true
+fi
+
 echo "==> flutter run -d macos"
 flutter run -d macos "${defines[@]}" "$@"

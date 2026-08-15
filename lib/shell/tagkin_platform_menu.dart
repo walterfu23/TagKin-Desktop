@@ -7,8 +7,10 @@ import 'package:tagkin_desktop/persons/collection_navigation.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/prefs/settings_navigation.dart';
 import 'package:tagkin_desktop/shell/quit_navigation.dart';
+import 'package:tagkin_desktop/undo/active_undo_controller.dart';
+import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 
-/// macOS system menu bar: TagKin / File / Window.
+/// macOS system menu bar: TagKin / File / Edit / Window.
 ///
 /// Under development — collection File menu is WIP, not shipped.
 /// On non-macOS this is a pass-through (Windows uses in-app File menu).
@@ -205,6 +207,29 @@ class TagKinPlatformMenu extends ConsumerWidget {
       ),
     ];
 
+    // Always set onSelected so macOS claims Cmd+Z (no system beep) even
+    // when the screen stack is empty. Skip D12 while typing in a field.
+    ref.watch(activeScreenUndoControllerProvider);
+    final editMenus = <PlatformMenuItem>[
+      PlatformMenuItem(
+        label: 'Undo',
+        shortcut: const SingleActivator(
+          LogicalKeyboardKey.keyZ,
+          meta: true,
+        ),
+        onSelected: () => _invokeScreenUndo(context, ref),
+      ),
+      PlatformMenuItem(
+        label: 'Redo',
+        shortcut: const SingleActivator(
+          LogicalKeyboardKey.keyZ,
+          meta: true,
+          shift: true,
+        ),
+        onSelected: () => _invokeScreenRedo(context, ref),
+      ),
+    ];
+
     return PlatformMenuBar(
       menus: [
         PlatformMenu(
@@ -215,6 +240,10 @@ class TagKinPlatformMenu extends ConsumerWidget {
           label: 'File',
           menus: fileMenus,
         ),
+        PlatformMenu(
+          label: 'Edit',
+          menus: editMenus,
+        ),
         if (windowMenus.isNotEmpty)
           PlatformMenu(
             label: 'Window',
@@ -224,4 +253,24 @@ class TagKinPlatformMenu extends ConsumerWidget {
       child: child,
     );
   }
+}
+
+void _invokeScreenUndo(BuildContext context, WidgetRef ref) {
+  if (focusIsInEditableText(context)) return;
+  final controller = ref.read(activeScreenUndoControllerProvider);
+  if (controller == null || !controller.canUndo) return;
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  controller.undo().catchError((Object e) {
+    messenger?.showSnackBar(SnackBar(content: Text('$e')));
+  });
+}
+
+void _invokeScreenRedo(BuildContext context, WidgetRef ref) {
+  if (focusIsInEditableText(context)) return;
+  final controller = ref.read(activeScreenUndoControllerProvider);
+  if (controller == null || !controller.canRedo) return;
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  controller.redo().catchError((Object e) {
+    messenger?.showSnackBar(SnackBar(content: Text('$e')));
+  });
 }

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
+import 'package:tagkin_desktop/persons/person_assign_control.dart';
 import 'package:tagkin_desktop/review/item_review_page.dart';
 import 'package:tagkin_desktop/ui/format_local_datetime.dart';
+import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 
 import 'fake_comments_repository.dart';
 import 'fake_corrections_repository.dart';
@@ -13,6 +16,15 @@ import 'fake_items_repository.dart';
 import 'fake_jobs_repository.dart';
 import 'fake_persons_repository.dart';
 import 'fake_usage_repository.dart';
+
+FormFieldState<String> _assignFieldState(WidgetTester tester, Key key) {
+  return tester.state<FormFieldState<String>>(
+    find.descendant(
+      of: find.byKey(key),
+      matching: find.byType(DropdownButtonFormField<String>),
+    ),
+  );
+}
 
 void main() {
   testWidgets('KnowledgeView renders who/what/when/where as CSV',
@@ -246,6 +258,24 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(items.assignPersonCalls, isEmpty);
+    expect(
+      _assignFieldState(tester, const Key('item-assign-face-tag_who')).value,
+      PersonAssignControl.draftValue('Maya'),
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('item-assign-face-tag_who')),
+        matching: find.text('Maya'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('item-assign-face-tag_who')),
+        matching: find.text('New person'),
+      ),
+      findsNothing,
+    );
     await tester.ensureVisible(find.byKey(const Key('item-detail-save')));
     await tester.tap(find.byKey(const Key('item-detail-save')));
     await tester.pumpAndSettle();
@@ -334,6 +364,93 @@ void main() {
     expect(find.byKey(const Key('item-assign-face-tag_who')), findsNothing);
     expect(find.byKey(const Key('who-exclusion-draft-tag_who')), findsNothing);
     expect(find.byKey(const Key('who-exclusion-excl_tag_who_1')), findsOneWidget);
+  });
+
+  testWidgets(
+      'Exclude then Cmd+Z under SelectableScope restores the crop',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final item = fixtureItem(
+      id: 'item_1',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final knowledge = fixtureKnowledge(
+      item: item,
+      tags: [
+        fixtureTag(
+          id: 'tag_who',
+          dimension: 'who',
+          value: 'toddler',
+          region: const TagRegion(
+            yMin: 0.1,
+            xMin: 0.1,
+            yMax: 0.4,
+            xMax: 0.4,
+          ),
+        ),
+      ],
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {'item_1': knowledge},
+    );
+    final persons = FakePersonsRepository(persons: const []);
+    items.linkedPersons = persons;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          itemsRepositoryProvider.overrideWithValue(items),
+          personsRepositoryProvider.overrideWithValue(persons),
+          correctionsRepositoryProvider.overrideWithValue(
+            FakeCorrectionsRepository(items: items),
+          ),
+          commentsRepositoryProvider.overrideWithValue(
+            FakeCommentsRepository(),
+          ),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          jobsRepositoryProvider.overrideWithValue(
+            FakeJobsRepository(itemId: 'item_1', item: item),
+          ),
+        ],
+        child: MaterialApp(
+          builder: (context, child) {
+            return ActiveUndoShortcuts(
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
+          home: const UndoSelectableRoute(
+            child: ItemDetailPage(itemId: 'item_1'),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(
+      find.byKey(const Key('item-exclude-face-tag_who')),
+    );
+    await tester.tap(find.byKey(const Key('item-exclude-face-tag_who')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('who-exclusion-draft-tag_who')), findsOneWidget);
+    expect(find.byKey(const Key('undo-depth')), findsOneWidget);
+    expect(items.createWhoExclusionCalls, isEmpty);
+
+    // Do not retarget focus onto SelectionArea — after Exclude, focus is
+    // the route FocusScope (same as a real Cmd+Z after a button click).
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.meta);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.meta);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('item-assign-face-tag_who')), findsOneWidget);
+    expect(find.byKey(const Key('who-exclusion-draft-tag_who')), findsNothing);
+    expect(find.byKey(const Key('undo-depth')), findsNothing);
+    expect(items.createWhoExclusionCalls, isEmpty);
   });
 
   testWidgets('Include on a draft exclude restores the crop with no API',
@@ -505,6 +622,24 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(items.assignPersonCalls, isEmpty);
+    expect(
+      _assignFieldState(tester, const Key('item-assign-included-ex_1')).value,
+      PersonAssignControl.draftValue('Maya'),
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('item-assign-included-ex_1')),
+        matching: find.text('Maya'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('item-assign-included-ex_1')),
+        matching: find.text('New person'),
+      ),
+      findsNothing,
+    );
     await tester.ensureVisible(find.byKey(const Key('item-detail-save')));
     await tester.tap(find.byKey(const Key('item-detail-save')));
     await tester.pumpAndSettle();
@@ -514,6 +649,125 @@ void main() {
     expect(items.assignPersonCalls, hasLength(1));
     expect(items.assignPersonCalls.single.tagId, 'tag_who');
     expect(items.assignPersonCalls.single.name, 'Maya');
+  });
+
+  testWidgets(
+      'Second included face can pick a draft New person name before Save',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final item = fixtureItem(
+      id: 'item_1',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final knowledge = fixtureKnowledge(
+      item: item,
+      tags: const [],
+      whoExclusions: [
+        const WhoExclusion(
+          id: 'ex_1',
+          itemId: 'item_1',
+          region: TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
+          createdFromTagId: 'tag_a',
+          createdAt: '2026-07-26T00:00:00.000Z',
+        ),
+        const WhoExclusion(
+          id: 'ex_2',
+          itemId: 'item_1',
+          region: TagRegion(yMin: 0.5, xMin: 0.5, yMax: 0.8, xMax: 0.8),
+          createdFromTagId: 'tag_b',
+          createdAt: '2026-07-26T00:00:00.000Z',
+        ),
+      ],
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {'item_1': knowledge},
+    );
+    final persons = FakePersonsRepository(persons: const []);
+    items.linkedPersons = persons;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          itemsRepositoryProvider.overrideWithValue(items),
+          personsRepositoryProvider.overrideWithValue(persons),
+          correctionsRepositoryProvider.overrideWithValue(
+            FakeCorrectionsRepository(items: items),
+          ),
+          commentsRepositoryProvider.overrideWithValue(
+            FakeCommentsRepository(),
+          ),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          jobsRepositoryProvider.overrideWithValue(
+            FakeJobsRepository(itemId: 'item_1', item: item),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: ItemReviewSection(itemId: 'item_1', openVideo: false),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(
+      find.byKey(const Key('item-include-exclusion-ex_1')),
+    );
+    await tester.tap(find.byKey(const Key('item-include-exclusion-ex_1')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const Key('item-include-exclusion-ex_2')),
+    );
+    await tester.tap(find.byKey(const Key('item-include-exclusion-ex_2')));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(
+      find.byKey(const Key('item-assign-included-ex_1')),
+    );
+    await tester.tap(find.byKey(const Key('item-assign-included-ex_1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('New person').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('person-name-field')), 'test');
+    await tester.tap(find.byKey(const Key('person-name-save')));
+    await tester.pumpAndSettle();
+
+    expect(
+      _assignFieldState(tester, const Key('item-assign-included-ex_1')).value,
+      PersonAssignControl.draftValue('test'),
+    );
+
+    await tester.ensureVisible(
+      find.byKey(const Key('item-assign-included-ex_2')),
+    );
+    await tester.tap(find.byKey(const Key('item-assign-included-ex_2')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('person-assign-draft-test')), findsWidgets);
+    await tester.tap(find.text('test').last);
+    await tester.pumpAndSettle();
+
+    expect(
+      _assignFieldState(tester, const Key('item-assign-included-ex_2')).value,
+      PersonAssignControl.draftValue('test'),
+    );
+    expect(items.assignPersonCalls, isEmpty);
+
+    await tester.ensureVisible(find.byKey(const Key('item-detail-save')));
+    await tester.tap(find.byKey(const Key('item-detail-save')));
+    await tester.pumpAndSettle();
+
+    expect(items.undoWhoExclusionCalls, hasLength(2));
+    expect(items.assignPersonCalls, hasLength(2));
+    expect(
+      items.assignPersonCalls.map((c) => c.name).toList(),
+      ['test', 'test'],
+    );
   });
 
   testWidgets('Assign item to a person when there are no face crops',

@@ -22,7 +22,6 @@ import 'package:tagkin_desktop/review/review_controller.dart';
 import 'package:tagkin_desktop/undo/undo_controller.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 import 'package:tagkin_desktop/undo/undoable_action.dart';
-import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
 /// Review screen: local media + approved knowledge + corrections/comments.
 ///
@@ -244,6 +243,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
       _publishDirty();
       return;
     }
+    FocusManager.instance.primaryFocus?.unfocus();
     _undoStack.push(
       CallbackUndoableAction(
         label: label,
@@ -763,7 +763,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     final container = ProviderScope.containerOf(context);
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (_) => SelectableScope(
+        builder: (_) => UndoSelectableRoute(
           child: UncontrolledProviderScope(
             container: container,
             child: PersonDetailPage(personId: personId),

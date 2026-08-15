@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/undo/active_undo_controller.dart';
 import 'package:tagkin_desktop/undo/undo_controller.dart';
+import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
 /// Intent for screen-level Undo (D12).
 class ScreenUndoIntent extends Intent {
@@ -255,6 +256,21 @@ class UndoDepthBadge extends StatelessWidget {
           style: style,
         );
       },
+    );
+  }
+}
+
+/// Pushed-route chrome: Cmd/Ctrl+Z sits above [SelectableScope]
+/// (same order as app home).
+class UndoSelectableRoute extends StatelessWidget {
+  const UndoSelectableRoute({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ActiveUndoShortcuts(
+      child: SelectableScope(child: child),
     );
   }
 }

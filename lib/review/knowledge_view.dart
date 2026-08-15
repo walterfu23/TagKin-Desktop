@@ -72,6 +72,15 @@ class KnowledgeView extends StatelessWidget {
       for (final exclusion in knowledge.whoExclusions)
         if (exclusionIntents[exclusion.id]?.include == true) exclusion,
     ];
+    final draftPersonNames = uniqueDraftPersonNames(
+      persons: persons,
+      names: [
+        for (final intent in cropIntents.values) intent.name,
+        for (final intent in appearanceIntents.values) intent.name,
+        for (final intent in exclusionIntents.values) intent.name,
+        for (final intent in pendingItemAssigns) intent.name,
+      ],
+    );
     final cells = <Widget>[];
     final visibleCrops = [
       for (final tag in crops)
@@ -86,6 +95,7 @@ class KnowledgeView extends StatelessWidget {
             itemId: itemId,
             persons: persons,
             personNamesById: personNamesById,
+            draftPersonNames: draftPersonNames,
             intent: cropIntents[tag.id],
             enabled: assignEnabled,
             onPersonTap: onPersonTap,
@@ -102,6 +112,7 @@ class KnowledgeView extends StatelessWidget {
             item: knowledge.item,
             persons: persons,
             personNamesById: personNamesById,
+            draftPersonNames: draftPersonNames,
             intent: exclusionIntents[exclusion.id],
             enabled: assignEnabled,
             onAssign: onAssignIncludedExclusion,
@@ -116,6 +127,7 @@ class KnowledgeView extends StatelessWidget {
             appearance: appearance,
             personNamesById: personNamesById,
             persons: persons,
+            draftPersonNames: draftPersonNames,
             intent: appearanceIntents[appearance.id],
             enabled: assignEnabled,
             onPersonTap: onPersonTap,
@@ -140,6 +152,7 @@ class KnowledgeView extends StatelessWidget {
           PersonAssignControl(
             key: const Key('item-assign-person'),
             persons: persons,
+            draftPersonNames: draftPersonNames,
             enabled: assignEnabled,
             label: itemAssignments.isEmpty && pendingItemAssigns.isEmpty
                 ? 'Assign to person'
@@ -359,6 +372,7 @@ class _CropAssignRow extends StatelessWidget {
     this.itemId,
     required this.persons,
     required this.personNamesById,
+    this.draftPersonNames = const [],
     this.intent,
     required this.enabled,
     this.onPersonTap,
@@ -372,6 +386,7 @@ class _CropAssignRow extends StatelessWidget {
   final String? itemId;
   final List<Person> persons;
   final Map<String, String> personNamesById;
+  final List<String> draftPersonNames;
   final PersonAssignIntent? intent;
   final bool enabled;
   final void Function(String personId)? onPersonTap;
@@ -443,6 +458,8 @@ class _CropAssignRow extends StatelessWidget {
                     key: Key('item-assign-face-${tag.id}'),
                     persons: persons,
                     currentPersonId: personId,
+                    currentPersonName: personName,
+                    draftPersonNames: draftPersonNames,
                     enabled: enabled,
                     label: named ? 'Reassign' : 'Assign',
                     onAssign: ({personId, name}) => onAssignCrop!(
@@ -487,6 +504,7 @@ class _ItemAssignRow extends StatelessWidget {
     required this.appearance,
     required this.personNamesById,
     required this.persons,
+    this.draftPersonNames = const [],
     this.intent,
     required this.enabled,
     this.onPersonTap,
@@ -497,6 +515,7 @@ class _ItemAssignRow extends StatelessWidget {
   final PersonAppearance appearance;
   final Map<String, String> personNamesById;
   final List<Person> persons;
+  final List<String> draftPersonNames;
   final PersonAssignIntent? intent;
   final bool enabled;
   final void Function(String personId)? onPersonTap;
@@ -545,6 +564,8 @@ class _ItemAssignRow extends StatelessWidget {
                 key: Key('item-reassign-${appearance.id}'),
                 persons: persons,
                 currentPersonId: personId,
+                currentPersonName: effective.personName,
+                draftPersonNames: draftPersonNames,
                 enabled: enabled,
                 label: 'Reassign',
                 onAssign: ({personId, name}) => onReassignAppearance!(
@@ -612,6 +633,7 @@ class _IncludedExclusionRow extends StatelessWidget {
     required this.item,
     required this.persons,
     required this.personNamesById,
+    this.draftPersonNames = const [],
     this.intent,
     required this.enabled,
     this.onAssign,
@@ -622,6 +644,7 @@ class _IncludedExclusionRow extends StatelessWidget {
   final Item item;
   final List<Person> persons;
   final Map<String, String> personNamesById;
+  final List<String> draftPersonNames;
   final PersonAssignIntent? intent;
   final bool enabled;
   final Future<void> Function(
@@ -669,6 +692,8 @@ class _IncludedExclusionRow extends StatelessWidget {
                     key: Key('item-assign-included-${exclusion.id}'),
                     persons: persons,
                     currentPersonId: personId,
+                    currentPersonName: personName,
+                    draftPersonNames: draftPersonNames,
                     enabled: enabled,
                     label: named ? 'Reassign' : 'Assign',
                     onAssign: ({personId, name}) => onAssign!(

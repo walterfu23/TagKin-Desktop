@@ -37,6 +37,9 @@ echo "    2. API Keys -> copy Publishable key (pk_test_… / pk_live_…)"
 echo "    3. Do NOT paste Secret key here (R8 — desktop never holds sk_*)"
 echo "    4. Ensure API CLERK_AUTHORIZED_PARTIES allows this Clerk application's JWT azp"
 echo "       (web: http://localhost:3000; desktop: https://<instance>.clerk.accounts.dev)"
+echo "    5. Native applications -> Allowlist for mobile SSO redirect:"
+echo "       tagkindesktop://oauth/callback"
+echo "       (one-time operator step; end users never set this)"
 echo ""
 
 read_line() {

@@ -32,6 +32,9 @@ Write-Host '==> Clerk Dashboard (desktop client)'
 Write-Host '    1. https://dashboard.clerk.com -> same application as tagkin-api/web'
 Write-Host '    2. API Keys -> copy Publishable key (pk_test_… / pk_live_…)'
 Write-Host '    3. Do NOT paste Secret key here (R8 — desktop never holds sk_*)'
+Write-Host '    4. Native applications -> Allowlist for mobile SSO redirect:'
+Write-Host '       tagkindesktop://oauth/callback'
+Write-Host '       (one-time operator step; end users never set this; required for macOS Google)'
 Write-Host ''
 
 function Read-LineKeep([string]$Prompt, [string]$Current) {

@@ -17,6 +17,7 @@ import 'package:tagkin_desktop/api/jobs_repository.dart';
 import 'package:tagkin_desktop/api/me_repository.dart';
 import 'package:tagkin_desktop/api/persons_repository.dart';
 import 'package:tagkin_desktop/api/usage_repository.dart';
+import 'package:tagkin_desktop/auth/macos_oauth_return_hint.dart';
 import 'package:tagkin_desktop/auth/secure_persistor.dart';
 import 'package:tagkin_desktop/config/app_config.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
@@ -136,6 +137,15 @@ Uri? _oauthRedirectUri(BuildContext context, Strategy strategy) {
   return Uri(scheme: _oauthRedirectScheme, host: 'oauth', path: '/callback');
 }
 
+/// Initial open + later `tagkindesktop://` hops (app_links 7 has no allUriLinkStream).
+Stream<Uri?> _macosOauthDeepLinks() async* {
+  final links = AppLinks();
+  try {
+    yield await links.getInitialLink();
+  } catch (_) {}
+  yield* links.uriLinkStream.map<Uri?>((uri) => uri);
+}
+
 /// Auth-gated shell: Clerk sign-in when configured, else a configure prompt;
 /// signed-in users bootstrap `GET /me` then see [signedInHome].
 class AuthShell extends ConsumerWidget {
@@ -181,7 +191,7 @@ class AuthShell extends ConsumerWidget {
         // flutter/flutter#170316, #184557). Windows uses WebView2, not
         // WKWebView, so it is not affected and keeps the in-app popup.
         redirectionGenerator: Platform.isMacOS ? _oauthRedirectUri : null,
-        deepLinkStream: Platform.isMacOS ? AppLinks().uriLinkStream : null,
+        deepLinkStream: Platform.isMacOS ? _macosOauthDeepLinks() : null,
       ),
       child: ClerkErrorListener(
         child: ClerkAuthBuilder(
@@ -209,23 +219,129 @@ class AuthShell extends ConsumerWidget {
 /// leaves [ClerkAuthentication] with `isNotAvailable` (blank widget) and
 /// only retries every 10s — still with that 1s cap. Refresh here uses the
 /// 15s HTTP timeout instead.
-class _ClerkSignedOutPage extends StatelessWidget {
+class _ClerkSignedOutPage extends StatefulWidget {
   const _ClerkSignedOutPage({required this.authState});
 
   final ClerkAuthState authState;
 
   @override
-  Widget build(BuildContext context) {
-    if (authState.isNotAvailable) {
-      return _ClerkEnvRetry(authState: authState);
+  State<_ClerkSignedOutPage> createState() => _ClerkSignedOutPageState();
+}
+
+class _ClerkSignedOutPageState extends State<_ClerkSignedOutPage> {
+  Timer? _oauthWait;
+  var _oauthTimedOut = false;
+  var _oauthWasPending = false;
+  var _oauthMisses = 0;
+  var _oauthRetrying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.authState.addListener(_onAuth);
+    _onAuth();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ClerkSignedOutPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.authState, widget.authState)) {
+      oldWidget.authState.removeListener(_onAuth);
+      widget.authState.addListener(_onAuth);
+      _onAuth();
     }
-    return const Scaffold(
+  }
+
+  @override
+  void dispose() {
+    widget.authState.removeListener(_onAuth);
+    _oauthWait?.cancel();
+    super.dispose();
+  }
+
+  bool get _oauthPending {
+    if (kIsWeb || !Platform.isMacOS) return false;
+    final signIn = widget.authState.signIn;
+    if (signIn == null) return false;
+    final verification =
+        signIn.firstFactorVerification ?? signIn.verification;
+    if (verification == null || verification.status.isVerified) {
+      return false;
+    }
+    if (!verification.strategy.isOauth) return false;
+    final url = verification.externalVerificationRedirectUrl;
+    return url != null && url.isNotEmpty;
+  }
+
+  void _onAuth() {
+    if (!mounted) return;
+    if (_oauthRetrying) {
+      setState(() {});
+      return;
+    }
+    final pending = _oauthPending;
+    if (pending && !_oauthWasPending) {
+      _oauthWait?.cancel();
+      _oauthTimedOut = false;
+      _oauthWait = Timer(kMacOsOauthReturnTimeout, () {
+        if (mounted && _oauthPending) {
+          setState(() => _oauthTimedOut = true);
+        }
+      });
+    } else if (!pending && _oauthWasPending) {
+      _oauthWait?.cancel();
+      _oauthTimedOut = false;
+    }
+    _oauthWasPending = pending;
+    setState(() {});
+  }
+
+  Future<void> _retryOauth() async {
+    _oauthWait?.cancel();
+    setState(() {
+      _oauthTimedOut = false;
+      _oauthMisses += 1;
+      _oauthRetrying = true;
+    });
+    try {
+      await widget.authState.resetClient();
+    } catch (e, st) {
+      debugPrint('OAuth retry reset failed: $e\n$st');
+    }
+    if (!mounted) return;
+    setState(() {
+      _oauthRetrying = false;
+      _oauthWasPending = _oauthPending;
+      _oauthTimedOut = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.authState.isNotAvailable) {
+      return _ClerkEnvRetry(authState: widget.authState);
+    }
+    final showOauthHint = _oauthPending || _oauthTimedOut;
+    return Scaffold(
       body: SelectionContainer.disabled(
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-              padding: EdgeInsets.all(24),
-              child: ClerkAuthentication(),
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const ClerkAuthentication(),
+                  if (showOauthHint) ...[
+                    const SizedBox(height: 16),
+                    MacOsOauthReturnHint(
+                      timedOut: _oauthTimedOut,
+                      repeatMiss: _oauthMisses >= 1,
+                      onRetry: _retryOauth,
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
         ),

@@ -7,7 +7,7 @@ import 'package:tagkin_desktop/persons/person_detail_page.dart';
 import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
 import 'package:tagkin_desktop/prepass/face_embedder.dart';
 import 'package:tagkin_desktop/prepass/onnx_face_embedder.dart';
-import 'package:tagkin_desktop/widgets/selectable_scope.dart';
+import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 
 /// Library-wide persons list (D9). Every person is always named (R2) — the
 /// old "Unnamed" section is gone; unassigned likeness lives in FaceGroup
@@ -62,7 +62,7 @@ class _PersonsListPageState extends ConsumerState<PersonsListPage> {
     final container = ProviderScope.containerOf(context);
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (_) => SelectableScope(
+        builder: (_) => UndoSelectableRoute(
           child: UncontrolledProviderScope(
             container: container,
             child: PersonDetailPage(personId: person.id),

@@ -15,7 +15,7 @@ import 'package:tagkin_desktop/persons/who_face_linker.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/usage/usage_banner.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
-import 'package:tagkin_desktop/widgets/selectable_scope.dart';
+import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 
 /// Post-auth Folders home (D2): wide multi-column items table.
 ///
@@ -109,7 +109,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     final container = ProviderScope.containerOf(context);
     await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
-        builder: (_) => SelectableScope(
+        builder: (_) => UndoSelectableRoute(
           child: UncontrolledProviderScope(
             container: container,
             child: ItemDetailPage(itemId: item.id),

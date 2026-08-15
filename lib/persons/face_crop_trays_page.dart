@@ -24,7 +24,6 @@ import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
 import 'package:tagkin_desktop/undo/undo_controller.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 import 'package:tagkin_desktop/undo/undoable_action.dart';
-import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
 export 'face_crop/face_crop_focus.dart';
 
@@ -1349,7 +1348,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     final container = ProviderScope.containerOf(context);
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (_) => SelectableScope(
+        builder: (_) => UndoSelectableRoute(
           child: UncontrolledProviderScope(
             container: container,
             child: ItemDetailPage(itemId: itemId),

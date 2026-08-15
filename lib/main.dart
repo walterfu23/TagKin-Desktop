@@ -47,14 +47,17 @@ class TagKinDesktopApp extends StatelessWidget {
           useMaterial3: true,
           extensions: <ThemeExtension<dynamic>>[tagKinClerkTheme()],
         ),
-        // ActiveUndoShortcuts must sit above SelectableScope so Cmd/Ctrl+Z
-        // still reaches the active screen stack when SelectionArea holds
-        // focus (D12). SelectionArea must be under Overlay (per route), not
-        // MaterialApp.builder.
-        home: const ActiveUndoShortcuts(
-          child: SelectableScope(
-            child: AuthShell(signedInHome: ItemsListPage()),
-          ),
+        // Shortcuts must wrap the Navigator (builder), not only `home`.
+        // A pushed route's FocusScope sits above that page's widgets; if
+        // Cmd/Ctrl+Z is only registered on `home`, item detail beeps and
+        // the stack never moves. SelectionArea stays per-route (needs Overlay).
+        builder: (context, child) {
+          return ActiveUndoShortcuts(
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
+        home: const SelectableScope(
+          child: AuthShell(signedInHome: ItemsListPage()),
         ),
       ),
     );

@@ -57,4 +57,4 @@ From Specs.md (remaining spec gaps):
 46. [not yet implemented] thumbnail hosting without storing media (Specs §13 open)
 47. [not yet implemented] operator-hosted GPU pool (deferred; R1 tension) (Specs §13)
 48. should allow undo/redo everywhere, including item details page. folder ingestion dose not allow undo/redo
-49. in the item detail page, should have a way for an excluded face to be assigned to a person.
+49. [Done] in the item detail page, should have a way for an excluded face to be assigned to a person.
