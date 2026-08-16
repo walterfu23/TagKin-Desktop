@@ -1651,6 +1651,129 @@ enum TagStatus {
   String toString() => wire;
 }
 
+class TrialGrantResult {
+  const TrialGrantResult({
+    required this.status,
+    required this.creditsApplied,
+    required this.remainingCredits,
+  });
+
+  final String status;
+  final int creditsApplied;
+  final int remainingCredits;
+
+  factory TrialGrantResult.fromJson(Map<String, dynamic> json) => TrialGrantResult(
+        status: json['status'] as String,
+        creditsApplied: (json['creditsApplied'] as num).toInt(),
+        remainingCredits: (json['remainingCredits'] as num).toInt(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['status'] = status;
+    json['creditsApplied'] = creditsApplied;
+    json['remainingCredits'] = remainingCredits;
+    return json;
+  }
+}
+
+enum TrialIntentKind {
+  setupintent('setupIntent'),
+  paymentintent('paymentIntent');
+
+  const TrialIntentKind(this.wire);
+
+  final String wire;
+
+  static TrialIntentKind fromWire(String value) {
+    for (final e in values) {
+      if (e.wire == value) return e;
+    }
+    throw FormatException('Unknown TrialIntentKind: $value');
+  }
+
+  @override
+  String toString() => wire;
+}
+
+enum TrialStatus {
+  notstarted('notStarted'),
+  pending('pending'),
+  granted('granted'),
+  blocked('blocked'),
+  claimedelsewhere('claimedElsewhere');
+
+  const TrialStatus(this.wire);
+
+  final String wire;
+
+  static TrialStatus fromWire(String value) {
+    for (final e in values) {
+      if (e.wire == value) return e;
+    }
+    throw FormatException('Unknown TrialStatus: $value');
+  }
+
+  @override
+  String toString() => wire;
+}
+
+class TrialSummary {
+  const TrialSummary({
+    required this.status,
+    required this.eligible,
+    required this.publishableKey,
+  });
+
+  final TrialStatus status;
+  final bool eligible;
+  final String publishableKey;
+
+  factory TrialSummary.fromJson(Map<String, dynamic> json) => TrialSummary(
+        status: TrialStatus.fromWire(json['status'] as String),
+        eligible: json['eligible'] as bool,
+        publishableKey: json['publishableKey'] as String,
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['status'] = status.wire;
+    json['eligible'] = eligible;
+    json['publishableKey'] = publishableKey;
+    return json;
+  }
+}
+
+class TrialVerificationCreated {
+  const TrialVerificationCreated({
+    required this.verificationId,
+    required this.intentKind,
+    required this.clientSecret,
+    required this.publishableKey,
+  });
+
+  final String verificationId;
+  final TrialIntentKind intentKind;
+  final String clientSecret;
+  final String publishableKey;
+
+  factory TrialVerificationCreated.fromJson(Map<String, dynamic> json) => TrialVerificationCreated(
+        verificationId: json['verificationId'] as String,
+        intentKind: TrialIntentKind.fromWire(json['intentKind'] as String),
+        clientSecret: json['clientSecret'] as String,
+        publishableKey: json['publishableKey'] as String,
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['verificationId'] = verificationId;
+    json['intentKind'] = intentKind.wire;
+    json['clientSecret'] = clientSecret;
+    json['publishableKey'] = publishableKey;
+    return json;
+  }
+}
+
 class UnassignAppearances {
   const UnassignAppearances({
     required this.appearanceIds,
