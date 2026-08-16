@@ -132,6 +132,7 @@ class FolderIngestQueue extends ChangeNotifier {
     required this.itemsRepository,
     required this.jobsRepository,
     required this.isUsageBlocked,
+    this.onPaidReject,
     this.enumerateFolder = enumerateMedia,
     this.contentHasher = computeContentHash,
     this.perceptualHasher = computePerceptualHashFromFile,
@@ -151,6 +152,7 @@ class FolderIngestQueue extends ChangeNotifier {
   final ItemsRepository itemsRepository;
   final JobsRepository jobsRepository;
   final bool Function() isUsageBlocked;
+  final void Function(String? code, String message)? onPaidReject;
   final Future<List<MediaCandidate>> Function(String path) enumerateFolder;
   final Future<String> Function(String path) contentHasher;
   final Future<String?> Function(String path) perceptualHasher;
@@ -640,6 +642,7 @@ class FolderIngestQueue extends ChangeNotifier {
         await pipeline.start(
           ingestOutcomes: outcomes,
           isUsageBlocked: isUsageBlocked,
+          onPaidReject: onPaidReject,
         );
       } finally {
         upload.removeListener(flushLiveItems);
@@ -677,6 +680,13 @@ final folderIngestQueueProvider = ChangeNotifierProvider<FolderIngestQueue>(
           return ref.read(usageControllerProvider).gate.blocked;
         } catch (_) {
           return false;
+        }
+      },
+      onPaidReject: (code, message) {
+        try {
+          ref.read(usageControllerProvider).noteAnalyzeReject(code, message);
+        } catch (_) {
+          // Faces widget tests may lack a signed-in usage controller.
         }
       },
       enumerateFolder: ref.read(mediaEnumeratorProvider),

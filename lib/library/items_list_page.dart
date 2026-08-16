@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
@@ -13,9 +14,10 @@ import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
+import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 import 'package:tagkin_desktop/usage/usage_banner.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
-import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
+import 'package:tagkin_desktop/usage/usage_gate.dart';
 
 /// Post-auth Folders home (D2): wide multi-column items table.
 ///
@@ -187,10 +189,17 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     final usage = ref.read(usageControllerProvider);
     if (usage.gate.blocked) {
       if (!mounted) return;
+      final creditCopy = usage.gate.notice == UsageNotice.outOfCredits
+          ? 'Out of credits'
+          : 'Ingest paused.';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          key: Key('folder-retry-blocked'),
-          content: Text('Budget pause blocks new analyze.'),
+        SnackBar(
+          key: const Key('folder-retry-blocked'),
+          content: Text(
+            usage.gate.creditAdmission
+                ? creditCopy
+                : 'Budget pause blocks new analyze.',
+          ),
         ),
       );
       return;
@@ -218,6 +227,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
       return;
     }
 
+    usage.clearAnalyzeReject();
     setState(() => _retryingFolders.add(dir));
     final jobs = ref.read(jobsRepositoryProvider);
     final prefs = ref.read(desktopPrefsProvider);
@@ -230,6 +240,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     );
     var succeeded = 0;
     var stillFailed = 0;
+    ApiException? creditReject;
     for (final item in toRetry) {
       try {
         final result = await jobs.analyzeItem(item.id);
@@ -243,13 +254,34 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
         } catch (_) {
           // Linking is best-effort; analyze already succeeded.
         }
-      } catch (_) {
+      } catch (e) {
         stillFailed++;
+        if (e is ApiException && isCreditRejectCode(e.code)) {
+          usage.noteAnalyzeReject(e.code, e.message);
+          creditReject = e;
+          break;
+        }
       }
     }
     if (!mounted) return;
     setState(() => _retryingFolders.remove(dir));
     _retry();
+    if (creditReject != null) {
+      final copy = creditReject.code == 'outOfCredits'
+          ? 'Out of credits'
+          : creditReject.code == 'paidPaused'
+              ? (creditReject.message.isEmpty
+                  ? 'Ingest paused.'
+                  : creditReject.message)
+              : 'Not enough credits for this analysis';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          key: const Key('folder-retry-credits'),
+          content: Text(copy),
+        ),
+      );
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         key: const Key('folder-retry-done'),
@@ -292,6 +324,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     }
     if (path == null || !mounted) return;
 
+    ref.read(usageControllerProvider).clearAnalyzeReject();
     final queue = ref.read(folderIngestQueueProvider);
     final result = await queue.enqueue(path);
     if (!mounted) return;
@@ -332,7 +365,11 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
           body: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              UsageBanner(gate: usage.gate),
+              UsageBanner(
+                gate: usage.gate,
+                analyzeRejectCode: usage.analyzeRejectCode,
+                analyzeRejectMessage: usage.analyzeRejectMessage,
+              ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                 child: Row(

@@ -13,8 +13,9 @@ enum UsagePhase { idle, loading, loaded, error }
 /// Does not auto-retry on error (matches D1 [ApiClient] no-silent-retry).
 /// Does not poll — refresh by calling [load] again (e.g. on page re-entry).
 ///
-/// `/analyze`-time reject/queue reason display is owned by D7; this
-/// controller only covers the pre-ingest kill-switch / hard-limit gate.
+/// Analyze-time credit rejects (`insufficientCredits` / `outOfCredits` /
+/// `paidPaused`) are recorded via [noteAnalyzeReject] so [UsageBanner] can
+/// show the server verdict. [load] does not clear that reject.
 class UsageController extends ChangeNotifier {
   UsageController({required this.usageRepository});
 
@@ -25,9 +26,14 @@ class UsageController extends ChangeNotifier {
   UsageGate gate = UsageGate.open;
   Object? error;
 
+  /// Last credit-admission 409 from analyze. Null when none is pending.
+  String? analyzeRejectCode;
+  String? analyzeRejectMessage;
+
   /// Fetches usage. On failure sets [phase] to [UsagePhase.error] and leaves
   /// [gate] at [UsageGate.open] (fail-open for display; server still
-  /// authorizes paid work). Never silently retries.
+  /// authorizes paid work). Never silently retries. Does not clear a stored
+  /// analyze reject.
   Future<void> load() async {
     phase = UsagePhase.loading;
     error = null;
@@ -45,6 +51,24 @@ class UsageController extends ChangeNotifier {
       gate = UsageGate.open;
       summary = null;
     }
+    notifyListeners();
+  }
+
+  /// Record a server credit reject and refresh `/usage` so the meter follows.
+  /// Non-credit codes are ignored.
+  void noteAnalyzeReject(String? code, String message) {
+    if (!isCreditRejectCode(code)) return;
+    analyzeRejectCode = code;
+    analyzeRejectMessage = message;
+    notifyListeners();
+    load();
+  }
+
+  /// Drop a stored analyze reject (new ingest / retry session).
+  void clearAnalyzeReject() {
+    if (analyzeRejectCode == null && analyzeRejectMessage == null) return;
+    analyzeRejectCode = null;
+    analyzeRejectMessage = null;
     notifyListeners();
   }
 }

@@ -1822,6 +1822,11 @@ class UsageSummary {
     required this.killSwitch,
     this.softLimitExceeded,
     this.pauseReason,
+    required this.remainingCredits,
+    required this.reservedCredits,
+    required this.lowCreditWarningCredits,
+    required this.lowCreditWarning,
+    required this.creditAdmission,
   });
 
   final int softLimitCents;
@@ -1831,6 +1836,11 @@ class UsageSummary {
   final KillSwitchState killSwitch;
   final bool? softLimitExceeded;
   final String? pauseReason;
+  final int remainingCredits;
+  final int reservedCredits;
+  final int lowCreditWarningCredits;
+  final bool lowCreditWarning;
+  final bool creditAdmission;
 
   factory UsageSummary.fromJson(Map<String, dynamic> json) => UsageSummary(
         softLimitCents: (json['softLimitCents'] as num).toInt(),
@@ -1840,6 +1850,11 @@ class UsageSummary {
         killSwitch: KillSwitchState.fromJson(json['killSwitch'] as Map<String, dynamic>),
         softLimitExceeded: json['softLimitExceeded'] == null ? null : json['softLimitExceeded'] as bool,
         pauseReason: json['pauseReason'] == null ? null : json['pauseReason'] as String,
+        remainingCredits: (json['remainingCredits'] as num).toInt(),
+        reservedCredits: (json['reservedCredits'] as num).toInt(),
+        lowCreditWarningCredits: (json['lowCreditWarningCredits'] as num).toInt(),
+        lowCreditWarning: json['lowCreditWarning'] as bool,
+        creditAdmission: json['creditAdmission'] as bool,
       );
 
   Map<String, dynamic> toJson() {
@@ -1851,6 +1866,11 @@ class UsageSummary {
     json['killSwitch'] = killSwitch.toJson();
     if (softLimitExceeded != null) json['softLimitExceeded'] = softLimitExceeded;
     if (pauseReason != null) json['pauseReason'] = pauseReason;
+    json['remainingCredits'] = remainingCredits;
+    json['reservedCredits'] = reservedCredits;
+    json['lowCreditWarningCredits'] = lowCreditWarningCredits;
+    json['lowCreditWarning'] = lowCreditWarning;
+    json['creditAdmission'] = creditAdmission;
     return json;
   }
 }

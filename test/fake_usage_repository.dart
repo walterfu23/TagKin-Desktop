@@ -31,6 +31,11 @@ UsageSummary fixtureUsageSummary({
   String? killSwitchReason,
   bool? softLimitExceeded,
   String? pauseReason,
+  int remainingCredits = 0,
+  int reservedCredits = 0,
+  int lowCreditWarningCredits = 500,
+  bool lowCreditWarning = false,
+  bool creditAdmission = false,
 }) {
   return UsageSummary(
     softLimitCents: softLimitCents,
@@ -43,5 +48,10 @@ UsageSummary fixtureUsageSummary({
     ),
     softLimitExceeded: softLimitExceeded,
     pauseReason: pauseReason,
+    remainingCredits: remainingCredits,
+    reservedCredits: reservedCredits,
+    lowCreditWarningCredits: lowCreditWarningCredits,
+    lowCreditWarning: lowCreditWarning,
+    creditAdmission: creditAdmission,
   );
 }

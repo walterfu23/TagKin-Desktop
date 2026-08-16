@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/batch_ingest_controller.dart';
 import 'package:tagkin_desktop/ingest/model_host_uploader.dart';
@@ -234,6 +235,44 @@ void main() {
       expect(pipeline.analyzeOutcomes[0].succeeded, isFalse);
       expect(pipeline.analyzeOutcomes[1].succeeded, isTrue);
       expect(pipeline.canRetry, isTrue);
+    });
+
+    test('onPaidReject fires and stops the loop on outOfCredits', () async {
+      final photo = fixtureItem(id: 'item_1', type: ItemType.photo);
+      final photo2 = fixtureItem(id: 'item_3', type: ItemType.photo);
+      final items = FakeItemsRepository(items: [photo, photo2]);
+      var analyzeCount = 0;
+      final jobs = _SelectiveAnalyzeJobs(
+        onAnalyze: (id) async {
+          analyzeCount++;
+          throw ApiException(
+            statusCode: 409,
+            code: 'outOfCredits',
+            message: 'Out of credits',
+          );
+        },
+      );
+      final rejects = <(String?, String)>[];
+      final pipeline = PostIngestPipelineController(
+        prePass: _stubPrePass(items),
+        upload: _stubUpload(items),
+        jobsRepository: jobs,
+        whoFaceLinker: WhoFaceLinker(items: items),
+      );
+
+      await pipeline.start(
+        ingestOutcomes: [
+          _ingest(item: photo, path: '/a.jpg'),
+          _ingest(item: photo2, path: '/c.jpg'),
+        ],
+        usageBlocked: false,
+        onPaidReject: (code, message) => rejects.add((code, message)),
+      );
+
+      expect(analyzeCount, 1);
+      expect(rejects, [('outOfCredits', 'Out of credits')]);
+      expect(pipeline.analyzeOutcomes, hasLength(1));
+      expect(pipeline.analyzeOutcomes.single.succeeded, isFalse);
     });
 
     test('start is idempotent within a session', () async {

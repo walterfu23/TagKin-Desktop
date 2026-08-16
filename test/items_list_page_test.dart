@@ -61,6 +61,7 @@ Future<void> _pumpLibrary(
   WidgetTester tester, {
   required FakeItemsRepository items,
   FakeJobsRepository? jobs,
+  FakeUsageRepository? usage,
   List<Override> extraOverrides = const [],
 }) async {
   // Match the wide library window so fixed table columns fit.
@@ -72,7 +73,7 @@ Future<void> _pumpLibrary(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        ..._sessionOverrides(items: items, jobs: jobs),
+        ..._sessionOverrides(items: items, jobs: jobs, usage: usage),
         ...extraOverrides,
       ],
       child: const TagKinDesktopApp(),
@@ -875,6 +876,62 @@ void main() {
     expect(jobs.analyzedItemIds, ['live_a', 'live_b']);
     expect(find.byKey(const Key('processing-status-failed')), findsNothing);
     expect(find.byKey(const Key('processing-status-tagged')), findsNWidgets(2));
+  });
+
+  testWidgets(
+      'folder Retry credit reject shows banner and snackbar without retrying',
+      (tester) async {
+    const shared = '/albums/retry_credits';
+    final tagged = fixtureItem(
+      id: 'credit_ok',
+      sourceRef: 'file://$shared/ok.jpg',
+      analysisRef: 'ref_ok',
+      analysisRefState: AnalysisRefState.ready,
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final failed = fixtureItem(
+      id: 'credit_fail',
+      sourceRef: 'file://$shared/fail.jpg',
+      analysisRef: 'ref_fail',
+      analysisRefState: AnalysisRefState.ready,
+      processingStatus: ProcessingStatus.failed,
+    );
+    final items = FakeItemsRepository(items: [tagged, failed]);
+    final jobs = FakeJobsRepository(
+      libraryItems: items,
+      analyzeError: ApiException(
+        statusCode: 409,
+        code: 'insufficientCredits',
+        message: 'Not enough credits for this analysis',
+      ),
+    );
+    await _pumpLibrary(
+      tester,
+      items: items,
+      jobs: jobs,
+      usage: FakeUsageRepository(
+        summary: fixtureUsageSummary(
+          creditAdmission: true,
+          remainingCredits: 40,
+          lowCreditWarning: true,
+        ),
+      ),
+    );
+
+    await tester.ensureVisible(
+      find.byKey(const Key('source-group-retry-$shared')),
+    );
+    await tester.tap(find.byKey(const Key('source-group-retry-$shared')));
+    await tester.pumpAndSettle();
+
+    expect(jobs.analyzeCallCount, 1);
+    expect(find.byKey(const Key('folder-retry-credits')), findsOneWidget);
+    expect(find.text('Not enough credits for this analysis'), findsWidgets);
+    expect(
+      find.byKey(const Key('usage-banner-insufficient-credits')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('folder-retry-done')), findsNothing);
   });
 
   testWidgets(

@@ -156,4 +156,77 @@ void main() {
     // as authority text in the open state.
     expect(find.textContaining('111'), findsNothing);
   });
+
+  testWidgets('creditAdmission low remaining shows Only n credits remaining',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: UsageBanner(
+            gate: UsageGate.fromSummary(
+              fixtureUsageSummary(
+                creditAdmission: true,
+                remainingCredits: 400,
+                lowCreditWarning: true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const Key('usage-banner-low-credits')), findsOneWidget);
+    expect(find.text('Only 400 credits remaining'), findsOneWidget);
+  });
+
+  testWidgets('creditAdmission zero remaining disables Add from folder',
+      (tester) async {
+    final usage = FakeUsageRepository(
+      summary: fixtureUsageSummary(
+        creditAdmission: true,
+        remainingCredits: 0,
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: _overrides(usage: usage),
+        child: const TagKinDesktopApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('usage-banner-out-of-credits')), findsOneWidget);
+    expect(find.text('Out of credits'), findsOneWidget);
+    final button = tester.widget<FilledButton>(
+      find.byKey(const Key('add-from-folder')),
+    );
+    expect(button.onPressed, isNull);
+  });
+
+  testWidgets('insufficient reject shows Not enough credits banner',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: UsageBanner(
+            gate: UsageGate.fromSummary(
+              fixtureUsageSummary(
+                creditAdmission: true,
+                remainingCredits: 40,
+                lowCreditWarning: true,
+              ),
+            ),
+            analyzeRejectCode: 'insufficientCredits',
+            analyzeRejectMessage: 'need 80',
+          ),
+        ),
+      ),
+    );
+    expect(
+      find.byKey(const Key('usage-banner-insufficient-credits')),
+      findsOneWidget,
+    );
+    expect(find.text('Not enough credits for this analysis'), findsOneWidget);
+    expect(find.text('Only 40 credits remaining'), findsNothing);
+  });
 }

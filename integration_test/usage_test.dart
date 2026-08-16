@@ -58,4 +58,46 @@ void main() {
     expect(button.onPressed, isNull);
     expect(usage.getUsageCallCount, greaterThan(0));
   });
+
+  testWidgets(
+      'out-of-credits fixture disables Add from folder and shows Out of credits',
+      (WidgetTester tester) async {
+    final usage = FakeUsageRepository(
+      summary: fixtureUsageSummary(
+        creditAdmission: true,
+        remainingCredits: 0,
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          testSessionProvider.overrideWithValue(
+            const TestSession(
+              token: 'integration-token',
+              account: Account(
+                id: 'acc_integration',
+                email: 'integration@example.com',
+                createdAt: '2026-07-18T00:00:00.000Z',
+              ),
+            ),
+          ),
+          itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
+          usageRepositoryProvider.overrideWithValue(usage),
+          jobsRepositoryProvider.overrideWithValue(FakeJobsRepository()),
+        ],
+        child: const TagKinDesktopApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('usage-banner-out-of-credits')), findsOneWidget);
+    expect(find.text('Out of credits'), findsOneWidget);
+
+    final button = tester.widget<FilledButton>(
+      find.byKey(const Key('add-from-folder')),
+    );
+    expect(button.onPressed, isNull);
+    expect(usage.getUsageCallCount, greaterThan(0));
+  });
 }

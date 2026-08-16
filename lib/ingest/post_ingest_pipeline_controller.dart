@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/api/jobs_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart'
     show itemsRepositoryProvider, jobsRepositoryProvider;
@@ -9,6 +10,7 @@ import 'package:tagkin_desktop/ingest/upload_controller.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prepass/prepass_controller.dart';
+import 'package:tagkin_desktop/usage/usage_gate.dart';
 
 /// High-level phases of the automatic D4 → D5 → D7 chain after folder ingest.
 enum PostIngestPipelinePhase {
@@ -65,6 +67,8 @@ class PostIngestPipelineController extends ChangeNotifier {
   int itemIndex = 0;
   int itemTotal = 0;
 
+  void Function(String? code, String message)? _onPaidReject;
+
   bool get isBusy =>
       phase == PostIngestPipelinePhase.runningPrePass ||
       phase == PostIngestPipelinePhase.runningUpload ||
@@ -91,9 +95,11 @@ class PostIngestPipelineController extends ChangeNotifier {
     required List<IngestOutcome> ingestOutcomes,
     bool usageBlocked = false,
     bool Function()? isUsageBlocked,
+    void Function(String? code, String message)? onPaidReject,
   }) async {
     if (_started || phase != PostIngestPipelinePhase.idle) return;
     _started = true;
+    _onPaidReject = onPaidReject;
     await _run(
       ingestOutcomes: ingestOutcomes,
       isUsageBlocked: () => usageBlocked || (isUsageBlocked?.call() ?? false),
@@ -105,6 +111,7 @@ class PostIngestPipelineController extends ChangeNotifier {
     required List<IngestOutcome> ingestOutcomes,
     bool usageBlocked = false,
     bool Function()? isUsageBlocked,
+    void Function(String? code, String message)? onPaidReject,
   }) async {
     if (isBusy || !canRetry) return;
     prePass.reset();
@@ -114,6 +121,7 @@ class PostIngestPipelineController extends ChangeNotifier {
     itemTotal = 0;
     error = null;
     _started = true;
+    _onPaidReject = onPaidReject;
     phase = PostIngestPipelinePhase.idle;
     notifyListeners();
     await _run(
@@ -168,8 +176,9 @@ class PostIngestPipelineController extends ChangeNotifier {
 
         phase = PostIngestPipelinePhase.runningAnalyze;
         notifyListeners();
-        await _analyzePhotos([one]);
+        final stopPaid = await _analyzePhotos([one]);
         prePass.frameSamplesByItemId.clear();
+        if (stopPaid) break;
       }
 
       phase = !anyPaid && skipPaid
@@ -183,7 +192,8 @@ class PostIngestPipelineController extends ChangeNotifier {
     }
   }
 
-  Future<void> _analyzePhotos(List<IngestOutcome> ingestOutcomes) async {
+  /// Returns true when a hard credit stop should halt the rest of the chain.
+  Future<bool> _analyzePhotos(List<IngestOutcome> ingestOutcomes) async {
     final typeById = <String, ItemType>{
       for (final o in ingestOutcomes)
         if (o.item != null) o.item!.id: o.item!.type,
@@ -225,8 +235,13 @@ class PostIngestPipelineController extends ChangeNotifier {
         );
         analyzeOutcomes = List.unmodifiable(newOutcomes);
         notifyListeners();
+        if (e is ApiException && isCreditRejectCode(e.code)) {
+          _onPaidReject?.call(e.code, e.message);
+          if (isHardCreditStop(e.code)) return true;
+        }
       }
     }
+    return false;
   }
 
   void reset() {

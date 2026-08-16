@@ -52,9 +52,12 @@ class _FolderIngestPageState extends ConsumerState<FolderIngestPage> {
         controller.outcomes.where((o) => o.succeeded).length;
     if (succeeded == 0) return;
     _pipelineArmed = true;
+    final usage = ref.read(usageControllerProvider);
+    usage.clearAnalyzeReject();
     pipeline.start(
       ingestOutcomes: controller.outcomes,
       usageBlocked: gate.blocked,
+      onPaidReject: usage.noteAnalyzeReject,
     );
   }
 
@@ -82,7 +85,11 @@ class _FolderIngestPageState extends ConsumerState<FolderIngestPage> {
         builder: (context, _) => Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            UsageBanner(gate: usage.gate),
+            UsageBanner(
+              gate: usage.gate,
+              analyzeRejectCode: usage.analyzeRejectCode,
+              analyzeRejectMessage: usage.analyzeRejectMessage,
+            ),
             Expanded(
               child: _FolderIngestBody(
                 controller: controller,
@@ -90,12 +97,17 @@ class _FolderIngestPageState extends ConsumerState<FolderIngestPage> {
                 upload: upload,
                 pipeline: pipeline,
                 gate: usage.gate,
+                analyzeRejectCode: usage.analyzeRejectCode,
+                onPaidReject: usage.noteAnalyzeReject,
                 onTryStartPipeline: () => tryStartPipeline(
                   controller: controller,
                   pipeline: pipeline,
                   gate: usage.gate,
                 ),
-                onIngestAnotherFolder: _resetPipelineArm,
+                onIngestAnotherFolder: () {
+                  ref.read(usageControllerProvider).clearAnalyzeReject();
+                  _resetPipelineArm();
+                },
               ),
             ),
           ],
@@ -112,6 +124,8 @@ class _FolderIngestBody extends StatelessWidget {
     required this.upload,
     required this.pipeline,
     required this.gate,
+    this.analyzeRejectCode,
+    this.onPaidReject,
     required this.onTryStartPipeline,
     required this.onIngestAnotherFolder,
   });
@@ -121,6 +135,8 @@ class _FolderIngestBody extends StatelessWidget {
   final UploadController upload;
   final PostIngestPipelineController pipeline;
   final UsageGate gate;
+  final String? analyzeRejectCode;
+  final void Function(String? code, String message)? onPaidReject;
   final VoidCallback onTryStartPipeline;
   final VoidCallback onIngestAnotherFolder;
 
@@ -142,6 +158,8 @@ class _FolderIngestBody extends StatelessWidget {
           upload: upload,
           pipeline: pipeline,
           gate: gate,
+          analyzeRejectCode: analyzeRejectCode,
+          onPaidReject: onPaidReject,
           onTryStartPipeline: onTryStartPipeline,
           onIngestAnotherFolder: onIngestAnotherFolder,
         );
@@ -310,6 +328,8 @@ class _DoneView extends StatefulWidget {
     required this.upload,
     required this.pipeline,
     required this.gate,
+    this.analyzeRejectCode,
+    this.onPaidReject,
     required this.onTryStartPipeline,
     required this.onIngestAnotherFolder,
   });
@@ -319,6 +339,8 @@ class _DoneView extends StatefulWidget {
   final UploadController upload;
   final PostIngestPipelineController pipeline;
   final UsageGate gate;
+  final String? analyzeRejectCode;
+  final void Function(String? code, String message)? onPaidReject;
   final VoidCallback onTryStartPipeline;
   final VoidCallback onIngestAnotherFolder;
 
@@ -483,7 +505,13 @@ class _DoneViewState extends State<_DoneView> {
               Text(
                 analyzeFail == 0
                     ? 'Analyzed $analyzeOk photo(s).'
-                    : 'Analyze: $analyzeOk ok; $analyzeFail failed.',
+                    : widget.analyzeRejectCode == 'outOfCredits'
+                        ? 'Out of credits'
+                        : widget.analyzeRejectCode == 'insufficientCredits'
+                            ? 'Not enough credits for this analysis'
+                            : widget.analyzeRejectCode == 'paidPaused'
+                                ? 'Analyze paused.'
+                                : 'Analyze: $analyzeOk ok; $analyzeFail failed.',
                 key: const Key('analyze-done-summary'),
                 textAlign: TextAlign.center,
               ),
@@ -505,6 +533,7 @@ class _DoneViewState extends State<_DoneView> {
                     : () => pipeline.retryFailed(
                           ingestOutcomes: controller.outcomes,
                           usageBlocked: gate.blocked,
+                          onPaidReject: widget.onPaidReject,
                         ),
                 child: const Text('Retry failed'),
               ),

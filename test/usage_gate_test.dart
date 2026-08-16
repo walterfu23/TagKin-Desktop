@@ -59,6 +59,59 @@ void main() {
       expect(gate.reasonText, 'hard budget');
     });
 
+    test('creditAdmission: low remaining warns and does not block', () {
+      final gate = UsageGate.fromSummary(
+        fixtureUsageSummary(
+          creditAdmission: true,
+          remainingCredits: 400,
+          lowCreditWarning: true,
+        ),
+      );
+      expect(gate.blocked, isFalse);
+      expect(gate.warn, isTrue);
+      expect(gate.notice, UsageNotice.lowCredits);
+      expect(gate.remainingCredits, 400);
+    });
+
+    test('creditAdmission: zero remaining is out of credits', () {
+      final gate = UsageGate.fromSummary(
+        fixtureUsageSummary(
+          creditAdmission: true,
+          remainingCredits: 0,
+        ),
+      );
+      expect(gate.blocked, isTrue);
+      expect(gate.warn, isFalse);
+      expect(gate.notice, UsageNotice.outOfCredits);
+    });
+
+    test('creditAdmission: paid pause blocks while remaining is positive', () {
+      final gate = UsageGate.fromSummary(
+        fixtureUsageSummary(
+          creditAdmission: true,
+          remainingCredits: 80,
+          pauseReason: 'Estimate overrun absorbed',
+        ),
+      );
+      expect(gate.blocked, isTrue);
+      expect(gate.notice, UsageNotice.budgetBlocked);
+      expect(gate.reasonText, 'Estimate overrun absorbed');
+    });
+
+    test('creditAdmission false still derives from cents', () {
+      final gate = UsageGate.fromSummary(
+        fixtureUsageSummary(
+          creditAdmission: false,
+          remainingCredits: 0,
+          softLimitExceeded: true,
+          spentCents: 800,
+        ),
+      );
+      expect(gate.blocked, isFalse);
+      expect(gate.warn, isTrue);
+      expect(gate.notice, UsageNotice.budgetWarn);
+    });
+
     test('derives only from fixture fields — no local cost model', () {
       // Unusual limits still produce gate output driven solely by the fixture.
       final gate = UsageGate.fromSummary(
@@ -104,6 +157,40 @@ void main() {
       expect(controller.error, isA<ApiException>());
       expect(controller.gate, UsageGate.open);
       expect(repo.getUsageCallCount, 1);
+      controller.dispose();
+    });
+
+    test('noteAnalyzeReject stores credit codes and refreshes usage', () async {
+      final repo = FakeUsageRepository(
+        summary: fixtureUsageSummary(
+          creditAdmission: true,
+          remainingCredits: 40,
+        ),
+      );
+      final controller = UsageController(usageRepository: repo);
+      await controller.load();
+      expect(repo.getUsageCallCount, 1);
+      controller.noteAnalyzeReject(
+        'insufficientCredits',
+        'Not enough credits for this analysis',
+      );
+      expect(controller.analyzeRejectCode, 'insufficientCredits');
+      await Future<void>.delayed(Duration.zero);
+      expect(repo.getUsageCallCount, 2);
+      controller.load();
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.analyzeRejectCode, 'insufficientCredits');
+      controller.clearAnalyzeReject();
+      expect(controller.analyzeRejectCode, isNull);
+      controller.dispose();
+    });
+
+    test('noteAnalyzeReject ignores non-credit codes', () async {
+      final repo = FakeUsageRepository();
+      final controller = UsageController(usageRepository: repo);
+      controller.noteAnalyzeReject('hard_limit', 'budget');
+      expect(controller.analyzeRejectCode, isNull);
+      expect(repo.getUsageCallCount, 0);
       controller.dispose();
     });
   });
