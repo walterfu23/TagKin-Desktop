@@ -4,7 +4,10 @@ import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/person_detail_page.dart';
+import 'package:tagkin_desktop/persons/person_name.dart';
 import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prepass/face_embedder.dart';
 import 'package:tagkin_desktop/prepass/onnx_face_embedder.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
@@ -81,6 +84,10 @@ class _PersonsListPageState extends ConsumerState<PersonsListPage> {
         _retry();
       }
     });
+    final columns = ref.watch(desktopPrefsProvider).personsListColumns.clamp(
+          DesktopPrefs.personsListColumnsMin,
+          DesktopPrefs.personsListColumnsMax,
+        );
     return Scaffold(
       appBar: AppBar(
         title: const Text('Persons'),
@@ -147,7 +154,13 @@ class _PersonsListPageState extends ConsumerState<PersonsListPage> {
                   );
                 }
 
-                final persons = snapshot.data!;
+                final persons = List<Person>.from(snapshot.data!)
+                  ..sort((a, b) {
+                    final byName = personNameKey(a.name)
+                        .compareTo(personNameKey(b.name));
+                    if (byName != 0) return byName;
+                    return a.id.compareTo(b.id);
+                  });
 
                 if (persons.isEmpty) {
                   return Center(
@@ -166,16 +179,23 @@ class _PersonsListPageState extends ConsumerState<PersonsListPage> {
                   );
                 }
 
-                return ListView(
+                return GridView.builder(
                   key: const Key('persons-list'),
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  children: [
-                    for (final person in persons)
-                      _PersonTile(
-                        person: person,
-                        onTap: () => _openDetail(person),
-                      ),
-                  ],
+                  padding: const EdgeInsets.all(16),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 0.75,
+                  ),
+                  itemCount: persons.length,
+                  itemBuilder: (context, index) {
+                    final person = persons[index];
+                    return _PersonCell(
+                      person: person,
+                      onTap: () => _openDetail(person),
+                    );
+                  },
                 );
               },
             ),
@@ -186,22 +206,44 @@ class _PersonsListPageState extends ConsumerState<PersonsListPage> {
   }
 }
 
-class _PersonTile extends StatelessWidget {
-  const _PersonTile({required this.person, required this.onTap});
+class _PersonCell extends StatelessWidget {
+  const _PersonCell({required this.person, required this.onTap});
 
   final Person person;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
+    return InkWell(
       key: Key('person-row-${person.id}'),
-      leading: PersonListFaceThumb(personId: person.id),
-      title: Text(
-        person.name,
-        key: Key('person-name-${person.id}'),
-      ),
       onTap: onTap,
+      child: Column(
+        children: [
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final side = constraints.maxWidth < constraints.maxHeight
+                    ? constraints.maxWidth
+                    : constraints.maxHeight;
+                return Center(
+                  child: PersonListFaceThumb(
+                    personId: person.id,
+                    size: side.clamp(32.0, 240.0),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            person.name,
+            key: Key('person-name-${person.id}'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
     );
   }
 }

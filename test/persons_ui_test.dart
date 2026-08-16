@@ -5,6 +5,8 @@ import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/persons/person_detail_page.dart';
 import 'package:tagkin_desktop/persons/person_name_dialog.dart';
 import 'package:tagkin_desktop/persons/persons_list_page.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 
 import 'fake_persons_repository.dart';
 
@@ -31,6 +33,7 @@ void main() {
       ProviderScope(
         overrides: [
           personsRepositoryProvider.overrideWithValue(persons),
+          desktopPrefsProvider.overrideWithValue(const DesktopPrefs()),
         ],
         child: const MaterialApp(home: PersonsListPage()),
       ),
@@ -42,6 +45,81 @@ void main() {
     expect(find.text('Confirmed Chris'), findsOneWidget);
     expect(find.byKey(const Key('person-row-person_s')), findsOneWidget);
     expect(find.byKey(const Key('person-row-person_c')), findsOneWidget);
+    final grid = tester.widget<GridView>(find.byKey(const Key('persons-list')));
+    final delegate =
+        grid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
+    expect(delegate.crossAxisCount, 5);
+  });
+
+  testWidgets('persons list sorts A–Z case-insensitively', (tester) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(id: 'p_z', name: 'zoe'),
+        fixturePersonDetail(id: 'p_a', name: 'Ada'),
+        fixturePersonDetail(id: 'p_b', name: 'bob'),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          desktopPrefsProvider.overrideWithValue(const DesktopPrefs()),
+        ],
+        child: const MaterialApp(home: PersonsListPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final ada = tester.getTopLeft(find.byKey(const Key('person-row-p_a')));
+    final bob = tester.getTopLeft(find.byKey(const Key('person-row-p_b')));
+    final zoe = tester.getTopLeft(find.byKey(const Key('person-row-p_z')));
+    expect(ada.dx, lessThan(bob.dx));
+    expect(bob.dx, lessThan(zoe.dx));
+    expect(ada.dy, bob.dy);
+    expect(bob.dy, zoe.dy);
+  });
+
+  testWidgets('persons list uses Settings column count', (tester) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(id: 'p_a', name: 'Ada'),
+        fixturePersonDetail(id: 'p_b', name: 'Bob'),
+        fixturePersonDetail(id: 'p_c', name: 'Cara'),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          desktopPrefsProvider.overrideWithValue(
+            const DesktopPrefs(personsListColumns: 2),
+          ),
+        ],
+        child: const MaterialApp(home: PersonsListPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final grid = tester.widget<GridView>(find.byKey(const Key('persons-list')));
+    final delegate =
+        grid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
+    expect(delegate.crossAxisCount, 2);
+    final ada = tester.getTopLeft(find.byKey(const Key('person-row-p_a')));
+    final bob = tester.getTopLeft(find.byKey(const Key('person-row-p_b')));
+    final cara = tester.getTopLeft(find.byKey(const Key('person-row-p_c')));
+    expect(ada.dy, bob.dy);
+    expect(ada.dx, lessThan(bob.dx));
+    expect(cara.dy, greaterThan(ada.dy));
   });
 
   testWidgets(

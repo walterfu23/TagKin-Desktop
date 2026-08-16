@@ -36,6 +36,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   late double _sceneCutThreshold;
   late double _facesDetectScoreThreshold;
   late int _facesTrayPageLimit;
+  late int _personsListColumns;
   late bool _autoConfirmHighConfidencePersonMatches;
   late int _autoConfirmMinConfidencePercent;
   late int _jobsPollIntervalSeconds;
@@ -64,6 +65,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _sceneCutThreshold = prefs.sceneCutThreshold;
     _facesDetectScoreThreshold = prefs.facesDetectScoreThreshold;
     _facesTrayPageLimit = prefs.facesTrayPageLimit;
+    _personsListColumns = prefs.personsListColumns;
     _autoConfirmHighConfidencePersonMatches =
         prefs.autoConfirmHighConfidencePersonMatches;
     _autoConfirmMinConfidencePercent = prefs.autoConfirmMinConfidencePercent;
@@ -87,6 +89,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _sceneCutThreshold = prefs.sceneCutThreshold;
     _facesDetectScoreThreshold = prefs.facesDetectScoreThreshold;
     _facesTrayPageLimit = prefs.facesTrayPageLimit;
+    _personsListColumns = prefs.personsListColumns;
     _autoConfirmHighConfidencePersonMatches =
         prefs.autoConfirmHighConfidencePersonMatches;
     _autoConfirmMinConfidencePercent = prefs.autoConfirmMinConfidencePercent;
@@ -141,6 +144,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       'video.sceneCutThreshold': _sceneCutThreshold,
       'faces.detectScoreThreshold': _facesDetectScoreThreshold,
       'faces.trayPageLimit': _facesTrayPageLimit,
+      'ui.personsListColumns': _personsListColumns,
       'faces.autoConfirmHighConfidencePersonMatches':
           _autoConfirmHighConfidencePersonMatches,
       'faces.autoConfirmMinConfidencePercent':
@@ -674,6 +678,18 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     max: DesktopPrefs.facesTrayPageLimitMax,
                     step: DesktopPrefs.facesTrayPageLimitStep,
                     onChanged: (v) => _facesTrayPageLimit = v,
+                  ),
+                  _intSlider(
+                    key: const Key('pref-persons-list-columns'),
+                    label: 'Persons list columns',
+                    helper:
+                        'How many person face crops sit in each row on the '
+                        'Persons page. Default 5 (1–10).',
+                    value: _personsListColumns,
+                    min: DesktopPrefs.personsListColumnsMin,
+                    max: DesktopPrefs.personsListColumnsMax,
+                    step: DesktopPrefs.personsListColumnsStep,
+                    onChanged: (v) => _personsListColumns = v,
                   ),
                   SwitchListTile(
                     key: const Key('pref-auto-confirm-high-confidence'),

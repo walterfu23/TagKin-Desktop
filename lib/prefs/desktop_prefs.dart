@@ -21,6 +21,7 @@ class DesktopPrefs {
     this.sceneCutThreshold = 0.3,
     this.facesDetectScoreThreshold = 0.2,
     this.facesTrayPageLimit = 500,
+    this.personsListColumns = 5,
     this.autoConfirmHighConfidencePersonMatches = true,
     this.autoConfirmMinConfidencePercent = 95,
     this.jobsPollIntervalSeconds = 2,
@@ -69,6 +70,9 @@ class DesktopPrefs {
 
   /// Appearances / exclusions list page size on Faces trays.
   final int facesTrayPageLimit;
+
+  /// Face-crop columns on the Persons list page.
+  final int personsListColumns;
 
   /// When true, WhoFaceLinker sends [autoConfirmMinConfidencePercent] so the
   /// API may auto-confirm high-confidence named-person matches.
@@ -133,6 +137,10 @@ class DesktopPrefs {
   static const facesTrayPageLimitMax = 500;
   static const facesTrayPageLimitStep = 10;
 
+  static const personsListColumnsMin = 1;
+  static const personsListColumnsMax = 10;
+  static const personsListColumnsStep = 1;
+
   static const autoConfirmMinConfidencePercentMin = 0;
   static const autoConfirmMinConfidencePercentMax = 100;
   static const autoConfirmMinConfidencePercentStep = 1;
@@ -156,6 +164,7 @@ class DesktopPrefs {
     double? sceneCutThreshold,
     double? facesDetectScoreThreshold,
     int? facesTrayPageLimit,
+    int? personsListColumns,
     bool? autoConfirmHighConfidencePersonMatches,
     int? autoConfirmMinConfidencePercent,
     int? jobsPollIntervalSeconds,
@@ -181,6 +190,7 @@ class DesktopPrefs {
       facesDetectScoreThreshold:
           facesDetectScoreThreshold ?? this.facesDetectScoreThreshold,
       facesTrayPageLimit: facesTrayPageLimit ?? this.facesTrayPageLimit,
+      personsListColumns: personsListColumns ?? this.personsListColumns,
       autoConfirmHighConfidencePersonMatches:
           autoConfirmHighConfidencePersonMatches ??
               this.autoConfirmHighConfidencePersonMatches,
@@ -207,6 +217,7 @@ class DesktopPrefs {
         'video.sceneCutThreshold': sceneCutThreshold,
         'faces.detectScoreThreshold': facesDetectScoreThreshold,
         'faces.trayPageLimit': facesTrayPageLimit,
+        'ui.personsListColumns': personsListColumns,
         'faces.autoConfirmHighConfidencePersonMatches':
             autoConfirmHighConfidencePersonMatches,
         'faces.autoConfirmMinConfidencePercent':
@@ -320,6 +331,12 @@ class DesktopPrefs {
         min: facesTrayPageLimitMin,
         max: facesTrayPageLimitMax,
       ),
+      personsListColumns: intVal(
+        'ui.personsListColumns',
+        5,
+        min: personsListColumnsMin,
+        max: personsListColumnsMax,
+      ),
       autoConfirmHighConfidencePersonMatches: flag(
         'faces.autoConfirmHighConfidencePersonMatches',
         fallback: true,
@@ -357,6 +374,7 @@ class DesktopPrefs {
       other.sceneCutThreshold == sceneCutThreshold &&
       other.facesDetectScoreThreshold == facesDetectScoreThreshold &&
       other.facesTrayPageLimit == facesTrayPageLimit &&
+      other.personsListColumns == personsListColumns &&
       other.autoConfirmHighConfidencePersonMatches ==
           autoConfirmHighConfidencePersonMatches &&
       other.autoConfirmMinConfidencePercent ==
@@ -380,6 +398,7 @@ class DesktopPrefs {
         sceneCutThreshold,
         facesDetectScoreThreshold,
         facesTrayPageLimit,
+        personsListColumns,
         autoConfirmHighConfidencePersonMatches,
         autoConfirmMinConfidencePercent,
         jobsPollIntervalSeconds,
