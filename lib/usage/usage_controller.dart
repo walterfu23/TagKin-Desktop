@@ -30,11 +30,23 @@ class UsageController extends ChangeNotifier {
   String? analyzeRejectCode;
   String? analyzeRejectMessage;
 
+  Future<void>? _inFlight;
+
+  /// Server remaining credits, already net of open holds. Null until a
+  /// successful [load] — never fall back to [UsageGate.open]'s `0`.
+  int? get remainingCredits => summary?.remainingCredits;
+
   /// Fetches usage. On failure sets [phase] to [UsagePhase.error] and leaves
   /// [gate] at [UsageGate.open] (fail-open for display; server still
   /// authorizes paid work). Never silently retries. Does not clear a stored
   /// analyze reject.
-  Future<void> load() async {
+  Future<void> load() {
+    final future = _load();
+    _inFlight = future;
+    return future;
+  }
+
+  Future<void> _load() async {
     phase = UsagePhase.loading;
     error = null;
     notifyListeners();
@@ -52,6 +64,16 @@ class UsageController extends ChangeNotifier {
       summary = null;
     }
     notifyListeners();
+  }
+
+  /// No-op when already [UsagePhase.loaded]; awaits an in-flight fetch;
+  /// otherwise calls [load] (including after a prior error).
+  Future<void> ensureLoaded() {
+    if (phase == UsagePhase.loaded) return Future.value();
+    if (phase == UsagePhase.loading && _inFlight != null) {
+      return _inFlight!;
+    }
+    return load();
   }
 
   /// Record a server credit reject and refresh `/usage` so the meter follows.

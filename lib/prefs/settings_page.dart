@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/credits/credits_navigation.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
+import 'package:tagkin_desktop/usage/credits_remaining.dart';
+import 'package:tagkin_desktop/usage/usage_controller.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prefs/range_slider_control.dart';
@@ -49,6 +51,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     super.initState();
     _baseline = ref.read(desktopPrefsProvider);
     _applyDraft(_baseline);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(usageControllerProvider).ensureLoaded();
+    });
   }
 
   void _applyDraft(DesktopPrefs prefs) {
@@ -461,6 +467,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Keep the autoDispose usage controller alive while Settings is open so
+    // the lazily-built Credits tile still sees the ensureLoaded fetch.
+    ref.watch(usageControllerProvider);
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
@@ -825,6 +834,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 subtitle:
                     'Buy a credit pack, redeem a code, or add a card for the Trial pack. Credits do not expire.',
                 children: [
+                  const CreditsRemainingTile(),
                   ListTile(
                     key: const Key('settings-buy-credits'),
                     title: const Text('Buy credits'),

@@ -1,11 +1,46 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_store.dart';
 import 'package:tagkin_desktop/prefs/settings_page.dart';
 import 'package:tagkin_desktop/ui/format_local_datetime.dart';
+
+import 'fake_usage_repository.dart';
+
+List<Override> _overrides(DesktopPrefsController prefsController) {
+  return [
+    desktopPrefsControllerProvider.overrideWith((ref) => prefsController),
+    usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+  ];
+}
+
+Future<void> _openSettings(WidgetTester tester) async {
+  await tester.tap(find.byKey(const Key('open-settings')));
+  await tester.pumpAndSettle();
+}
+
+Widget _host() {
+  return MaterialApp(
+    home: Builder(
+      builder: (context) => Scaffold(
+        body: TextButton(
+          key: const Key('open-settings'),
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const SettingsPage(),
+              ),
+            );
+          },
+          child: const Text('Open'),
+        ),
+      ),
+    ),
+  );
+}
 
 void main() {
   testWidgets('dirty Settings exit shows Discard/Cancel/Save', (tester) async {
@@ -15,31 +50,11 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          desktopPrefsControllerProvider.overrideWith((ref) => prefsController),
-        ],
-        child: MaterialApp(
-          home: Builder(
-            builder: (context) => Scaffold(
-              body: TextButton(
-                key: const Key('open-settings'),
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const SettingsPage(),
-                    ),
-                  );
-                },
-                child: const Text('Open'),
-              ),
-            ),
-          ),
-        ),
+        overrides: _overrides(prefsController),
+        child: _host(),
       ),
     );
-
-    await tester.tap(find.byKey(const Key('open-settings')));
-    await tester.pumpAndSettle();
+    await _openSettings(tester);
 
     expect(find.byKey(const Key('pref-date-time-format')), findsOneWidget);
     expect(find.text('Local (this computer)'), findsOneWidget);
@@ -70,31 +85,11 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          desktopPrefsControllerProvider.overrideWith((ref) => prefsController),
-        ],
-        child: MaterialApp(
-          home: Builder(
-            builder: (context) => Scaffold(
-              body: TextButton(
-                key: const Key('open-settings'),
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const SettingsPage(),
-                    ),
-                  );
-                },
-                child: const Text('Open'),
-              ),
-            ),
-          ),
-        ),
+        overrides: _overrides(prefsController),
+        child: _host(),
       ),
     );
-
-    await tester.tap(find.byKey(const Key('open-settings')));
-    await tester.pumpAndSettle();
+    await _openSettings(tester);
 
     final country = find.byKey(const Key('pref-show-country-same'));
     await tester.ensureVisible(country);
@@ -118,31 +113,11 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          desktopPrefsControllerProvider.overrideWith((ref) => prefsController),
-        ],
-        child: MaterialApp(
-          home: Builder(
-            builder: (context) => Scaffold(
-              body: TextButton(
-                key: const Key('open-settings'),
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const SettingsPage(),
-                    ),
-                  );
-                },
-                child: const Text('Open'),
-              ),
-            ),
-          ),
-        ),
+        overrides: _overrides(prefsController),
+        child: _host(),
       ),
     );
-
-    await tester.tap(find.byKey(const Key('open-settings')));
-    await tester.pumpAndSettle();
+    await _openSettings(tester);
 
     // Library is below the intro + Where card; ListView builds lazily.
     final pageSizeKey = find.byKey(const Key('pref-library-page-size'));
@@ -171,31 +146,11 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          desktopPrefsControllerProvider.overrideWith((ref) => prefsController),
-        ],
-        child: MaterialApp(
-          home: Builder(
-            builder: (context) => Scaffold(
-              body: TextButton(
-                key: const Key('open-settings'),
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const SettingsPage(),
-                    ),
-                  );
-                },
-                child: const Text('Open'),
-              ),
-            ),
-          ),
-        ),
+        overrides: _overrides(prefsController),
+        child: _host(),
       ),
     );
-
-    await tester.tap(find.byKey(const Key('open-settings')));
-    await tester.pumpAndSettle();
+    await _openSettings(tester);
 
     await tester.tap(find.byKey(const Key('pref-date-time-format')));
     await tester.pumpAndSettle();
@@ -206,6 +161,42 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(prefsController.prefs.dateTimeFormat, DateTimeDisplayFormat.iso24);
+  });
+
+  testWidgets('Settings Credits group shows remaining from /usage',
+      (tester) async {
+    final store = MemoryDesktopPrefsStore();
+    final prefsController = DesktopPrefsController(store: store);
+    await prefsController.load();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          desktopPrefsControllerProvider.overrideWith((ref) => prefsController),
+          usageRepositoryProvider.overrideWithValue(
+            FakeUsageRepository(
+              summary: fixtureUsageSummary(remainingCredits: 1234),
+            ),
+          ),
+        ],
+        child: _host(),
+      ),
+    );
+    await _openSettings(tester);
+
+    final tile = find.byKey(const Key('settings-credits-remaining'));
+    await tester.dragUntilVisible(
+      tile,
+      find.byType(ListView),
+      const Offset(0, -180),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tile, findsOneWidget);
+    expect(find.text('Credits remaining'), findsOneWidget);
+    expect(find.byKey(const Key('settings-credits-remaining-value')), findsOneWidget);
+    expect(find.text('1,234'), findsOneWidget);
+    expect(find.byKey(const Key('settings-buy-credits')), findsOneWidget);
   });
 }
 

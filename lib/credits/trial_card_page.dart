@@ -6,6 +6,7 @@ import 'package:tagkin_desktop/app_shell.dart' show creditsRepositoryProvider;
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/credits/buy_credits_page.dart';
 import 'package:tagkin_desktop/credits/checkout_launcher.dart';
+import 'package:tagkin_desktop/usage/credits_remaining.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
@@ -33,6 +34,7 @@ class _TrialCardPageState extends ConsumerState<TrialCardPage>
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _load();
+      ref.read(usageControllerProvider).ensureLoaded();
     });
   }
 
@@ -123,6 +125,9 @@ class _TrialCardPageState extends ConsumerState<TrialCardPage>
         key: const Key('trial-card-granted'),
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const CreditsRemainingSentence(
+            textKey: Key('trial-card-remaining'),
+          ),
           const Text('Trial credits are now remaining credits.'),
           const SizedBox(height: 16),
           FilledButton(
@@ -138,6 +143,9 @@ class _TrialCardPageState extends ConsumerState<TrialCardPage>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const CreditsRemainingSentence(
+          textKey: Key('trial-card-remaining'),
+        ),
         const Text(
           'Add a card to receive the Trial pack. TagKin never sees the card number.',
         ),

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/credits/pack_label.dart';
 import 'package:tagkin_desktop/credits/redeem_code_controller.dart';
+import 'package:tagkin_desktop/usage/credits_remaining.dart';
+import 'package:tagkin_desktop/usage/usage_controller.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
 /// Enter a redeem code, preview debt allocation, then confirm.
@@ -19,6 +21,10 @@ class _RedeemCodePageState extends ConsumerState<RedeemCodePage> {
   void initState() {
     super.initState();
     _codeController = TextEditingController();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(usageControllerProvider).ensureLoaded();
+    });
   }
 
   @override
@@ -76,6 +82,9 @@ class _RedeemCodePageState extends ConsumerState<RedeemCodePage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const CreditsRemainingSentence(
+          textKey: Key('redeem-code-remaining'),
+        ),
         const Text(
           'Enter a redeem code. Credits do not expire.',
         ),

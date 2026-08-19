@@ -9,7 +9,7 @@ class FakeUsageRepository implements UsageRepository {
   }) : summary = summary ?? fixtureUsageSummary();
 
   UsageSummary summary;
-  final Object? getUsageError;
+  Object? getUsageError;
 
   int getUsageCallCount = 0;
 

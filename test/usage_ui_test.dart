@@ -119,6 +119,27 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('usage-banner-hidden')), findsOneWidget);
+    expect(find.byKey(const Key('credits-remaining-chip')), findsOneWidget);
+    expect(find.text('10,000 credits'), findsOneWidget);
+    final button = tester.widget<FilledButton>(
+      find.byKey(const Key('add-from-folder')),
+    );
+    expect(button.onPressed, isNotNull);
+  });
+
+  testWidgets('Folders chip stays hidden when /usage fails', (tester) async {
+    final usage = FakeUsageRepository(
+      getUsageError: Exception('usage down'),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: _overrides(usage: usage),
+        child: const TagKinDesktopApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('credits-remaining-chip')), findsNothing);
     final button = tester.widget<FilledButton>(
       find.byKey(const Key('add-from-folder')),
     );
@@ -147,6 +168,7 @@ void main() {
 
     expect(find.text('acc_b@example.com'), findsOneWidget);
     expect(find.textContaining('111'), findsNothing);
+    expect(find.text('222 credits'), findsOneWidget);
   });
 
   testWidgets('creditAdmission low remaining shows Only n credits remaining',

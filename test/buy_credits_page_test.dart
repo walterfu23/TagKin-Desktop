@@ -44,6 +44,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('You have 10,000 credits.'), findsOneWidget);
     expect(find.text('\$20 — 2,000 credits'), findsOneWidget);
     expect(
       find.text(
@@ -83,6 +84,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    expect(find.text('You have 0 credits.'), findsOneWidget);
     await tester.tap(find.byKey(const Key('buy-credits-checkout')));
     await tester.pump();
     await tester.pump();
@@ -107,6 +109,7 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(find.byKey(const Key('buy-credits-applied')), findsOneWidget);
+    expect(find.text('Credits applied. Remaining: 2,000.'), findsOneWidget);
     expect(usage.getUsageCallCount, greaterThan(0));
   });
 

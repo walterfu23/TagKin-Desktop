@@ -16,6 +16,7 @@ import 'package:tagkin_desktop/persons/who_face_linker.dart';
 import 'package:tagkin_desktop/credits/credits_navigation.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
+import 'package:tagkin_desktop/usage/credits_remaining.dart';
 import 'package:tagkin_desktop/usage/usage_banner.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
 import 'package:tagkin_desktop/usage/usage_gate.dart';
@@ -397,6 +398,8 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       ),
                     ],
+                    const SizedBox(width: 12),
+                    const CreditsRemainingChip(),
                     const SizedBox(width: 12),
                     FilledButton.icon(
                       key: const Key('add-from-folder'),

@@ -140,6 +140,52 @@ void main() {
       controller.dispose();
     });
 
+    test('remainingCredits is null until a successful load', () async {
+      final repo = FakeUsageRepository(
+        summary: fixtureUsageSummary(remainingCredits: 1234),
+      );
+      final controller = UsageController(usageRepository: repo);
+      expect(controller.remainingCredits, isNull);
+      await controller.load();
+      expect(controller.remainingCredits, 1234);
+      controller.dispose();
+    });
+
+    test('remainingCredits stays null when load fails', () async {
+      final repo = FakeUsageRepository(
+        getUsageError: ApiException(statusCode: 500, message: 'boom'),
+      );
+      final controller = UsageController(usageRepository: repo);
+      await controller.load();
+      expect(controller.remainingCredits, isNull);
+      expect(controller.phase, UsagePhase.error);
+      controller.dispose();
+    });
+
+    test('ensureLoaded fetches once then no-ops', () async {
+      final repo = FakeUsageRepository();
+      final controller = UsageController(usageRepository: repo);
+      await controller.ensureLoaded();
+      await controller.ensureLoaded();
+      expect(repo.getUsageCallCount, 1);
+      expect(controller.phase, UsagePhase.loaded);
+      controller.dispose();
+    });
+
+    test('ensureLoaded retries after a failed load', () async {
+      final repo = FakeUsageRepository(
+        getUsageError: ApiException(statusCode: 500, message: 'boom'),
+      );
+      final controller = UsageController(usageRepository: repo);
+      await controller.ensureLoaded();
+      expect(controller.phase, UsagePhase.error);
+      repo.getUsageError = null;
+      await controller.ensureLoaded();
+      expect(controller.phase, UsagePhase.loaded);
+      expect(repo.getUsageCallCount, 2);
+      controller.dispose();
+    });
+
     test('noteAnalyzeReject ignores non-credit codes', () async {
       final repo = FakeUsageRepository();
       final controller = UsageController(usageRepository: repo);

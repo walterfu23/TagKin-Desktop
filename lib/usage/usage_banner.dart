@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:tagkin_desktop/credits/pack_label.dart';
 import 'package:tagkin_desktop/usage/usage_gate.dart';
 
 /// Warn / blocked banner driven by [UsageGate] plus an optional analyze 409.
@@ -56,7 +57,7 @@ class UsageBanner extends StatelessWidget {
     if (lowCredits) {
       return _warn(
         context,
-        'Only ${gate.remainingCredits} credits remaining',
+        'Only ${formatCreditCount(gate.remainingCredits)} credits remaining',
         const Key('usage-banner-low-credits'),
         action: onBuyCredits,
       );

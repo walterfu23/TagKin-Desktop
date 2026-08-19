@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/credits/buy_credits_controller.dart';
 import 'package:tagkin_desktop/credits/pack_label.dart';
 import 'package:tagkin_desktop/credits/redeem_code_page.dart';
+import 'package:tagkin_desktop/usage/credits_remaining.dart';
+import 'package:tagkin_desktop/usage/usage_controller.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
 /// Pick a paid pack, disclose net credits from the server, open Checkout.
@@ -21,6 +23,7 @@ class _BuyCreditsPageState extends ConsumerState<BuyCreditsPage>
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(buyCreditsControllerProvider).loadOffers();
+      ref.read(usageControllerProvider).ensureLoaded();
     });
   }
 
@@ -97,6 +100,9 @@ class _BuyCreditsPageState extends ConsumerState<BuyCreditsPage>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const CreditsRemainingSentence(
+          textKey: Key('buy-credits-remaining'),
+        ),
         const Text('Choose a credit pack. Credits do not expire.'),
         const SizedBox(height: 16),
         RadioGroup<String>(

@@ -43,6 +43,8 @@ void main() {
         ),
       ),
     );
+    await tester.pumpAndSettle();
+    expect(find.text('You have 10,000 credits.'), findsOneWidget);
 
     await tester.enterText(
       find.byKey(const Key('redeem-code-input')),
