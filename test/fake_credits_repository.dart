@@ -8,8 +8,12 @@ class FakeCreditsRepository implements CreditsRepository {
     this.trial,
     this.verification,
     this.grant,
+    this.preview,
+    this.redeemResult,
     this.createError,
     this.claimError,
+    this.previewError,
+    this.redeemError,
   }) : packs = packs ??
             [
               const CreditPackOffer(
@@ -26,8 +30,12 @@ class FakeCreditsRepository implements CreditsRepository {
   TrialSummary? trial;
   TrialVerificationCreated? verification;
   TrialGrantResult? grant;
+  RedeemPreview? preview;
+  RedeemResult? redeemResult;
   Object? createError;
   Object? claimError;
+  Object? previewError;
+  Object? redeemError;
 
   final launched = <String>[];
   int listPacksCount = 0;
@@ -120,6 +128,33 @@ class FakeCreditsRepository implements CreditsRepository {
           status: 'granted',
           creditsApplied: 1000,
           remainingCredits: 1000,
+        );
+  }
+
+  @override
+  Future<RedeemPreview> previewRedeem(String code) async {
+    if (previewError != null) throw previewError!;
+    return preview ??
+        RedeemPreview(
+          packId: 'pack20',
+          credits: 2000,
+          debtCreditsToClear: 0,
+          netCredits: 2000,
+          expiresAt: '2099-01-01T00:00:00.000Z',
+        );
+  }
+
+  @override
+  Future<RedeemResult> redeem(String code) async {
+    if (redeemError != null) throw redeemError!;
+    return redeemResult ??
+        const RedeemResult(
+          packId: 'pack20',
+          credits: 2000,
+          debtPaidCredits: 0,
+          netCredits: 2000,
+          remainingCredits: 2000,
+          creditDebt: 0,
         );
   }
 }

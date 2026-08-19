@@ -823,13 +823,19 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               _settingsGroup(
                 title: 'Credits',
                 subtitle:
-                    'Buy a credit pack or add a card for the Trial pack. Credits do not expire.',
+                    'Buy a credit pack, redeem a code, or add a card for the Trial pack. Credits do not expire.',
                 children: [
                   ListTile(
                     key: const Key('settings-buy-credits'),
                     title: const Text('Buy credits'),
                     subtitle: const Text('Open Stripe Checkout in your browser'),
                     onTap: () => pushBuyCreditsPage(context),
+                  ),
+                  ListTile(
+                    key: const Key('settings-redeem-code'),
+                    title: const Text('Redeem code'),
+                    subtitle: const Text('Apply a code without Stripe'),
+                    onTap: () => pushRedeemCodePage(context),
                   ),
                   ListTile(
                     key: const Key('settings-trial-card'),

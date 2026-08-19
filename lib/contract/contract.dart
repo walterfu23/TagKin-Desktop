@@ -1545,6 +1545,96 @@ class RecordAnalysisRef {
   }
 }
 
+class RedeemCodeSubmit {
+  const RedeemCodeSubmit({
+    required this.code,
+  });
+
+  final String code;
+
+  factory RedeemCodeSubmit.fromJson(Map<String, dynamic> json) => RedeemCodeSubmit(
+        code: json['code'] as String,
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['code'] = code;
+    return json;
+  }
+}
+
+class RedeemPreview {
+  const RedeemPreview({
+    required this.packId,
+    required this.credits,
+    required this.debtCreditsToClear,
+    required this.netCredits,
+    required this.expiresAt,
+  });
+
+  final String packId;
+  final int credits;
+  final int debtCreditsToClear;
+  final int netCredits;
+  final String expiresAt;
+
+  factory RedeemPreview.fromJson(Map<String, dynamic> json) => RedeemPreview(
+        packId: json['packId'] as String,
+        credits: (json['credits'] as num).toInt(),
+        debtCreditsToClear: (json['debtCreditsToClear'] as num).toInt(),
+        netCredits: (json['netCredits'] as num).toInt(),
+        expiresAt: json['expiresAt'] as String,
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['packId'] = packId;
+    json['credits'] = credits;
+    json['debtCreditsToClear'] = debtCreditsToClear;
+    json['netCredits'] = netCredits;
+    json['expiresAt'] = expiresAt;
+    return json;
+  }
+}
+
+class RedeemResult {
+  const RedeemResult({
+    required this.packId,
+    required this.credits,
+    required this.debtPaidCredits,
+    required this.netCredits,
+    required this.remainingCredits,
+    required this.creditDebt,
+  });
+
+  final String packId;
+  final int credits;
+  final int debtPaidCredits;
+  final int netCredits;
+  final int remainingCredits;
+  final int creditDebt;
+
+  factory RedeemResult.fromJson(Map<String, dynamic> json) => RedeemResult(
+        packId: json['packId'] as String,
+        credits: (json['credits'] as num).toInt(),
+        debtPaidCredits: (json['debtPaidCredits'] as num).toInt(),
+        netCredits: (json['netCredits'] as num).toInt(),
+        remainingCredits: (json['remainingCredits'] as num).toInt(),
+        creditDebt: (json['creditDebt'] as num).toInt(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['packId'] = packId;
+    json['credits'] = credits;
+    json['debtPaidCredits'] = debtPaidCredits;
+    json['netCredits'] = netCredits;
+    json['remainingCredits'] = remainingCredits;
+    json['creditDebt'] = creditDebt;
+    return json;
+  }
+}
+
 class RedoCorrectionResult {
   const RedoCorrectionResult({
     required this.correction,

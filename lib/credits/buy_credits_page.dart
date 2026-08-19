@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/credits/buy_credits_controller.dart';
 import 'package:tagkin_desktop/credits/pack_label.dart';
+import 'package:tagkin_desktop/credits/redeem_code_page.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
 /// Pick a paid pack, disclose net credits from the server, open Checkout.
@@ -142,6 +143,22 @@ class _BuyCreditsPageState extends ConsumerState<BuyCreditsPage>
                   ? null
                   : controller.startCheckout,
               child: const Text('Continue to Checkout'),
+            ),
+            TextButton(
+              key: const Key('buy-credits-have-a-code'),
+              onPressed: () {
+                final container = ProviderScope.containerOf(context);
+                Navigator.of(context).push<void>(
+                  MaterialPageRoute<void>(
+                    settings: const RouteSettings(name: 'redeem-code'),
+                    builder: (_) => UncontrolledProviderScope(
+                      container: container,
+                      child: const RedeemCodePage(),
+                    ),
+                  ),
+                );
+              },
+              child: const Text('Have a code?'),
             ),
             if (controller.phase == BuyCreditsPhase.awaitingBrowser ||
                 controller.phase == BuyCreditsPhase.polling) ...[

@@ -1,7 +1,7 @@
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 
-/// Typed client for owner-scoped credit pack / purchase / Trial routes (D6).
+/// Typed client for owner-scoped credit pack / purchase / Trial / redeem routes (D6).
 ///
 /// Never estimates cost or debt client-side and never sends `ownerUserId` (R9/R10).
 class CreditsRepository {
@@ -56,6 +56,26 @@ class CreditsRepository {
     );
     return TrialGrantResult.fromJson(
       _client.decodeMap(response, '/credits/trial/claim'),
+    );
+  }
+
+  Future<RedeemPreview> previewRedeem(String code) async {
+    final response = await _client.post(
+      '/credits/redemptions/preview',
+      body: RedeemCodeSubmit(code: code).toJson(),
+    );
+    return RedeemPreview.fromJson(
+      _client.decodeMap(response, '/credits/redemptions/preview'),
+    );
+  }
+
+  Future<RedeemResult> redeem(String code) async {
+    final response = await _client.post(
+      '/credits/redemptions',
+      body: RedeemCodeSubmit(code: code).toJson(),
+    );
+    return RedeemResult.fromJson(
+      _client.decodeMap(response, '/credits/redemptions'),
     );
   }
 }
