@@ -7,24 +7,31 @@ import 'fake_usage_repository.dart';
 
 void main() {
   group('UsageGate.fromSummary', () {
-    test('open when under soft and hard limits', () {
+    test('open when remaining is above the warning threshold', () {
       final gate = UsageGate.fromSummary(fixtureUsageSummary());
       expect(gate.blocked, isFalse);
       expect(gate.warn, isFalse);
       expect(gate.reasonText, isNull);
+      expect(gate.notice, UsageNotice.none);
     });
 
-    test('warn when softLimitExceeded and not blocked', () {
+    test('low remaining warns and does not block', () {
       final gate = UsageGate.fromSummary(
-        fixtureUsageSummary(softLimitExceeded: true, spentCents: 800),
+        fixtureUsageSummary(
+          remainingCredits: 400,
+          lowCreditWarning: true,
+        ),
       );
       expect(gate.blocked, isFalse);
       expect(gate.warn, isTrue);
+      expect(gate.notice, UsageNotice.lowCredits);
+      expect(gate.remainingCredits, 400);
     });
 
     test('blocked by kill switch; surfaces reason verbatim', () {
       final gate = UsageGate.fromSummary(
         fixtureUsageSummary(
+          remainingCredits: 10000,
           killSwitchEnabled: true,
           killSwitchReason: 'maintenance',
           pauseReason: 'kill switch on',
@@ -38,6 +45,7 @@ void main() {
     test('blocked by kill switch falls back to killSwitch.reason', () {
       final gate = UsageGate.fromSummary(
         fixtureUsageSummary(
+          remainingCredits: 10000,
           killSwitchEnabled: true,
           killSwitchReason: 'ops pause',
         ),
@@ -46,49 +54,18 @@ void main() {
       expect(gate.reasonText, 'ops pause');
     });
 
-    test('blocked when spent+reserved >= hardLimitCents', () {
+    test('zero remaining is out of credits', () {
       final gate = UsageGate.fromSummary(
-        fixtureUsageSummary(
-          hardLimitCents: 1000,
-          spentCents: 600,
-          reservedCents: 400,
-          pauseReason: 'hard budget',
-        ),
-      );
-      expect(gate.blocked, isTrue);
-      expect(gate.reasonText, 'hard budget');
-    });
-
-    test('creditAdmission: low remaining warns and does not block', () {
-      final gate = UsageGate.fromSummary(
-        fixtureUsageSummary(
-          creditAdmission: true,
-          remainingCredits: 400,
-          lowCreditWarning: true,
-        ),
-      );
-      expect(gate.blocked, isFalse);
-      expect(gate.warn, isTrue);
-      expect(gate.notice, UsageNotice.lowCredits);
-      expect(gate.remainingCredits, 400);
-    });
-
-    test('creditAdmission: zero remaining is out of credits', () {
-      final gate = UsageGate.fromSummary(
-        fixtureUsageSummary(
-          creditAdmission: true,
-          remainingCredits: 0,
-        ),
+        fixtureUsageSummary(remainingCredits: 0),
       );
       expect(gate.blocked, isTrue);
       expect(gate.warn, isFalse);
       expect(gate.notice, UsageNotice.outOfCredits);
     });
 
-    test('creditAdmission: paid pause blocks while remaining is positive', () {
+    test('paid pause blocks while remaining is positive', () {
       final gate = UsageGate.fromSummary(
         fixtureUsageSummary(
-          creditAdmission: true,
           remainingCredits: 80,
           pauseReason: 'Estimate overrun absorbed',
         ),
@@ -98,35 +75,16 @@ void main() {
       expect(gate.reasonText, 'Estimate overrun absorbed');
     });
 
-    test('creditAdmission false still derives from cents', () {
-      final gate = UsageGate.fromSummary(
-        fixtureUsageSummary(
-          creditAdmission: false,
-          remainingCredits: 0,
-          softLimitExceeded: true,
-          spentCents: 800,
-        ),
-      );
-      expect(gate.blocked, isFalse);
-      expect(gate.warn, isTrue);
-      expect(gate.notice, UsageNotice.budgetWarn);
-    });
-
     test('derives only from fixture fields — no local cost model', () {
-      // Unusual limits still produce gate output driven solely by the fixture.
       final gate = UsageGate.fromSummary(
         fixtureUsageSummary(
-          softLimitCents: 99999,
-          hardLimitCents: 1,
-          spentCents: 0,
-          reservedCents: 0,
-          softLimitExceeded: true,
+          remainingCredits: 400,
+          lowCreditWarning: true,
         ),
       );
-      // softLimitExceeded is true but atOrAboveHard is false (0 < 1) and
-      // kill switch off → warn only.
       expect(gate.blocked, isFalse);
       expect(gate.warn, isTrue);
+      expect(gate.notice, UsageNotice.lowCredits);
     });
   });
 
@@ -134,14 +92,14 @@ void main() {
     test('load populates summary and gate from repository', () async {
       final repo = FakeUsageRepository(
         summary: fixtureUsageSummary(
-          spentCents: 50,
-          softLimitExceeded: true,
+          remainingCredits: 400,
+          lowCreditWarning: true,
         ),
       );
       final controller = UsageController(usageRepository: repo);
       await controller.load();
       expect(controller.phase, UsagePhase.loaded);
-      expect(controller.summary!.spentCents, 50);
+      expect(controller.summary!.remainingCredits, 400);
       expect(controller.gate.warn, isTrue);
       expect(repo.getUsageCallCount, 1);
       controller.dispose();
@@ -162,10 +120,7 @@ void main() {
 
     test('noteAnalyzeReject stores credit codes and refreshes usage', () async {
       final repo = FakeUsageRepository(
-        summary: fixtureUsageSummary(
-          creditAdmission: true,
-          remainingCredits: 40,
-        ),
+        summary: fixtureUsageSummary(remainingCredits: 40),
       );
       final controller = UsageController(usageRepository: repo);
       await controller.load();

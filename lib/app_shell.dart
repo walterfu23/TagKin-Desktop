@@ -17,6 +17,8 @@ import 'package:tagkin_desktop/api/jobs_repository.dart';
 import 'package:tagkin_desktop/api/me_repository.dart';
 import 'package:tagkin_desktop/api/persons_repository.dart';
 import 'package:tagkin_desktop/api/usage_repository.dart';
+import 'package:tagkin_desktop/api/credits_repository.dart';
+import 'package:tagkin_desktop/credits/checkout_launcher.dart';
 import 'package:tagkin_desktop/auth/macos_oauth_return_hint.dart';
 import 'package:tagkin_desktop/auth/secure_persistor.dart';
 import 'package:tagkin_desktop/config/app_config.dart';
@@ -76,6 +78,17 @@ final itemsRepositoryProvider = Provider<ItemsRepository>(
 final usageRepositoryProvider = Provider<UsageRepository>(
   (ref) => UsageRepository(ref.watch(apiClientProvider)),
   dependencies: [apiClientProvider],
+);
+
+/// Credits pack/purchase/Trial API (D6). Override in tests with a fake.
+final creditsRepositoryProvider = Provider<CreditsRepository>(
+  (ref) => CreditsRepository(ref.watch(apiClientProvider)),
+  dependencies: [apiClientProvider],
+);
+
+/// System-browser Checkout launcher. Override in tests.
+final checkoutUrlLauncherProvider = Provider<CheckoutUrlLauncher>(
+  (ref) => launchCheckoutUrl,
 );
 
 /// Tagging & jobs lifecycle API (D7). Override in tests with a fake;

@@ -41,25 +41,24 @@ List<Override> _overrides({
 }
 
 void main() {
-  testWidgets('usage banner renders softLimit / spent from API fixture',
-      (tester) async {
+  testWidgets('low remaining shows Only n credits remaining', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: UsageBanner(
             gate: UsageGate.fromSummary(
               fixtureUsageSummary(
-                softLimitCents: 1000,
-                spentCents: 800,
-                softLimitExceeded: true,
+                remainingCredits: 400,
+                lowCreditWarning: true,
               ),
             ),
           ),
         ),
       ),
     );
-    expect(find.byKey(const Key('usage-banner-warn')), findsOneWidget);
-    expect(find.text('80% of budget used'), findsOneWidget);
+    expect(find.byKey(const Key('usage-banner-low-credits')), findsOneWidget);
+    expect(find.text('Only 400 credits remaining'), findsOneWidget);
+    expect(find.text('80% of budget used'), findsNothing);
   });
 
   testWidgets('kill-switch disables Add from folder and shows banner',
@@ -89,14 +88,9 @@ void main() {
     expect(button.onPressed, isNull);
   });
 
-  testWidgets('hard-limit disables Add from folder', (tester) async {
+  testWidgets('out of credits disables Add from folder', (tester) async {
     final usage = FakeUsageRepository(
-      summary: fixtureUsageSummary(
-        hardLimitCents: 100,
-        spentCents: 80,
-        reservedCents: 20,
-        pauseReason: 'hard budget reached',
-      ),
+      summary: fixtureUsageSummary(remainingCredits: 0),
     );
 
     await tester.pumpWidget(
@@ -107,14 +101,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('usage-banner-blocked')), findsOneWidget);
+    expect(find.byKey(const Key('usage-banner-out-of-credits')), findsOneWidget);
     final button = tester.widget<FilledButton>(
       find.byKey(const Key('add-from-folder')),
     );
     expect(button.onPressed, isNull);
   });
 
-  testWidgets('open budget leaves Add from folder enabled and banner hidden',
+  testWidgets('open remaining leaves Add from folder enabled and banner hidden',
       (tester) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -135,7 +129,7 @@ void main() {
       (tester) async {
     // B's fixture has a distinctive spent value; A's numbers must not appear.
     final usageB = FakeUsageRepository(
-      summary: fixtureUsageSummary(spentCents: 222, softLimitCents: 500),
+      summary: fixtureUsageSummary(remainingCredits: 222),
     );
 
     await tester.pumpWidget(
@@ -152,8 +146,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('acc_b@example.com'), findsOneWidget);
-    // Open budget → no banner with A-specific copy; spent is not displayed
-    // as authority text in the open state.
     expect(find.textContaining('111'), findsNothing);
   });
 
@@ -165,7 +157,6 @@ void main() {
           body: UsageBanner(
             gate: UsageGate.fromSummary(
               fixtureUsageSummary(
-                creditAdmission: true,
                 remainingCredits: 400,
                 lowCreditWarning: true,
               ),
@@ -181,10 +172,9 @@ void main() {
   testWidgets('creditAdmission zero remaining disables Add from folder',
       (tester) async {
     final usage = FakeUsageRepository(
-      summary: fixtureUsageSummary(
-        creditAdmission: true,
-        remainingCredits: 0,
-      ),
+        summary: fixtureUsageSummary(
+          remainingCredits: 0,
+        ),
     );
 
     await tester.pumpWidget(

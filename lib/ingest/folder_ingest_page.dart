@@ -6,6 +6,7 @@ import 'package:tagkin_desktop/ingest/dedup.dart';
 import 'package:tagkin_desktop/ingest/post_ingest_pipeline_controller.dart';
 import 'package:tagkin_desktop/ingest/upload_controller.dart';
 import 'package:tagkin_desktop/prepass/prepass_controller.dart';
+import 'package:tagkin_desktop/credits/credits_navigation.dart';
 import 'package:tagkin_desktop/usage/usage_banner.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
 import 'package:tagkin_desktop/usage/usage_gate.dart';
@@ -89,6 +90,7 @@ class _FolderIngestPageState extends ConsumerState<FolderIngestPage> {
               gate: usage.gate,
               analyzeRejectCode: usage.analyzeRejectCode,
               analyzeRejectMessage: usage.analyzeRejectMessage,
+              onBuyCredits: () => pushBuyCreditsPage(context),
             ),
             Expanded(
               child: _FolderIngestBody(

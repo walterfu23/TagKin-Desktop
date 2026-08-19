@@ -8,6 +8,7 @@ void main() {
     final roots = [
       Directory('lib/usage'),
       Directory('lib/api'),
+      Directory('lib/credits'),
     ];
     final pattern = RegExp(
       r'sk_test_|sk_live_|CLERK_SECRET_KEY|GEMINI_API_KEY|AIza[0-9A-Za-z_-]{20,}',
@@ -34,5 +35,8 @@ void main() {
     expect(gate.contains('reserve('), isFalse);
     expect(repo.contains('estimateCost'), isFalse);
     expect(repo.contains('mintUpload'), isFalse);
+    final credits = File('lib/api/credits_repository.dart').readAsStringSync();
+    expect(credits.contains('estimateCost'), isFalse);
+    expect(credits.contains('mintUpload'), isFalse);
   });
 }

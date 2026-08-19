@@ -9,11 +9,13 @@ class UsageBanner extends StatelessWidget {
     required this.gate,
     this.analyzeRejectCode,
     this.analyzeRejectMessage,
+    this.onBuyCredits,
   });
 
   final UsageGate gate;
   final String? analyzeRejectCode;
   final String? analyzeRejectMessage;
+  final VoidCallback? onBuyCredits;
 
   @override
   Widget build(BuildContext context) {
@@ -38,6 +40,7 @@ class UsageBanner extends StatelessWidget {
         context,
         'Out of credits',
         const Key('usage-banner-out-of-credits'),
+        action: onBuyCredits,
       );
     }
 
@@ -46,6 +49,7 @@ class UsageBanner extends StatelessWidget {
         context,
         'Not enough credits for this analysis',
         const Key('usage-banner-insufficient-credits'),
+        action: onBuyCredits,
       );
     }
 
@@ -54,6 +58,7 @@ class UsageBanner extends StatelessWidget {
         context,
         'Only ${gate.remainingCredits} credits remaining',
         const Key('usage-banner-low-credits'),
+        action: onBuyCredits,
       );
     }
 
@@ -65,18 +70,15 @@ class UsageBanner extends StatelessWidget {
       return _blocked(context, message, const Key('usage-banner-blocked'));
     }
 
-    if (gate.warn || gate.notice == UsageNotice.budgetWarn) {
-      return _warn(
-        context,
-        '80% of budget used',
-        const Key('usage-banner-warn'),
-      );
-    }
-
     return const SizedBox.shrink(key: Key('usage-banner-hidden'));
   }
 
-  Widget _blocked(BuildContext context, String message, Key textKey) {
+  Widget _blocked(
+    BuildContext context,
+    String message,
+    Key textKey, {
+    VoidCallback? action,
+  }) {
     return Material(
       color: Theme.of(context).colorScheme.errorContainer,
       child: Padding(
@@ -97,13 +99,24 @@ class UsageBanner extends StatelessWidget {
                 ),
               ),
             ),
+            if (action != null)
+              TextButton(
+                key: const Key('usage-banner-buy-credits'),
+                onPressed: action,
+                child: const Text('Buy credits'),
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _warn(BuildContext context, String message, Key textKey) {
+  Widget _warn(
+    BuildContext context,
+    String message,
+    Key textKey, {
+    VoidCallback? action,
+  }) {
     return Material(
       color: Colors.amber.shade100,
       child: Padding(
@@ -119,6 +132,12 @@ class UsageBanner extends StatelessWidget {
                 style: TextStyle(color: Colors.amber.shade900),
               ),
             ),
+            if (action != null)
+              TextButton(
+                key: const Key('usage-banner-buy-credits'),
+                onPressed: action,
+                child: const Text('Buy credits'),
+              ),
           ],
         ),
       ),

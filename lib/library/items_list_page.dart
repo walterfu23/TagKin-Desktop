@@ -13,6 +13,7 @@ import 'package:tagkin_desktop/library/source_reveal.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
+import 'package:tagkin_desktop/credits/credits_navigation.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 import 'package:tagkin_desktop/usage/usage_banner.dart';
@@ -369,6 +370,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
                 gate: usage.gate,
                 analyzeRejectCode: usage.analyzeRejectCode,
                 analyzeRejectMessage: usage.analyzeRejectMessage,
+                onBuyCredits: () => pushBuyCreditsPage(context),
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),

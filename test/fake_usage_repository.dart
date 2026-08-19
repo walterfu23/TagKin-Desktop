@@ -21,32 +21,22 @@ class FakeUsageRepository implements UsageRepository {
   }
 }
 
-/// Fixture [UsageSummary] for tests. Defaults to an open (unpaused) budget.
+/// Fixture [UsageSummary] for tests. Defaults to an open (unpaused) credit meter.
 UsageSummary fixtureUsageSummary({
-  int softLimitCents = 1000,
-  int hardLimitCents = 2000,
-  int reservedCents = 0,
-  int spentCents = 0,
   bool killSwitchEnabled = false,
   String? killSwitchReason,
-  bool? softLimitExceeded,
   String? pauseReason,
-  int remainingCredits = 0,
+  int remainingCredits = 10000,
   int reservedCredits = 0,
   int lowCreditWarningCredits = 500,
   bool lowCreditWarning = false,
-  bool creditAdmission = false,
+  bool creditAdmission = true,
 }) {
   return UsageSummary(
-    softLimitCents: softLimitCents,
-    hardLimitCents: hardLimitCents,
-    reservedCents: reservedCents,
-    spentCents: spentCents,
     killSwitch: KillSwitchState(
       enabled: killSwitchEnabled,
       reason: killSwitchReason,
     ),
-    softLimitExceeded: softLimitExceeded,
     pauseReason: pauseReason,
     remainingCredits: remainingCredits,
     reservedCredits: reservedCredits,

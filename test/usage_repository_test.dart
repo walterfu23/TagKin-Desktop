@@ -16,18 +16,13 @@ void main() {
         expect(request.body, isEmpty);
         return http.Response(
           jsonEncode({
-            'softLimitCents': 1000,
-            'hardLimitCents': 2000,
-            'reservedCents': 100,
-            'spentCents': 200,
             'killSwitch': {'enabled': false, 'reason': null},
-            'softLimitExceeded': false,
             'pauseReason': null,
-            'remainingCredits': 0,
-            'reservedCredits': 0,
+            'remainingCredits': 2000,
+            'reservedCredits': 100,
             'lowCreditWarningCredits': 500,
             'lowCreditWarning': false,
-            'creditAdmission': false,
+            'creditAdmission': true,
           }),
           200,
           headers: {'content-type': 'application/json'},
@@ -41,10 +36,9 @@ void main() {
       )..recordRequests = true;
 
       final summary = await UsageRepository(client).getUsage();
-      expect(summary.softLimitCents, 1000);
-      expect(summary.hardLimitCents, 2000);
-      expect(summary.reservedCents, 100);
-      expect(summary.spentCents, 200);
+      expect(summary.remainingCredits, 2000);
+      expect(summary.reservedCredits, 100);
+      expect(summary.creditAdmission, isTrue);
       expect(summary.killSwitch.enabled, isFalse);
       expect(client.recordedRequests, hasLength(1));
       expect(client.recordedRequests.single.body, isNull);
@@ -58,16 +52,12 @@ void main() {
         expect(request.bodyBytes, isEmpty);
         return http.Response(
           jsonEncode({
-            'softLimitCents': 1,
-            'hardLimitCents': 2,
-            'reservedCents': 0,
-            'spentCents': 0,
             'killSwitch': {'enabled': false},
             'remainingCredits': 0,
             'reservedCredits': 0,
             'lowCreditWarningCredits': 500,
             'lowCreditWarning': false,
-            'creditAdmission': false,
+            'creditAdmission': true,
           }),
           200,
           headers: {'content-type': 'application/json'},
@@ -90,21 +80,17 @@ void main() {
 
     test('two tokens never observe each other\'s usage (tenant isolation)',
         () async {
-      Future<int> spentFor(String token, int spent) async {
+      Future<int> remainingFor(String token, int remaining) async {
         final mock = MockClient((request) async {
           expect(request.headers['Authorization'], 'Bearer $token');
           return http.Response(
             jsonEncode({
-              'softLimitCents': 1000,
-              'hardLimitCents': 2000,
-              'reservedCents': 0,
-              'spentCents': spent,
               'killSwitch': {'enabled': false},
-              'remainingCredits': 0,
+              'remainingCredits': remaining,
               'reservedCredits': 0,
               'lowCreditWarningCredits': 500,
               'lowCreditWarning': false,
-              'creditAdmission': false,
+              'creditAdmission': true,
             }),
             200,
             headers: {'content-type': 'application/json'},
@@ -117,11 +103,11 @@ void main() {
         );
         final summary = await UsageRepository(client).getUsage();
         client.close();
-        return summary.spentCents;
+        return summary.remainingCredits;
       }
 
-      expect(await spentFor('tok-a', 111), 111);
-      expect(await spentFor('tok-b', 222), 222);
+      expect(await remainingFor('tok-a', 111), 111);
+      expect(await remainingFor('tok-b', 222), 222);
     });
   });
 }

@@ -3,7 +3,6 @@ import 'package:tagkin_desktop/contract/contract.dart';
 /// Which copy [UsageBanner] should prefer from [UsageSummary] alone.
 enum UsageNotice {
   none,
-  budgetWarn,
   budgetBlocked,
   lowCredits,
   outOfCredits,
@@ -30,21 +29,21 @@ class UsageGate {
     required this.blocked,
     required this.warn,
     this.reasonText,
-    this.creditAdmission = false,
+    this.creditAdmission = true,
     this.remainingCredits = 0,
     this.notice = UsageNotice.none,
   });
 
-  /// Kill-switch on, hard budget, out of credits, or a paid pause.
+  /// Kill-switch on, out of credits, or a paid pause.
   final bool blocked;
 
-  /// Soft budget / low-credit warning while still allowed to ingest.
+  /// Low-credit warning while still allowed to ingest.
   final bool warn;
 
   /// Server `pauseReason` or kill-switch reason when [blocked]; else null.
   final String? reasonText;
 
-  /// True when this account reserves in credits (server flag).
+  /// True when this account reserves in credits (always, after Phase 6).
   final bool creditAdmission;
 
   /// Spendable credits already net of open holds. Do not subtract again.
@@ -59,45 +58,23 @@ class UsageGate {
   /// Derive gate state from a [UsageSummary]. Values come only from the
   /// fixture/API response — no local cost model.
   factory UsageGate.fromSummary(UsageSummary summary) {
-    if (summary.creditAdmission) {
-      final remaining = summary.remainingCredits;
-      final kill = summary.killSwitch.enabled;
-      final paused =
-          summary.pauseReason != null && summary.pauseReason!.isNotEmpty;
-      final blocked = kill || remaining == 0 || paused;
-      final warn = summary.lowCreditWarning && !blocked;
+    final remaining = summary.remainingCredits;
+    final kill = summary.killSwitch.enabled;
+    final paused =
+        summary.pauseReason != null && summary.pauseReason!.isNotEmpty;
+    final blocked = kill || remaining == 0 || paused;
+    final warn = summary.lowCreditWarning && !blocked;
 
-      final UsageNotice notice;
-      if (kill || (paused && remaining > 0)) {
-        notice = UsageNotice.budgetBlocked;
-      } else if (remaining == 0) {
-        notice = UsageNotice.outOfCredits;
-      } else if (warn) {
-        notice = UsageNotice.lowCredits;
-      } else {
-        notice = UsageNotice.none;
-      }
-
-      String? reasonText;
-      if (blocked) {
-        reasonText = summary.pauseReason ?? summary.killSwitch.reason;
-      }
-
-      return UsageGate(
-        blocked: blocked,
-        warn: warn,
-        reasonText: reasonText,
-        creditAdmission: true,
-        remainingCredits: remaining,
-        notice: notice,
-      );
+    final UsageNotice notice;
+    if (kill || (paused && remaining > 0)) {
+      notice = UsageNotice.budgetBlocked;
+    } else if (remaining == 0) {
+      notice = UsageNotice.outOfCredits;
+    } else if (warn) {
+      notice = UsageNotice.lowCredits;
+    } else {
+      notice = UsageNotice.none;
     }
-
-    final atOrAboveHard =
-        (summary.spentCents + summary.reservedCents) >= summary.hardLimitCents;
-    final blocked = summary.killSwitch.enabled || atOrAboveHard;
-    final softExceeded = summary.softLimitExceeded ?? false;
-    final warn = softExceeded && !blocked;
 
     String? reasonText;
     if (blocked) {
@@ -108,9 +85,9 @@ class UsageGate {
       blocked: blocked,
       warn: warn,
       reasonText: reasonText,
-      notice: blocked
-          ? UsageNotice.budgetBlocked
-          : (warn ? UsageNotice.budgetWarn : UsageNotice.none),
+      creditAdmission: true,
+      remainingCredits: remaining,
+      notice: notice,
     );
   }
 }

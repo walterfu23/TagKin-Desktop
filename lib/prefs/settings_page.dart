@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:tagkin_desktop/credits/credits_navigation.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
@@ -816,6 +817,27 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     max: DesktopPrefs.jobsPollIntervalSecondsMax,
                     step: DesktopPrefs.jobsPollIntervalSecondsStep,
                     onChanged: (v) => _jobsPollIntervalSeconds = v,
+                  ),
+                ],
+              ),
+              _settingsGroup(
+                title: 'Credits',
+                subtitle:
+                    'Buy a credit pack or add a card for the Trial pack. Credits do not expire.',
+                children: [
+                  ListTile(
+                    key: const Key('settings-buy-credits'),
+                    title: const Text('Buy credits'),
+                    subtitle: const Text('Open Stripe Checkout in your browser'),
+                    onTap: () => pushBuyCreditsPage(context),
+                  ),
+                  ListTile(
+                    key: const Key('settings-trial-card'),
+                    title: const Text('Card verification'),
+                    subtitle: const Text(
+                      'Required once before Trial credits become remaining credits',
+                    ),
+                    onTap: () => pushTrialCardPage(context),
                   ),
                 ],
               ),

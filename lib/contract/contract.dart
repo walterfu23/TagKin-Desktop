@@ -573,6 +573,152 @@ class CreateWhoExclusionResult {
   }
 }
 
+class CreditPackOffer {
+  const CreditPackOffer({
+    required this.packId,
+    required this.priceUsdCents,
+    required this.credits,
+    required this.debtCreditsToClear,
+    required this.netCredits,
+  });
+
+  final String packId;
+  final int priceUsdCents;
+  final int credits;
+  final int debtCreditsToClear;
+  final int netCredits;
+
+  factory CreditPackOffer.fromJson(Map<String, dynamic> json) => CreditPackOffer(
+        packId: json['packId'] as String,
+        priceUsdCents: (json['priceUsdCents'] as num).toInt(),
+        credits: (json['credits'] as num).toInt(),
+        debtCreditsToClear: (json['debtCreditsToClear'] as num).toInt(),
+        netCredits: (json['netCredits'] as num).toInt(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['packId'] = packId;
+    json['priceUsdCents'] = priceUsdCents;
+    json['credits'] = credits;
+    json['debtCreditsToClear'] = debtCreditsToClear;
+    json['netCredits'] = netCredits;
+    return json;
+  }
+}
+
+class CreditPackOfferList {
+  const CreditPackOfferList({
+    required this.packs,
+  });
+
+  final List<CreditPackOffer> packs;
+
+  factory CreditPackOfferList.fromJson(Map<String, dynamic> json) => CreditPackOfferList(
+        packs: (json['packs'] as List<dynamic>).map((e) => CreditPackOffer.fromJson(e as Map<String, dynamic>)).toList(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['packs'] = packs.map((e) => e.toJson()).toList();
+    return json;
+  }
+}
+
+class CreditPurchaseCreate {
+  const CreditPurchaseCreate({
+    required this.packId,
+  });
+
+  final String packId;
+
+  factory CreditPurchaseCreate.fromJson(Map<String, dynamic> json) => CreditPurchaseCreate(
+        packId: json['packId'] as String,
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['packId'] = packId;
+    return json;
+  }
+}
+
+enum CreditPurchaseStatus {
+  pending('pending'),
+  paid('paid'),
+  expired('expired'),
+  partiallyrefunded('partiallyRefunded'),
+  refunded('refunded');
+
+  const CreditPurchaseStatus(this.wire);
+
+  final String wire;
+
+  static CreditPurchaseStatus fromWire(String value) {
+    for (final e in values) {
+      if (e.wire == value) return e;
+    }
+    throw FormatException('Unknown CreditPurchaseStatus: $value');
+  }
+
+  @override
+  String toString() => wire;
+}
+
+class CreditPurchaseView {
+  const CreditPurchaseView({
+    required this.purchaseId,
+    required this.status,
+    required this.packId,
+    required this.priceUsdCents,
+    required this.currency,
+    required this.credits,
+    required this.maxDebtCreditsToClear,
+    required this.quotedNetCredits,
+    this.checkoutUrl,
+    required this.remainingCredits,
+  });
+
+  final String purchaseId;
+  final CreditPurchaseStatus status;
+  final String packId;
+  final int priceUsdCents;
+  final String currency;
+  final int credits;
+  final int maxDebtCreditsToClear;
+  final int quotedNetCredits;
+  final String? checkoutUrl;
+  final int remainingCredits;
+
+  factory CreditPurchaseView.fromJson(Map<String, dynamic> json) => CreditPurchaseView(
+        purchaseId: json['purchaseId'] as String,
+        status: CreditPurchaseStatus.fromWire(json['status'] as String),
+        packId: json['packId'] as String,
+        priceUsdCents: (json['priceUsdCents'] as num).toInt(),
+        currency: json['currency'] as String,
+        credits: (json['credits'] as num).toInt(),
+        maxDebtCreditsToClear: (json['maxDebtCreditsToClear'] as num).toInt(),
+        quotedNetCredits: (json['quotedNetCredits'] as num).toInt(),
+        checkoutUrl: json['checkoutUrl'] == null ? null : json['checkoutUrl'] as String,
+        remainingCredits: (json['remainingCredits'] as num).toInt(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['purchaseId'] = purchaseId;
+    json['status'] = status.wire;
+    json['packId'] = packId;
+    json['priceUsdCents'] = priceUsdCents;
+    json['currency'] = currency;
+    json['credits'] = credits;
+    json['maxDebtCreditsToClear'] = maxDebtCreditsToClear;
+    json['quotedNetCredits'] = quotedNetCredits;
+    if (checkoutUrl != null) json['checkoutUrl'] = checkoutUrl;
+    json['remainingCredits'] = remainingCredits;
+    return json;
+  }
+}
+
 class DeclineAutoAssignAppearances {
   const DeclineAutoAssignAppearances({
     required this.appearanceIds,
@@ -1748,19 +1894,22 @@ class TrialVerificationCreated {
   const TrialVerificationCreated({
     required this.verificationId,
     required this.intentKind,
-    required this.clientSecret,
+    this.clientSecret,
+    required this.cardSetupUrl,
     required this.publishableKey,
   });
 
   final String verificationId;
   final TrialIntentKind intentKind;
-  final String clientSecret;
+  final String? clientSecret;
+  final String cardSetupUrl;
   final String publishableKey;
 
   factory TrialVerificationCreated.fromJson(Map<String, dynamic> json) => TrialVerificationCreated(
         verificationId: json['verificationId'] as String,
         intentKind: TrialIntentKind.fromWire(json['intentKind'] as String),
-        clientSecret: json['clientSecret'] as String,
+        clientSecret: json['clientSecret'] == null ? null : json['clientSecret'] as String,
+        cardSetupUrl: json['cardSetupUrl'] as String,
         publishableKey: json['publishableKey'] as String,
       );
 
@@ -1768,7 +1917,8 @@ class TrialVerificationCreated {
     final json = <String, dynamic>{};
     json['verificationId'] = verificationId;
     json['intentKind'] = intentKind.wire;
-    json['clientSecret'] = clientSecret;
+    if (clientSecret != null) json['clientSecret'] = clientSecret;
+    json['cardSetupUrl'] = cardSetupUrl;
     json['publishableKey'] = publishableKey;
     return json;
   }
@@ -1938,12 +2088,7 @@ class UploadGrant {
 
 class UsageSummary {
   const UsageSummary({
-    required this.softLimitCents,
-    required this.hardLimitCents,
-    required this.reservedCents,
-    required this.spentCents,
     required this.killSwitch,
-    this.softLimitExceeded,
     this.pauseReason,
     required this.remainingCredits,
     required this.reservedCredits,
@@ -1952,12 +2097,7 @@ class UsageSummary {
     required this.creditAdmission,
   });
 
-  final int softLimitCents;
-  final int hardLimitCents;
-  final int reservedCents;
-  final int spentCents;
   final KillSwitchState killSwitch;
-  final bool? softLimitExceeded;
   final String? pauseReason;
   final int remainingCredits;
   final int reservedCredits;
@@ -1966,12 +2106,7 @@ class UsageSummary {
   final bool creditAdmission;
 
   factory UsageSummary.fromJson(Map<String, dynamic> json) => UsageSummary(
-        softLimitCents: (json['softLimitCents'] as num).toInt(),
-        hardLimitCents: (json['hardLimitCents'] as num).toInt(),
-        reservedCents: (json['reservedCents'] as num).toInt(),
-        spentCents: (json['spentCents'] as num).toInt(),
         killSwitch: KillSwitchState.fromJson(json['killSwitch'] as Map<String, dynamic>),
-        softLimitExceeded: json['softLimitExceeded'] == null ? null : json['softLimitExceeded'] as bool,
         pauseReason: json['pauseReason'] == null ? null : json['pauseReason'] as String,
         remainingCredits: (json['remainingCredits'] as num).toInt(),
         reservedCredits: (json['reservedCredits'] as num).toInt(),
@@ -1982,12 +2117,7 @@ class UsageSummary {
 
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{};
-    json['softLimitCents'] = softLimitCents;
-    json['hardLimitCents'] = hardLimitCents;
-    json['reservedCents'] = reservedCents;
-    json['spentCents'] = spentCents;
     json['killSwitch'] = killSwitch.toJson();
-    if (softLimitExceeded != null) json['softLimitExceeded'] = softLimitExceeded;
     if (pauseReason != null) json['pauseReason'] = pauseReason;
     json['remainingCredits'] = remainingCredits;
     json['reservedCredits'] = reservedCredits;
