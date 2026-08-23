@@ -13,7 +13,7 @@ bundles the weights. Hot reload/restart is **not** enough after a first fetch.
 
 Installs InsightFace `buffalo_l` into `assets/models/`:
 
-- `w600k_r50.onnx` — ArcFace recognizer (declared in `pubspec.yaml` assets)
+- `w600k_r50.onnx` — ArcFace recognizer (bundled when present; `pubspec` lists this directory)
 - `det_10g.onnx` — optional detector
 
 At runtime the app loads via `createSessionFromAsset` (works under macOS App

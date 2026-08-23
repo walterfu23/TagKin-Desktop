@@ -99,10 +99,10 @@ flutter:
 
   # Face models (ONNX weights gitignored — fetch via mac/119_fetch_face_models.sh,
   # then full rebuild so Flutter bundles them for sandboxed macOS).
+  # Declare the directory, not the .onnx files: analyze/CI must not require
+  # weights that are not in git.
   assets:
-    - assets/models/README.md
-    - assets/models/w600k_r50.onnx
-    - assets/models/det_10g.onnx
+    - assets/models/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
