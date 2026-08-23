@@ -29,7 +29,7 @@ Do not duplicate product docs here. This README covers **desktop-specific** setu
 
 - Flutter SDK (stable channel)
 - Desktop tooling: Visual Studio (Windows) / Xcode (macOS)
-- The sibling **`tagkin`** repo checked out next to this one (the shared `@tagkin/contract` OpenAPI is read for Dart model codegen).
+- The sibling **`tagkin`** repo checked out next to this one (the shared `@tagkin/contract` OpenAPI is read for Dart model codegen). `102_codegen` also writes `openapi/openapi.yaml` so GitHub Actions can run R2 drift without cloning private TagKin.
 
 ## Getting started
 

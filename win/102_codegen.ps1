@@ -17,4 +17,10 @@ Write-Host "==> using contract: $openapi"
 $env:TAGKIN_OPENAPI = $openapi
 Write-Host '==> dart run tool/gen_contract.dart'
 dart run tool/gen_contract.dart
+
+# Desktop CI cannot clone private TagKin; keep a vendored copy for R2 drift.
+$vendor = Join-Path $global:TagKinDesktopRoot 'openapi\openapi.yaml'
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $vendor) | Out-Null
+Copy-Item -Force $openapi $vendor
+Write-Host "==> vendored $vendor"
 Write-Host '==> codegen complete'

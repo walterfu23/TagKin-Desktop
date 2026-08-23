@@ -1,0 +1,3266 @@
+openapi: 3.1.0
+info:
+  title: TagKin API
+  version: 0.0.0
+  description: >
+    TagKin orchestration API. Orchestration only: this API never receives, proxies,
+    caches, or stores user media bytes (Rules R1/R5/R7). Domain names here are the
+    single source of truth for all code and UI (R2). Every durable record is
+    account-scoped and the owner is derived from the authenticated caller, never
+    from a client-supplied field (R10).
+servers:
+  - url: http://localhost:8787
+    description: Local development
+
+tags:
+  - name: system
+    description: Health and identity
+  - name: items
+    description: Library items (photo/video). References and metadata only — never bytes.
+  - name: ingest
+    description: >
+      Upload grants and analysisRef recording. Bytes go client → model host;
+      TagKin only mints short-lived URLs and stores refs (R1/R5/R8).
+  - name: pre-pass
+    description: >
+      Client-side classic pre-pass results (EXIF, pHash, key periods, face
+      embeddings). Vectors/metadata/text only — never media bytes (R1/R5/R9).
+  - name: usage
+    description: >
+      Cost admission visibility (S5 / R9). Current usage, reservation, limits,
+      and kill-switch pause reason. Numbers only — never media bytes.
+  - name: credits
+    description: >
+      Trial card verification, grant, pack offers, Buy credits purchases, and
+      redeem codes (S5). Authenticated routes only; the Stripe webhook is not
+      a client endpoint. Numbers and status only — never media bytes or card
+      PAN.
+  - name: tagging
+    description: >
+      Image-only VLM tagging on a ready analysisRef (S6 / R9). Photo items in
+      v1; never accepts media bytes (R1). Escalates only on evidence.
+  - name: persons
+    description: >
+      Cross-item person identity (S7). pgvector likeness search proposes
+      person assignments; humans name people and correct via unlink/reassign
+      (R6). Vectors/IDs only — never pixels (R1).
+  - name: knowledge
+    description: >
+      Approved knowledge projection, corrections, and provenance (S8 / R6/R10).
+      Corrections are non-destructive overlays; item reads return the approved
+      projection only. Metadata/text only — never media bytes (R1).
+  - name: comments
+    description: >
+      Private human text comments on an item or video key period (S9 / R10).
+      Owner-scoped create/edit/soft-delete; text metadata only — never media
+      bytes (R1). Author is derived from the authenticated token.
+  - name: jobs
+    description: >
+      Job status/progress and lifecycle (S11 / R10). Cancel unfinished work
+      and delete items with remote analysis-object cleanup. Metadata/refs
+      only — never media bytes (R1/R5).
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      operationId: getHealth
+      summary: Liveness/readiness probe
+      security: []
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+  /me:
+    get:
+      tags: [system]
+      operationId: getMe
+      summary: Current authenticated account (owner derived from token, never the body)
+      responses:
+        "200":
+          description: The authenticated account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /items:
+    get:
+      tags: [items]
+      operationId: listItems
+      summary: List the caller's library items (owner-scoped, R10)
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ProcessingStatus"
+      responses:
+        "200":
+          description: Items owned by the authenticated account
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Item"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    post:
+      tags: [items]
+      operationId: createItem
+      summary: Register a library item (metadata/reference only — no bytes, R1)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateItem"
+      responses:
+        "201":
+          description: Item created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /items/{itemId}:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [items]
+      operationId: getItem
+      summary: Get one item owned by the authenticated account (R10)
+      responses:
+        "200":
+          description: The item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [jobs]
+      operationId: deleteItem
+      summary: >
+        Soft-delete an item: cancel unfinished work, schedule remote
+        analysis-object cleanup, record a tombstone. Never touches original
+        local/user-cloud media (R1/R5/R10).
+      responses:
+        "204":
+          description: Item deleted (soft); tombstone recorded
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /items/{itemId}/upload-grant:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [ingest]
+      operationId: createUploadGrant
+      summary: >
+        Mint a short-lived upload URL so the client can PUT bytes directly to
+        the model host. Never returns a provider key (R8).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUploadGrant"
+      responses:
+        "201":
+          description: Upload grant minted (URL only)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadGrant"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /items/{itemId}/analysis-ref:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [ingest]
+      operationId: recordAnalysisRef
+      summary: >
+        Record the model-host analysisRef after a successful direct upload.
+        Metadata/ref only — never media bytes (R1/R4).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordAnalysisRef"
+      responses:
+        "200":
+          description: Item updated with analysisRef
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /usage:
+    get:
+      tags: [usage]
+      operationId: getUsage
+      summary: >
+        Current cost usage, open reservation, soft/hard limits, credit meters
+        (when credit admission is enabled), and kill-switch state for the
+        authenticated account (R9/R10). Read-only for clients.
+      responses:
+        "200":
+          description: Owner-scoped usage summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /credits/trial:
+    get:
+      tags: [credits]
+      operationId: getTrial
+      summary: >
+        Trial grant status for the authenticated account. Clerk sign-up alone
+        does not make Trial credits spendable (S5).
+      responses:
+        "200":
+          description: Trial status and whether a new verification can start
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrialSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /credits/trial/verifications:
+    post:
+      tags: [credits]
+      operationId: createTrialVerification
+      summary: >
+        Create (or return the pending) Stripe SetupIntent for Trial card
+        verification. Owner is the session, never the body (R10).
+      responses:
+        "201":
+          description: Client secret for Stripe.js card setup
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrialVerificationCreated"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/TrialRejected"
+
+  /credits/trial/verifications/{verificationId}/claim:
+    parameters:
+      - name: verificationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [credits]
+      operationId: claimTrialVerification
+      summary: >
+        Retrieve the SetupIntent from Stripe and, when Radar allows a new card
+        fingerprint, apply the Trial pack once.
+      responses:
+        "200":
+          description: Trial pack applied (or already applied — idempotent)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrialGrantResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TrialRejected"
+
+  /credits/packs:
+    get:
+      tags: [credits]
+      operationId: listCreditPacks
+      summary: >
+        Enabled paid credit packs for the authenticated account, with the
+        server-computed debt-clearing preview (D6). Owner is the session (R10).
+      responses:
+        "200":
+          description: Paid pack offers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreditPackOfferList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /credits/purchases:
+    post:
+      tags: [credits]
+      operationId: createCreditPurchase
+      summary: >
+        Create a frozen CreditPurchase snapshot and Stripe Checkout session.
+        At most one pending purchase per account. Owner is the session (R10).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreditPurchaseCreate"
+      responses:
+        "201":
+          description: Purchase snapshot and Checkout URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreditPurchaseView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /credits/purchases/{purchaseId}:
+    parameters:
+      - name: purchaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [credits]
+      operationId: getCreditPurchase
+      summary: >
+        Owner-scoped purchase poll target. Reconciles a pending Checkout
+        session when Stripe already marked it paid.
+      responses:
+        "200":
+          description: Purchase snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreditPurchaseView"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /credits/purchases/{purchaseId}/cancel:
+    parameters:
+      - name: purchaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [credits]
+      operationId: cancelCreditPurchase
+      summary: Expire a pending purchase and its Checkout session.
+      responses:
+        "200":
+          description: Purchase snapshot after cancel
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreditPurchaseView"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /credits/redemptions/preview:
+    post:
+      tags: [credits]
+      operationId: previewCreditRedemption
+      summary: >
+        Validate a redeem code and return the server-computed debt-clearing
+        preview. Does not consume the code. Owner is the session (R10).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RedeemCodeSubmit"
+      responses:
+        "200":
+          description: Debt-allocation preview for a valid unused unexpired code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedeemPreview"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/RedeemRejected"
+        "429":
+          $ref: "#/components/responses/RedeemRateLimited"
+
+  /credits/redemptions:
+    post:
+      tags: [credits]
+      operationId: redeemCreditCode
+      summary: >
+        Atomically claim a hashed redeem code and apply its snapshotted
+        credits. Concurrent retries apply once. Owner is the session (R10).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RedeemCodeSubmit"
+      responses:
+        "200":
+          description: Credits applied (or already applied — idempotent)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedeemResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/RedeemRejected"
+        "429":
+          $ref: "#/components/responses/RedeemRateLimited"
+
+  /items/{itemId}/pre-pass-result:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [pre-pass]
+      operationId: recordPrePassResult
+      summary: >
+        Accept a client-side classic pre-pass payload (EXIF when/where, pHash,
+        key periods, face embeddings). Vectors/metadata/text only — never
+        media bytes (R1/R5/R9).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PrePassResult"
+      responses:
+        "200":
+          description: Pre-pass result recorded; item updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrePassResultResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /items/{itemId}/analyze:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [tagging]
+      operationId: analyzeItem
+      summary: >
+        Run the image-only TaggingProvider on a photo item's ready analysisRef.
+        Reserves spend first (R9); never accepts or proxies media bytes (R1).
+        Video tagging is not supported in v1.
+      responses:
+        "200":
+          description: Tagging completed; normalized tags persisted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyzeResultResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/BudgetExceeded"
+
+  /items/{itemId}/jobs:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [jobs]
+      operationId: listItemJobs
+      summary: >
+        List durable jobs for an owned item (most-recent-first). Progress and
+        terminal state for cancel/retry visibility (S11 / R10).
+      responses:
+        "200":
+          description: Jobs owned by the authenticated account for this item
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /items/{itemId}/cancel:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [jobs]
+      operationId: cancelItem
+      summary: >
+        Cancel unfinished work for an item and release any open cost
+        reservation (S5/S11). No-op success when nothing is unfinished.
+      responses:
+        "200":
+          description: Cancel applied (or no-op)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CancelItemResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /items/{itemId}/who-appearances:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [persons]
+      operationId: recordWhoAppearances
+      summary: >
+        Record likeness embeddings for active who tags on an owned item, then
+        auto-run person linking (S7). Vectors only — never pixels (R1). Humans
+        name and correct assignments (R6).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WhoAppearancesRequest"
+      responses:
+        "200":
+          description: Appearances stored and person linking ran
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WhoAppearancesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /items/{itemId}/who-exclusions:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [persons]
+      operationId: createWhoExclusion
+      summary: >
+        Exclude a who face from this photo (S7 reject). Soft-removes the who
+        tag and stores a durable exclusion so re-analyze will not re-include
+        the same face (R6). Region + optional embedding; never pixels (R1).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWhoExclusionRequest"
+      responses:
+        "200":
+          description: Exclusion stored; who tag removed from approved projection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateWhoExclusionResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /items/{itemId}/who-exclusions/{exclusionId}:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: exclusionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      tags: [persons]
+      operationId: undoWhoExclusion
+      summary: >
+        Undo a who-face exclusion on this photo (R6). Does not restore the
+        removed tag; a later re-analyze may recreate a who box for that face.
+      responses:
+        "200":
+          description: Exclusion soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [exclusion]
+                properties:
+                  exclusion:
+                    $ref: "#/components/schemas/WhoExclusion"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /items/{itemId}/link-people:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [persons]
+      operationId: linkPeopleForItem
+      summary: >
+        Run pgvector likeness matching over this item's not-yet-linked
+        PersonAppearance rows (S7). May auto-assign to a named person
+        (unconfirmed or auto-confirmed) or form GroupFA among loose faces (R6).
+        No media bytes involved (R1).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                autoConfirmMinConfidencePercent:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                  description: >
+                    When set, named-person auto-assigns at or above this
+                    confidence percent become confirmed. Omit to never
+                    auto-confirm.
+      responses:
+        "200":
+          description: Matching ran; appearances assigned or newly grouped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LinkPeopleResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /items/{itemId}/assign-person:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [persons]
+      operationId: assignPersonToItem
+      summary: >
+        Human assignment (R6): attach a face crop (tagId = who tag with region)
+        to an existing or new named person. When the item has no face crops,
+        omit tagId to attach the whole item. One of personId or name is required.
+        No media bytes (R1).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignPerson"
+      responses:
+        "200":
+          description: Appearance assigned (created if needed)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonAppearance"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            Whole-item assign is not allowed because this item has face crops
+            (`item_has_face_crops`). Assign a crop via tagId instead.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /items/{itemId}/knowledge:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [knowledge]
+      operationId: getItemKnowledge
+      summary: >
+        Approved who/what/when/where projection for an owned item (S8).
+        Returns active tags only — superseded/removed originals remain in DB
+        for provenance but are excluded from this read (R6).
+      responses:
+        "200":
+          description: Approved knowledge projection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemKnowledge"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /items/{itemId}/tags:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [knowledge]
+      operationId: addTag
+      summary: >
+        Human-add a tag on an owned item (S8 / R6). Server always stamps
+        source=human; client-supplied source/provider/confidence/owner are
+        ignored (R10).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddTag"
+      responses:
+        "201":
+          description: Tag created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagMutationResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /items/{itemId}/captured-at:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags: [knowledge]
+      operationId: correctItemCapturedAt
+      summary: >
+        Correct Item.capturedAt (when dimension) with provenance/undo (S8 / R6).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CorrectCapturedAt"
+      responses:
+        "200":
+          description: Captured-at corrected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapturedAtMutationResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /items/{itemId}/comments:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [comments]
+      operationId: listItemComments
+      summary: >
+        List active (non-deleted) comments for an owned item, including
+        key-period-level comments on that item (S9 / R10).
+      responses:
+        "200":
+          description: Active comments for the item
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Comment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [comments]
+      operationId: createItemComment
+      summary: >
+        Create a private text comment on an owned item (S9). At most one
+        active item-level comment (128 characters). Author is stamped from
+        the authenticated token; client-supplied author/owner fields are
+        ignored (R10).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateComment"
+      responses:
+        "201":
+          description: Comment created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Comment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            An active item-level comment already exists. Edit or delete it
+            (`item_comment_exists`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /tags/{tagId}:
+    parameters:
+      - name: tagId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags: [knowledge]
+      operationId: editTag
+      summary: >
+        Non-destructive edit: supersede the active tag and create a human
+        replacement (S8 / R6). Original row remains retrievable.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditTag"
+      responses:
+        "200":
+          description: New active human tag (original superseded)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagMutationResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [knowledge]
+      operationId: removeTag
+      summary: >
+        Soft-remove an active tag (status=removed). Row is not deleted (S8 / R6).
+      responses:
+        "200":
+          description: Tag marked removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagMutationResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /key-periods/{keyPeriodId}:
+    parameters:
+      - name: keyPeriodId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags: [knowledge]
+      operationId: correctKeyPeriodBounds
+      summary: >
+        Correct key-period start/end bounds with provenance/undo (S8 / R6).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CorrectKeyPeriodBounds"
+      responses:
+        "200":
+          description: Key period bounds corrected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeyPeriodMutationResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /key-periods/{keyPeriodId}/comments:
+    parameters:
+      - name: keyPeriodId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [comments]
+      operationId: createKeyPeriodComment
+      summary: >
+        Create a private text comment on an owned video key period (S9).
+        itemId is derived server-side from the key period; never accepted from
+        the client body (R10).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateComment"
+      responses:
+        "201":
+          description: Comment created on the key period
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Comment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /comments/{commentId}:
+    parameters:
+      - name: commentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags: [comments]
+      operationId: editComment
+      summary: >
+        Edit the body of an owned active comment (S9). Soft-deleted comments
+        cannot be edited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditComment"
+      responses:
+        "200":
+          description: Comment updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Comment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [comments]
+      operationId: deleteComment
+      summary: >
+        Soft-delete an owned comment (sets deletedAt). Row remains for audit;
+        excluded from normal list views (S9 / Specs §6.5).
+      responses:
+        "200":
+          description: Comment soft-deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Comment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /corrections/{correctionId}/undo:
+    parameters:
+      - name: correctionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [knowledge]
+      operationId: undoCorrection
+      summary: >
+        Undo a prior tag / captured-at / key-period-bounds correction (S8 / R6).
+        Person-linking undos use S7 native inverse ops, not this endpoint.
+      responses:
+        "200":
+          description: Prior approved value restored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UndoCorrectionResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /corrections/{correctionId}/redo:
+    parameters:
+      - name: correctionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [knowledge]
+      operationId: redoCorrection
+      summary: >
+        Redo a prior tag / captured-at / key-period-bounds correction after undo
+        (S8 / R6). Re-applies the original correction's recorded value when the
+        entity is still in the undone state; returns 400 if state has diverged.
+        Person-linking redos use S7 native inverse ops, not this endpoint.
+      responses:
+        "200":
+          description: Original correction value restored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedoCorrectionResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /persons:
+    get:
+      tags: [persons]
+      operationId: listPersons
+      summary: List the caller's person identities (owner-scoped, R10)
+      responses:
+        "200":
+          description: Persons owned by the authenticated account
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Person"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /persons/appearances/unassigned:
+    get:
+      tags: [persons]
+      operationId: listUnassignedAppearances
+      summary: >
+        List face crops with no person assignment (Unassigned tray). Never
+        returns embeddings (R1).
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Page of unassigned appearances
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnassignedAppearancesPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /persons/appearances/assigned:
+    get:
+      tags: [persons]
+      operationId: listAssignedAppearances
+      summary: >
+        List face crops already linked to a person (Assigned tray overview).
+        Never returns embeddings (R1).
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Page of assigned appearances
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignedAppearancesPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /persons/exclusions:
+    get:
+      tags: [persons]
+      operationId: listAccountWhoExclusions
+      summary: List active who-face exclusions across all items (Excluded tray)
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Page of active who exclusions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountWhoExclusionsPage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /persons/{personId}:
+    parameters:
+      - name: personId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [persons]
+      operationId: getPerson
+      summary: Get one person and their appearances (never returns the embedding vector, R1)
+      responses:
+        "200":
+          description: The person and its appearances
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [persons]
+      operationId: renamePerson
+      summary: Rename a person (human-authored; R6)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenamePerson"
+      responses:
+        "200":
+          description: Person renamed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Person"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [persons]
+      operationId: deletePerson
+      summary: >
+        Remove a person and unassign its appearances (crops stay available in
+        Unassigned). Reversible by reassigning faces (R6).
+      responses:
+        "204":
+          description: Person deleted
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /persons/{personId}/merge:
+    parameters:
+      - name: personId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [persons]
+      operationId: mergePerson
+      summary: >
+        Move every appearance from this person onto targetPersonId, then delete
+        this person (R6). Does not unassign faces.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MergePerson"
+      responses:
+        "200":
+          description: Target person after the merge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /persons/{personId}/split:
+    parameters:
+      - name: personId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [persons]
+      operationId: splitPerson
+      deprecated: true
+      summary: >
+        Deprecated — use reassignAppearance with name, or assignFaceGroup.
+        Compat: move appearances onto one newly created named person.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SplitPerson"
+      responses:
+        "200":
+          description: New person created from the split appearances
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /persons/appearances/unassign:
+    post:
+      tags: [persons]
+      operationId: unassignAppearances
+      summary: >
+        Move appearances to Unassigned. Two or more become GroupFM; one becomes
+        loose. Deletes empty persons left behind.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UnassignAppearances"
+      responses:
+        "200":
+          description: Appearances moved to Unassigned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnassignAppearancesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /persons/appearances/assemble:
+    post:
+      tags: [persons]
+      operationId: assembleAppearances
+      summary: >
+        Manually assemble ≥2 loose Unassigned appearances into one GroupFM.
+        Members must not already belong to a multi-face FaceGroup.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssembleAppearances"
+      responses:
+        "200":
+          description: Appearances now in one GroupFM
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssembleAppearancesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /persons/exclusions/assemble:
+    post:
+      tags: [persons]
+      operationId: assembleExclusions
+      summary: >
+        Manually assemble ≥2 loose Excluded faces into one GroupFM.
+        Members must not already belong to a multi-face FaceGroup.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssembleExclusions"
+      responses:
+        "200":
+          description: Exclusions now in one GroupFM
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssembleExclusionsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /persons/face-groups/{faceGroupId}/assign:
+    parameters:
+      - name: faceGroupId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [persons]
+      operationId: assignFaceGroup
+      summary: >
+        Promote GroupFA/GroupFM into a named Person (creates GroupP when ≥2
+        faces). Prior FaceGroup is deleted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignFaceGroup"
+      responses:
+        "200":
+          description: Person detail after assignment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /persons/face-groups/{faceGroupId}/ungroup:
+    parameters:
+      - name: faceGroupId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [persons]
+      operationId: ungroupFaceGroup
+      summary: >
+        Dissolve a GroupFM into loose individual faces (clear faceGroupId on
+        members and delete the FaceGroup). GroupFA cannot be ungrouped this way.
+      responses:
+        "200":
+          description: Former GroupFM members now loose
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UngroupFaceGroupResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /persons/appearances/{appearanceId}/unlink:
+    parameters:
+      - name: appearanceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [persons]
+      operationId: unlinkAppearance
+      summary: >
+        Human correction (R6): clear this appearance's personId and faceGroupId
+        (loose). Prunes FaceGroups left with fewer than two members.
+      responses:
+        "200":
+          description: Appearance unlinked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonAppearance"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /persons/appearances/{appearanceId}/confirm:
+    parameters:
+      - name: appearanceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [persons]
+      operationId: confirmAppearanceAssignment
+      summary: >
+        Human authority (R6): mark an unconfirmed auto-assignment as confirmed.
+      responses:
+        "200":
+          description: Appearance assignment confirmed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonAppearance"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /persons/appearances/{appearanceId}/unconfirm:
+    parameters:
+      - name: appearanceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [persons]
+      operationId: unconfirmAppearanceAssignment
+      summary: >
+        Undo Confirm (D12): mark a confirmed assignment as unconfirmed again.
+      responses:
+        "200":
+          description: Appearance assignment set to unconfirmed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonAppearance"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /persons/appearances/{appearanceId}/decline-auto-assign:
+    parameters:
+      - name: appearanceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [persons]
+      operationId: declineAutoAssignAppearance
+      summary: >
+        Human correction (R6): reject an auto-assignment ("Not this person").
+        Clears personId and records declinedAutoPersonId so rematch will not
+        re-attach to the same person.
+      responses:
+        "200":
+          description: Appearance unlinked with auto-assign decline recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonAppearance"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /persons/appearances/decline-auto-assign:
+    post:
+      tags: [persons]
+      operationId: declineAutoAssignAppearances
+      summary: >
+        Human correction (R6): reject auto-assignment ("Not this person") for
+        one or more appearances. Two or more declined together are restored
+        as one GroupFA in Unassigned (matching how they existed before being
+        auto-assigned); a single face becomes loose. Records
+        declinedAutoPersonId per appearance so rematch will not re-attach to
+        the same person.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeclineAutoAssignAppearances"
+      responses:
+        "200":
+          description: Appearances declined and restored to Unassigned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeclineAutoAssignAppearancesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /persons/appearances/{appearanceId}/reassign:
+    parameters:
+      - name: appearanceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [persons]
+      operationId: reassignAppearance
+      summary: >
+        Human correction (R6): move this appearance to another person. Pass an
+        existing personId, or omit/null personId to create a new person then
+        assign.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReassignAppearance"
+      responses:
+        "200":
+          description: Appearance reassigned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonAppearance"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Session/JWT validated server-side; owner is derived from it (R10).
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid authorization
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BadRequest:
+      description: Malformed request body or query
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Not found, or not owned by the authenticated account
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BudgetExceeded:
+      description: >
+        Cost admission rejected the reservation (kill switch, hard budget, or
+        concurrency cap). No provider call was made (R9).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TrialRejected:
+      description: >
+        Trial grant rejected (already granted, Radar block, fingerprint already
+        used, verification still pending, or Trial pack unavailable).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    RedeemRejected:
+      description: >
+        Redeem rejected (unknown/Trial, expired, or already used). Unknown and
+        Trial share redeemCodeInvalid so the client cannot distinguish them.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    RedeemRateLimited:
+      description: Too many redeem attempts from this account or network source.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        version:
+          type: string
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+
+    Account:
+      type: object
+      description: A TagKin user account. Owns exactly one private library.
+      required: [id, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        createdAt:
+          type: string
+          format: date-time
+
+    ItemType:
+      type: string
+      description: The item's type (R2 — UI "photo"/"video").
+      enum: [photo, video]
+
+    SourceType:
+      type: string
+      description: Where the item originates. v1 supports local; user-cloud is Later.
+      enum: [local]
+
+    ProcessingStatus:
+      type: string
+      description: Async tagging lifecycle for an item.
+      enum:
+        - pending
+        - awaiting_model_access
+        - processing
+        - tagged
+        - failed
+        - cancelled
+
+    JobState:
+      type: string
+      description: Durable job lifecycle (S11 / System §6.1).
+      enum:
+        - queued
+        - awaiting_model_access
+        - reserved
+        - processing
+        - paused_for_budget
+        - completed
+        - failed
+        - cancelled
+
+    JobKind:
+      type: string
+      description: Job operation kind. v1 supports single-item analyze.
+      enum:
+        - analyze
+
+    Job:
+      type: object
+      description: >
+        Durable pipeline job for an item (S11). Progress and terminal state;
+        never carries media bytes (R1).
+      required:
+        - id
+        - kind
+        - state
+        - attempts
+        - pipelineVersion
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        itemId:
+          type: string
+          format: uuid
+          nullable: true
+        kind:
+          $ref: "#/components/schemas/JobKind"
+        state:
+          $ref: "#/components/schemas/JobState"
+        attempts:
+          type: integer
+          minimum: 0
+        pipelineVersion:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CancelItemResponse:
+      type: object
+      description: Result of cancelling unfinished work on an item (S11).
+      required: [item]
+      properties:
+        item:
+          $ref: "#/components/schemas/Item"
+        job:
+          allOf:
+            - $ref: "#/components/schemas/Job"
+          nullable: true
+
+    AnalysisRefState:
+      type: string
+      description: >
+        Lifecycle of the model-host analysis reference (Tech §5). Refs are
+        library metadata — not media bytes (R1/R4).
+      enum:
+        - pending
+        - ready
+        - expired
+        - deleted
+        - unavailable
+
+    Item:
+      type: object
+      description: >
+        A single photo or video in a user's library. Stores references and metadata
+        only — never media bytes (R1/R4).
+      required:
+        - id
+        - type
+        - sourceType
+        - processingStatus
+        - analysisRefState
+        - schemaVersion
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          $ref: "#/components/schemas/ItemType"
+        sourceType:
+          $ref: "#/components/schemas/SourceType"
+        sourceRef:
+          type: string
+          nullable: true
+          description: Opaque reference to where the media lives (not bytes).
+        analysisRef:
+          type: string
+          nullable: true
+          description: Reference the model host uses to read media (not bytes, R4).
+        analysisRefState:
+          $ref: "#/components/schemas/AnalysisRefState"
+        contentHash:
+          type: string
+          nullable: true
+          description: Idempotency/dedup anchor computed client-side.
+        perceptualHash:
+          type: string
+          nullable: true
+          description: >
+            Perceptual hash (hex) for near-duplicate grouping (S4). Distinct
+            from exact contentHash.
+        dedupOfItemId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >
+            When set, this item is a near-duplicate of the referenced
+            representative item (same account).
+        capturedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Prefer EXIF/metadata capture time over model-inferred (when).
+        processingStatus:
+          $ref: "#/components/schemas/ProcessingStatus"
+        schemaVersion:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateItem:
+      type: object
+      required: [type, sourceType]
+      properties:
+        type:
+          $ref: "#/components/schemas/ItemType"
+        sourceType:
+          $ref: "#/components/schemas/SourceType"
+        sourceRef:
+          type: string
+          nullable: true
+        contentHash:
+          type: string
+          nullable: true
+        capturedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    UploadGrant:
+      type: object
+      description: >
+        Short-lived, single-purpose upload URL. Never contains a provider key (R8).
+      required: [uploadUrl, expiresAt]
+      properties:
+        uploadUrl:
+          type: string
+          format: uri
+          description: Resumable upload URL; client PUTs bytes here directly.
+        expiresAt:
+          type: string
+          format: date-time
+          description: When this grant should be considered expired.
+
+    CreateUploadGrant:
+      type: object
+      required: [mimeType]
+      properties:
+        mimeType:
+          type: string
+          description: MIME type of the file the client will upload (image/* or video/*).
+          example: image/jpeg
+
+    RecordAnalysisRef:
+      type: object
+      required: [analysisRef]
+      properties:
+        analysisRef:
+          type: string
+          description: Opaque model-host file URI/reference (not bytes, R4).
+          minLength: 1
+
+    PrePassWhere:
+      type: object
+      required: [lat, lng]
+      properties:
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lng:
+          type: number
+          minimum: -180
+          maximum: 180
+
+    PrePassKeyPeriodInput:
+      type: object
+      required: [startMs, endMs]
+      properties:
+        startMs:
+          type: integer
+          minimum: 0
+        endMs:
+          type: integer
+          minimum: 0
+
+    PrePassAppearanceInput:
+      type: object
+      required: [embedding, embeddingModelId]
+      description: >
+        Face/person embedding from the client classic-CV pass. Vector only —
+        never pixels (R1). Dimension must be 512.
+      properties:
+        keyPeriodIndex:
+          type: integer
+          minimum: 0
+          description: Optional index into the keyPeriods array in the same payload.
+        embedding:
+          type: array
+          items:
+            type: number
+          minItems: 512
+          maxItems: 512
+        embeddingModelId:
+          type: string
+          minLength: 1
+
+    PrePassResult:
+      type: object
+      description: >
+        Contract-shaped client pre-pass payload. Contains only vectors,
+        metadata, and text — never media bytes (R1/R5).
+      properties:
+        contentHash:
+          type: string
+          nullable: true
+        perceptualHash:
+          type: string
+          nullable: true
+          description: Hex-encoded perceptual hash (typically 16 hex chars = 64 bits).
+        capturedAt:
+          type: string
+          format: date-time
+          nullable: true
+        where:
+          allOf:
+            - $ref: "#/components/schemas/PrePassWhere"
+          nullable: true
+        durationMs:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: Video duration in ms; used to validate key period bounds.
+        keyPeriods:
+          type: array
+          items:
+            $ref: "#/components/schemas/PrePassKeyPeriodInput"
+        appearances:
+          type: array
+          items:
+            $ref: "#/components/schemas/PrePassAppearanceInput"
+
+    PrePassResultResponse:
+      type: object
+      required: [item, keyPeriodIds, appearanceIds, tagIds]
+      properties:
+        item:
+          $ref: "#/components/schemas/Item"
+        keyPeriodIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        appearanceIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        tagIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    KnowledgeSource:
+      type: string
+      description: Provenance of a knowledge value (R10).
+      enum: [metadata, model, human]
+
+    Person:
+      type: object
+      description: >
+        A named people identity within one account (R6/R10). Always has a
+        non-empty name, unique per account (case-insensitive). Faces with this
+        personId form GroupP when ≥2.
+      required: [id, name, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+        createdAt:
+          type: string
+          format: date-time
+
+    FaceGroupKind:
+      type: string
+      description: >
+        GroupFA (auto alike from Analyze) or GroupFM (manually assembled, or
+        restored when leaving a named multi-face person).
+      enum: [FA, FM]
+
+    PersonAppearance:
+      type: object
+      description: >
+        One likeness detection. May be on a named Person (personId), in a
+        FaceGroup FA/FM (faceGroupId), or loose (both null). Never includes
+        the embedding vector itself (R1).
+      required: [id, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        personId:
+          type: string
+          format: uuid
+          nullable: true
+        faceGroupId:
+          type: string
+          format: uuid
+          nullable: true
+        faceGroupKind:
+          allOf:
+            - $ref: "#/components/schemas/FaceGroupKind"
+          nullable: true
+        assignmentState:
+          type: string
+          nullable: true
+          description: >
+            confirmed = human or auto-confirmed assignment; unconfirmed =
+            auto-assigned to a named person pending Confirm / Not this person.
+            Null when personId is null.
+          enum: [confirmed, unconfirmed]
+        itemId:
+          type: string
+          format: uuid
+          nullable: true
+        keyPeriodId:
+          type: string
+          format: uuid
+          nullable: true
+        tagId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >
+            When set, this appearance was derived from an active who Tag
+            (face-box crop embed). Null for legacy pre-pass-only appearances.
+        region:
+          allOf:
+            - $ref: "#/components/schemas/TagRegion"
+          nullable: true
+          description: >
+            Who-tag face box when available. Clients crop locally; never
+            returned with embeddings (R1).
+        createdAt:
+          type: string
+          format: date-time
+
+    WhoAppearanceInput:
+      type: object
+      required: [tagId, embedding, embeddingModelId]
+      description: >
+        Likeness vector for one active who tag. Face-crop embedding only —
+        never pixels (R1). Dimension must be 512.
+      properties:
+        tagId:
+          type: string
+          format: uuid
+        embedding:
+          type: array
+          items:
+            type: number
+          minItems: 512
+          maxItems: 512
+        embeddingModelId:
+          type: string
+          minLength: 1
+
+    WhoAppearancesRequest:
+      type: object
+      required: [appearances]
+      properties:
+        appearances:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/WhoAppearanceInput"
+        autoConfirmMinConfidencePercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: >
+            When set, named-person auto-assigns at or above this confidence
+            percent become confirmed; weaker matches stay unconfirmed. Omit to
+            never auto-confirm (all named auto-assigns are unconfirmed).
+
+    WhoAppearancesResponse:
+      type: object
+      required: [appearanceIds, appearances]
+      properties:
+        appearanceIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        appearances:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonAppearance"
+
+    PersonDetail:
+      type: object
+      description: A named person plus its appearances (S7).
+      required: [id, name, createdAt, appearances]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+        createdAt:
+          type: string
+          format: date-time
+        appearances:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonAppearance"
+
+    RenamePerson:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+
+    MergePerson:
+      type: object
+      required: [targetPersonId]
+      properties:
+        targetPersonId:
+          type: string
+          format: uuid
+          description: Existing person that receives the source person's faces.
+
+    SplitPerson:
+      type: object
+      required: [appearanceIds, name]
+      properties:
+        appearanceIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: uuid
+        name:
+          type: string
+          minLength: 1
+          description: Name for the newly created person.
+
+    AssignPerson:
+      type: object
+      description: >
+        Assign a face crop (tagId) or, when the item has no face crops, the
+        whole item to an existing named person (personId) or a new name.
+        One of personId or name is required.
+      properties:
+        personId:
+          type: string
+          format: uuid
+          description: Existing named person to assign to.
+        name:
+          type: string
+          minLength: 1
+          description: Create a new named person with this name, then assign.
+        tagId:
+          type: string
+          format: uuid
+          description: >
+            Active who tag with a face region. Omit only when the item has
+            no face crops (whole-item assignment).
+
+    ReassignAppearance:
+      type: object
+      description: >
+        Assign this appearance to an existing named person (personId) or create
+        a new named person (name). One of personId or name is required.
+      properties:
+        personId:
+          type: string
+          format: uuid
+          description: Existing named person to assign to.
+        name:
+          type: string
+          minLength: 1
+          description: Create a new named person with this name, then assign.
+
+    AssignFaceGroup:
+      type: object
+      description: >
+        Promote a GroupFA/GroupFM into a named Person (GroupP when ≥2 faces).
+        One of personId or name is required.
+      properties:
+        personId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+
+    UnassignAppearances:
+      type: object
+      required: [appearanceIds]
+      description: >
+        Move appearances to Unassigned. Two or more together become GroupFM;
+        a single face becomes loose.
+      properties:
+        appearanceIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: uuid
+
+    UnassignAppearancesResponse:
+      type: object
+      required: [appearances]
+      properties:
+        appearances:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonAppearance"
+
+    DeclineAutoAssignAppearances:
+      type: object
+      required: [appearanceIds]
+      description: >
+        Reject auto-assignment for one or more appearances. Two or more
+        together are restored as one GroupFA; a single face becomes loose.
+      properties:
+        appearanceIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: uuid
+
+    DeclineAutoAssignAppearancesResponse:
+      type: object
+      required: [appearances]
+      properties:
+        appearances:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonAppearance"
+
+    AssembleAppearances:
+      type: object
+      required: [appearanceIds]
+      description: >
+        ≥2 loose Unassigned appearances to join into one GroupFM.
+      properties:
+        appearanceIds:
+          type: array
+          minItems: 2
+          items:
+            type: string
+            format: uuid
+
+    AssembleAppearancesResponse:
+      type: object
+      required: [appearances, faceGroupId]
+      properties:
+        faceGroupId:
+          type: string
+          format: uuid
+        appearances:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonAppearance"
+
+    AssembleExclusions:
+      type: object
+      required: [exclusionIds]
+      description: >
+        ≥2 loose Excluded faces to join into one GroupFM.
+      properties:
+        exclusionIds:
+          type: array
+          minItems: 2
+          items:
+            type: string
+            format: uuid
+
+    AssembleExclusionsResponse:
+      type: object
+      required: [exclusions, faceGroupId]
+      properties:
+        faceGroupId:
+          type: string
+          format: uuid
+        exclusions:
+          type: array
+          items:
+            $ref: "#/components/schemas/WhoExclusion"
+
+    UngroupFaceGroupResponse:
+      type: object
+      required: [faceGroupId, appearances, exclusions]
+      description: >
+        Former GroupFM members after dissolve (faceGroupId cleared).
+      properties:
+        faceGroupId:
+          type: string
+          format: uuid
+          description: Id of the deleted FaceGroup.
+        appearances:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonAppearance"
+        exclusions:
+          type: array
+          items:
+            $ref: "#/components/schemas/WhoExclusion"
+
+    LinkPeopleResponse:
+      type: object
+      description: Result of running S7 likeness matching over one item's appearances.
+      required: [appearances]
+      properties:
+        appearances:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonAppearance"
+
+    KeyPeriod:
+      type: object
+      description: A start-end range of interest inside a video item (R2).
+      required: [id, itemId, startMs, endMs]
+      properties:
+        id:
+          type: string
+          format: uuid
+        itemId:
+          type: string
+          format: uuid
+        startMs:
+          type: integer
+          minimum: 0
+        endMs:
+          type: integer
+          minimum: 0
+
+    TagRegion:
+      type: object
+      description: >
+        Normalized face/person region on the media frame (0–1 inclusive),
+        typically from a VLM who-detection box. Origin is top-left.
+      required: [yMin, xMin, yMax, xMax]
+      properties:
+        yMin:
+          type: number
+          minimum: 0
+          maximum: 1
+        xMin:
+          type: number
+          minimum: 0
+          maximum: 1
+        yMax:
+          type: number
+          minimum: 0
+          maximum: 1
+        xMax:
+          type: number
+          minimum: 0
+          maximum: 1
+
+    Tag:
+      type: object
+      description: A normalized who/what/when/where value scoped to an item or key period.
+      required: [id, dimension, value, source, status, schemaVersion, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        itemId:
+          type: string
+          format: uuid
+          nullable: true
+        keyPeriodId:
+          type: string
+          format: uuid
+          nullable: true
+        dimension:
+          type: string
+          enum: [who, what, when, where]
+        value:
+          type: string
+        source:
+          $ref: "#/components/schemas/KnowledgeSource"
+        status:
+          $ref: "#/components/schemas/TagStatus"
+        correctedFromTagId:
+          type: string
+          format: uuid
+          nullable: true
+          description: When set, this human tag superseded the referenced tag (S8).
+        confidence:
+          type: number
+          nullable: true
+        provider:
+          type: string
+          nullable: true
+          description: analysisProvider id stored as data (R3).
+        modelId:
+          type: string
+          nullable: true
+        region:
+          allOf:
+            - $ref: "#/components/schemas/TagRegion"
+          nullable: true
+          description: >
+            Optional face box for who detections from the VLM. Null for
+            what/where/when and for who tags without a valid box.
+        schemaVersion:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+
+    TagStatus:
+      type: string
+      description: >
+        Approved-projection lifecycle for a Tag (S8 / R6). Corrections never
+        delete the original — they supersede or remove it in the projection.
+      enum: [active, superseded, removed]
+
+    AddTag:
+      type: object
+      required: [dimension, value]
+      description: >
+        Human-add payload. Client-supplied source/provider/confidence/accountId
+        are ignored — server stamps source=human (R10).
+      properties:
+        dimension:
+          type: string
+          enum: [who, what, when, where]
+        value:
+          type: string
+          minLength: 1
+        keyPeriodId:
+          type: string
+          format: uuid
+          nullable: true
+
+    EditTag:
+      type: object
+      required: [value]
+      properties:
+        value:
+          type: string
+          minLength: 1
+
+    CorrectCapturedAt:
+      type: object
+      required: [capturedAt]
+      properties:
+        capturedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    CorrectKeyPeriodBounds:
+      type: object
+      required: [startMs, endMs]
+      properties:
+        startMs:
+          type: integer
+          minimum: 0
+        endMs:
+          type: integer
+          minimum: 0
+
+    Correction:
+      type: object
+      description: Non-destructive correction overlay (S8 / R6).
+      required: [id, targetType, targetId, source, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        targetType:
+          type: string
+          description: e.g. tag | item_captured_at | key_period_bounds | person | person_appearance
+        targetId:
+          type: string
+          format: uuid
+        previousValue:
+          nullable: true
+        newValue:
+          nullable: true
+        source:
+          $ref: "#/components/schemas/KnowledgeSource"
+        createdAt:
+          type: string
+          format: date-time
+
+    KeyPeriodKnowledge:
+      type: object
+      required: [id, itemId, startMs, endMs, tags]
+      properties:
+        id:
+          type: string
+          format: uuid
+        itemId:
+          type: string
+          format: uuid
+        startMs:
+          type: integer
+          minimum: 0
+        endMs:
+          type: integer
+          minimum: 0
+        tags:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tag"
+          description: Active tags scoped to this key period only.
+
+    ItemKnowledge:
+      type: object
+      description: >
+        Approved knowledge projection for an item (S8). Active tags only;
+        superseded/removed originals remain auditable via corrections.
+        Includes active who-face exclusions that survive re-analyze.
+      required: [item, tags, keyPeriods, appearances, corrections, whoExclusions]
+      properties:
+        item:
+          $ref: "#/components/schemas/Item"
+        tags:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tag"
+          description: Active item-level tags (keyPeriodId null).
+        keyPeriods:
+          type: array
+          items:
+            $ref: "#/components/schemas/KeyPeriodKnowledge"
+        appearances:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonAppearance"
+        corrections:
+          type: array
+          items:
+            $ref: "#/components/schemas/Correction"
+        whoExclusions:
+          type: array
+          items:
+            $ref: "#/components/schemas/WhoExclusion"
+          description: Active per-photo who-face exclusions (S7 reject).
+
+    WhoExclusion:
+      type: object
+      required: [id, itemId, region, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        itemId:
+          type: string
+          format: uuid
+        region:
+          $ref: "#/components/schemas/TagRegion"
+        faceGroupId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Preserved GroupFA/GroupFM membership across exclude/undo.
+        faceGroupKind:
+          allOf:
+            - $ref: "#/components/schemas/FaceGroupKind"
+          nullable: true
+        createdFromTagId:
+          type: string
+          format: uuid
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    UnassignedAppearancesPage:
+      type: object
+      required: [appearances, limit, offset]
+      properties:
+        appearances:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonAppearance"
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    AssignedAppearancesPage:
+      type: object
+      required: [appearances, limit, offset]
+      properties:
+        appearances:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonAppearance"
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    AccountWhoExclusionsPage:
+      type: object
+      required: [exclusions, limit, offset]
+      properties:
+        exclusions:
+          type: array
+          items:
+            $ref: "#/components/schemas/WhoExclusion"
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    CreateWhoExclusionRequest:
+      type: object
+      required: [tagId]
+      properties:
+        tagId:
+          type: string
+          format: uuid
+          description: Active who tag on this item to exclude.
+
+    CreateWhoExclusionResult:
+      type: object
+      required: [exclusion, removedTagId]
+      properties:
+        exclusion:
+          $ref: "#/components/schemas/WhoExclusion"
+        removedTagId:
+          type: string
+          format: uuid
+
+    TagMutationResult:
+      type: object
+      required: [tag, correction]
+      properties:
+        tag:
+          $ref: "#/components/schemas/Tag"
+        correction:
+          $ref: "#/components/schemas/Correction"
+
+    CapturedAtMutationResult:
+      type: object
+      required: [item, correction]
+      properties:
+        item:
+          $ref: "#/components/schemas/Item"
+        correction:
+          $ref: "#/components/schemas/Correction"
+
+    KeyPeriodMutationResult:
+      type: object
+      required: [keyPeriod, correction]
+      properties:
+        keyPeriod:
+          $ref: "#/components/schemas/KeyPeriodKnowledge"
+        correction:
+          $ref: "#/components/schemas/Correction"
+
+    UndoCorrectionResult:
+      type: object
+      required: [correction, restored]
+      properties:
+        correction:
+          $ref: "#/components/schemas/Correction"
+        restored:
+          type: object
+          required: [kind]
+          properties:
+            kind:
+              type: string
+              enum: [tag, item_captured_at, key_period_bounds]
+            tag:
+              $ref: "#/components/schemas/Tag"
+            item:
+              $ref: "#/components/schemas/Item"
+            keyPeriod:
+              $ref: "#/components/schemas/KeyPeriodKnowledge"
+
+    RedoCorrectionResult:
+      type: object
+      required: [correction, restored]
+      properties:
+        correction:
+          $ref: "#/components/schemas/Correction"
+        restored:
+          type: object
+          required: [kind]
+          properties:
+            kind:
+              type: string
+              enum: [tag, item_captured_at, key_period_bounds]
+            tag:
+              $ref: "#/components/schemas/Tag"
+            item:
+              $ref: "#/components/schemas/Item"
+            keyPeriod:
+              $ref: "#/components/schemas/KeyPeriodKnowledge"
+
+    Comment:
+      type: object
+      description: >
+        Private human context on an item or a video key period. An item has
+        at most one active item-level comment (`body` max 128 characters).
+        Key-period comments remain a list.
+      required: [id, authorUserId, body, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        itemId:
+          type: string
+          format: uuid
+          nullable: true
+        keyPeriodId:
+          type: string
+          format: uuid
+          nullable: true
+        authorUserId:
+          type: string
+          format: uuid
+          description: >
+            Owning account id of the author. Always derived server-side from the
+            authenticated token (R10); never accepted from the client body.
+        body:
+          type: string
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Soft-delete timestamp; null means the comment is active.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    CreateComment:
+      type: object
+      required: [body]
+      description: >
+        Create-comment payload (`body` 1–128 characters). Client-supplied
+        authorUserId / accountId / itemId / keyPeriodId are ignored — server
+        stamps author from the token and derives attachment from the path
+        (R10). An item already having an active item-level comment is 409.
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 128
+
+    EditComment:
+      type: object
+      required: [body]
+      description: Edit-comment payload. Only body is writable (1–128 characters).
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 128
+
+    KillSwitchState:
+      type: object
+      description: Global kill-switch visibility for the UI (S5 / R9).
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+        reason:
+          type: string
+          nullable: true
+
+    UsageSummary:
+      type: object
+      description: >
+        Owner-scoped credit usage (S5 / R9). Numeric/enum fields only —
+        never media bytes (R1). Clients may read this; they never set remaining
+        credits or flip the kill switch (server-authoritative, §4). Admission
+        is credits after the Phase 6 cutover.
+      required:
+        - killSwitch
+        - remainingCredits
+        - reservedCredits
+        - lowCreditWarningCredits
+        - lowCreditWarning
+        - creditAdmission
+      properties:
+        killSwitch:
+          $ref: "#/components/schemas/KillSwitchState"
+        pauseReason:
+          type: string
+          nullable: true
+          description: >
+            Why new paid work is paused/unavailable (kill switch, absorbed
+            overrun, global paid-reservation pause, or null when not paused).
+        remainingCredits:
+          type: integer
+          minimum: 0
+          description: >
+            Spendable credits after open reservations have already been
+            subtracted. Do not subtract reservedCredits from this again.
+        reservedCredits:
+          type: integer
+          minimum: 0
+          description: Informational sum of reservedCredits on open credit-mode rows.
+        lowCreditWarningCredits:
+          type: integer
+          minimum: 0
+          description: Admin-set remaining-credit warning threshold (default 500).
+        lowCreditWarning:
+          type: boolean
+          description: >
+            True when remainingCredits is at or below lowCreditWarningCredits.
+        creditAdmission:
+          type: boolean
+          description: >
+            True when this account reserves/settles in credits. Always true
+            after the Phase 6 cutover.
+
+    TrialStatus:
+      type: string
+      description: >
+        Server-derived Trial grant state. Consumer UI never says trial credits.
+      enum:
+        - notStarted
+        - pending
+        - granted
+        - blocked
+        - claimedElsewhere
+
+    TrialIntentKind:
+      type: string
+      description: Stripe intent used to verify the card (SetupIntent, not a hold).
+      enum: [setupIntent, paymentIntent]
+
+    TrialSummary:
+      type: object
+      description: >
+        Trial eligibility for the authenticated account (S5). Status and the
+        Stripe publishable key only — never a secret or card PAN (R8).
+      required: [status, eligible, publishableKey]
+      properties:
+        status:
+          $ref: "#/components/schemas/TrialStatus"
+        eligible:
+          type: boolean
+          description: True when this account has not already received a Trial pack.
+        publishableKey:
+          type: string
+          description: Stripe publishable key for client card collection.
+
+    TrialVerificationCreated:
+      type: object
+      description: >
+        Server-owned Trial verification plus the Checkout setup URL. The client
+        opens cardSetupUrl in the system browser; TagKin never sees the PAN.
+        clientSecret is optional for a future Stripe.js web client.
+      required: [verificationId, intentKind, cardSetupUrl, publishableKey]
+      properties:
+        verificationId:
+          type: string
+          format: uuid
+        intentKind:
+          $ref: "#/components/schemas/TrialIntentKind"
+        clientSecret:
+          type: string
+          nullable: true
+        cardSetupUrl:
+          type: string
+          format: uri
+        publishableKey:
+          type: string
+
+    CreditPackOffer:
+      type: object
+      description: >
+        Enabled paid pack plus the server-computed debt preview. Clients render
+        these numbers; they never compute debt or credits (R9/D6).
+      required: [packId, priceUsdCents, credits, debtCreditsToClear, netCredits]
+      properties:
+        packId:
+          type: string
+          enum: [pack20, pack30, pack40]
+        priceUsdCents:
+          type: integer
+          minimum: 1
+        credits:
+          type: integer
+          minimum: 1
+        debtCreditsToClear:
+          type: integer
+          minimum: 0
+        netCredits:
+          type: integer
+          minimum: 0
+
+    CreditPackOfferList:
+      type: object
+      required: [packs]
+      properties:
+        packs:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreditPackOffer"
+
+    CreditPurchaseCreate:
+      type: object
+      required: [packId]
+      properties:
+        packId:
+          type: string
+          enum: [pack20, pack30, pack40]
+
+    CreditPurchaseStatus:
+      type: string
+      description: Server-owned purchase lifecycle (S5).
+      enum: [pending, paid, expired, partiallyRefunded, refunded]
+
+    CreditPurchaseView:
+      type: object
+      description: >
+        Frozen purchase snapshot. checkoutUrl is set only while pending.
+        remainingCredits is the account's spendable counter after any apply.
+      required:
+        - purchaseId
+        - status
+        - packId
+        - priceUsdCents
+        - currency
+        - credits
+        - maxDebtCreditsToClear
+        - quotedNetCredits
+        - remainingCredits
+      properties:
+        purchaseId:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/CreditPurchaseStatus"
+        packId:
+          type: string
+        priceUsdCents:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+        credits:
+          type: integer
+          minimum: 0
+        maxDebtCreditsToClear:
+          type: integer
+          minimum: 0
+        quotedNetCredits:
+          type: integer
+          minimum: 0
+        checkoutUrl:
+          type: string
+          format: uri
+          nullable: true
+        remainingCredits:
+          type: integer
+          minimum: 0
+
+    RedeemCodeSubmit:
+      type: object
+      description: >
+        Plaintext redeem code from the user. Owner is the session, never the
+        body (R10).
+      required: [code]
+      properties:
+        code:
+          type: string
+          minLength: 1
+
+    RedeemPreview:
+      type: object
+      description: >
+        Server-computed debt allocation for a valid unused unexpired code.
+        Clients render these numbers; they never compute debt (R9/D6).
+      required: [packId, credits, debtCreditsToClear, netCredits, expiresAt]
+      properties:
+        packId:
+          type: string
+          enum: [pack20, pack30, pack40]
+        credits:
+          type: integer
+          minimum: 1
+        debtCreditsToClear:
+          type: integer
+          minimum: 0
+        netCredits:
+          type: integer
+          minimum: 0
+        expiresAt:
+          type: string
+          format: date-time
+
+    RedeemResult:
+      type: object
+      description: >
+        Complimentary apply result after claiming a redeem code. remainingCredits
+        is the account's spendable counter after the apply.
+      required:
+        - packId
+        - credits
+        - debtPaidCredits
+        - netCredits
+        - remainingCredits
+        - creditDebt
+      properties:
+        packId:
+          type: string
+          enum: [pack20, pack30, pack40]
+        credits:
+          type: integer
+          minimum: 1
+        debtPaidCredits:
+          type: integer
+          minimum: 0
+        netCredits:
+          type: integer
+          minimum: 0
+        remainingCredits:
+          type: integer
+          minimum: 0
+        creditDebt:
+          type: integer
+          minimum: 0
+
+    TrialGrantResult:
+      type: object
+      description: Idempotent Trial apply result. Credits are real remaining credits.
+      required: [status, creditsApplied, remainingCredits]
+      properties:
+        status:
+          type: string
+          enum: [granted]
+        creditsApplied:
+          type: integer
+          minimum: 0
+        remainingCredits:
+          type: integer
+          minimum: 0
+
+    AnalyzeResultResponse:
+      type: object
+      description: >
+        Result of S6 image-only tagging. Normalized Tag ids only — never vendor
+        payloads or media bytes (R1/R2).
+      required: [item, tagIds, provider, modelId, escalated]
+      properties:
+        item:
+          $ref: "#/components/schemas/Item"
+        tagIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        provider:
+          type: string
+          description: analysisProvider id stored as data (R3).
+        modelId:
+          type: string
+          description: Model id used for the final (possibly escalated) attempt.
+        escalated:
+          type: boolean
+          description: True when a costlier model was used after evidence (R9).
+
+security:
+  - bearerAuth: []

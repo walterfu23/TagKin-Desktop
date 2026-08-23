@@ -17,11 +17,10 @@ import 'dart:io';
 import 'package:yaml/yaml.dart';
 
 const List<String> _openApiCandidates = <String>[
+  // Vendored for CI (102_codegen copies from the sibling TagKin repo).
   'openapi/openapi.yaml',
-  // Local monorepo sibling (mac/win scripts).
+  // Local workspace sibling.
   '../TagKin/packages/contract/openapi/openapi.yaml',
-  // CI: actions/checkout path: TagKin under GITHUB_WORKSPACE.
-  'TagKin/packages/contract/openapi/openapi.yaml',
 ];
 
 void main() {

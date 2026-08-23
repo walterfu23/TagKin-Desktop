@@ -22,16 +22,12 @@ jobs:
             enable_desktop: windows
             build_target: windows
     steps:
-      - uses: actions/checkout@v4
+      # checkout@v5 runs on Node 24 (v4 used Node 20, now deprecated on GHA).
+      - uses: actions/checkout@v5
 
-      # The canonical @tagkin/contract OpenAPI lives in the sibling TagKin repo;
-      # check it out next to this one so codegen (R2) can read it.
-      - name: Checkout TagKin (contract)
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/TagKin
-          path: TagKin
-          token: ${{ secrets.TAGKIN_CHECKOUT_TOKEN }}
+      # Contract OpenAPI is vendored at openapi/openapi.yaml (refreshed by
+      # 102_codegen from the sibling TagKin repo). Do not clone TagKin here —
+      # it is private and GITHUB_TOKEN cannot read another personal repo.
 
       - uses: subosito/flutter-action@v2
         with:
@@ -48,10 +44,10 @@ jobs:
       - name: Contract codegen (R2)
         shell: bash
         run: |
-          SPEC="../TagKin/packages/contract/openapi/openapi.yaml"
-          if [ ! -f "$SPEC" ]; then SPEC="TagKin/packages/contract/openapi/openapi.yaml"; fi
+          SPEC="openapi/openapi.yaml"
           if [ ! -f "$SPEC" ]; then
-            echo "error: contract OpenAPI not found at $SPEC" >&2
+            echo "error: vendored contract OpenAPI not found at $SPEC" >&2
+            echo "       Run TagKin-Desktop/mac/102_codegen.sh (or win/102_codegen.ps1) and commit openapi/openapi.yaml." >&2
             exit 1
           fi
           TAGKIN_OPENAPI="$SPEC" dart run tool/gen_contract.dart

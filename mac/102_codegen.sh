@@ -20,4 +20,10 @@ echo "==> using contract: ${OPENAPI}"
 export TAGKIN_OPENAPI="${OPENAPI}"
 echo "==> dart run tool/gen_contract.dart"
 dart run tool/gen_contract.dart
+
+# Desktop CI cannot clone private TagKin; keep a vendored copy for R2 drift.
+VENDOR="${TAGKIN_DESKTOP_ROOT}/openapi/openapi.yaml"
+mkdir -p "$(dirname "${VENDOR}")"
+cp "${OPENAPI}" "${VENDOR}"
+echo "==> vendored ${VENDOR}"
 echo "==> codegen complete"
