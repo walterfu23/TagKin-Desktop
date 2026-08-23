@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show compute;
+import 'package:flutter/foundation.dart'
+    show compute, debugPrint, visibleForTesting;
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
 
@@ -18,6 +19,15 @@ class FaceCropCache {
   FaceCropCache._();
 
   static final FaceCropCache instance = FaceCropCache._();
+
+  /// Skip `compute()` and crop on the calling isolate.
+  ///
+  /// Widget tests set this so Faces thumbs do not wait on Windows CI isolate
+  /// spawn (first `compute()` often exceeds a few hundred ms). Production
+  /// stays on the background isolate. Isolate behavior is covered by
+  /// `face_crop_cache_test.dart`.
+  @visibleForTesting
+  static bool debugCropOnCallingIsolate = false;
 
   /// Bounded so long Faces sessions don't grow memory unbounded.
   static const int maxEntries = 400;
@@ -104,12 +114,23 @@ class FaceCropCache {
     }
   }
 
+  Future<List<Uint8List?>> _cropMany(FaceCropBatchRequest request) async {
+    if (debugCropOnCallingIsolate) {
+      return cropManyWhoFacesJpeg(request);
+    }
+    try {
+      return await compute(cropManyWhoFacesJpeg, request);
+    } catch (e, st) {
+      debugPrint('FaceCropCache: compute failed, cropping inline: $e\n$st');
+      return cropManyWhoFacesJpeg(request);
+    }
+  }
+
   Future<void> _runBatch(_FileBatch batch) async {
     final requests = batch.requests;
     try {
       final bytes = await batch.loadFileBytes();
-      var crops = await compute(
-        cropManyWhoFacesJpeg,
+      var crops = await _cropMany(
         FaceCropBatchRequest(
           imageBytes: bytes,
           regions: [for (final r in requests) r.region],

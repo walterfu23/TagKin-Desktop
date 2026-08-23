@@ -143,4 +143,19 @@ void main() {
       throwsA(isA<StateError>()),
     );
   });
+
+  test('debugCropOnCallingIsolate still returns a JPEG crop', () async {
+    FaceCropCache.debugCropOnCallingIsolate = true;
+    addTearDown(() => FaceCropCache.debugCropOnCallingIsolate = false);
+
+    final crop = await FaceCropCache.instance.getOrCropFace(
+      itemId: 'i7',
+      contentHash: 'h7',
+      region: _regionA,
+      loadFileBytes: () async => _jpeg(40, 80, 120),
+    );
+
+    expect(crop, isNotNull);
+    expect(crop!.length, greaterThan(32));
+  });
 }

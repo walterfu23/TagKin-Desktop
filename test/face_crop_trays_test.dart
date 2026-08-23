@@ -5,12 +5,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
+import 'package:path/path.dart' as p;
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/persons/collection.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/collections_store.dart';
+import 'package:tagkin_desktop/persons/face_crop_cache.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/persons/face_crop_trays_page.dart';
 
@@ -57,16 +59,45 @@ String _unassignedIdForTag(FakePersonsRepository persons, String tagId) {
   fail('No unassigned appearance for tag $tagId');
 }
 
+/// File IO + FutureBuilder; isolate spawn is skipped via
+/// [FaceCropCache.debugCropOnCallingIsolate]. Still poll — Windows CI file
+/// reads are not bounded by a fixed 200ms.
+Future<void> _pumpUntilCropImages(WidgetTester tester) async {
+  final appearance = find.byKey(const Key('face-crop-appearance-ap_u'));
+  final exclusion = find.byKey(const Key('face-crop-exclusion-ex_1'));
+  final deadline = DateTime.now().add(const Duration(seconds: 10));
+  while (DateTime.now().isBefore(deadline)) {
+    await tester.pump();
+    if (appearance.evaluate().isNotEmpty &&
+        exclusion.evaluate().isNotEmpty &&
+        find
+            .descendant(of: appearance, matching: find.byType(Image))
+            .evaluate()
+            .isNotEmpty &&
+        find
+            .descendant(of: exclusion, matching: find.byType(Image))
+            .evaluate()
+            .isNotEmpty) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+}
+
 void main() {
   setUp(() {
     faceCropLastLeafFolder = null;
     debugFaceCropMetaPressed = null;
     debugFaceCropShiftPressed = null;
+    FaceCropCache.instance.clear();
+    FaceCropCache.debugCropOnCallingIsolate = true;
   });
 
   tearDown(() {
     debugFaceCropMetaPressed = null;
     debugFaceCropShiftPressed = null;
+    FaceCropCache.debugCropOnCallingIsolate = false;
+    FaceCropCache.instance.clear();
   });
 
   testWidgets('face crop trays: loads unassigned + excluded columns',
@@ -170,7 +201,7 @@ void main() {
     await tester.runAsync(() async {
       dir = await Directory.systemTemp.createTemp('face_crop_trays_');
       Future<Item> seedPhoto(String id) async {
-        final file = File('${dir.path}/$id.jpg');
+        final file = File(p.join(dir.path, '$id.jpg'));
         await file.writeAsBytes(_solidJpeg());
         return fixtureItem(
           id: id,
@@ -252,10 +283,7 @@ void main() {
         ),
       );
       await tester.pump(); // post-frame _reload
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-      await tester.pump(); // trays + thumb FutureBuilders start
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-      await tester.pump(); // Image.memory after crop
+      await _pumpUntilCropImages(tester);
     });
 
     expect(find.byKey(const Key('face-crop-appearance-ap_u')), findsOneWidget);
@@ -290,7 +318,7 @@ void main() {
     await tester.runAsync(() async {
       dir = await Directory.systemTemp.createTemp('face_crop_trays_getitem_');
       Future<Item> seedPhoto(String id) async {
-        final file = File('${dir.path}/$id.jpg');
+        final file = File(p.join(dir.path, '$id.jpg'));
         await file.writeAsBytes(_solidJpeg());
         return fixtureItem(
           id: id,
@@ -371,10 +399,7 @@ void main() {
         ),
       );
       await tester.pump(); // post-frame _reload
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-      await tester.pump(); // trays + thumb FutureBuilders start
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-      await tester.pump(); // Image.memory after crop
+      await _pumpUntilCropImages(tester);
     });
 
     // Crops still render (the optimization must not break correctness)...
