@@ -188,7 +188,23 @@ class LibraryTableController extends ChangeNotifier {
     if (pageIndex >= pageCount && pageCount > 0) {
       pageIndex = pageCount - 1;
     }
+    _notify();
+  }
+
+  bool _disposed = false;
+
+  void _notify() {
+    if (_disposed) return;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    // Drop in-flight load / warmers so they cannot notify after dispose
+    // (autoDispose provider + unawaited _warmKnowledge on sign-out / test teardown).
+    _loadGeneration = (_loadGeneration ?? 0) + 1;
+    super.dispose();
   }
 
   List<LibraryTableRow> _rows = const [];
@@ -207,7 +223,7 @@ class LibraryTableController extends ChangeNotifier {
   /// flight); no-ops on later calls. Dedupes with a concurrent caller (e.g.
   /// [ItemsListPage.initState]) that also triggers the initial load.
   Future<void> ensureLoaded() {
-    if (hasLoadedOnce) return Future.value();
+    if (_disposed || hasLoadedOnce) return Future.value();
     return _loadFuture ??= load();
   }
 
@@ -311,7 +327,7 @@ class LibraryTableController extends ChangeNotifier {
     final idx = _rows.indexWhere((r) => r.item.id == item.id);
     if (idx < 0) {
       _rows = [..._rows, LibraryTableRow(item: item)];
-      notifyListeners();
+      _notify();
       return;
     }
     _replaceRow(item.id, (r) => r.copyWith(item: item));
@@ -351,13 +367,14 @@ class LibraryTableController extends ChangeNotifier {
   }
 
   Future<void> load() async {
+    if (_disposed) return;
     final gen = DateTime.now().microsecondsSinceEpoch;
     _loadGeneration = gen;
     final showSpinner = !hasLoadedOnce;
     if (showSpinner) {
       loading = true;
       error = null;
-      notifyListeners();
+      _notify();
     } else {
       error = null;
     }
@@ -383,7 +400,7 @@ class LibraryTableController extends ChangeNotifier {
         pageIndex = 0;
         loading = false;
         hasLoadedOnce = true;
-        notifyListeners();
+        _notify();
 
         await _refreshPersonNames();
         if (_loadGeneration != gen) return;
@@ -396,7 +413,7 @@ class LibraryTableController extends ChangeNotifier {
         error = e;
         loading = false;
         hasLoadedOnce = true;
-        notifyListeners();
+        _notify();
       }
     } finally {
       _loadFuture = null;
@@ -406,7 +423,7 @@ class LibraryTableController extends ChangeNotifier {
   void setFilterQuery(String value) {
     filterQuery = value;
     pageIndex = 0;
-    notifyListeners();
+    _notify();
   }
 
   /// Snapshot of Folders look for the open collection.
@@ -461,7 +478,7 @@ class LibraryTableController extends ChangeNotifier {
       statusFilter = nextStatus;
       await load();
     } else {
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -484,7 +501,7 @@ class LibraryTableController extends ChangeNotifier {
     collectionLeafFolders = folders;
     pageIndex = 0;
     _autoExpandSiblingFolderParents(filteredSorted);
-    notifyListeners();
+    _notify();
   }
 
   Future<void> setStatusFilter(ProcessingStatus? status) async {
@@ -525,7 +542,7 @@ class LibraryTableController extends ChangeNotifier {
       }
     }
     pageIndex = 0;
-    notifyListeners();
+    _notify();
   }
 
   /// When multi-column sort is disabled, keep only the primary sort column.
@@ -533,7 +550,7 @@ class LibraryTableController extends ChangeNotifier {
     if (sortKeys.length <= 1) return;
     sortKeys = [sortKeys.first];
     pageIndex = 0;
-    notifyListeners();
+    _notify();
   }
 
   /// Re-resolve display where labels from [LibraryTableRow.whereRaw] (prefs change).
@@ -548,28 +565,28 @@ class LibraryTableController extends ChangeNotifier {
 
   void setPage(int index) {
     pageIndex = index.clamp(0, pageCount - 1);
-    notifyListeners();
+    _notify();
   }
 
   void toggleExpandWho(String itemId) {
     if (!expandedWho.add(itemId)) expandedWho.remove(itemId);
-    notifyListeners();
+    _notify();
   }
 
   void toggleExpandWhere(String itemId) {
     if (!expandedWhere.add(itemId)) expandedWhere.remove(itemId);
-    notifyListeners();
+    _notify();
   }
 
   void toggleExpandComments(String itemId) {
     if (!expandedComments.add(itemId)) expandedComments.remove(itemId);
-    notifyListeners();
+    _notify();
   }
 
   /// Expand or collapse a multi-item source directory group.
   void toggleCollapseSourceDir(String dir) {
     if (!expandedSourceDirs.add(dir)) expandedSourceDirs.remove(dir);
-    notifyListeners();
+    _notify();
   }
 
   /// Drop expanded folder keys that no longer appear in the loaded rows
@@ -641,6 +658,7 @@ class LibraryTableController extends ChangeNotifier {
   }
 
   Future<void> _warmThumbs(int gen) async {
+    if (_disposed || _loadGeneration != gen) return;
     final snapshot = List<LibraryTableRow>.from(_rows);
     for (final row in snapshot) {
       if (_loadGeneration != gen) return;
@@ -651,8 +669,9 @@ class LibraryTableController extends ChangeNotifier {
   }
 
   Future<void> _warmKnowledge(int gen) async {
+    if (_disposed || _loadGeneration != gen) return;
     knowledgeWarming = true;
-    notifyListeners();
+    _notify();
     final ids = _rows.map((r) => r.item.id).toList();
     var cursor = 0;
     Future<void> worker() async {
@@ -692,10 +711,11 @@ class LibraryTableController extends ChangeNotifier {
     await Future.wait(workers);
     if (_loadGeneration != gen) return;
     knowledgeWarming = false;
-    notifyListeners();
+    _notify();
   }
 
   Future<void> _warmComments(int gen) async {
+    if (_disposed || _loadGeneration != gen) return;
     final ids = _rows.map((r) => r.item.id).toList();
     var cursor = 0;
     Future<void> worker() async {
@@ -738,7 +758,7 @@ class LibraryTableController extends ChangeNotifier {
     final next = List<LibraryTableRow>.from(_rows);
     next[idx] = map(next[idx]);
     _rows = next;
-    notifyListeners();
+    _notify();
   }
 
   static int _compare(

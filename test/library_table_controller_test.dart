@@ -852,4 +852,23 @@ void main() {
     await _awaitKnowledge(controller);
     expect(controller.allRows.single.who, ['Alex']);
   });
+
+  test('load after dispose does not notify (teardown / autoDispose race)',
+      () async {
+    final gate = Completer<void>();
+    final items = FakeItemsRepository(
+      items: [fixtureItem(id: 'a')],
+      onListItems: () => gate.future,
+    );
+    final controller = LibraryTableController(
+      itemsRepository: items,
+      commentsRepository: FakeCommentsRepository(),
+      thumbCache: LocalThumbCache(),
+    );
+    final pending = controller.load();
+    controller.dispose();
+    gate.complete();
+    await pending;
+    await pumpEventQueue();
+  });
 }
