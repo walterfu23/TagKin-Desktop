@@ -112,14 +112,15 @@ class LibraryTableRow {
     final ref = item.sourceRef;
     if (ref == null || ref.isEmpty) return '';
     final path = localPathFromSourceRef(ref);
-    return path ?? ref;
+    if (path == null) return ref;
+    return normalizeLeafFolder(path);
   }
 
   /// Parent directory of [sourceLabel], or '' when missing / not a path.
   String get sourceDir {
     final label = sourceLabel;
     if (label.isEmpty) return '';
-    final dir = p.dirname(label);
+    final dir = p.posix.dirname(label);
     // dirname of a bare filename is '.' — treat as no shared folder key.
     if (dir.isEmpty || dir == '.') return '';
     return dir;
@@ -576,7 +577,7 @@ class LibraryTableController extends ChangeNotifier {
   void _pruneExpandedSourceDirs() {
     if (expandedSourceDirs.isEmpty && _seededBranchParents.isEmpty) return;
     final valid = <String>{};
-    final ctx = p.context;
+    final ctx = p.posix;
     for (final row in _rows) {
       var dir = row.sourceDir;
       while (dir.isNotEmpty && dir != '.') {
@@ -605,7 +606,7 @@ class LibraryTableController extends ChangeNotifier {
   /// Absolute paths of directory nodes that have two or more child folders.
   static Set<String> _multiChildFolderParentPaths(List<LibraryTableRow> items) {
     if (items.isEmpty) return {};
-    final ctx = p.context;
+    final ctx = p.posix;
     final root = _PathNode(segment: '', absolutePath: '');
     for (final row in items) {
       final dir = row.sourceDir;
@@ -794,7 +795,7 @@ List<LibraryVisibleEntry> _buildPathGroupedEntries({
   required Set<String> expandedSourceDirs,
   p.Context? pathContext,
 }) {
-  final ctx = pathContext ?? p.context;
+  final ctx = pathContext ?? p.posix;
   if (items.isEmpty) return const [];
 
   final indexOf = <String, int>{

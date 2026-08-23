@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
+import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_store.dart';
 
 /// Persists in-progress folder ingest roots so a crash can auto-resume.
@@ -36,7 +37,7 @@ class ActiveFolderIngestStore {
         if (e.key is! String || e.value is! List) continue;
         next[e.key as String] = [
           for (final v in e.value as List)
-            if (v is String && v.isNotEmpty) p.normalize(v),
+            if (v is String && v.isNotEmpty) normalizeLeafFolder(v),
         ];
       }
       _cache = next;
@@ -57,7 +58,7 @@ class ActiveFolderIngestStore {
 
   Future<void> add(String accountId, String folderPath) async {
     await _ensureLoaded();
-    final normalized = p.normalize(folderPath);
+    final normalized = normalizeLeafFolder(folderPath);
     final current = List<String>.from(_cache[accountId] ?? const []);
     if (current.contains(normalized)) return;
     current.add(normalized);
@@ -67,7 +68,7 @@ class ActiveFolderIngestStore {
 
   Future<void> remove(String accountId, String folderPath) async {
     await _ensureLoaded();
-    final normalized = p.normalize(folderPath);
+    final normalized = normalizeLeafFolder(folderPath);
     final current = List<String>.from(_cache[accountId] ?? const []);
     if (!current.contains(normalized)) return;
     current.remove(normalized);

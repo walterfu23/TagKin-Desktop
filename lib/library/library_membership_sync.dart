@@ -36,10 +36,10 @@ Future<void> publishCollectionMembershipFromLibrary({
       await cols.claimFoldersForCurrent(under);
       // Ensure newly claimed sibling leaves are visible in the Folders tree.
       for (final leaf in under) {
-        var dir = leaf;
-        while (dir.isNotEmpty && dir != p.dirname(dir)) {
+        var dir = normalizeLeafFolder(leaf);
+        while (dir.isNotEmpty && dir != p.posix.dirname(dir)) {
           table.expandedSourceDirs.add(dir);
-          final parent = p.normalize(p.dirname(dir));
+          final parent = p.posix.dirname(dir);
           if (parent == dir) break;
           dir = parent;
         }

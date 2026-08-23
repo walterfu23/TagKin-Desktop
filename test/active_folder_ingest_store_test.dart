@@ -25,6 +25,9 @@ void main() {
 
     expect(await store.listForAccount('acc_1'), ['/albums/Paris']);
     expect(await store.listForAccount('acc_2'), ['/albums/Rome']);
+
+    await store.add('acc_1', r'\albums\Paris');
+    expect(await store.listForAccount('acc_1'), ['/albums/Paris']);
   });
 
   test('remove drops only that account path', () async {

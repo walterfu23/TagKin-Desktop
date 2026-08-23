@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:tagkin_desktop/api/jobs_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart' show jobsRepositoryProvider;
 import 'package:tagkin_desktop/ingest/folder_bookmark_store.dart';
+import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 
 /// Phase of one background folder-remove job.
 enum FolderRemoveJobPhase {
@@ -87,7 +88,7 @@ class FolderRemoveQueue extends ChangeNotifier {
 
   int get activeJobCount => _jobs.where((j) => j.isActive).length;
 
-  static String normalizePath(String path) => p.normalize(path);
+  static String normalizePath(String path) => normalizeLeafFolder(path);
 
   bool isRemoving(String folderPath) {
     final normalized = normalizePath(folderPath);

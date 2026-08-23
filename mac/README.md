@@ -73,6 +73,10 @@ After an agent or local edit, load the new code before verifying in the UI:
 **Auth only:** `107_test_d1.sh` (mocked; no live Clerk required).
 
 **Library only:** `108_test_d2.sh` (mocked items API; no live network required).
+
+## GitHub Actions run history
+
+`prune-runs` (weekly Sunday 06:00 UTC, or **Actions → prune-runs → Run workflow**) keeps the 5 newest runs per workflow and deletes the rest. In-progress runs are left alone. Artifact/log retention is a separate repo setting.
 **Person-link consolidation loop** (API up, face models fetched, 3 photo item ids):
 
 ```bash

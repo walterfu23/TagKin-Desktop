@@ -206,7 +206,7 @@ class FolderIngestQueue extends ChangeNotifier {
 
   int get activeJobCount => _jobs.where((j) => j.isActive).length;
 
-  static String normalizePath(String path) => p.normalize(path);
+  static String normalizePath(String path) => normalizeLeafFolder(path);
 
   /// Whether Faces should hide a folder for this job phase.
   ///
