@@ -31,6 +31,14 @@ void main() {
     );
   });
 
+  test('remove on an empty store does not create the support dir', () async {
+    final missing = Directory('${tempDir.path}/absent');
+    expect(missing.existsSync(), isFalse);
+    final empty = FolderBookmarkStore(supportDir: missing);
+    await empty.remove('/albums/Paris');
+    expect(missing.existsSync(), isFalse);
+  });
+
   test('remove is a no-op when path is unknown', () async {
     await store.save('/albums/Rome', 'bookmark-rome');
     await store.remove('/albums/Paris');

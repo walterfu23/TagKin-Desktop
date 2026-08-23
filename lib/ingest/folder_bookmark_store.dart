@@ -57,9 +57,14 @@ class FolderBookmarkStore {
   Map<String, String> _cache = {};
   bool _loaded = false;
 
-  Future<Directory> _dir() async {
+  Future<Directory> _dir({required bool create}) async {
     final override = _supportDirOverride;
-    if (override != null) return override;
+    if (override != null) {
+      if (create && !override.existsSync()) {
+        await override.create(recursive: true);
+      }
+      return override;
+    }
     final home = Platform.environment['HOME'];
     if (home == null || home.isEmpty) {
       throw StateError('HOME not set');
@@ -67,14 +72,14 @@ class FolderBookmarkStore {
     final dir = Directory(
       p.join(home, 'Library', 'Application Support', 'tagkin_desktop'),
     );
-    if (!dir.existsSync()) {
+    if (create && !dir.existsSync()) {
       await dir.create(recursive: true);
     }
     return dir;
   }
 
-  Future<File> _file() async {
-    final dir = await _dir();
+  Future<File> _file({bool createDir = false}) async {
+    final dir = await _dir(create: createDir);
     return File(p.join(dir.path, 'folder_bookmarks.json'));
   }
 
@@ -97,7 +102,7 @@ class FolderBookmarkStore {
   }
 
   Future<void> _persist() async {
-    final file = await _file();
+    final file = await _file(createDir: true);
     await file.writeAsString(jsonEncode(_cache));
   }
 

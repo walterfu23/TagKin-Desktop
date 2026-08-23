@@ -7,6 +7,7 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/ingest/model_host_uploader.dart';
 import 'package:tagkin_desktop/ingest/upload_controller.dart';
+import 'package:tagkin_desktop/library/folder_remove_queue.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/library/items_list_page.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
@@ -52,6 +53,15 @@ List<Override> _sessionOverrides({
     jobsRepositoryProvider.overrideWithValue(
       jobs ?? FakeJobsRepository(),
     ),
+    folderRemoveQueueProvider.overrideWith((ref) {
+      return FolderRemoveQueue(
+        jobsRepository: ref.watch(jobsRepositoryProvider),
+        // Widget tests must not hit dart:io Application Support — that
+        // Future can stall FakeAsync while a remove spinner keeps
+        // pumpAndSettle alive (CI hang).
+        removeBookmark: (_) async {},
+      );
+    }),
     personsRepositoryProvider.overrideWithValue(FakePersonsRepository()),
     collectionsStoreProvider.overrideWithValue(MemoryCollectionsStore()),
   ];
