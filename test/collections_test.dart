@@ -291,6 +291,22 @@ void main() {
       expect(notifies, 1);
     });
 
+    test('adoptUnownedFolders treats slash and backslash as the same leaf',
+        () async {
+      await controller.create(name: 'Trip', seedFolders: ['/albums/Trip/Alpha']);
+      expect(
+        controller.adoptUnownedFolders([
+          r'\albums\Trip\Alpha',
+          r'\albums\Trip\Beta',
+        ]),
+        isTrue,
+      );
+      expect(
+        controller.current.leafFolders.toSet(),
+        {'/albums/Trip/Alpha', '/albums/Trip/Beta'},
+      );
+    });
+
     test('claimFoldersForCurrent steals from other collection and persists',
         () async {
       final store = CollectionsStore(supportDir: tempDir);

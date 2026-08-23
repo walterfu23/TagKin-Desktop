@@ -18,7 +18,7 @@ class Collection {
   final String id;
   final String name;
 
-  /// Normalized absolute leaf folder paths.
+  /// Normalized absolute leaf folder paths (POSIX separators).
   final List<String> leafFolders;
 
   /// Folders / Faces page look (not Settings — those stay app-global).

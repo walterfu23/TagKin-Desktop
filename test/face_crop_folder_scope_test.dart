@@ -5,6 +5,15 @@ import 'fake_items_repository.dart';
 
 void main() {
   group('face_crop_folder_scope', () {
+    test('normalizeLeafFolder unifies Windows separators', () {
+      expect(normalizeLeafFolder(r'\albums\Trip\Beta'), '/albums/Trip/Beta');
+      expect(normalizeLeafFolder('/albums/Trip/Beta'), '/albums/Trip/Beta');
+      expect(
+        normalizeLeafFolder(r'C:\Users\me\Trip'),
+        'C:/Users/me/Trip',
+      );
+    });
+
     test('leafFolderFromSourceRef uses parent directory', () {
       expect(
         leafFolderFromSourceRef('file:///Users/me/Trip/a.jpg'),
@@ -33,6 +42,7 @@ void main() {
         fixtureItem(id: 'c', sourceRef: 'file:///albums/Rome/3.jpg'),
       ];
       expect(itemIdsInLeafFolder(items, '/albums/Paris'), {'a'});
+      expect(itemIdsInLeafFolder(items, r'\albums\Paris'), {'a'});
       expect(itemIdsInLeafFolder(items, '/albums/Paris/day2'), {'b'});
     });
 

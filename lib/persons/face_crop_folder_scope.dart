@@ -5,6 +5,14 @@ import 'package:tagkin_desktop/review/local_media_resolver.dart';
 /// Last leaf folder chosen on Faces (session-scoped).
 String? faceCropLastLeafFolder;
 
+/// Stable leaf-folder identity: POSIX separators so `/albums/X` and
+/// `\albums\X` (Windows `Uri.toFilePath`) are the same membership key.
+String normalizeLeafFolder(String folder) {
+  final trimmed = folder.trim();
+  if (trimmed.isEmpty) return trimmed;
+  return p.posix.normalize(trimmed.replaceAll(r'\', '/'));
+}
+
 /// Parent directory of [item]'s local `sourceRef`, or null when unknown.
 String? leafFolderFromItem(Item item) {
   return leafFolderFromSourceRef(item.sourceRef);
@@ -14,9 +22,11 @@ String? leafFolderFromItem(Item item) {
 String? leafFolderFromSourceRef(String? sourceRef) {
   final path = localPathFromSourceRef(sourceRef);
   if (path == null || path.isEmpty) return null;
-  final dir = p.normalize(p.dirname(path));
+  final dir = p.dirname(path);
   if (dir.isEmpty || dir == '.') return null;
-  return dir;
+  final normalized = normalizeLeafFolder(dir);
+  if (normalized.isEmpty || normalized == '.') return null;
+  return normalized;
 }
 
 /// Sorted unique leaf folders among [items].
@@ -32,7 +42,7 @@ List<String> distinctLeafFolders(Iterable<Item> items) {
 
 /// Item ids whose source file lives directly in [leafFolder].
 Set<String> itemIdsInLeafFolder(Iterable<Item> items, String leafFolder) {
-  final target = p.normalize(leafFolder);
+  final target = normalizeLeafFolder(leafFolder);
   final ids = <String>{};
   for (final item in items) {
     final folder = leafFolderFromItem(item);
@@ -45,12 +55,12 @@ Set<String> itemIdsInLeafFolder(Iterable<Item> items, String leafFolder) {
 
 /// Whether [filePath] is [folder] itself or a descendant under it.
 bool pathIsUnderFolder(String filePath, String folder) {
-  final normalizedFile = p.normalize(filePath);
-  final normalizedFolder = p.normalize(folder);
+  final normalizedFile = normalizeLeafFolder(filePath);
+  final normalizedFolder = normalizeLeafFolder(folder);
   if (normalizedFile == normalizedFolder) return true;
-  final prefix = normalizedFolder.endsWith(p.separator)
+  final prefix = normalizedFolder.endsWith('/')
       ? normalizedFolder
-      : '$normalizedFolder${p.separator}';
+      : '$normalizedFolder/';
   return normalizedFile.startsWith(prefix);
 }
 
@@ -72,7 +82,12 @@ String? resolveLeafFolderSelection({
   String? preferred,
 }) {
   if (folders.isEmpty) return null;
-  if (preferred != null && folders.contains(preferred)) return preferred;
+  if (preferred != null) {
+    final key = normalizeLeafFolder(preferred);
+    for (final folder in folders) {
+      if (normalizeLeafFolder(folder) == key) return folder;
+    }
+  }
   return folders.first;
 }
 
@@ -86,7 +101,7 @@ String leafFolderLabel(String folder) {
 List<String> minimalCoveringFolders(Iterable<String> folders) {
   final unique = {
     for (final f in folders)
-      if (f.isNotEmpty) p.normalize(f),
+      if (f.isNotEmpty) normalizeLeafFolder(f),
   }.toList()
     ..sort();
   return [
@@ -106,13 +121,13 @@ List<String> coveringFoldersForItems(
 }) {
   final bookmarks = [
     for (final f in bookmarkedFolders)
-      if (f.isNotEmpty) p.normalize(f),
+      if (f.isNotEmpty) normalizeLeafFolder(f),
   ];
   final roots = <String>{};
   for (final item in items) {
     final path = localPathFromSourceRef(item.sourceRef);
     if (path == null || path.isEmpty) continue;
-    final normalized = p.normalize(path);
+    final normalized = normalizeLeafFolder(path);
     String? best;
     for (final folder in bookmarks) {
       if (pathIsUnderFolder(normalized, folder)) {

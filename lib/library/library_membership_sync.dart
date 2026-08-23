@@ -26,7 +26,7 @@ Future<void> publishCollectionMembershipFromLibrary({
 
   final root = claimUnderFolder == null || claimUnderFolder.isEmpty
       ? null
-      : p.normalize(claimUnderFolder);
+      : normalizeLeafFolder(claimUnderFolder);
   if (root != null) {
     final under = [
       for (final f in folders)

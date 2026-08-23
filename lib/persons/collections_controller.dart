@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/persons/collection.dart';
 import 'package:tagkin_desktop/persons/collections_store.dart';
+import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:uuid/uuid.dart';
 
@@ -62,14 +63,21 @@ class CollectionsController extends ChangeNotifier {
   /// GUID of the collection that currently lists [folder], if any.
   /// Prefers the dirty in-memory current over a stale catalog row for the same id.
   String? ownerCollectionId(String folder) {
-    if (folder.isEmpty) return null;
+    final key = normalizeLeafFolder(folder);
+    if (key.isEmpty) return null;
     final cur = _current;
-    if (cur != null && cur.leafFolders.contains(folder)) return cur.id;
+    if (cur != null && _folderIn(cur.leafFolders, key)) return cur.id;
     for (final c in _catalog.collections) {
       if (cur != null && c.id == cur.id) continue;
-      if (c.leafFolders.contains(folder)) return c.id;
+      if (_folderIn(c.leafFolders, key)) return c.id;
     }
     return null;
+  }
+
+  static bool _folderIn(Iterable<String> folders, String folder) {
+    final key = normalizeLeafFolder(folder);
+    if (key.isEmpty) return false;
+    return folders.any((f) => normalizeLeafFolder(f) == key);
   }
 
   /// Library folders claimed by any collection other than [exceptId].
@@ -79,10 +87,14 @@ class CollectionsController extends ChangeNotifier {
     for (final c in _catalog.collections) {
       if (c.id == exceptId) continue;
       if (cur != null && c.id == cur.id) continue;
-      claimed.addAll(c.leafFolders);
+      claimed.addAll([
+        for (final f in c.leafFolders) normalizeLeafFolder(f),
+      ]);
     }
     if (cur != null && cur.id != exceptId) {
-      claimed.addAll(cur.leafFolders);
+      claimed.addAll([
+        for (final f in cur.leafFolders) normalizeLeafFolder(f),
+      ]);
     }
     return claimed;
   }
@@ -162,7 +174,9 @@ class CollectionsController extends ChangeNotifier {
     final claimed = foldersClaimedByOthers(exceptId: cur.id);
     final folders = [
       for (final f in libraryFolders)
-        if (!claimed.contains(f)) f,
+        if (normalizeLeafFolder(f) case final key
+            when key.isNotEmpty && !claimed.contains(key))
+          key,
     ];
     if (folders.isEmpty) return;
     _current = cur.copyWith(leafFolders: folders);
@@ -184,7 +198,10 @@ class CollectionsController extends ChangeNotifier {
     final created = Collection(
       id: newCollectionId(),
       name: name,
-      leafFolders: List<String>.of(libraryFolders),
+      leafFolders: [
+        for (final f in libraryFolders)
+          if (normalizeLeafFolder(f) case final key when key.isNotEmpty) key,
+      ],
     );
     _current = created;
     _sessionReady = true;
@@ -299,7 +316,9 @@ class CollectionsController extends ChangeNotifier {
     final claimed = foldersClaimedByOthers(exceptId: id);
     final folders = [
       for (final f in seedFolders)
-        if (f.isNotEmpty && !claimed.contains(f)) f,
+        if (normalizeLeafFolder(f) case final key
+            when key.isNotEmpty && !claimed.contains(key))
+          key,
     ];
     _current = Collection(
       id: id,
@@ -412,11 +431,12 @@ class CollectionsController extends ChangeNotifier {
 
   bool addFolder(String folder) {
     final cur = _current;
-    if (cur == null || folder.isEmpty) return false;
-    if (cur.leafFolders.contains(folder)) return true;
-    final owner = ownerCollectionId(folder);
+    final key = normalizeLeafFolder(folder);
+    if (cur == null || key.isEmpty) return false;
+    if (_folderIn(cur.leafFolders, key)) return true;
+    final owner = ownerCollectionId(key);
     if (owner != null && owner != cur.id) return false;
-    _current = cur.copyWith(leafFolders: [...cur.leafFolders, folder]);
+    _current = cur.copyWith(leafFolders: [...cur.leafFolders, key]);
     _recomputeDirty();
     return true;
   }
@@ -431,10 +451,11 @@ class CollectionsController extends ChangeNotifier {
     final next = List<String>.of(cur.leafFolders);
     var changed = false;
     for (final folder in folders) {
-      if (folder.isEmpty || next.contains(folder)) continue;
-      final owner = ownerCollectionId(folder);
+      final key = normalizeLeafFolder(folder);
+      if (key.isEmpty || _folderIn(next, key)) continue;
+      final owner = ownerCollectionId(key);
       if (owner != null && owner != cur.id) continue;
-      next.add(folder);
+      next.add(key);
       changed = true;
     }
     if (!changed) return false;
@@ -453,7 +474,7 @@ class CollectionsController extends ChangeNotifier {
     if (cur == null || !sessionReady) return false;
     final claim = <String>{
       for (final f in folders)
-        if (f.isNotEmpty) f,
+        if (normalizeLeafFolder(f) case final key when key.isNotEmpty) key,
     };
     if (claim.isEmpty) return false;
 
@@ -466,7 +487,7 @@ class CollectionsController extends ChangeNotifier {
       }
       final nextLeaves = [
         for (final f in c.leafFolders)
-          if (!claim.contains(f)) f,
+          if (!claim.contains(normalizeLeafFolder(f))) f,
       ];
       if (nextLeaves.length != c.leafFolders.length) {
         catalogChanged = true;
@@ -482,7 +503,7 @@ class CollectionsController extends ChangeNotifier {
     final next = List<String>.of(cur.leafFolders);
     var membershipChanged = false;
     for (final f in claim) {
-      if (next.contains(f)) continue;
+      if (_folderIn(next, f)) continue;
       next.add(f);
       membershipChanged = true;
     }
@@ -498,12 +519,13 @@ class CollectionsController extends ChangeNotifier {
 
   bool removeFolder(String folder) {
     final cur = _current;
+    final key = normalizeLeafFolder(folder);
     if (cur == null) return false;
-    if (!cur.leafFolders.contains(folder)) return true;
+    if (!_folderIn(cur.leafFolders, key)) return true;
     _current = cur.copyWith(
       leafFolders: [
         for (final f in cur.leafFolders)
-          if (f != folder) f,
+          if (normalizeLeafFolder(f) != key) f,
       ],
     );
     _recomputeDirty();
@@ -516,11 +538,14 @@ class CollectionsController extends ChangeNotifier {
   bool removeFolders(Iterable<String> folders) {
     final cur = _current;
     if (cur == null) return false;
-    final drop = folders.toSet();
+    final drop = {
+      for (final f in folders)
+        if (normalizeLeafFolder(f) case final key when key.isNotEmpty) key,
+    };
     if (drop.isEmpty) return false;
     final next = [
       for (final f in cur.leafFolders)
-        if (!drop.contains(f)) f,
+        if (!drop.contains(normalizeLeafFolder(f))) f,
     ];
     if (next.length == cur.leafFolders.length) return false;
     _current = cur.copyWith(leafFolders: next);
