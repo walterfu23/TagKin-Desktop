@@ -103,12 +103,12 @@ class FolderBookmarkStore {
 
   Future<void> _persist() async {
     final file = await _file(createDir: true);
-    await file.writeAsString(jsonEncode(_cache));
+    await file.writeAsString(jsonEncode(_cache), flush: true);
   }
 
   Future<void> save(String folderPath, String bookmarkBase64) async {
     await _ensureLoaded();
-    final normalized = p.normalize(folderPath);
+    final normalized = _canonicalPath(folderPath);
     _cache[normalized] = bookmarkBase64;
     await _persist();
   }
@@ -116,7 +116,7 @@ class FolderBookmarkStore {
   /// Drop the bookmark for [folderPath] if present (exact path only).
   Future<void> remove(String folderPath) async {
     await _ensureLoaded();
-    final normalized = p.normalize(folderPath);
+    final normalized = _canonicalPath(folderPath);
     if (!_cache.containsKey(normalized)) return;
     _cache.remove(normalized);
     await _persist();
@@ -131,21 +131,28 @@ class FolderBookmarkStore {
   /// Longest bookmarked folder prefix of [filePath], or null.
   Future<String?> folderForFile(String filePath) async {
     await _ensureLoaded();
-    return _folderForNormalizedFile(p.normalize(filePath));
+    return _folderForNormalizedFile(_canonicalPath(filePath));
   }
 
   /// Longest bookmarked folder prefix of [filePath], if any.
   Future<String?> bookmarkForFile(String filePath) async {
     await _ensureLoaded();
-    final folder = _folderForNormalizedFile(p.normalize(filePath));
+    final folder = _folderForNormalizedFile(_canonicalPath(filePath));
     return folder == null ? null : _cache[folder];
+  }
+
+  /// POSIX separators so `/albums/X` and `\albums\X` are the same key
+  /// (Windows `Uri.toFilePath` uses `\`).
+  static String _canonicalPath(String path) {
+    final trimmed = path.trim();
+    if (trimmed.isEmpty) return trimmed;
+    return p.posix.normalize(trimmed.replaceAll(r'\', '/'));
   }
 
   String? _folderForNormalizedFile(String normalized) {
     String? best;
     for (final folder in _cache.keys) {
-      final prefix =
-          folder.endsWith(p.separator) ? folder : '$folder${p.separator}';
+      final prefix = folder.endsWith('/') ? folder : '$folder/';
       if (normalized == folder || normalized.startsWith(prefix)) {
         if (best == null || folder.length > best.length) {
           best = folder;

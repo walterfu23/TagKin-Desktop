@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/ingest/folder_bookmark_store.dart';
 
+import 'delete_temp_dir.dart';
+
 void main() {
   late Directory tempDir;
   late FolderBookmarkStore store;
@@ -12,11 +14,7 @@ void main() {
     store = FolderBookmarkStore(supportDir: tempDir);
   });
 
-  tearDown(() async {
-    if (tempDir.existsSync()) {
-      await tempDir.delete(recursive: true);
-    }
-  });
+  tearDown(() => deleteTempDir(tempDir));
 
   test('remove drops exact folder bookmark', () async {
     await store.save('/albums/Paris', 'bookmark-paris');
@@ -50,14 +48,14 @@ void main() {
 
   test('listFolders and folderForFile use longest prefix', () async {
     await store.save('/albums/Paris', 'bookmark-paris');
-    await store.save('/albums/Paris/day1', 'bookmark-day1');
+    await store.save(r'\albums\Paris\day1', 'bookmark-day1');
 
     expect(await store.listFolders(), unorderedEquals([
       '/albums/Paris',
       '/albums/Paris/day1',
     ]));
     expect(
-      await store.folderForFile('/albums/Paris/day1/a.jpg'),
+      await store.folderForFile(r'\albums\Paris\day1\a.jpg'),
       '/albums/Paris/day1',
     );
     expect(

@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:tagkin_desktop/prepass/onnx_face_embedder.dart';
 
+import 'delete_temp_dir.dart';
+
 void main() {
   group('FaceModelPaths.walkUpForAssetsModels', () {
     test('emits assets/models under each parent of a macOS .app executable', () {
@@ -46,30 +48,41 @@ void main() {
         maxWalkUp: 4,
       );
       expect(
-        candidates,
-        contains(
-          p.join(
-            '/Users/test',
-            'Library',
-            'Application Support',
-            'tagkin',
-            'models',
-            'w600k_r50.onnx',
+        candidates.any(
+          (c) => p.equals(
+            c,
+            p.join(
+              '/Users/test',
+              'Library',
+              'Application Support',
+              'tagkin',
+              'models',
+              'w600k_r50.onnx',
+            ),
           ),
         ),
+        isTrue,
       );
       expect(
-        candidates,
-        contains(
-          p.join('/Users/test', 'TagKin-Desktop', 'assets', 'models',
-              'w600k_r50.onnx'),
+        candidates.any(
+          (c) => p.equals(
+            c,
+            p.join(
+              '/Users/test',
+              'TagKin-Desktop',
+              'assets',
+              'models',
+              'w600k_r50.onnx',
+            ),
+          ),
         ),
+        isTrue,
       );
     });
 
     test('resolve finds a file placed under a walked-up assets/models', () async {
       final root = await Directory.systemTemp.createTemp('face_models_');
-      addTearDown(() => root.delete(recursive: true));
+      addTearDown(() => deleteTempDir(root));
 
       final modelsDir = Directory(p.join(root.path, 'assets', 'models'));
       await modelsDir.create(recursive: true);

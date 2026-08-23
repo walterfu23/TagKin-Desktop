@@ -48,7 +48,7 @@ class ActiveFolderIngestStore {
 
   Future<void> _persist() async {
     final file = await _file();
-    await file.writeAsString(jsonEncode(_cache));
+    await file.writeAsString(jsonEncode(_cache), flush: true);
   }
 
   Future<List<String>> listForAccount(String accountId) async {

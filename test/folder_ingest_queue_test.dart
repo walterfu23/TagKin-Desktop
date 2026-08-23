@@ -12,6 +12,7 @@ import 'package:tagkin_desktop/persons/who_face_linker.dart';
 import 'package:tagkin_desktop/prepass/prepass_controller.dart';
 import 'package:tagkin_desktop/prepass/prepass_payload_builder.dart';
 
+import 'delete_temp_dir.dart';
 import 'fake_items_repository.dart';
 import 'fake_jobs_repository.dart';
 
@@ -493,7 +494,7 @@ void main() {
 
   test('restoreInterrupted resumes a checkpointed pending folder', () async {
     final temp = await Directory.systemTemp.createTemp('tagkin_ingest_ckpt_');
-    addTearDown(() => temp.delete(recursive: true));
+    addTearDown(() => deleteTempDir(temp));
     final store = ActiveFolderIngestStore(supportDir: temp);
     await store.add('acc_1', '/albums/Paris');
 
@@ -531,7 +532,7 @@ void main() {
   test('restoreInterrupted without account id can retry after id is set',
       () async {
     final temp = await Directory.systemTemp.createTemp('tagkin_ingest_ckpt_');
-    addTearDown(() => temp.delete(recursive: true));
+    addTearDown(() => deleteTempDir(temp));
     final store = ActiveFolderIngestStore(supportDir: temp);
     await store.add('acc_1', '/albums/Paris');
 
@@ -569,7 +570,7 @@ void main() {
   test('missing folder access fails the job and drops the checkpoint',
       () async {
     final temp = await Directory.systemTemp.createTemp('tagkin_ingest_ckpt_');
-    addTearDown(() => temp.delete(recursive: true));
+    addTearDown(() => deleteTempDir(temp));
     final store = ActiveFolderIngestStore(supportDir: temp);
     await store.add('acc_1', '/albums/Paris');
 
@@ -808,7 +809,7 @@ void main() {
 
   test('restoreOnSignIn does not re-enqueue a checkpointed folder', () async {
     final temp = await Directory.systemTemp.createTemp('tagkin_ingest_ckpt_');
-    addTearDown(() => temp.delete(recursive: true));
+    addTearDown(() => deleteTempDir(temp));
     final store = ActiveFolderIngestStore(supportDir: temp);
     await store.add('acc_1', '/albums/Paris');
 

@@ -3,11 +3,13 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
+import 'package:path/path.dart' as p;
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
 import 'package:tagkin_desktop/prepass/face_embedder.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 
+import 'delete_temp_dir.dart';
 import 'fake_items_repository.dart';
 
 Uint8List _solidJpeg() {
@@ -162,13 +164,14 @@ void main() {
   test('WhoFaceLinker skips posting when embedder is stub', () async {
     debugResetFaceEmbedderStubNotice();
     final dir = await Directory.systemTemp.createTemp('who_stub_');
-    final file = File('${dir.path}/face.jpg');
+    addTearDown(() => deleteTempDir(dir));
+    final file = File(p.join(dir.path, 'face.jpg'));
     await file.writeAsBytes(_solidJpeg());
 
     final item = fixtureItem(
       id: 'item_1',
       type: ItemType.photo,
-      sourceRef: 'file://${file.path}',
+      sourceRef: Uri.file(file.path).toString(),
       processingStatus: ProcessingStatus.tagged,
       contentHash: null,
     );
@@ -202,19 +205,18 @@ void main() {
     expect(result, isNull);
     expect(items.whoAppearancesRecorded, isEmpty);
     expect(consumeFaceEmbedderStubNotice(), isTrue);
-
-    await dir.delete(recursive: true);
   });
 
   test('WhoFaceLinker posts when embedder is a real model id', () async {
     final dir = await Directory.systemTemp.createTemp('who_onnx_');
-    final file = File('${dir.path}/face.jpg');
+    addTearDown(() => deleteTempDir(dir));
+    final file = File(p.join(dir.path, 'face.jpg'));
     await file.writeAsBytes(_solidJpeg());
 
     final item = fixtureItem(
       id: 'item_1',
       type: ItemType.photo,
-      sourceRef: 'file://${file.path}',
+      sourceRef: Uri.file(file.path).toString(),
       processingStatus: ProcessingStatus.tagged,
       contentHash: null,
     );
@@ -256,19 +258,18 @@ void main() {
       items.whoAppearancesRecorded.single.autoConfirmMinConfidencePercent,
       90,
     );
-
-    await dir.delete(recursive: true);
   });
 
   test('WhoFaceLinker omits autoConfirm when percent is null', () async {
     final dir = await Directory.systemTemp.createTemp('who_omit_');
-    final file = File('${dir.path}/face.jpg');
+    addTearDown(() => deleteTempDir(dir));
+    final file = File(p.join(dir.path, 'face.jpg'));
     await file.writeAsBytes(_solidJpeg());
 
     final item = fixtureItem(
       id: 'item_1',
       type: ItemType.photo,
-      sourceRef: 'file://${file.path}',
+      sourceRef: Uri.file(file.path).toString(),
       processingStatus: ProcessingStatus.tagged,
       contentHash: null,
     );
@@ -303,7 +304,5 @@ void main() {
       items.whoAppearancesRecorded.single.autoConfirmMinConfidencePercent,
       isNull,
     );
-
-    await dir.delete(recursive: true);
   });
 }
