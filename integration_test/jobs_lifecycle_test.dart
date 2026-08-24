@@ -17,6 +17,7 @@ import '../test/fake_comments_repository.dart';
 import '../test/fake_corrections_repository.dart';
 import '../test/fake_items_repository.dart';
 import '../test/fake_jobs_repository.dart';
+import '../test/fake_persons_repository.dart';
 import '../test/fake_usage_repository.dart';
 
 void main() {
@@ -59,6 +60,7 @@ void main() {
           ),
           usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
           jobsRepositoryProvider.overrideWithValue(jobs),
+          personsRepositoryProvider.overrideWithValue(FakePersonsRepository()),
           collectionsStoreProvider.overrideWithValue(MemoryCollectionsStore()),
         ],
         child: const TagKinDesktopApp(),

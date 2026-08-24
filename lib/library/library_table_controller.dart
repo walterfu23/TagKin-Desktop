@@ -402,8 +402,9 @@ class LibraryTableController extends ChangeNotifier {
         hasLoadedOnce = true;
         _notify();
 
+        if (_disposed || _loadGeneration != gen) return;
         await _refreshPersonNames();
-        if (_loadGeneration != gen) return;
+        if (_disposed || _loadGeneration != gen) return;
 
         unawaited(_warmThumbs(gen));
         unawaited(_warmKnowledge(gen));
@@ -644,6 +645,7 @@ class LibraryTableController extends ChangeNotifier {
   }
 
   Future<void> _refreshPersonNames() async {
+    if (_disposed) return;
     final repo = personsRepository;
     if (repo == null) {
       _personNamesById = {};
@@ -651,8 +653,10 @@ class LibraryTableController extends ChangeNotifier {
     }
     try {
       final people = await repo.listPersons();
+      if (_disposed) return;
       _personNamesById = {for (final p in people) p.id: p.name};
     } catch (_) {
+      if (_disposed) return;
       _personNamesById = {};
     }
   }

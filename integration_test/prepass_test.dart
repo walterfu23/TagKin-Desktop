@@ -20,6 +20,7 @@ import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 
 import '../test/fake_items_repository.dart';
 import '../test/fake_jobs_repository.dart';
+import '../test/fake_persons_repository.dart';
 import '../test/fake_usage_repository.dart';
 
 void main() {
@@ -53,6 +54,7 @@ void main() {
           itemsRepositoryProvider.overrideWithValue(repo),
           usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
           jobsRepositoryProvider.overrideWithValue(FakeJobsRepository()),
+          personsRepositoryProvider.overrideWithValue(FakePersonsRepository()),
           folderPickerProvider.overrideWithValue(() async => dir.path),
           // Fake picker returns a temp dir with no security-scoped bookmark.
           // Production pickFolderNative always persists one; skip restore so

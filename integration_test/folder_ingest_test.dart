@@ -21,6 +21,7 @@ import 'package:tagkin_desktop/prepass/prepass_payload_builder.dart';
 
 import '../test/fake_items_repository.dart';
 import '../test/fake_jobs_repository.dart';
+import '../test/fake_persons_repository.dart';
 import '../test/fake_usage_repository.dart';
 
 void main() {
@@ -53,6 +54,7 @@ void main() {
           itemsRepositoryProvider.overrideWithValue(repo),
           usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
           jobsRepositoryProvider.overrideWithValue(jobs),
+          personsRepositoryProvider.overrideWithValue(FakePersonsRepository()),
           folderPickerProvider.overrideWithValue(() async => dir.path),
           folderIngestQueueProvider.overrideWith((ref) {
             return FolderIngestQueue(

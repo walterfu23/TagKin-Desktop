@@ -12,6 +12,7 @@ import 'package:tagkin_desktop/main.dart';
 
 import '../test/fake_items_repository.dart';
 import '../test/fake_jobs_repository.dart';
+import '../test/fake_persons_repository.dart';
 import '../test/fake_usage_repository.dart';
 
 void main() {
@@ -43,6 +44,7 @@ void main() {
           itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
           usageRepositoryProvider.overrideWithValue(usage),
           jobsRepositoryProvider.overrideWithValue(FakeJobsRepository()),
+          personsRepositoryProvider.overrideWithValue(FakePersonsRepository()),
         ],
         child: const TagKinDesktopApp(),
       ),
@@ -85,6 +87,7 @@ void main() {
           itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
           usageRepositoryProvider.overrideWithValue(usage),
           jobsRepositoryProvider.overrideWithValue(FakeJobsRepository()),
+          personsRepositoryProvider.overrideWithValue(FakePersonsRepository()),
         ],
         child: const TagKinDesktopApp(),
       ),
