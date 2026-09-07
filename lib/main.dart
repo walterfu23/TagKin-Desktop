@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/auth/clerk_theme.dart';
+import 'package:tagkin_desktop/branding.g.dart';
 import 'package:tagkin_desktop/library/items_list_page.dart';
 import 'package:tagkin_desktop/shell/app_navigator.dart';
 import 'package:tagkin_desktop/shell/tagkin_platform_menu.dart';
@@ -13,11 +14,10 @@ import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 import 'package:window_manager/window_manager.dart';
 
-/// App name shown in the shell.
-const String kAppTitle = 'TagKin';
+/// App name shown in the shell. Generated from branding/branding.yaml.
+const String kAppTitle = kAppName;
 
-bool get _isDesktopOs =>
-    !kIsWeb && (Platform.isMacOS || Platform.isWindows);
+bool get _isDesktopOs => !kIsWeb && (Platform.isMacOS || Platform.isWindows);
 
 bool get _runningInFlutterTest =>
     Platform.environment.containsKey('FLUTTER_TEST');
@@ -52,9 +52,7 @@ class TagKinDesktopApp extends StatelessWidget {
         // Cmd/Ctrl+Z is only registered on `home`, item detail beeps and
         // the stack never moves. SelectionArea stays per-route (needs Overlay).
         builder: (context, child) {
-          return ActiveUndoShortcuts(
-            child: child ?? const SizedBox.shrink(),
-          );
+          return ActiveUndoShortcuts(child: child ?? const SizedBox.shrink());
         },
         home: const SelectableScope(
           child: AuthShell(signedInHome: ItemsListPage()),

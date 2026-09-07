@@ -1,0 +1,16 @@
+# User-facing branding. Internal ids (package name, bundle id, OAuth scheme,
+# keychain service, Dart class names) stay as they are.
+#
+# After editing, regenerate:
+#   TagKin-Desktop/mac/120_branding.sh
+#   TagKin-Desktop/win/120_branding.ps1
+#   TagKin/mac/131_branding-admin.sh   (operator GUI)
+
+# Everything the end user reads (Dock, menu bar, window title, in-app chrome).
+appName: TagFam
+
+# On-disk bundle / exe name (no spaces). Defaults to appName with spaces stripped.
+fileName: TagFam
+
+# Operator GUI title. Defaults to "<appName> Admin".
+adminAppName: TagFam Admin

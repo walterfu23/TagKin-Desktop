@@ -32,6 +32,7 @@ Do **not** reuse the API `sN` ids (those are the `tagkin` repo's `TagKin/mac/`);
 | [`101_setup.sh`](./101_setup.sh) | First clone (or after a toolchain change): `flutter pub get` + contract codegen + fetch bundled ffmpeg. |
 | [`102_codegen.sh`](./102_codegen.sh) | After the shared `@tagkin/contract` OpenAPI changes — regenerate Dart models. |
 | [`119_fetch_face_models.sh`](./119_fetch_face_models.sh) | Download InsightFace ONNX weights for cross-photo person linking (optional; large). |
+| [`120_branding.sh`](./120_branding.sh) | After changing `branding/branding.yaml` or `branding/icon_*.png` — regenerate the user-facing name and app icons. Then relaunch (`./11_dev.sh`). |
 | [`103_clerk-env.sh`](./103_clerk-env.sh) | Interactive Clerk publishable-key + API URL into `.env` (D1; never secret key). |
 | [`104_analyze.sh`](./104_analyze.sh) | Static analysis bar (`flutter analyze`). |
 | [`105_fetch_ffmpeg.sh`](./105_fetch_ffmpeg.sh) | Download/copy ffmpeg+ffprobe into `third_party/ffmpeg/macos/` for embedding in the `.app` (D4; end users never install ffmpeg). |
@@ -62,6 +63,7 @@ After an agent or local edit, load the new code before verifying in the UI:
 | Dart/UI only, and `./11_dev.sh` is already running | In that Flutter terminal, press **`R`** (hot restart). `r` (hot reload) is often enough for small widget tweaks; prefer **`R`** after controller/navigation/label changes. |
 | App not running, or native / plugin / asset / `.env` change | `./11_dev.sh` (full relaunch). |
 | Shared OpenAPI / `@tagkin/contract` | `./102_codegen.sh`, then hot restart or `./11_dev.sh`. |
+| User-facing name or app icons (`branding/`) | `./120_branding.sh`, then **quit and** `./11_dev.sh` (not hot restart). Operator GUI: `TagKin/mac/131_branding-admin.sh` then `./130_admin-tool.sh`. |
 | API / DB (in `tagkin`) | Restart the API stack from `TagKin/mac/` (`./11_dev-stack.sh`, which calls `./12` first), then pick up desktop as above. |
 
 ## Example flows

@@ -13,6 +13,7 @@ class ClerkPanelHeader extends StatelessWidget {
     this.subtitle,
     this.title,
     this.padding = horizontalPadding24,
+    this.showLogo = true,
   });
 
   /// The title, if other than the app title
@@ -24,6 +25,9 @@ class ClerkPanelHeader extends StatelessWidget {
   /// Padding around the content
   final EdgeInsets padding;
 
+  /// When false, skip the 32px instance logo (TagKin supplies its own mark).
+  final bool showLogo;
+
   @override
   Widget build(BuildContext context) {
     final display = ClerkAuth.displayConfigOf(context);
@@ -33,17 +37,20 @@ class ClerkPanelHeader extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Padding(
-          padding: verticalPadding24,
-          child: Center(
-            child: SizedBox(
-              height: 32.0,
-              child: display.logoUrl?.isNotEmpty == true
-                  ? ClerkCachedImage(display.logoUrl!)
-                  : defaultOrgLogo,
+        if (showLogo)
+          Padding(
+            padding: verticalPadding24,
+            child: Center(
+              child: SizedBox(
+                height: 32.0,
+                child: display.logoUrl?.isNotEmpty == true
+                    ? ClerkCachedImage(display.logoUrl!)
+                    : defaultOrgLogo,
+              ),
             ),
-          ),
-        ),
+          )
+        else
+          verticalMargin24,
         Padding(
           padding: padding,
           child: Text(

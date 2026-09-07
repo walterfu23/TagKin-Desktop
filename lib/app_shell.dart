@@ -18,11 +18,13 @@ import 'package:tagkin_desktop/api/me_repository.dart';
 import 'package:tagkin_desktop/api/persons_repository.dart';
 import 'package:tagkin_desktop/api/usage_repository.dart';
 import 'package:tagkin_desktop/api/credits_repository.dart';
-import 'package:tagkin_desktop/credits/checkout_launcher.dart';
+import 'package:tagkin_desktop/auth/login_hero.dart';
 import 'package:tagkin_desktop/auth/macos_oauth_return_hint.dart';
 import 'package:tagkin_desktop/auth/secure_persistor.dart';
+import 'package:tagkin_desktop/branding.g.dart';
 import 'package:tagkin_desktop/config/app_config.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/credits/checkout_launcher.dart';
 import 'package:tagkin_desktop/persons/collection_navigation.dart';
 import 'package:tagkin_desktop/persons/collection_start_gate.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
@@ -41,8 +43,9 @@ import 'package:window_manager/window_manager.dart';
 enum TopLevelTab { folders, faces, persons }
 
 /// Which top-level tab is visible in [_SignedInScaffold].
-final activeTopLevelTabProvider =
-    StateProvider<TopLevelTab>((ref) => TopLevelTab.folders);
+final activeTopLevelTabProvider = StateProvider<TopLevelTab>(
+  (ref) => TopLevelTab.folders,
+);
 
 /// Signed-in [Account.id] for crash-resume ingest checkpoints. Null until the
 /// signed-in shell's first frame (after `GET /me`).
@@ -154,18 +157,31 @@ Uri? _oauthRedirectUri(BuildContext context, Strategy strategy) {
 Stream<Uri?> _macosOauthDeepLinks() async* {
   final links = AppLinks();
   try {
-    yield await links.getInitialLink();
+    final initial = await links.getInitialLink();
+    if (initial != null) {
+      _debugOauthDeepLink(initial);
+      yield initial;
+    }
   } catch (_) {}
-  yield* links.uriLinkStream.map<Uri?>((uri) => uri);
+  yield* links.uriLinkStream.map<Uri?>((uri) {
+    _debugOauthDeepLink(uri);
+    return uri;
+  });
+}
+
+void _debugOauthDeepLink(Uri uri) {
+  if (!kDebugMode) return;
+  final hasNonce = uri.queryParameters.containsKey('rotating_token_nonce');
+  debugPrint(
+    'macOS OAuth callback ${uri.scheme}://${uri.host}${uri.path}'
+    '${hasNonce ? ' (has nonce)' : ' (missing nonce)'}',
+  );
 }
 
 /// Auth-gated shell: Clerk sign-in when configured, else a configure prompt;
 /// signed-in users bootstrap `GET /me` then see [signedInHome].
 class AuthShell extends ConsumerWidget {
-  const AuthShell({
-    super.key,
-    required this.signedInHome,
-  });
+  const AuthShell({super.key, required this.signedInHome});
 
   /// Post-auth home (D2 library list).
   final Widget signedInHome;
@@ -276,8 +292,7 @@ class _ClerkSignedOutPageState extends State<_ClerkSignedOutPage> {
     if (kIsWeb || !Platform.isMacOS) return false;
     final signIn = widget.authState.signIn;
     if (signIn == null) return false;
-    final verification =
-        signIn.firstFactorVerification ?? signIn.verification;
+    final verification = signIn.firstFactorVerification ?? signIn.verification;
     if (verification == null || verification.status.isVerified) {
       return false;
     }
@@ -335,27 +350,65 @@ class _ClerkSignedOutPageState extends State<_ClerkSignedOutPage> {
       return _ClerkEnvRetry(authState: widget.authState);
     }
     final showOauthHint = _oauthPending || _oauthTimedOut;
+    final clerkColumn = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const ClerkAuthentication(),
+        if (showOauthHint) ...[
+          const SizedBox(height: 16),
+          MacOsOauthReturnHint(
+            timedOut: _oauthTimedOut,
+            repeatMiss: _oauthMisses >= 1,
+            onRetry: _retryOauth,
+          ),
+        ],
+      ],
+    );
     return Scaffold(
+      backgroundColor: const Color(0xFFEEF1F8),
       body: SelectionContainer.disabled(
         child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const ClerkAuthentication(),
-                  if (showOauthHint) ...[
-                    const SizedBox(height: 16),
-                    MacOsOauthReturnHint(
-                      timedOut: _oauthTimedOut,
-                      repeatMiss: _oauthMisses >= 1,
-                      onRetry: _retryOauth,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= 880;
+              if (wide) {
+                return Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Expanded(flex: 5, child: LoginHero()),
+                      const SizedBox(width: 32),
+                      Expanded(
+                        flex: 4,
+                        child: Center(
+                          child: SingleChildScrollView(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 420),
+                              child: clerkColumn,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  children: [
+                    const SizedBox(
+                      height: 220,
+                      width: double.infinity,
+                      child: LoginHero(),
                     ),
+                    const SizedBox(height: 24),
+                    clerkColumn,
                   ],
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           ),
         ),
       ),
@@ -415,16 +468,13 @@ class _ClerkBootLoading extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'TagKin',
+              kAppName,
               style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600),
             ),
             SizedBox(height: 16),
             CircularProgressIndicator(key: Key('clerk-boot-loading')),
             SizedBox(height: 16),
-            Text(
-              'Loading sign-in…',
-              key: Key('clerk-boot-loading-label'),
-            ),
+            Text('Loading sign-in…', key: Key('clerk-boot-loading-label')),
           ],
         ),
       ),
@@ -454,10 +504,7 @@ class _MissingClerkConfigPage extends StatelessWidget {
 }
 
 class _TestSignedInHost extends ConsumerStatefulWidget {
-  const _TestSignedInHost({
-    required this.session,
-    required this.signedInHome,
-  });
+  const _TestSignedInHost({required this.session, required this.signedInHome});
 
   final TestSession session;
   final Widget signedInHome;
@@ -487,9 +534,7 @@ class _TestSignedInHostState extends ConsumerState<_TestSignedInHost> {
   @override
   Widget build(BuildContext context) {
     return ProviderScope(
-      overrides: [
-        apiClientProvider.overrideWithValue(_client),
-      ],
+      overrides: [apiClientProvider.overrideWithValue(_client)],
       child: AccountBootstrap(
         loadAccount: () async {
           if (widget.session.meError != null) {
@@ -548,9 +593,7 @@ class _ClerkSignedInHostState extends State<_ClerkSignedInHost> {
   @override
   Widget build(BuildContext context) {
     return ProviderScope(
-      overrides: [
-        apiClientProvider.overrideWithValue(_client),
-      ],
+      overrides: [apiClientProvider.overrideWithValue(_client)],
       child: AccountBootstrap(
         loadAccount: () => MeRepository(_client).getMe(),
         // Do not auto-sign-out on /me 401 — that flashes back to Clerk login and
@@ -581,6 +624,7 @@ class AccountBootstrap extends StatefulWidget {
 
   final Future<Account> Function() loadAccount;
   final Future<void> Function()? onSignOut;
+
   /// Debug helper for local scripts — returns current Clerk session JWT.
   final Future<String?> Function()? fetchApiToken;
   final VoidCallback onUnauthorized;
@@ -715,7 +759,7 @@ class _SignedInScaffold extends ConsumerStatefulWidget {
 
 class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
     with WidgetsBindingObserver, WindowListener {
-  /// In-app gear is Windows-only; macOS uses TagKin → Settings… in the menu bar.
+  /// In-app gear is Windows-only; macOS uses the app menu → Settings… in the menu bar.
   bool get _showSettingsGear => !kIsWeb && Platform.isWindows;
 
   bool _settingsOpen = false;
@@ -733,6 +777,7 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
   LibraryTableController? _libraryLookSource;
 
   bool _windowCloseGateActive = false;
+
   /// Set before [windowManager.destroy] so [didRequestAppExit] allows terminate
   /// (macOS destroy → NSApp.terminate; gate alone would cancel exit).
   bool _quitConfirmed = false;
@@ -789,12 +834,36 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
     if (Platform.environment.containsKey('FLUTTER_TEST')) return;
     try {
       await windowManager.setPreventClose(true);
+      if (!mounted) {
+        try {
+          await windowManager.setPreventClose(false);
+        } catch (_) {}
+        return;
+      }
       windowManager.addListener(this);
       _windowCloseGateActive = true;
       signedInQuitHandlerReady = true;
     } catch (_) {
       // Plugin missing or not ready — fall back to didRequestAppExit only.
     }
+  }
+
+  /// Drop the signed-in close intercept. Sign-out must call this: otherwise
+  /// [windowManager.setPreventClose] stays true with no [WindowListener], and
+  /// the traffic-light / title-bar close button appears to do nothing.
+  Future<void> _disarmWindowCloseGate() async {
+    if (_windowCloseGateActive) {
+      try {
+        windowManager.removeListener(this);
+      } catch (_) {}
+      _windowCloseGateActive = false;
+    }
+    signedInQuitHandlerReady = false;
+    if (!_desktopWindowCloseSupported) return;
+    if (Platform.environment.containsKey('FLUTTER_TEST')) return;
+    try {
+      await windowManager.setPreventClose(false);
+    } catch (_) {}
   }
 
   /// Disarm the close gate, then terminate. Must clear [_windowCloseGateActive]
@@ -804,29 +873,16 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
   Future<void> _allowCloseAndQuit() async {
     if (!_windowCloseGateActive && !_quitConfirmed) return;
     _quitConfirmed = true;
-    if (_windowCloseGateActive) {
-      windowManager.removeListener(this);
-      _windowCloseGateActive = false;
-    }
-    signedInQuitHandlerReady = false;
+    await _disarmWindowCloseGate();
     try {
-      await windowManager.setPreventClose(false);
       await windowManager.destroy();
-    } catch (_) {
-      try {
-        await windowManager.destroy();
-      } catch (_) {}
-    }
+    } catch (_) {}
   }
 
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_onHardwareKeyForFacesSelectAll);
-    if (_windowCloseGateActive) {
-      windowManager.removeListener(this);
-      _windowCloseGateActive = false;
-    }
-    signedInQuitHandlerReady = false;
+    unawaited(_disarmWindowCloseGate());
     _libraryLookSource?.removeListener(_onLibraryLookChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -913,12 +969,7 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
       final cols = ref.read(collectionsControllerProvider);
       if (!cols.dirty) {
         _quitConfirmed = true;
-        windowManager.removeListener(this);
-        _windowCloseGateActive = false;
-        signedInQuitHandlerReady = false;
-        try {
-          await windowManager.setPreventClose(false);
-        } catch (_) {}
+        await _disarmWindowCloseGate();
         return AppExitResponse.exit;
       }
       unawaited(_handleWindowClose());
@@ -959,6 +1010,7 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
     if (!mounted) return;
     ref.read(collectionsControllerProvider).clearSession();
     _collectionBootstrapRequested = false;
+    await _disarmWindowCloseGate();
     await handler();
   }
 
@@ -1012,9 +1064,9 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not copy token: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not copy token: $e')));
     }
   }
 
@@ -1042,8 +1094,10 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
       unawaited(_handleWindowClose());
     });
 
-    ref.listen<CollectionMenuRequest?>(collectionMenuRequestProvider,
-        (previous, next) {
+    ref.listen<CollectionMenuRequest?>(collectionMenuRequestProvider, (
+      previous,
+      next,
+    ) {
       if (next == null) return;
       if (previous?.nonce == next.nonce) return;
       if (!mounted) return;
@@ -1052,7 +1106,9 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
 
     final cols = ref.watch(collectionsControllerProvider);
     final table = ref.watch(libraryTableControllerProvider);
-    final libraryFolders = distinctLeafFolders(table.allRows.map((r) => r.item));
+    final libraryFolders = distinctLeafFolders(
+      table.allRows.map((r) => r.item),
+    );
 
     // Empty → mint Collection1; else resume currentCollectionId; else start gate.
     if (cols.loaded && !cols.sessionReady && !_collectionBootstrapRequested) {
@@ -1108,17 +1164,18 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
       final lib = ref.read(libraryTableControllerProvider);
       _ensureLibraryLookSync(lib);
       unawaited(_applyCollectionUiIfNeeded(c));
-      final folders =
-          distinctLeafFolders(lib.allRows.map((r) => r.item)).toSet();
+      final folders = distinctLeafFolders(
+        lib.allRows.map((r) => r.item),
+      ).toSet();
       if (c.current.leafFolders.isEmpty && folders.isNotEmpty) {
         await c.fillMembershipIfEmpty(folders.toList());
         if (!mounted) return;
       } else {
         c.adoptUnownedFolders(folders);
       }
-      ref.read(libraryTableControllerProvider).setCollectionLeafFolders(
-            c.current.leafFolders.toSet(),
-          );
+      ref
+          .read(libraryTableControllerProvider)
+          .setCollectionLeafFolders(c.current.leafFolders.toSet());
     });
 
     final showWindowsFileMenu = !kIsWeb && Platform.isWindows;
@@ -1127,149 +1184,149 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
       appBar: AppBar(
         title: SelectionContainer.disabled(
           child: Row(
-          children: [
-            const Text('TagKin'),
-            if (cols.chromeLabel.isNotEmpty) ...[
-              const SizedBox(width: 16),
-              Flexible(
-                child: Text(
-                  cols.chromeLabel,
-                  key: const Key('shell-collection-label'),
-                  style: Theme.of(context).textTheme.bodyMedium,
-                  overflow: TextOverflow.ellipsis,
+            children: [
+              const Text(kAppName),
+              if (cols.chromeLabel.isNotEmpty) ...[
+                const SizedBox(width: 16),
+                Flexible(
+                  child: Text(
+                    cols.chromeLabel,
+                    key: const Key('shell-collection-label'),
+                    style: Theme.of(context).textTheme.bodyMedium,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              ),
+              ],
             ],
-          ],
-        ),
+          ),
         ),
         actions: [
           SelectionContainer.disabled(
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-          if (kDebugMode && widget.fetchApiToken != null)
-            IconButton(
-              key: const Key('nav-copy-api-token'),
-              tooltip: 'Copy API token (debug)',
-              onPressed: _copyApiToken,
-              icon: const Icon(Icons.key_outlined),
-            ),
-          if (_showSettingsGear)
-            IconButton(
-              key: const Key('nav-settings'),
-              tooltip: 'Settings',
-              onPressed: _openSettings,
-              icon: const Icon(Icons.settings_outlined),
-            ),
-          if (showWindowsFileMenu)
-            PopupMenuButton<CollectionMenuCommand>(
-              key: const Key('windows-file-menu'),
-              tooltip: 'File',
-              onSelected: (cmd) {
-                requestCollectionMenu(ref, cmd);
-              },
-              itemBuilder: (context) {
-                final recents = cols.recentCollections;
-                return [
-                  const PopupMenuItem(
-                    value: CollectionMenuCommand.newCollection,
-                    child: Text('New Collection…'),
+                if (kDebugMode && widget.fetchApiToken != null)
+                  IconButton(
+                    key: const Key('nav-copy-api-token'),
+                    tooltip: 'Copy API token (debug)',
+                    onPressed: _copyApiToken,
+                    icon: const Icon(Icons.key_outlined),
                   ),
-                  const PopupMenuItem(
-                    value: CollectionMenuCommand.open,
-                    child: Text('Open Collection…'),
+                if (_showSettingsGear)
+                  IconButton(
+                    key: const Key('nav-settings'),
+                    tooltip: 'Settings',
+                    onPressed: _openSettings,
+                    icon: const Icon(Icons.settings_outlined),
                   ),
-                  for (final c in recents)
-                    PopupMenuItem<CollectionMenuCommand>(
-                      onTap: () {
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          requestCollectionMenu(
-                            ref,
-                            CollectionMenuCommand.openRecent,
-                            recentCollectionId: c.id,
-                          );
-                        });
-                      },
-                      child: Text('Recent: ${c.name}'),
+                if (showWindowsFileMenu)
+                  PopupMenuButton<CollectionMenuCommand>(
+                    key: const Key('windows-file-menu'),
+                    tooltip: 'File',
+                    onSelected: (cmd) {
+                      requestCollectionMenu(ref, cmd);
+                    },
+                    itemBuilder: (context) {
+                      final recents = cols.recentCollections;
+                      return [
+                        const PopupMenuItem(
+                          value: CollectionMenuCommand.newCollection,
+                          child: Text('New Collection…'),
+                        ),
+                        const PopupMenuItem(
+                          value: CollectionMenuCommand.open,
+                          child: Text('Open Collection…'),
+                        ),
+                        for (final c in recents)
+                          PopupMenuItem<CollectionMenuCommand>(
+                            onTap: () {
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                requestCollectionMenu(
+                                  ref,
+                                  CollectionMenuCommand.openRecent,
+                                  recentCollectionId: c.id,
+                                );
+                              });
+                            },
+                            child: Text('Recent: ${c.name}'),
+                          ),
+                        const PopupMenuDivider(),
+                        PopupMenuItem(
+                          value: CollectionMenuCommand.save,
+                          enabled: cols.dirty,
+                          child: const Text('Save Collection'),
+                        ),
+                        const PopupMenuItem(
+                          value: CollectionMenuCommand.saveAs,
+                          child: Text('Save Collection as…'),
+                        ),
+                        const PopupMenuItem(
+                          value: CollectionMenuCommand.rename,
+                          child: Text('Rename Collection…'),
+                        ),
+                        const PopupMenuItem(
+                          value: CollectionMenuCommand.delete,
+                          child: Text('Delete Collection…'),
+                        ),
+                        const PopupMenuDivider(),
+                        const PopupMenuItem(
+                          value: CollectionMenuCommand.addFolder,
+                          child: Text('Add Folder to Collection…'),
+                        ),
+                        const PopupMenuItem(
+                          value: CollectionMenuCommand.removeFolder,
+                          child: Text('Remove Folder from Collection…'),
+                        ),
+                      ];
+                    },
+                    icon: const Icon(Icons.menu),
+                  ),
+                IconButton(
+                  key: const Key('nav-folders'),
+                  tooltip: 'Folders',
+                  onPressed: () => _selectTab(TopLevelTab.folders),
+                  icon: Icon(
+                    activeTab == TopLevelTab.folders
+                        ? Icons.folder
+                        : Icons.folder_outlined,
+                  ),
+                ),
+                IconButton(
+                  key: const Key('nav-face-crops'),
+                  tooltip: 'Faces',
+                  onPressed: () => _selectTab(TopLevelTab.faces),
+                  icon: Icon(
+                    activeTab == TopLevelTab.faces
+                        ? Icons.face_retouching_natural
+                        : Icons.face_retouching_natural_outlined,
+                  ),
+                ),
+                IconButton(
+                  key: const Key('nav-persons'),
+                  tooltip: 'Persons',
+                  onPressed: () => _selectTab(TopLevelTab.persons),
+                  icon: Icon(
+                    activeTab == TopLevelTab.persons
+                        ? Icons.people
+                        : Icons.people_outline,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Center(
+                    child: Text(
+                      widget.account.email ?? widget.account.id,
+                      key: const Key('account-label'),
                     ),
-                  const PopupMenuDivider(),
-                  PopupMenuItem(
-                    value: CollectionMenuCommand.save,
-                    enabled: cols.dirty,
-                    child: const Text('Save Collection'),
                   ),
-                  const PopupMenuItem(
-                    value: CollectionMenuCommand.saveAs,
-                    child: Text('Save Collection as…'),
+                ),
+                if (widget.onSignOut != null)
+                  IconButton(
+                    key: const Key('sign-out'),
+                    tooltip: 'Sign out',
+                    onPressed: _signOut,
+                    icon: const Icon(Icons.logout),
                   ),
-                  const PopupMenuItem(
-                    value: CollectionMenuCommand.rename,
-                    child: Text('Rename Collection…'),
-                  ),
-                  const PopupMenuItem(
-                    value: CollectionMenuCommand.delete,
-                    child: Text('Delete Collection…'),
-                  ),
-                  const PopupMenuDivider(),
-                  const PopupMenuItem(
-                    value: CollectionMenuCommand.addFolder,
-                    child: Text('Add Folder to Collection…'),
-                  ),
-                  const PopupMenuItem(
-                    value: CollectionMenuCommand.removeFolder,
-                    child: Text('Remove Folder from Collection…'),
-                  ),
-                ];
-              },
-              icon: const Icon(Icons.menu),
-            ),
-          IconButton(
-            key: const Key('nav-folders'),
-            tooltip: 'Folders',
-            onPressed: () => _selectTab(TopLevelTab.folders),
-            icon: Icon(
-              activeTab == TopLevelTab.folders
-                  ? Icons.folder
-                  : Icons.folder_outlined,
-            ),
-          ),
-          IconButton(
-            key: const Key('nav-face-crops'),
-            tooltip: 'Faces',
-            onPressed: () => _selectTab(TopLevelTab.faces),
-            icon: Icon(
-              activeTab == TopLevelTab.faces
-                  ? Icons.face_retouching_natural
-                  : Icons.face_retouching_natural_outlined,
-            ),
-          ),
-          IconButton(
-            key: const Key('nav-persons'),
-            tooltip: 'Persons',
-            onPressed: () => _selectTab(TopLevelTab.persons),
-            icon: Icon(
-              activeTab == TopLevelTab.persons
-                  ? Icons.people
-                  : Icons.people_outline,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Center(
-              child: Text(
-                widget.account.email ?? widget.account.id,
-                key: const Key('account-label'),
-              ),
-            ),
-          ),
-          if (widget.onSignOut != null)
-            IconButton(
-              key: const Key('sign-out'),
-              tooltip: 'Sign out',
-              onPressed: _signOut,
-              icon: const Icon(Icons.logout),
-            ),
               ],
             ),
           ),

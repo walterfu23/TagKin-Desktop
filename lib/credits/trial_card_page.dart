@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/api/credits_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart' show creditsRepositoryProvider;
+import 'package:tagkin_desktop/branding.g.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/credits/buy_credits_page.dart';
 import 'package:tagkin_desktop/credits/checkout_launcher.dart';
@@ -108,10 +109,7 @@ class _TrialCardPageState extends ConsumerState<TrialCardPage>
     return SelectableScope(
       child: Scaffold(
         appBar: AppBar(title: const Text('Card verification')),
-        body: Padding(
-          padding: const EdgeInsets.all(24),
-          child: _body(),
-        ),
+        body: Padding(padding: const EdgeInsets.all(24), child: _body()),
       ),
     );
   }
@@ -125,9 +123,7 @@ class _TrialCardPageState extends ConsumerState<TrialCardPage>
         key: const Key('trial-card-granted'),
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const CreditsRemainingSentence(
-            textKey: Key('trial-card-remaining'),
-          ),
+          const CreditsRemainingSentence(textKey: Key('trial-card-remaining')),
           const Text('Trial credits are now remaining credits.'),
           const SizedBox(height: 16),
           FilledButton(
@@ -143,11 +139,9 @@ class _TrialCardPageState extends ConsumerState<TrialCardPage>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const CreditsRemainingSentence(
-          textKey: Key('trial-card-remaining'),
-        ),
-        const Text(
-          'Add a card to receive the Trial pack. TagKin never sees the card number.',
+        const CreditsRemainingSentence(textKey: Key('trial-card-remaining')),
+        Text(
+          'Add a card to receive the Trial pack. $kAppName never sees the card number.',
         ),
         const SizedBox(height: 16),
         FilledButton(

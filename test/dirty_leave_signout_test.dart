@@ -12,6 +12,7 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/main.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/collections_store.dart';
+import 'package:tagkin_desktop/shell/quit_navigation.dart';
 
 import 'fake_items_repository.dart';
 import 'fake_jobs_repository.dart';
@@ -25,6 +26,10 @@ Account _account(String id) => Account(
     );
 
 void main() {
+  tearDown(() {
+    signedInQuitHandlerReady = false;
+  });
+
   testWidgets(
       'Cancel on dirty-leave prompt leaves Sign out clickable for a second try',
       (tester) async {
@@ -91,5 +96,44 @@ void main() {
     await tester.tap(find.byKey(const Key('nav-persons')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('persons-empty')), findsOneWidget);
+  });
+
+  testWidgets(
+      'Sign out clears the signed-in window-close gate so close can quit',
+      (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          testSessionProvider.overrideWithValue(
+            TestSession(
+              token: 'tok',
+              account: _account('acc_1'),
+              onSignOut: () async {},
+            ),
+          ),
+          itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          jobsRepositoryProvider.overrideWithValue(FakeJobsRepository()),
+          personsRepositoryProvider.overrideWithValue(FakePersonsRepository()),
+          collectionsStoreProvider.overrideWithValue(MemoryCollectionsStore()),
+        ],
+        child: const TagKinDesktopApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('sign-out')), findsOneWidget);
+
+    // Simulate the real (non-test) gate: widget tests skip window_manager.
+    signedInQuitHandlerReady = true;
+
+    await tester.tap(find.byKey(const Key('sign-out')));
+    await tester.pumpAndSettle();
+
+    expect(
+      signedInQuitHandlerReady,
+      isFalse,
+      reason: 'leaving preventClose armed after Sign out swallows the '
+          'red close button with no handler',
+    );
   });
 }

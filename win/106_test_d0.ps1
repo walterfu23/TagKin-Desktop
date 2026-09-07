@@ -5,6 +5,10 @@ $ErrorActionPreference = 'Stop'
 $winDir = Split-Path -Parent $PSCommandPath
 . (Join-Path $winDir '_env.ps1')
 
+Write-Host '==> branding (must produce no uncommitted drift)'
+Write-Host '==> dart run tool/gen_branding.dart --check'
+dart run tool/gen_branding.dart --check
+
 Write-Host '==> codegen (must produce no uncommitted drift)'
 & (Join-Path $winDir '102_codegen.ps1')
 if ((Test-Path (Join-Path $global:TagKinDesktopRoot '.git'))) {

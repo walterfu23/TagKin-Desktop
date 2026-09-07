@@ -51,3 +51,6 @@ app.*.map.json
 # Face ONNX weights (fetch via mac/119_fetch_face_models.sh)
 assets/models/*.onnx
 
+# Working icon art (PSD / oversized masters). Canonical sources are branding/.
+Icons/TagFam_2/
+

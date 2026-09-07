@@ -40,7 +40,7 @@ if [[ -n "${TAGKIN_API_URL:-}" ]]; then
 fi
 
 # So Safari can offer Allow / Always Allow for tagkindesktop:// after Clerk Continue.
-DEBUG_APP="${TAGKIN_DESKTOP_ROOT}/build/macos/Build/Products/Debug/tagkin_desktop.app"
+DEBUG_APP="${TAGKIN_DESKTOP_ROOT}/build/macos/Build/Products/Debug/${TAGKIN_DESKTOP_PRODUCT_NAME}.app"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 if [[ -d "${DEBUG_APP}" && -x "${LSREGISTER}" ]]; then
   echo "==> lsregister ${DEBUG_APP}"

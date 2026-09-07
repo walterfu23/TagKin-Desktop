@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:tagkin_desktop/branding.g.dart';
 import 'package:tagkin_desktop/persons/collection_navigation.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/prefs/settings_navigation.dart';
@@ -10,22 +11,21 @@ import 'package:tagkin_desktop/shell/quit_navigation.dart';
 import 'package:tagkin_desktop/undo/active_undo_controller.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 
-/// macOS system menu bar: TagKin / File / Edit / Window.
+/// macOS system menu bar: app / File / Edit / Window.
 ///
 /// Under development — collection File menu is WIP, not shipped.
 /// On non-macOS this is a pass-through (Windows uses in-app File menu).
 class TagKinPlatformMenu extends ConsumerWidget {
-  const TagKinPlatformMenu({
-    super.key,
-    required this.child,
-  });
+  const TagKinPlatformMenu({super.key, required this.child});
 
   final Widget child;
 
   static bool _has(PlatformProvidedMenuItemType type) =>
       PlatformProvidedMenuItem.hasMenu(type);
 
-  static PlatformProvidedMenuItem? _provided(PlatformProvidedMenuItemType type) {
+  static PlatformProvidedMenuItem? _provided(
+    PlatformProvidedMenuItemType type,
+  ) {
     if (!_has(type)) return null;
     return PlatformProvidedMenuItem(type: type);
   }
@@ -37,8 +37,9 @@ class TagKinPlatformMenu extends ConsumerWidget {
     final about = _provided(PlatformProvidedMenuItemType.about);
     final services = _provided(PlatformProvidedMenuItemType.servicesSubmenu);
     final hide = _provided(PlatformProvidedMenuItemType.hide);
-    final hideOthers =
-        _provided(PlatformProvidedMenuItemType.hideOtherApplications);
+    final hideOthers = _provided(
+      PlatformProvidedMenuItemType.hideOtherApplications,
+    );
     final showAll = _provided(PlatformProvidedMenuItemType.showAllApplications);
     final minimize = _provided(PlatformProvidedMenuItemType.minimizeWindow);
     final zoom = _provided(PlatformProvidedMenuItemType.zoomWindow);
@@ -59,19 +60,13 @@ class TagKinPlatformMenu extends ConsumerWidget {
         ],
       ),
       if (services != null) PlatformMenuItemGroup(members: [services]),
-      PlatformMenuItemGroup(
-        members: [
-          ?hide,
-          ?hideOthers,
-          ?showAll,
-        ],
-      ),
+      PlatformMenuItemGroup(members: [?hide, ?hideOthers, ?showAll]),
       // Custom Quit owns dirty-collection confirm via window_manager; do not use
       // PlatformProvidedMenuItemType.quit (routes through didRequestAppExit).
       PlatformMenuItemGroup(
         members: [
           PlatformMenuItem(
-            label: 'Quit TagKin',
+            label: 'Quit $kAppName',
             shortcut: const SingleActivator(
               LogicalKeyboardKey.keyQ,
               meta: true,
@@ -89,11 +84,7 @@ class TagKinPlatformMenu extends ConsumerWidget {
       return true;
     }).toList();
 
-    final windowMenus = <PlatformMenuItem>[
-      ?minimize,
-      ?zoom,
-      ?fullScreen,
-    ];
+    final windowMenus = <PlatformMenuItem>[?minimize, ?zoom, ?fullScreen];
 
     final cols = ref.watch(collectionsControllerProvider);
     final sessionReady = cols.sessionReady;
@@ -106,18 +97,15 @@ class TagKinPlatformMenu extends ConsumerWidget {
             label: 'New Collection…',
             onSelected: sessionReady
                 ? () => requestCollectionMenu(
-                      ref,
-                      CollectionMenuCommand.newCollection,
-                    )
+                    ref,
+                    CollectionMenuCommand.newCollection,
+                  )
                 : null,
           ),
           PlatformMenuItem(
             label: 'Open Collection…',
             onSelected: sessionReady
-                ? () => requestCollectionMenu(
-                      ref,
-                      CollectionMenuCommand.open,
-                    )
+                ? () => requestCollectionMenu(ref, CollectionMenuCommand.open)
                 : null,
           ),
           if (recents.isNotEmpty)
@@ -129,10 +117,10 @@ class TagKinPlatformMenu extends ConsumerWidget {
                     label: c.name,
                     onSelected: sessionReady
                         ? () => requestCollectionMenu(
-                              ref,
-                              CollectionMenuCommand.openRecent,
-                              recentCollectionId: c.id,
-                            )
+                            ref,
+                            CollectionMenuCommand.openRecent,
+                            recentCollectionId: c.id,
+                          )
                         : null,
                   ),
               ],
@@ -148,37 +136,25 @@ class TagKinPlatformMenu extends ConsumerWidget {
               meta: true,
             ),
             onSelected: sessionReady && cols.dirty
-                ? () => requestCollectionMenu(
-                      ref,
-                      CollectionMenuCommand.save,
-                    )
+                ? () => requestCollectionMenu(ref, CollectionMenuCommand.save)
                 : null,
           ),
           PlatformMenuItem(
             label: 'Save Collection as…',
             onSelected: sessionReady
-                ? () => requestCollectionMenu(
-                      ref,
-                      CollectionMenuCommand.saveAs,
-                    )
+                ? () => requestCollectionMenu(ref, CollectionMenuCommand.saveAs)
                 : null,
           ),
           PlatformMenuItem(
             label: 'Rename Collection…',
             onSelected: sessionReady
-                ? () => requestCollectionMenu(
-                      ref,
-                      CollectionMenuCommand.rename,
-                    )
+                ? () => requestCollectionMenu(ref, CollectionMenuCommand.rename)
                 : null,
           ),
           PlatformMenuItem(
             label: 'Delete Collection…',
             onSelected: sessionReady
-                ? () => requestCollectionMenu(
-                      ref,
-                      CollectionMenuCommand.delete,
-                    )
+                ? () => requestCollectionMenu(ref, CollectionMenuCommand.delete)
                 : null,
           ),
         ],
@@ -189,18 +165,18 @@ class TagKinPlatformMenu extends ConsumerWidget {
             label: 'Add Folder to Collection…',
             onSelected: sessionReady
                 ? () => requestCollectionMenu(
-                      ref,
-                      CollectionMenuCommand.addFolder,
-                    )
+                    ref,
+                    CollectionMenuCommand.addFolder,
+                  )
                 : null,
           ),
           PlatformMenuItem(
             label: 'Remove Folder from Collection…',
             onSelected: sessionReady
                 ? () => requestCollectionMenu(
-                      ref,
-                      CollectionMenuCommand.removeFolder,
-                    )
+                    ref,
+                    CollectionMenuCommand.removeFolder,
+                  )
                 : null,
           ),
         ],
@@ -213,10 +189,7 @@ class TagKinPlatformMenu extends ConsumerWidget {
     final editMenus = <PlatformMenuItem>[
       PlatformMenuItem(
         label: 'Undo',
-        shortcut: const SingleActivator(
-          LogicalKeyboardKey.keyZ,
-          meta: true,
-        ),
+        shortcut: const SingleActivator(LogicalKeyboardKey.keyZ, meta: true),
         onSelected: () => _invokeScreenUndo(context, ref),
       ),
       PlatformMenuItem(
@@ -232,23 +205,11 @@ class TagKinPlatformMenu extends ConsumerWidget {
 
     return PlatformMenuBar(
       menus: [
-        PlatformMenu(
-          label: 'TagKin',
-          menus: appMenusNonEmpty,
-        ),
-        PlatformMenu(
-          label: 'File',
-          menus: fileMenus,
-        ),
-        PlatformMenu(
-          label: 'Edit',
-          menus: editMenus,
-        ),
+        PlatformMenu(label: kAppName, menus: appMenusNonEmpty),
+        PlatformMenu(label: 'File', menus: fileMenus),
+        PlatformMenu(label: 'Edit', menus: editMenus),
         if (windowMenus.isNotEmpty)
-          PlatformMenu(
-            label: 'Window',
-            menus: windowMenus,
-          ),
+          PlatformMenu(label: 'Window', menus: windowMenus),
       ],
       child: child,
     );

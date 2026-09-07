@@ -7,6 +7,10 @@ MAC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=_env.sh
 source "${MAC_DIR}/_env.sh"
 
+echo "==> branding (must produce no uncommitted drift)"
+echo "==> dart run tool/gen_branding.dart --check"
+dart run tool/gen_branding.dart --check
+
 echo "==> codegen (must produce no uncommitted drift)"
 "${MAC_DIR}/102_codegen.sh"
 if [[ -d "${TAGKIN_DESKTOP_ROOT}/.git" ]]; then

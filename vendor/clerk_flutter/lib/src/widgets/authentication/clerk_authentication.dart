@@ -66,6 +66,7 @@ class _ClerkAuthenticationState extends State<ClerkAuthentication>
         mainAxisSize: MainAxisSize.min,
         children: [
           ClerkPanelHeader(
+            showLogo: false,
             title: _state.isSigningIn
                 ? localizations.signInTo(display.applicationName)
                 : localizations.signUpTo(display.applicationName),

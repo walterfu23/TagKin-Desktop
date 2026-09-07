@@ -40,6 +40,7 @@ Subsystem regression entry points use **`NNN_test_dN.ps1`** (`d0`, `d1`, … `d1
 | [`105_fetch_ffmpeg.ps1`](./105_fetch_ffmpeg.ps1) | Download ffmpeg+ffprobe into `third_party/ffmpeg/windows/` for embedding next to the exe (D4; end users never install ffmpeg). |
 | [`118_clear_secure_store.ps1`](./118_clear_secure_store.ps1) | Wipe Credential Manager entries for `tagkin.desktop.secure` (D1; force clean sign-in). |
 | [`119_fetch_face_models.ps1`](./119_fetch_face_models.ps1) | Download InsightFace ONNX weights for cross-photo person linking (optional; large). |
+| [`120_branding.ps1`](./120_branding.ps1) | After changing `branding/branding.yaml` or `branding/icon_*.png` — regenerate the user-facing name and app icons. Then relaunch (`./11_dev.ps1`). |
 | [`122_wipe_Devtime.ps1`](./122_wipe_Devtime.ps1) | **Devtime only.** Wipe collections, prefs, bookmarks, and Credential Manager session (`CONFIRM=1`). Pair with `TagKin/mac/122_wipe_Devtime.sh` for Postgres. Does not delete media or face models. |
 | [`11_dev.ps1`](./11_dev.ps1) | Clear secure store, then run the app on Windows (`flutter run -d windows`). |
 | [`12_person_link_loop.ps1`](./12_person_link_loop.ps1) | Ops: delete suggested persons → re-analyze item ids → who-face link; repeat until Persons consolidate (max 20). Needs `TAGKIN_API_TOKEN` + `TAGKIN_LOOP_ITEM_IDS`. |

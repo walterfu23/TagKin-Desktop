@@ -2,6 +2,7 @@
 //
 #pragma code_page(65001)
 #include "resource.h"
+#include "branding.g.h"
 
 #define APSTUDIO_READONLY_SYMBOLS
 /////////////////////////////////////////////////////////////////////////////
@@ -90,12 +91,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.tagkin" "\0"
-            VALUE "FileDescription", "tagkin_desktop" "\0"
+            VALUE "FileDescription", TAGKIN_APP_NAME_A "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "tagkin_desktop" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.tagkin. All rights reserved." "\0"
-            VALUE "OriginalFilename", "tagkin_desktop.exe" "\0"
-            VALUE "ProductName", "tagkin_desktop" "\0"
+            VALUE "OriginalFilename", TAGKIN_APP_EXE_A "\0"
+            VALUE "ProductName", TAGKIN_APP_NAME_A "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

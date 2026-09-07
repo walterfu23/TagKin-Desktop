@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:tagkin_desktop/branding.g.dart';
 
 /// Deep-link Clerk must allowlist for macOS Google (and other OAuth) return.
 /// Operator-only — never shown in the signed-out UI.
@@ -29,14 +30,14 @@ class MacOsOauthReturnHint extends StatelessWidget {
         children: [
           Text(
             repeatMiss
-                ? 'Sign-in didn’t finish. Quit TagKin and open it again, '
-                    'then sign in.'
+                ? 'Sign-in didn’t finish. Quit $kAppName and open it again, '
+                      'then sign in.'
                 : 'Sign-in didn’t finish.',
             key: const Key('oauth-browser-timeout'),
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: scheme.error,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: scheme.error),
           ),
           const SizedBox(height: 8),
           TextButton(

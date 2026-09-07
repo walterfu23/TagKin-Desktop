@@ -7,5 +7,6 @@ This directory is a pin of upstream `clerk_flutter` `0.0.18-beta` with UX edits 
 3. **`lib/src/widgets/ui/clerk_control_buttons.dart`** — Back uses `ClerkMaterialButtonStyle.light` (secondary). Continue stays dark/primary.
 4. **`lib/src/clerk_auth_state.dart`** — `_SsoWebViewOverlay` guards `setBackgroundColor` with `try`/`on UnimplementedError` so Google (and other) SSO WebViews do not crash on macOS (`opaque is not implemented on macOS`).
 5. **`lib/src/clerk_auth_state.dart`** — SSO `showDialog` builders wrap `_SsoWebViewOverlay` in `ClerkAuth(authState: this)` so root-navigator dialogs still resolve `ClerkAuth` when the app nests `ClerkAuth` under `MaterialApp.home` (avoids `No ClerkAuth found in context`).
+6. **`lib/src/widgets/ui/clerk_panel_header.dart`** + **`clerk_authentication.dart`** — sign-in/up header omits the 32px Clerk Dashboard logo (`showLogo: false`); TagKin’s signed-out poster is the app mark.
 
 When upgrading Clerk, re-copy the upstream package and re-apply these edits.
