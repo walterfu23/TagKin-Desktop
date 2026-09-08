@@ -781,7 +781,8 @@ paths:
         "409":
           description: >
             Whole-item assign is not allowed because this item has face crops
-            (`item_has_face_crops`). Assign a crop via tagId instead.
+            (`item_has_face_crops`), or this person is already on another face in
+            this photo (`person_already_on_item`).
           content:
             application/json:
               schema:
@@ -1365,7 +1366,8 @@ paths:
       operationId: mergePerson
       summary: >
         Move every appearance from this person onto targetPersonId, then delete
-        this person (R6). Does not unassign faces.
+        this person (R6). Does not unassign faces. 409 when both people appear in
+        the same photo (`person_already_on_item`).
       requestBody:
         required: true
         content:
@@ -1385,6 +1387,13 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            Both people appear in the same photo (`person_already_on_item`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /persons/{personId}/split:
     parameters:
@@ -1452,7 +1461,8 @@ paths:
       operationId: assembleAppearances
       summary: >
         Manually assemble ≥2 loose Unassigned appearances into one GroupFM.
-        Members must not already belong to a multi-face FaceGroup.
+        Members must not already belong to a multi-face FaceGroup. 409 when
+        two faces are in the same photo (`same_photo_faces`).
       requestBody:
         required: true
         content:
@@ -1470,6 +1480,13 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: >
+            Two of these faces are in the same photo (`same_photo_faces`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /persons/exclusions/assemble:
     post:
@@ -1477,7 +1494,8 @@ paths:
       operationId: assembleExclusions
       summary: >
         Manually assemble ≥2 loose Excluded faces into one GroupFM.
-        Members must not already belong to a multi-face FaceGroup.
+        Members must not already belong to a multi-face FaceGroup. 409 when
+        two faces are in the same photo (`same_photo_faces`).
       requestBody:
         required: true
         content:
@@ -1495,6 +1513,13 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: >
+            Two of these faces are in the same photo (`same_photo_faces`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /persons/face-groups/{faceGroupId}/assign:
     parameters:
@@ -1509,7 +1534,10 @@ paths:
       operationId: assignFaceGroup
       summary: >
         Promote GroupFA/GroupFM into a named Person (creates GroupP when ≥2
-        faces). Prior FaceGroup is deleted.
+        faces). Prior FaceGroup is deleted. When the group holds two faces
+        from one photo, only the closest face is assigned; the rest stay
+        Unassigned. 409 `person_already_on_item` when nothing can be assigned
+        because this person is already on every member's photo.
       requestBody:
         required: true
         content:
@@ -1518,17 +1546,25 @@ paths:
               $ref: "#/components/schemas/AssignFaceGroup"
       responses:
         "200":
-          description: Person detail after assignment
+          description: Person after assignment, plus any same-photo faces left Unassigned
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PersonDetail"
+                $ref: "#/components/schemas/AssignFaceGroupResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            This person is already on another face in every member's photo
+            (`person_already_on_item`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /persons/face-groups/{faceGroupId}/ungroup:
     parameters:
@@ -1686,7 +1722,9 @@ paths:
               $ref: "#/components/schemas/DeclineAutoAssignAppearances"
       responses:
         "200":
-          description: Appearances declined and restored to Unassigned
+          description: >
+            Appearances declined. Auto-assigned faces return to Unassigned;
+            faces swept by a reassign are restored to their previous person.
           content:
             application/json:
               schema:
@@ -1710,7 +1748,9 @@ paths:
       summary: >
         Human correction (R6): move this appearance to another person. Pass an
         existing personId, or omit/null personId to create a new person then
-        assign.
+        assign. Alike faces still on the previous person are moved onto the
+        target as unconfirmed (alsoMoved). Pass propagateAlike: false to skip
+        that sweep (undo).
       requestBody:
         required: true
         content:
@@ -1719,17 +1759,25 @@ paths:
               $ref: "#/components/schemas/ReassignAppearance"
       responses:
         "200":
-          description: Appearance reassigned
+          description: Appearance reassigned; alsoMoved lists swept alike faces
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PersonAppearance"
+                $ref: "#/components/schemas/ReassignAppearanceResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            This person is already on another face in this photo
+            (`person_already_on_item`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
 components:
   securitySchemes:
@@ -2370,12 +2418,29 @@ components:
           type: string
           minLength: 1
           description: Create a new named person with this name, then assign.
+        propagateAlike:
+          type: boolean
+          description: >
+            When false, do not sweep alike faces off the previous person.
+            Default true. Desktop undo of a reassign sends false.
+
+    ReassignAppearanceResponse:
+      type: object
+      required: [appearance, alsoMoved]
+      properties:
+        appearance:
+          $ref: "#/components/schemas/PersonAppearance"
+        alsoMoved:
+          type: array
+          description: Alike faces swept off the previous person as unconfirmed.
+          items:
+            $ref: "#/components/schemas/PersonAppearance"
 
     AssignFaceGroup:
       type: object
       description: >
         Promote a GroupFA/GroupFM into a named Person (GroupP when ≥2 faces).
-        One of personId or name is required.
+        One of personId or name is required. Same-photo extras stay Unassigned.
       properties:
         personId:
           type: string
@@ -2383,6 +2448,20 @@ components:
         name:
           type: string
           minLength: 1
+
+    AssignFaceGroupResponse:
+      type: object
+      required: [person, skippedAppearances]
+      properties:
+        person:
+          $ref: "#/components/schemas/PersonDetail"
+        skippedAppearances:
+          type: array
+          description: >
+            Group members left Unassigned because another face from the same
+            photo was assigned, or this person already occupies that photo.
+          items:
+            $ref: "#/components/schemas/PersonAppearance"
 
     UnassignAppearances:
       type: object

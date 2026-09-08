@@ -337,6 +337,7 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
                         await controller.reassign(
                           appearanceId,
                           personId: fromPersonId,
+                          propagateAlike: false,
                         );
                         if (mounted && controller.error == null) {
                           ref.read(collectionsControllerProvider).markDirty();
@@ -410,20 +411,44 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
                 } else {
                   targetPersonId = target;
                 }
-                await controller.reassign(
+                final result = await controller.reassign(
                   appearanceId,
                   personId: targetPersonId,
                   name: newPersonName,
                 );
                 if (mounted && controller.error == null) {
                   ref.read(collectionsControllerProvider).markDirty();
+                  final alsoMovedIds = [
+                    for (final a in result?.alsoMoved ?? const <PersonAppearance>[])
+                      a.id,
+                  ];
+                  if (alsoMovedIds.isNotEmpty) {
+                    final n = alsoMovedIds.length;
+                    final faces = n == 1
+                        ? '1 other alike face'
+                        : '$n other alike faces';
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        key: const Key('person-also-moved'),
+                        content: Text(
+                          'Moved $faces as unconfirmed.',
+                        ),
+                      ),
+                    );
+                  }
                   _undoStack.push(
                     CallbackUndoableAction(
                       label: 'Reassign appearance',
                       onUndo: () async {
+                        if (alsoMovedIds.isNotEmpty) {
+                          await ref
+                              .read(personsRepositoryProvider)
+                              .declineAutoAssignAppearances(alsoMovedIds);
+                        }
                         await controller.reassign(
                           appearanceId,
                           personId: fromPersonId,
+                          propagateAlike: false,
                         );
                         if (mounted && controller.error == null) {
                           ref.read(collectionsControllerProvider).markDirty();
@@ -439,6 +464,23 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
                           ref.read(collectionsControllerProvider).markDirty();
                         }
                       },
+                    ),
+                  );
+                } else if (mounted) {
+                  final err = controller.error;
+                  final api = err is ApiException ? err : null;
+                  final already =
+                      api != null && api.code == 'person_already_on_item';
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      key: Key(
+                        already
+                            ? 'person-already-on-photo'
+                            : 'person-reassign-error',
+                      ),
+                      content: Text(
+                        already ? api.message : 'Reassign failed: $err',
+                      ),
                     ),
                   );
                 }

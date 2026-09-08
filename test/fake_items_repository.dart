@@ -305,6 +305,18 @@ class FakeItemsRepository implements ItemsRepository {
         );
       }
     }
+    if (existing != null) {
+      final clash = existing.appearances.any(
+        (a) => a.personId == pid && tagId != null && a.tagId != tagId,
+      );
+      if (clash) {
+        throw ApiException(
+          statusCode: 409,
+          code: 'person_already_on_item',
+          message: 'That person is already on another face in this photo',
+        );
+      }
+    }
     final appearance = PersonAppearance(
       id: 'ap_assign_${tagId ?? itemId}_$pid',
       personId: pid,

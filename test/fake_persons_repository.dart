@@ -26,6 +26,43 @@ class FakePersonsRepository implements PersonsRepository {
     _persons[index] = detail;
   }
 
+  void _assertPersonNotOnItem({
+    required String personId,
+    required String? itemId,
+    String? exceptAppearanceId,
+  }) {
+    if (itemId == null) return;
+    for (final p in _persons) {
+      if (p.id != personId) continue;
+      for (final a in p.appearances) {
+        if (a.id == exceptAppearanceId) continue;
+        if (a.itemId == itemId) {
+          throw ApiException(
+            statusCode: 409,
+            code: 'person_already_on_item',
+            message: '${p.name} is already on another face in this photo',
+          );
+        }
+      }
+    }
+  }
+
+  static void _assertNoSameItemPair(Iterable<PersonAppearance> members) {
+    final seen = <String>{};
+    for (final a in members) {
+      final itemId = a.itemId;
+      if (itemId == null) continue;
+      if (!seen.add(itemId)) {
+        throw ApiException(
+          statusCode: 409,
+          code: 'same_photo_faces',
+          message:
+              'Two of these faces are in the same photo, so they cannot be the same person',
+        );
+      }
+    }
+  }
+
   /// Remove and return an appearance by [tagId] from assigned or unassigned.
   PersonAppearance? takeAppearanceByTagId(String tagId) {
     for (var i = 0; i < _persons.length; i++) {
@@ -49,9 +86,30 @@ class FakePersonsRepository implements PersonsRepository {
   }
 
   final List<String> unlinkCalls = <String>[];
-  final List<({String appearanceId, String? personId, String? name})>
-      reassignCalls =
-      <({String appearanceId, String? personId, String? name})>[];
+  final List<
+    ({
+      String appearanceId,
+      String? personId,
+      String? name,
+      bool? propagateAlike,
+    })
+  >
+  reassignCalls =
+      <
+        ({
+          String appearanceId,
+          String? personId,
+          String? name,
+          bool? propagateAlike,
+        })
+      >[];
+
+  /// When true, reassign moves remaining faces on the source person onto the
+  /// target as unconfirmed (mirrors the API sweep). Off by default so existing
+  /// tray tests keep moving a single face.
+  bool sweepSiblingsOnReassign = false;
+
+  final Map<String, String> _autoMovedFromPersonId = <String, String>{};
   final List<String> confirmAppearanceCalls = <String>[];
   final List<String> declineAutoAssignCalls = <String>[];
   final List<({String personId, String name})> renameCalls =
@@ -60,7 +118,7 @@ class FakePersonsRepository implements PersonsRepository {
       <({String personId, String targetPersonId})>[];
   final List<String> deleteCalls = <String>[];
   final List<({String faceGroupId, String? personId, String? name})>
-      assignFaceGroupCalls =
+  assignFaceGroupCalls =
       <({String faceGroupId, String? personId, String? name})>[];
   final List<List<String>> unassignAppearancesCalls = <List<String>>[];
 
@@ -71,13 +129,7 @@ class FakePersonsRepository implements PersonsRepository {
   Future<List<Person>> listPersons() async {
     if (listError != null) throw listError!;
     return _persons
-        .map(
-          (d) => Person(
-            id: d.id,
-            name: d.name,
-            createdAt: d.createdAt,
-          ),
-        )
+        .map((d) => Person(id: d.id, name: d.name, createdAt: d.createdAt))
         .toList();
   }
 
@@ -93,8 +145,7 @@ class FakePersonsRepository implements PersonsRepository {
   bool _nameTaken(String name, {String? excludeId}) {
     final key = name.trim().toLowerCase();
     return _persons.any(
-      (p) =>
-          p.id != excludeId && p.name.trim().toLowerCase() == key,
+      (p) => p.id != excludeId && p.name.trim().toLowerCase() == key,
     );
   }
 
@@ -230,9 +281,7 @@ class FakePersonsRepository implements PersonsRepository {
       PersonAppearance? match;
       for (var i = 0; i < _persons.length; i++) {
         final person = _persons[i];
-        final idx = person.appearances.indexWhere(
-          (a) => a.id == appearanceId,
-        );
+        final idx = person.appearances.indexWhere((a) => a.id == appearanceId);
         if (idx < 0) continue;
         match = person.appearances[idx];
         final remaining = List<PersonAppearance>.from(person.appearances)
@@ -263,16 +312,61 @@ class FakePersonsRepository implements PersonsRepository {
       found.add(match);
     }
 
+    final restore = <PersonAppearance>[];
+    final unassign = <PersonAppearance>[];
+    for (final a in found) {
+      if (_autoMovedFromPersonId.containsKey(a.id)) {
+        restore.add(a);
+      } else {
+        unassign.add(a);
+      }
+    }
+
+    final restored = <PersonAppearance>[];
+    for (final a in restore) {
+      final fromId = _autoMovedFromPersonId.remove(a.id)!;
+      final idx = _persons.indexWhere((p) => p.id == fromId);
+      if (idx < 0) {
+        throw ApiException(statusCode: 404, message: 'Prior person not found');
+      }
+      final dest = _persons[idx];
+      final clash =
+          a.itemId != null && dest.appearances.any((x) => x.itemId == a.itemId);
+      if (clash) {
+        unassign.add(a);
+        continue;
+      }
+      final back = PersonAppearance(
+        id: a.id,
+        personId: fromId,
+        faceGroupId: null,
+        faceGroupKind: null,
+        assignmentState: 'confirmed',
+        itemId: a.itemId,
+        keyPeriodId: a.keyPeriodId,
+        tagId: a.tagId,
+        region: a.region,
+        createdAt: a.createdAt,
+      );
+      _persons[idx] = PersonDetail(
+        id: dest.id,
+        name: dest.name,
+        createdAt: dest.createdAt,
+        appearances: [...dest.appearances, back],
+      );
+      restored.add(back);
+    }
+
     String? faceGroupId;
     FaceGroupKind? faceGroupKind;
-    if (found.length >= 2) {
+    if (unassign.length >= 2) {
       _newFaceGroupCounter += 1;
       faceGroupId = 'fg_fa_$_newFaceGroupCounter';
       faceGroupKind = FaceGroupKind.fa;
     }
 
     final declined = <PersonAppearance>[
-      for (final a in found)
+      for (final a in unassign)
         PersonAppearance(
           id: a.id,
           personId: null,
@@ -288,7 +382,7 @@ class FakePersonsRepository implements PersonsRepository {
     ];
     unassignedAppearances.addAll(declined);
     assignedAppearances.removeWhere((a) => appearanceIds.contains(a.id));
-    return declined;
+    return [...restored, ...declined];
   }
 
   /// Test/undo helper: restore [assignmentState] to unconfirmed on an assigned
@@ -364,20 +458,26 @@ class FakePersonsRepository implements PersonsRepository {
   }
 
   @override
-  Future<PersonAppearance> reassignAppearance(
+  Future<ReassignAppearanceResponse> reassignAppearance(
     String appearanceId, {
     String? personId,
     String? name,
+    bool? propagateAlike,
   }) async {
-    reassignCalls.add(
-      (appearanceId: appearanceId, personId: personId, name: name),
-    );
+    reassignCalls.add((
+      appearanceId: appearanceId,
+      personId: personId,
+      name: name,
+      propagateAlike: propagateAlike,
+    ));
     PersonAppearance? found;
+    String? previousPersonId;
     for (var i = 0; i < _persons.length; i++) {
       final person = _persons[i];
       final idx = person.appearances.indexWhere((a) => a.id == appearanceId);
       if (idx < 0) continue;
       found = person.appearances[idx];
+      previousPersonId = person.id;
       final remaining = List<PersonAppearance>.from(person.appearances)
         ..removeAt(idx);
       _persons[i] = PersonDetail(
@@ -389,8 +489,9 @@ class FakePersonsRepository implements PersonsRepository {
       break;
     }
     if (found == null) {
-      final uIdx =
-          unassignedAppearances.indexWhere((a) => a.id == appearanceId);
+      final uIdx = unassignedAppearances.indexWhere(
+        (a) => a.id == appearanceId,
+      );
       if (uIdx >= 0) {
         found = unassignedAppearances.removeAt(uIdx);
       }
@@ -430,6 +531,11 @@ class FakePersonsRepository implements PersonsRepository {
       throw ApiException(statusCode: 404, message: 'Target person not found');
     }
     final target = _persons[targetIndex];
+    _assertPersonNotOnItem(
+      personId: targetPersonId,
+      itemId: found.itemId,
+      exceptAppearanceId: found.id,
+    );
     final moved = PersonAppearance(
       id: found.id,
       personId: targetPersonId,
@@ -442,30 +548,78 @@ class FakePersonsRepository implements PersonsRepository {
       region: found.region,
       createdAt: found.createdAt,
     );
+
+    final alsoMoved = <PersonAppearance>[];
+    if (propagateAlike != false &&
+        sweepSiblingsOnReassign &&
+        previousPersonId != null &&
+        previousPersonId != targetPersonId) {
+      final claimedItems = <String>{
+        if (found.itemId != null) found.itemId!,
+        for (final a in target.appearances)
+          if (a.itemId != null) a.itemId!,
+      };
+      for (var i = 0; i < _persons.length; i++) {
+        if (_persons[i].id != previousPersonId) continue;
+        final leftover = <PersonAppearance>[];
+        for (final a in _persons[i].appearances) {
+          final itemId = a.itemId;
+          if (itemId != null && claimedItems.contains(itemId)) {
+            leftover.add(a);
+            continue;
+          }
+          if (itemId != null) claimedItems.add(itemId);
+          final swept = PersonAppearance(
+            id: a.id,
+            personId: targetPersonId,
+            faceGroupId: null,
+            faceGroupKind: null,
+            assignmentState: 'unconfirmed',
+            itemId: a.itemId,
+            keyPeriodId: a.keyPeriodId,
+            tagId: a.tagId,
+            region: a.region,
+            createdAt: a.createdAt,
+          );
+          alsoMoved.add(swept);
+          _autoMovedFromPersonId[a.id] = previousPersonId;
+        }
+        _persons[i] = PersonDetail(
+          id: _persons[i].id,
+          name: _persons[i].name,
+          createdAt: _persons[i].createdAt,
+          appearances: leftover,
+        );
+        break;
+      }
+    }
+
     _persons[targetIndex] = PersonDetail(
       id: target.id,
       name: target.name,
       createdAt: target.createdAt,
-      appearances: [...target.appearances, moved],
+      appearances: [...target.appearances, moved, ...alsoMoved],
     );
-    return moved;
+    return ReassignAppearanceResponse(appearance: moved, alsoMoved: alsoMoved);
   }
 
   @override
-  Future<PersonDetail> assignFaceGroup(
+  Future<AssignFaceGroupResponse> assignFaceGroup(
     String faceGroupId, {
     String? personId,
     String? name,
   }) async {
-    assignFaceGroupCalls.add(
-      (faceGroupId: faceGroupId, personId: personId, name: name),
-    );
-    final members =
-        unassignedAppearances.where((a) => a.faceGroupId == faceGroupId).toList();
+    assignFaceGroupCalls.add((
+      faceGroupId: faceGroupId,
+      personId: personId,
+      name: name,
+    ));
+    final members = unassignedAppearances
+        .where((a) => a.faceGroupId == faceGroupId)
+        .toList();
     if (members.isEmpty) {
       throw ApiException(statusCode: 404, message: 'Face group not found');
     }
-    unassignedAppearances.removeWhere((a) => a.faceGroupId == faceGroupId);
 
     var targetPersonId = personId;
     if (targetPersonId == null) {
@@ -497,8 +651,47 @@ class FakePersonsRepository implements PersonsRepository {
       throw ApiException(statusCode: 404, message: 'Target person not found');
     }
     final target = _persons[targetIndex];
+    final claimed = {
+      for (final a in target.appearances)
+        if (a.itemId != null) a.itemId!,
+    };
+    final ordered = [...members]
+      ..sort((a, b) {
+        final byCreated = a.createdAt.compareTo(b.createdAt);
+        if (byCreated != 0) return byCreated;
+        return a.id.compareTo(b.id);
+      });
+    final byItem = <String?, List<PersonAppearance>>{};
+    for (final m in ordered) {
+      (byItem[m.itemId] ??= <PersonAppearance>[]).add(m);
+    }
+    final assign = <PersonAppearance>[];
+    final skip = <PersonAppearance>[];
+    for (final entry in byItem.entries) {
+      final itemId = entry.key;
+      final group = entry.value;
+      if (itemId == null) {
+        assign.addAll(group);
+        continue;
+      }
+      if (claimed.contains(itemId)) {
+        skip.addAll(group);
+        continue;
+      }
+      assign.add(group.first);
+      skip.addAll(group.skip(1));
+      claimed.add(itemId);
+    }
+    if (assign.isEmpty) {
+      throw ApiException(
+        statusCode: 409,
+        code: 'person_already_on_item',
+        message: '${target.name} is already on another face in this photo',
+      );
+    }
+    unassignedAppearances.removeWhere((a) => a.faceGroupId == faceGroupId);
     final moved = [
-      for (final m in members)
+      for (final m in assign)
         PersonAppearance(
           id: m.id,
           personId: targetPersonId,
@@ -512,6 +705,22 @@ class FakePersonsRepository implements PersonsRepository {
           createdAt: m.createdAt,
         ),
     ];
+    final skipped = [
+      for (final m in skip)
+        PersonAppearance(
+          id: m.id,
+          personId: null,
+          faceGroupId: null,
+          faceGroupKind: null,
+          assignmentState: null,
+          itemId: m.itemId,
+          keyPeriodId: m.keyPeriodId,
+          tagId: m.tagId,
+          region: m.region,
+          createdAt: m.createdAt,
+        ),
+    ];
+    unassignedAppearances.addAll(skipped);
     final updatedTarget = PersonDetail(
       id: target.id,
       name: target.name,
@@ -519,7 +728,10 @@ class FakePersonsRepository implements PersonsRepository {
       appearances: [...target.appearances, ...moved],
     );
     _persons[targetIndex] = updatedTarget;
-    return updatedTarget;
+    return AssignFaceGroupResponse(
+      person: updatedTarget,
+      skippedAppearances: skipped,
+    );
   }
 
   @override
@@ -601,6 +813,7 @@ class FakePersonsRepository implements PersonsRepository {
       }
       members.add(unassignedAppearances[idx]);
     }
+    _assertNoSameItemPair(members);
     _newFaceGroupCounter += 1;
     final faceGroupId = 'fg_fm_$_newFaceGroupCounter';
     final updated = <PersonAppearance>[
@@ -641,6 +854,15 @@ class FakePersonsRepository implements PersonsRepository {
       }
       members.add(accountExclusions[idx]);
     }
+    final exclusionItems = [for (final e in members) e.itemId];
+    if (exclusionItems.toSet().length != exclusionItems.length) {
+      throw ApiException(
+        statusCode: 409,
+        code: 'same_photo_faces',
+        message:
+            'Two of these faces are in the same photo, so they cannot be the same person',
+      );
+    }
     _newFaceGroupCounter += 1;
     final faceGroupId = 'fg_fm_$_newFaceGroupCounter';
     final updated = <WhoExclusion>[
@@ -669,8 +891,9 @@ class FakePersonsRepository implements PersonsRepository {
     final aps = unassignedAppearances
         .where((a) => a.faceGroupId == faceGroupId)
         .toList();
-    final exs =
-        accountExclusions.where((e) => e.faceGroupId == faceGroupId).toList();
+    final exs = accountExclusions
+        .where((e) => e.faceGroupId == faceGroupId)
+        .toList();
     if (aps.isEmpty && exs.isEmpty) {
       throw ApiException(statusCode: 404, message: 'Face group not found');
     }
@@ -857,8 +1080,8 @@ PersonAppearance fixtureAppearance({
   String? tagId,
   TagRegion? region,
 }) {
-  final resolvedState = assignmentState ??
-      (personId != null ? 'confirmed' : null);
+  final resolvedState =
+      assignmentState ?? (personId != null ? 'confirmed' : null);
   return PersonAppearance(
     id: id,
     personId: personId,
@@ -883,9 +1106,6 @@ PersonDetail fixturePersonDetail({
     id: id,
     name: name,
     createdAt: '2026-07-20T00:00:00.000Z',
-    appearances: appearances ??
-        [
-          fixtureAppearance(id: 'ap_1', personId: id),
-        ],
+    appearances: appearances ?? [fixtureAppearance(id: 'ap_1', personId: id)],
   );
 }

@@ -1,6 +1,7 @@
 import 'package:path/path.dart' as p;
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
+import 'package:tagkin_desktop/ui/alpha_order.dart';
 
 /// Last leaf folder chosen on Faces (session-scoped).
 String? faceCropLastLeafFolder;
@@ -36,7 +37,11 @@ List<String> distinctLeafFolders(Iterable<Item> items) {
     final folder = leafFolderFromItem(item);
     if (folder != null) folders.add(folder);
   }
-  final list = folders.toList()..sort();
+  final list = folders.toList()
+    ..sort((a, b) {
+      final byLabel = compareLabelsAlpha(leafFolderLabel(a), leafFolderLabel(b));
+      return byLabel != 0 ? byLabel : a.compareTo(b);
+    });
   return list;
 }
 

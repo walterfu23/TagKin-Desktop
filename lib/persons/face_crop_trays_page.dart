@@ -34,12 +34,14 @@ class _FaceMoveResult {
     this.removedExclusionId,
     this.addedAppearance,
     this.addedExclusion,
+    this.alsoMoved = const [],
   });
 
   final String? removedAppearanceId;
   final String? removedExclusionId;
   final PersonAppearance? addedAppearance;
   final WhoExclusion? addedExclusion;
+  final List<PersonAppearance> alsoMoved;
 }
 
 /// One reversible API pair for a tray drop gesture (D12).
@@ -572,9 +574,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       (byPerson[pid] ??= <PersonAppearance>[]).add(a);
     }
     if (byPerson.isEmpty) return const [];
-    final inFolder = byPerson.keys.toSet();
     final ordered = <({Person person, List<PersonAppearance> faces})>[];
-    for (final p in _sortPersonsForDropdown(_persons, inFolder)) {
+    for (final p in sortedPersonsByName(_persons)) {
       final faces = byPerson.remove(p.id);
       if (faces == null) continue;
       ordered.add((person: p, faces: faces));
@@ -1164,29 +1165,14 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     return counts;
   }
 
-  /// Sort: in-folder first, then by name (auto-select order).
-  static List<Person> _sortPersonsForDropdown(
-    List<Person> persons,
-    Set<String> inFolder,
-  ) {
-    final list = List<Person>.from(persons);
-    list.sort((a, b) {
-      final ra = inFolder.contains(a.id) ? 0 : 1;
-      final rb = inFolder.contains(b.id) ? 0 : 1;
-      if (ra != rb) return ra.compareTo(rb);
-      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-    });
-    return list;
-  }
-
-  /// First person (in-folder order) with faces in [assignedInFolder].
+  /// Alphabetical by name (auto-select and dropdown order).
   static String? _firstPersonIdInFolder(
     List<Person> persons,
     List<PersonAppearance> assignedInFolder,
   ) {
     final inFolder = _personIdsFromAppearances(assignedInFolder);
     if (inFolder.isEmpty) return null;
-    for (final p in _sortPersonsForDropdown(persons, inFolder)) {
+    for (final p in sortedPersonsByName(persons)) {
       if (inFolder.contains(p.id)) return p.id;
     }
     return null;
@@ -1236,7 +1222,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     if (inFolder) parts.add('in folder');
     if (unconfirmedCount > 0) {
       parts.add(
-        unconfirmedCount == 1 ? '1 unconfirmed' : '$unconfirmedCount unconfirmed',
+        unconfirmedCount == 1
+            ? '1 unconfirmed'
+            : '$unconfirmedCount unconfirmed',
       );
     }
     return parts.join(' · ');
@@ -1463,9 +1451,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
             ]);
             _markCollectionDirty();
             await _reload();
-            await _dropFocusIfNowFaceless(
-              {for (final s in snapshots) s.personId},
-            );
+            await _dropFocusIfNowFaceless({
+              for (final s in snapshots) s.personId,
+            });
           },
         ),
       );
@@ -1489,14 +1477,37 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     if (_busy) return;
     final resolved = await _promptUniquePersonName();
     if (resolved == null || !mounted) return;
+    PersonAppearance? found;
+    for (final a in [..._unassigned, ..._assignedOverview]) {
+      if (a.id == appearanceId) {
+        found = a;
+        break;
+      }
+    }
+    if (resolved.personId != null &&
+        found?.itemId != null &&
+        _itemsClaimedByPerson(resolved.personId!).contains(found!.itemId)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          key: const Key('face-crop-already-on-photo'),
+          content: Text(
+            personAlreadyOnPhotoMessage(
+              resolved.name ?? _nameForPersonId(resolved.personId),
+            ),
+          ),
+        ),
+      );
+      return;
+    }
     setState(() => _busy = true);
     try {
       final persons = ref.read(personsRepositoryProvider);
-      final updated = await persons.reassignAppearance(
+      final result = await persons.reassignAppearance(
         appearanceId,
         name: resolved.name,
         personId: resolved.personId,
       );
+      final updated = result.appearance;
       final newId = updated.personId;
       if (newId != null) {
         _personId = newId;
@@ -1516,8 +1527,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
               appearanceId,
               name: resolved.name,
               personId: resolved.personId,
+              propagateAlike: false,
             );
-            final pid = restored.personId;
+            final pid = restored.appearance.personId;
             if (pid != null && mounted) {
               _personId = pid;
             }
@@ -1528,10 +1540,17 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       );
     } catch (e) {
       if (!mounted) return;
+      final api = e is ApiException ? e : null;
+      final already =
+          api != null &&
+          (api.code == 'person_already_on_item' ||
+              api.code == 'same_photo_faces');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          key: const Key('face-crop-trays-error'),
-          content: Text('Set name failed: $e'),
+          key: Key(
+            already ? 'face-crop-already-on-photo' : 'face-crop-trays-error',
+          ),
+          content: Text(already ? api.message : 'Set name failed: $e'),
         ),
       );
     } finally {
@@ -1545,34 +1564,60 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     if (_busy) return;
     final resolved = await _promptUniquePersonName(title: 'Name this group');
     if (resolved == null || !mounted) return;
+    final groupMemberTagIds = [
+      for (final a in _scopedAppearances(_unassigned))
+        if (a.faceGroupId == faceGroupId && a.tagId != null) a.tagId!,
+    ];
+    final groupSize = _scopedAppearances(
+      _unassigned,
+    ).where((a) => a.faceGroupId == faceGroupId).length;
     setState(() => _busy = true);
     try {
       final persons = ref.read(personsRepositoryProvider);
-      final detail = await persons.assignFaceGroup(
+      final result = await persons.assignFaceGroup(
         faceGroupId,
         name: resolved.name,
         personId: resolved.personId,
       );
+      final detail = result.person;
       _personId = detail.id;
-      final appearanceIds = [for (final a in detail.appearances) a.id];
-      final tagIds = [
+      final assignedFromGroup = [
         for (final a in detail.appearances)
-          if (a.tagId != null) a.tagId!,
+          if (a.tagId != null && groupMemberTagIds.contains(a.tagId)) a.id,
+      ];
+      final skippedIds = [for (final a in result.skippedAppearances) a.id];
+      final tagIds = [
+        ...groupMemberTagIds,
+        for (final a in result.skippedAppearances)
+          if (a.tagId != null && !groupMemberTagIds.contains(a.tagId)) a.tagId!,
       ];
       await _reload();
       _markCollectionDirty();
+      if (result.skippedAppearances.isNotEmpty && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            key: const Key('face-crop-group-skipped-same-photo'),
+            content: Text(
+              skippedSamePhotoFacesMessage(
+                named: groupSize - result.skippedAppearances.length,
+                skipped: result.skippedAppearances.length,
+              ),
+            ),
+          ),
+        );
+      }
       // assignFaceGroup deletes the prior FaceGroup; undo via unassign
       // (≥2 → new GroupFM). Redo uses that new faceGroupId (closure).
       // Resolve members by tagId — appearance ids remint across tray hops.
-      var liveAppearanceIds = List<String>.from(appearanceIds);
+      var liveAppearanceIds = [...assignedFromGroup, ...skippedIds];
       String? redoFaceGroupId;
       _undoStack.push(
         CallbackUndoableAction(
           label: 'Set name',
           onUndo: () async {
-            final resolved = _assignedIdsForTagIds(tagIds);
-            final ids = tagIds.isNotEmpty && resolved.length == tagIds.length
-                ? resolved
+            final resolvedIds = _assignedIdsForTagIds(tagIds);
+            final ids = tagIds.isNotEmpty && resolvedIds.length == tagIds.length
+                ? resolvedIds
                 : liveAppearanceIds;
             final restored = await persons.unassignAppearances(ids);
             liveAppearanceIds = [for (final a in restored) a.id];
@@ -1597,10 +1642,25 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
               name: resolved.name,
               personId: resolved.personId,
             );
-            liveAppearanceIds = [for (final a in again.appearances) a.id];
+            liveAppearanceIds = [
+              for (final a in [
+                ...again.person.appearances,
+                ...again.skippedAppearances,
+              ])
+                if (a.tagId != null && tagIds.contains(a.tagId)) a.id,
+            ];
+            if (liveAppearanceIds.isEmpty) {
+              liveAppearanceIds = [
+                for (final a in [
+                  ...again.person.appearances,
+                  ...again.skippedAppearances,
+                ])
+                  a.id,
+              ];
+            }
             redoFaceGroupId = null;
             if (mounted) {
-              _personId = again.id;
+              _personId = again.person.id;
             }
             _markCollectionDirty();
             await _reload();
@@ -1609,10 +1669,17 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       );
     } catch (e) {
       if (!mounted) return;
+      final api = e is ApiException ? e : null;
+      final already =
+          api != null &&
+          (api.code == 'person_already_on_item' ||
+              api.code == 'same_photo_faces');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          key: const Key('face-crop-trays-error'),
-          content: Text('Set name failed: $e'),
+          key: Key(
+            already ? 'face-crop-already-on-photo' : 'face-crop-trays-error',
+          ),
+          content: Text(already ? api.message : 'Set name failed: $e'),
         ),
       );
     } finally {
@@ -2123,14 +2190,44 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           );
         } else if (data.appearanceId != null) {
           final id = data.appearanceId!;
-          steps.add(
-            _FaceDropUndoStep(
-              undo: () => persons.unlinkAppearance(id),
-              redo: () => name != null && name.isNotEmpty
-                  ? persons.reassignAppearance(id, name: name)
-                  : persons.reassignAppearance(id, personId: pid!),
-            ),
-          );
+          final fromPersonId = data.personId;
+          final alsoMovedIds = [for (final a in result.alsoMoved) a.id];
+          if (source == FaceCropTray.assigned && fromPersonId != null) {
+            steps.add(
+              _FaceDropUndoStep(
+                undo: () async {
+                  if (alsoMovedIds.isNotEmpty) {
+                    await persons.declineAutoAssignAppearances(alsoMovedIds);
+                  }
+                  await persons.reassignAppearance(
+                    id,
+                    personId: fromPersonId,
+                    propagateAlike: false,
+                  );
+                },
+                redo: () => name != null && name.isNotEmpty
+                    ? persons.reassignAppearance(id, name: name)
+                    : persons.reassignAppearance(id, personId: pid!),
+              ),
+            );
+          } else {
+            steps.add(
+              _FaceDropUndoStep(
+                undo: () => persons.unlinkAppearance(id),
+                redo: () => name != null && name.isNotEmpty
+                    ? persons.reassignAppearance(
+                        id,
+                        name: name,
+                        propagateAlike: false,
+                      )
+                    : persons.reassignAppearance(
+                        id,
+                        personId: pid!,
+                        propagateAlike: false,
+                      ),
+              ),
+            );
+          }
         }
     }
   }
@@ -2141,6 +2238,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     String? assignPersonId,
     String? assignName,
     List<_FaceDropUndoStep>? undoSteps,
+    bool? propagateAlike,
   }) async {
     final persons = ref.read(personsRepositoryProvider);
     final items = ref.read(itemsRepositoryProvider);
@@ -2225,12 +2323,21 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
             throw StateError('Could not find appearance after undo exclude');
           }
           final updated = name != null && name.isNotEmpty
-              ? await persons.reassignAppearance(match.id, name: name)
-              : await persons.reassignAppearance(match.id, personId: pid!);
+              ? await persons.reassignAppearance(
+                  match.id,
+                  name: name,
+                  propagateAlike: false,
+                )
+              : await persons.reassignAppearance(
+                  match.id,
+                  personId: pid!,
+                  propagateAlike: false,
+                );
           final result = _FaceMoveResult(
             removedExclusionId: data.exclusionId,
             removedAppearanceId: match.id,
-            addedAppearance: updated,
+            addedAppearance: updated.appearance,
+            alsoMoved: updated.alsoMoved,
           );
           _recordDropStepForOne(
             undoSteps,
@@ -2246,14 +2353,20 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         // bulk in [_onDrop] via assignFaceGroup.
         if (data.appearanceId != null) {
           final updated = name != null && name.isNotEmpty
-              ? await persons.reassignAppearance(data.appearanceId!, name: name)
+              ? await persons.reassignAppearance(
+                  data.appearanceId!,
+                  name: name,
+                  propagateAlike: propagateAlike,
+                )
               : await persons.reassignAppearance(
                   data.appearanceId!,
                   personId: pid!,
+                  propagateAlike: propagateAlike,
                 );
           final result = _FaceMoveResult(
             removedAppearanceId: data.appearanceId,
-            addedAppearance: updated,
+            addedAppearance: updated.appearance,
+            alsoMoved: updated.alsoMoved,
           );
           _recordDropStepForOne(
             undoSteps,
@@ -2275,6 +2388,40 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   }
 
   bool _exclusionInScope(WhoExclusion e) => _scopedItemIds.contains(e.itemId);
+
+  Set<String> _itemsClaimedByPerson(String personId) => {
+    for (final a in _assignedOverview)
+      if (a.personId == personId && a.itemId != null) a.itemId!,
+  };
+
+  String? _nameForPersonId(String? personId) {
+    if (personId == null) return null;
+    for (final p in _persons) {
+      if (p.id == personId) return p.name;
+    }
+    return _assignedController?.detail?.name;
+  }
+
+  bool _selectedFacesShareAPhoto() {
+    final seen = <String>{};
+    if (_selectionKind == FaceCropSelectKind.appearance) {
+      final pool = [..._unassigned, ..._assignedOverview];
+      for (final id in _selectedIds) {
+        for (final a in pool) {
+          if (a.id == id && a.itemId != null && !seen.add(a.itemId!)) {
+            return true;
+          }
+        }
+      }
+    } else if (_selectionKind == FaceCropSelectKind.exclusion) {
+      for (final id in _selectedIds) {
+        for (final e in _excluded) {
+          if (e.id == id && !seen.add(e.itemId)) return true;
+        }
+      }
+    }
+    return false;
+  }
 
   /// Same-person ≥2 leaving Assigned → one GroupFM batch; solos / already-loose
   /// stay per-face.
@@ -2623,6 +2770,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     final priorSelection = _snapshotSelectionByTagIds();
     setState(() => _busy = true);
     var failed = 0;
+    var groupSkipped = 0;
     Object? lastError;
     final applied = <_FaceMoveResult>[];
     final undoSteps = <_FaceDropUndoStep>[];
@@ -2740,6 +2888,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
               singles.add(data);
             }
           }
+          final claimedItems = <String>{
+            if (personId != null) ..._itemsClaimedByPerson(personId),
+          };
           for (final entry in byFaceGroup.entries) {
             try {
               final persons = ref.read(personsRepositoryProvider);
@@ -2762,14 +2913,19 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
 
               final assignNameUsed = createName;
               final assignPersonIdUsed = personId;
-              final detail = createName != null
+              final result = createName != null
                   ? await persons.assignFaceGroup(entry.key, name: createName)
                   : await persons.assignFaceGroup(
                       entry.key,
                       personId: personId!,
                     );
+              final detail = result.person;
               personId = detail.id;
               createName = null;
+              groupSkipped += result.skippedAppearances.length;
+              for (final a in detail.appearances) {
+                if (a.itemId != null) claimedItems.add(a.itemId!);
+              }
               final byId = {for (final a in detail.appearances) a.id: a};
               // Mutable: reminted across undo/redo (assignFaceGroup consumes FG).
               final liveAppearanceIds = <String>[];
@@ -2812,6 +2968,11 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                     ),
                   );
                 }
+              }
+              for (final skipped in result.skippedAppearances) {
+                liveAppearanceIds.add(skipped.id);
+                final tagId = skipped.tagId;
+                if (tagId != null) memberTagIds.add(tagId);
               }
 
               // Origin exclusions (empty for Unassigned-only FaceGroup).
@@ -2892,7 +3053,10 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                     liveFaceGroupId = null;
                     liveAppearanceIds.clear();
                     for (final tagId in memberTagIds) {
-                      for (final a in again.appearances) {
+                      for (final a in [
+                        ...again.person.appearances,
+                        ...again.skippedAppearances,
+                      ]) {
                         if (a.tagId == tagId) {
                           liveAppearanceIds.add(a.id);
                           break;
@@ -2900,9 +3064,13 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                       }
                     }
                     if (liveAppearanceIds.isEmpty) {
-                      liveAppearanceIds.addAll(
-                        again.appearances.map((a) => a.id),
-                      );
+                      liveAppearanceIds.addAll([
+                        for (final a in [
+                          ...again.person.appearances,
+                          ...again.skippedAppearances,
+                        ])
+                          a.id,
+                      ]);
                     }
                   },
                 ),
@@ -2913,16 +3081,34 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
             }
           }
           for (final data in singles) {
+            if (personId != null && claimedItems.contains(data.itemId)) {
+              failed++;
+              lastError = ApiException(
+                statusCode: 409,
+                code: 'person_already_on_item',
+                message: personAlreadyOnPhotoMessage(
+                  createName ?? _nameForPersonId(personId),
+                ),
+              );
+              continue;
+            }
             try {
               final nameForThis = createName;
+              final sweepAlike =
+                  data.source == FaceCropTray.assigned &&
+                  data.personId != null &&
+                  singles.length == 1 &&
+                  byFaceGroup.isEmpty;
               final result = await _applyOneDrop(
                 target,
                 data,
                 assignPersonId: personId,
                 assignName: nameForThis,
                 undoSteps: undoSteps,
+                propagateAlike: sweepAlike ? null : false,
               );
               applied.add(result);
+              claimedItems.add(data.itemId);
               final newPid = result.addedAppearance?.personId;
               if (newPid != null) {
                 personId = newPid;
@@ -3117,6 +3303,25 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
             target,
             selectionRestore: selectionRestore,
           );
+          final alsoMovedCount = [
+            for (final r in applied) ...r.alsoMoved,
+          ].length;
+          if (alsoMovedCount > 0) {
+            final who = _persons
+                .where((p) => p.id == _personId)
+                .map((p) => p.name)
+                .firstOrNull;
+            final faces = alsoMovedCount == 1
+                ? '1 other alike face'
+                : '$alsoMovedCount other alike faces';
+            final dest = who ?? 'this person';
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                key: const Key('face-crop-also-moved'),
+                content: Text('Moved $faces to $dest as unconfirmed.'),
+              ),
+            );
+          }
         }
         // Drag often leaves primary focus on the app-wide SelectionArea;
         // reclaim tray focus so local Cmd+A (and tests) stay reliable.
@@ -3130,11 +3335,34 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         });
       }
       if (failed > 0) {
+        final err = lastError;
+        late final bool already;
+        late final String message;
+        if (err is ApiException &&
+            (err.code == 'person_already_on_item' ||
+                err.code == 'same_photo_faces')) {
+          already = true;
+          message =
+              '${err.message}. Skipped $failed ${failed == 1 ? 'face' : 'faces'}.';
+        } else {
+          already = false;
+          message = 'Move failed for $failed of ${toApply.length}: $lastError';
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            key: const Key('face-crop-trays-error'),
+            key: Key(
+              already ? 'face-crop-already-on-photo' : 'face-crop-trays-error',
+            ),
+            content: Text(message),
+          ),
+        );
+      } else if (groupSkipped > 0) {
+        final named = applied.where((r) => r.addedAppearance != null).length;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            key: const Key('face-crop-group-skipped-same-photo'),
             content: Text(
-              'Move failed for $failed of ${toApply.length}: $lastError',
+              skippedSamePhotoFacesMessage(named: named, skipped: groupSkipped),
             ),
           ),
         );
@@ -3180,6 +3408,18 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   }
 
   Future<void> _groupSelection() async {
+    if (_selectedFacesShareAPhoto()) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          key: Key('face-crop-group-same-photo'),
+          content: Text(
+            'Two of these faces are in the same photo, so they cannot be the same person',
+          ),
+        ),
+      );
+      return;
+    }
     if (!_canGroupSelection) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -3749,7 +3989,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           await controller.rename(prior);
           _markCollectionDirty();
           if (mounted) {
-            final list = await ref.read(personsRepositoryProvider).listPersons();
+            final list = await ref
+                .read(personsRepositoryProvider)
+                .listPersons();
             if (mounted) setState(() => _persons = list);
           }
         },
@@ -3757,7 +3999,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           await controller.rename(next);
           _markCollectionDirty();
           if (mounted) {
-            final list = await ref.read(personsRepositoryProvider).listPersons();
+            final list = await ref
+                .read(personsRepositoryProvider)
+                .listPersons();
             if (mounted) setState(() => _persons = list);
           }
         },
@@ -3777,13 +4021,18 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       final first = await persons.reassignAppearance(
         appearanceIds.first,
         name: name,
+        propagateAlike: false,
       );
-      var newId = first.personId;
+      var newId = first.appearance.personId;
       if (newId == null) {
         throw StateError('Split did not create a person');
       }
       for (final id in appearanceIds.skip(1)) {
-        await persons.reassignAppearance(id, personId: newId);
+        await persons.reassignAppearance(
+          id,
+          personId: newId,
+          propagateAlike: false,
+        );
       }
       _assignedController?.dispose();
       _assignedController = null;
@@ -3798,7 +4047,11 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           label: 'Rename in folder',
           onUndo: () async {
             for (final id in liveIds) {
-              await persons.reassignAppearance(id, personId: fromPersonId);
+              await persons.reassignAppearance(
+                id,
+                personId: fromPersonId,
+                propagateAlike: false,
+              );
             }
             try {
               await persons.deletePerson(liveNewId);
@@ -3813,11 +4066,16 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
             final created = await persons.reassignAppearance(
               liveIds.first,
               name: name,
+              propagateAlike: false,
             );
-            liveNewId = created.personId ?? liveNewId;
-            liveIds = [created.id, ...liveIds.skip(1)];
+            liveNewId = created.appearance.personId ?? liveNewId;
+            liveIds = [created.appearance.id, ...liveIds.skip(1)];
             for (final id in liveIds.skip(1)) {
-              await persons.reassignAppearance(id, personId: liveNewId);
+              await persons.reassignAppearance(
+                id,
+                personId: liveNewId,
+                propagateAlike: false,
+              );
             }
             _personId = liveNewId;
             _markCollectionDirty();
@@ -3849,7 +4107,11 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     try {
       final persons = ref.read(personsRepositoryProvider);
       for (final id in appearanceIds) {
-        await persons.reassignAppearance(id, personId: toPersonId);
+        await persons.reassignAppearance(
+          id,
+          personId: toPersonId,
+          propagateAlike: false,
+        );
       }
       _assignedController?.dispose();
       _assignedController = null;
@@ -3862,7 +4124,11 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           label: label,
           onUndo: () async {
             for (final id in appearanceIds) {
-              await persons.reassignAppearance(id, personId: fromPersonId);
+              await persons.reassignAppearance(
+                id,
+                personId: fromPersonId,
+                propagateAlike: false,
+              );
             }
             _personId = fromPersonId;
             _markCollectionDirty();
@@ -3870,7 +4136,11 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           },
           onRedo: () async {
             for (final id in appearanceIds) {
-              await persons.reassignAppearance(id, personId: toPersonId);
+              await persons.reassignAppearance(
+                id,
+                personId: toPersonId,
+                propagateAlike: false,
+              );
             }
             _personId = toPersonId;
             _markCollectionDirty();
@@ -3918,11 +4188,16 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
             final first = await persons.reassignAppearance(
               liveIds.first,
               name: sourceName,
+              propagateAlike: false,
             );
-            liveSourceId = first.personId ?? liveSourceId;
-            liveIds = [first.id, ...liveIds.skip(1)];
+            liveSourceId = first.appearance.personId ?? liveSourceId;
+            liveIds = [first.appearance.id, ...liveIds.skip(1)];
             for (final id in liveIds.skip(1)) {
-              await persons.reassignAppearance(id, personId: liveSourceId);
+              await persons.reassignAppearance(
+                id,
+                personId: liveSourceId,
+                propagateAlike: false,
+              );
             }
             _personId = liveSourceId;
             _markCollectionDirty();
@@ -4029,17 +4304,17 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         if (a.personId != null) a.personId!,
     };
     var inFolderPersons = [
-      for (final p in _sortPersonsForDropdown(_persons, inFolderIds))
+      for (final p in sortedPersonsByName(_persons))
         if (inFolderIds.contains(p.id)) p,
     ];
     if (selectedId != null &&
         !inFolderIds.contains(selectedId) &&
         selectedName != null) {
-      inFolderPersons = [
+      inFolderPersons = sortedPersonsByName([
         ...inFolderPersons,
         selectedPerson ??
             Person(id: selectedId, name: selectedName, createdAt: ''),
-      ];
+      ]);
     }
     final dropdownValue = _assignAsNewPerson && showNewPerson
         ? _newPersonSentinel

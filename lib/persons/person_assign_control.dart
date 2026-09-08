@@ -3,6 +3,7 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/person_name.dart';
 import 'package:tagkin_desktop/persons/person_name_collision_dialog.dart';
 import 'package:tagkin_desktop/persons/person_name_dialog.dart';
+import 'package:tagkin_desktop/ui/alpha_order.dart';
 
 /// Prompt for a new person name, offering merge on collision (R6).
 ///
@@ -101,10 +102,14 @@ class PersonAssignControl extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final drafts = uniqueDraftPersonNames(
-      persons: persons,
-      names: [currentPersonName, ...draftPersonNames],
+    final drafts = sortedAlphaBy(
+      uniqueDraftPersonNames(
+        persons: persons,
+        names: [currentPersonName, ...draftPersonNames],
+      ),
+      (name) => name,
     );
+    final namedPersons = sortedPersonsByName(persons);
     final current = currentPersonId;
     final known = current != null && persons.any((p) => p.id == current);
     final named = currentPersonName?.trim();
@@ -140,7 +145,7 @@ class PersonAssignControl extends StatelessWidget {
             value: draftValue(name),
             child: Text(name, key: Key('person-assign-draft-$name')),
           ),
-        for (final person in persons)
+        for (final person in namedPersons)
           DropdownMenuItem(
             value: person.id,
             child: Text(person.name),

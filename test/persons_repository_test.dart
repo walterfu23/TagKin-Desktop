@@ -7,67 +7,58 @@ import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/api/items_repository.dart';
 import 'package:tagkin_desktop/api/persons_repository.dart';
 
-Map<String, dynamic> _personJson({
-  required String id,
-  String? name = 'Sam',
-}) =>
-    {
-      'id': id,
-      'name': name,
-      'createdAt': '2026-07-20T00:00:00.000Z',
-    };
+Map<String, dynamic> _personJson({required String id, String? name = 'Sam'}) =>
+    {'id': id, 'name': name, 'createdAt': '2026-07-20T00:00:00.000Z'};
 
 Map<String, dynamic> _appearanceJson({
   required String id,
   String? personId = 'person_1',
   String? itemId = 'item_1',
-}) =>
-    {
-      'id': id,
-      'personId': personId,
-      'itemId': itemId,
-      'keyPeriodId': null,
-      'createdAt': '2026-07-20T00:00:00.000Z',
-    };
+}) => {
+  'id': id,
+  'personId': personId,
+  'itemId': itemId,
+  'keyPeriodId': null,
+  'createdAt': '2026-07-20T00:00:00.000Z',
+};
 
 Map<String, dynamic> _personDetailJson({
   required String id,
   String? name = 'Sam',
-}) =>
-    {
-      ..._personJson(id: id, name: name),
-      'appearances': [
-        _appearanceJson(id: 'ap_1', personId: id),
-      ],
-    };
+}) => {
+  ..._personJson(id: id, name: name),
+  'appearances': [_appearanceJson(id: 'ap_1', personId: id)],
+};
 
 void main() {
   group('PersonsRepository', () {
-    test('listPersons returns owner-scoped persons from GET /persons',
-        () async {
-      final mock = MockClient((request) async {
-        expect(request.method, 'GET');
-        expect(request.url.path, '/persons');
-        expect(request.headers['Authorization'], 'Bearer tok-a');
-        return http.Response(
-          jsonEncode([
-            _personJson(id: 'person_a1'),
-            _personJson(id: 'person_a2'),
-          ]),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      });
+    test(
+      'listPersons returns owner-scoped persons from GET /persons',
+      () async {
+        final mock = MockClient((request) async {
+          expect(request.method, 'GET');
+          expect(request.url.path, '/persons');
+          expect(request.headers['Authorization'], 'Bearer tok-a');
+          return http.Response(
+            jsonEncode([
+              _personJson(id: 'person_a1'),
+              _personJson(id: 'person_a2'),
+            ]),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        });
 
-      final client = ApiClient(
-        baseUrl: 'http://api.test',
-        tokenProvider: () => 'tok-a',
-        httpClient: mock,
-      );
-      final persons = await PersonsRepository(client).listPersons();
-      expect(persons.map((p) => p.id), ['person_a1', 'person_a2']);
-      client.close();
-    });
+        final client = ApiClient(
+          baseUrl: 'http://api.test',
+          tokenProvider: () => 'tok-a',
+          httpClient: mock,
+        );
+        final persons = await PersonsRepository(client).listPersons();
+        expect(persons.map((p) => p.id), ['person_a1', 'person_a2']);
+        client.close();
+      },
+    );
 
     test('getPerson returns detail; foreign id surfaces 404 (R10)', () async {
       final mock = MockClient((request) async {
@@ -85,9 +76,7 @@ void main() {
       );
       await expectLater(
         PersonsRepository(client).getPerson('foreign'),
-        throwsA(
-          isA<ApiException>().having((e) => e.statusCode, 'status', 404),
-        ),
+        throwsA(isA<ApiException>().having((e) => e.statusCode, 'status', 404)),
       );
       client.close();
     });
@@ -124,12 +113,10 @@ void main() {
         expect(body['personId'], 'person_2');
         expect(body.containsKey('ownerUserId'), isFalse);
         return http.Response(
-          jsonEncode(
-            _appearanceJson(
-              id: 'ap_1',
-              personId: 'person_2',
-            ),
-          ),
+          jsonEncode({
+            'appearance': _appearanceJson(id: 'ap_1', personId: 'person_2'),
+            'alsoMoved': <Map<String, dynamic>>[],
+          }),
           200,
           headers: {'content-type': 'application/json'},
         );
@@ -139,11 +126,11 @@ void main() {
         tokenProvider: () => 'tok',
         httpClient: mock,
       )..recordRequests = true;
-      final appearance = await PersonsRepository(client).reassignAppearance(
-        'ap_1',
-        personId: 'person_2',
-      );
-      expect(appearance.personId, 'person_2');
+      final result = await PersonsRepository(
+        client,
+      ).reassignAppearance('ap_1', personId: 'person_2');
+      expect(result.appearance.personId, 'person_2');
+      expect(result.alsoMoved, isEmpty);
       for (final r in client.recordedRequests) {
         expect(r.bodyContainsOwnerField, isFalse);
       }
@@ -160,12 +147,10 @@ void main() {
         expect(body['name'], 'Riley');
         expect(body.containsKey('ownerUserId'), isFalse);
         return http.Response(
-          jsonEncode(
-            _appearanceJson(
-              id: 'ap_1',
-              personId: 'person_new',
-            ),
-          ),
+          jsonEncode({
+            'appearance': _appearanceJson(id: 'ap_1', personId: 'person_new'),
+            'alsoMoved': <Map<String, dynamic>>[],
+          }),
           200,
           headers: {'content-type': 'application/json'},
         );
@@ -175,11 +160,66 @@ void main() {
         tokenProvider: () => 'tok',
         httpClient: mock,
       );
-      final appearance = await PersonsRepository(client).reassignAppearance(
-        'ap_1',
-        name: 'Riley',
+      final result = await PersonsRepository(
+        client,
+      ).reassignAppearance('ap_1', name: 'Riley');
+      expect(result.appearance.personId, 'person_new');
+      expect(result.alsoMoved, isEmpty);
+      client.close();
+    });
+
+    test(
+      'reassignAppearance parses alsoMoved and omits propagateAlike by default',
+      () async {
+        final mock = MockClient((request) async {
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          expect(body.keys.toSet(), {'personId'});
+          expect(body.containsKey('propagateAlike'), isFalse);
+          return http.Response(
+            jsonEncode({
+              'appearance': _appearanceJson(id: 'ap_1', personId: 'person_2'),
+              'alsoMoved': [_appearanceJson(id: 'ap_2', personId: 'person_2')],
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        });
+        final client = ApiClient(
+          baseUrl: 'http://api.test',
+          tokenProvider: () => 'tok',
+          httpClient: mock,
+        );
+        final result = await PersonsRepository(
+          client,
+        ).reassignAppearance('ap_1', personId: 'person_2');
+        expect(result.alsoMoved, hasLength(1));
+        expect(result.alsoMoved.single.id, 'ap_2');
+        client.close();
+      },
+    );
+
+    test('reassignAppearance sends propagateAlike: false for undo', () async {
+      final mock = MockClient((request) async {
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body.keys.toSet(), {'personId', 'propagateAlike'});
+        expect(body['propagateAlike'], isFalse);
+        return http.Response(
+          jsonEncode({
+            'appearance': _appearanceJson(id: 'ap_1', personId: 'person_1'),
+            'alsoMoved': <Map<String, dynamic>>[],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      final client = ApiClient(
+        baseUrl: 'http://api.test',
+        tokenProvider: () => 'tok',
+        httpClient: mock,
       );
-      expect(appearance.personId, 'person_new');
+      await PersonsRepository(
+        client,
+      ).reassignAppearance('ap_1', personId: 'person_1', propagateAlike: false);
       client.close();
     });
 
@@ -198,8 +238,9 @@ void main() {
         tokenProvider: () => 'tok',
         httpClient: mock,
       );
-      final appearance =
-          await PersonsRepository(client).unlinkAppearance('ap_1');
+      final appearance = await PersonsRepository(
+        client,
+      ).unlinkAppearance('ap_1');
       expect(appearance.personId, isNull);
       client.close();
     });
@@ -222,8 +263,9 @@ void main() {
         tokenProvider: () => 'tok',
         httpClient: mock,
       );
-      final appearance =
-          await PersonsRepository(client).confirmAppearanceAssignment('ap_1');
+      final appearance = await PersonsRepository(
+        client,
+      ).confirmAppearanceAssignment('ap_1');
       expect(appearance.assignmentState, 'confirmed');
       client.close();
     });
@@ -246,50 +288,57 @@ void main() {
         tokenProvider: () => 'tok',
         httpClient: mock,
       );
-      final appearance =
-          await PersonsRepository(client).declineAutoAssignAppearance('ap_1');
+      final appearance = await PersonsRepository(
+        client,
+      ).declineAutoAssignAppearance('ap_1');
       expect(appearance.personId, isNull);
       client.close();
     });
 
-    test('assignFaceGroup posts name — promotes GroupFA/GroupFM (R6)',
-        () async {
-      final mock = MockClient((request) async {
-        expect(request.method, 'POST');
-        expect(request.url.path, '/persons/face-groups/fg_1/assign');
-        final body = jsonDecode(request.body) as Map<String, dynamic>;
-        expect(body.keys.toSet(), {'name'});
-        expect(body['name'], 'Sam');
-        expect(body.containsKey('ownerUserId'), isFalse);
-        return http.Response(
-          jsonEncode({
-            ..._personJson(id: 'person_new', name: 'Sam'),
-            'appearances': [
-              _appearanceJson(id: 'ap_1', personId: 'person_new'),
-              _appearanceJson(id: 'ap_2', personId: 'person_new'),
-            ],
-          }),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      });
-      final client = ApiClient(
-        baseUrl: 'http://api.test',
-        tokenProvider: () => 'tok',
-        httpClient: mock,
-      )..recordRequests = true;
-      final detail =
-          await PersonsRepository(client).assignFaceGroup('fg_1', name: 'Sam');
-      expect(detail.name, 'Sam');
-      expect(detail.appearances.map((a) => a.id), ['ap_1', 'ap_2']);
-      for (final r in client.recordedRequests) {
-        expect(r.bodyContainsOwnerField, isFalse);
-      }
-      client.close();
-    });
+    test(
+      'assignFaceGroup posts name — promotes GroupFA/GroupFM (R6)',
+      () async {
+        final mock = MockClient((request) async {
+          expect(request.method, 'POST');
+          expect(request.url.path, '/persons/face-groups/fg_1/assign');
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          expect(body.keys.toSet(), {'name'});
+          expect(body['name'], 'Sam');
+          expect(body.containsKey('ownerUserId'), isFalse);
+          return http.Response(
+            jsonEncode({
+              'person': {
+                ..._personJson(id: 'person_new', name: 'Sam'),
+                'appearances': [
+                  _appearanceJson(id: 'ap_1', personId: 'person_new'),
+                  _appearanceJson(id: 'ap_2', personId: 'person_new'),
+                ],
+              },
+              'skippedAppearances': <Map<String, dynamic>>[],
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        });
+        final client = ApiClient(
+          baseUrl: 'http://api.test',
+          tokenProvider: () => 'tok',
+          httpClient: mock,
+        )..recordRequests = true;
+        final assigned = await PersonsRepository(
+          client,
+        ).assignFaceGroup('fg_1', name: 'Sam');
+        expect(assigned.person.name, 'Sam');
+        expect(assigned.person.appearances.map((a) => a.id), ['ap_1', 'ap_2']);
+        expect(assigned.skippedAppearances, isEmpty);
+        for (final r in client.recordedRequests) {
+          expect(r.bodyContainsOwnerField, isFalse);
+        }
+        client.close();
+      },
+    );
 
-    test('unassignAppearances posts appearanceIds — no owner (R10)',
-        () async {
+    test('unassignAppearances posts appearanceIds — no owner (R10)', () async {
       final mock = MockClient((request) async {
         expect(request.method, 'POST');
         expect(request.url.path, '/persons/appearances/unassign');
@@ -313,8 +362,9 @@ void main() {
         tokenProvider: () => 'tok',
         httpClient: mock,
       )..recordRequests = true;
-      final appearances = await PersonsRepository(client)
-          .unassignAppearances(['ap_1', 'ap_2']);
+      final appearances = await PersonsRepository(
+        client,
+      ).unassignAppearances(['ap_1', 'ap_2']);
       expect(appearances.map((a) => a.id), ['ap_1', 'ap_2']);
       expect(appearances.every((a) => a.personId == null), isTrue);
       for (final r in client.recordedRequests) {
@@ -342,8 +392,9 @@ void main() {
         tokenProvider: () => 'tok',
         httpClient: mock,
       )..recordRequests = true;
-      final person =
-          await PersonsRepository(client).renamePerson('person_1', 'Alex');
+      final person = await PersonsRepository(
+        client,
+      ).renamePerson('person_1', 'Alex');
       expect(person.name, 'Alex');
       for (final r in client.recordedRequests) {
         expect(r.bodyContainsOwnerField, isFalse);
@@ -370,10 +421,9 @@ void main() {
         tokenProvider: () => 'tok',
         httpClient: mock,
       )..recordRequests = true;
-      final detail = await PersonsRepository(client).mergePerson(
-        'person_1',
-        'person_2',
-      );
+      final detail = await PersonsRepository(
+        client,
+      ).mergePerson('person_1', 'person_2');
       expect(detail.id, 'person_2');
       for (final r in client.recordedRequests) {
         expect(r.bodyContainsOwnerField, isFalse);
@@ -390,9 +440,7 @@ void main() {
         expect(request.body.isEmpty || request.body == 'null', isTrue);
         return http.Response(
           jsonEncode({
-            'appearances': [
-              _appearanceJson(id: 'ap_1', personId: 'person_1'),
-            ],
+            'appearances': [_appearanceJson(id: 'ap_1', personId: 'person_1')],
           }),
           200,
           headers: {'content-type': 'application/json'},
@@ -403,8 +451,7 @@ void main() {
         tokenProvider: () => 'tok',
         httpClient: mock,
       )..recordRequests = true;
-      final result =
-          await ItemsRepository(client).linkPeopleForItem('item_1');
+      final result = await ItemsRepository(client).linkPeopleForItem('item_1');
       expect(result.appearances.single.id, 'ap_1');
       for (final r in client.recordedRequests) {
         expect(r.bodyContainsOwnerField, isFalse);
@@ -414,36 +461,36 @@ void main() {
   });
 
   group('ItemsRepository.assignPersonToItem', () {
-    test('posts personId and tagId to /items/{id}/assign-person (R10)',
-        () async {
-      final mock = MockClient((request) async {
-        expect(request.method, 'POST');
-        expect(request.url.path, '/items/item_1/assign-person');
-        final body = jsonDecode(request.body) as Map<String, dynamic>;
-        expect(body['personId'], 'person_1');
-        expect(body['tagId'], 'tag_who');
-        expect(body.containsKey('ownerUserId'), isFalse);
-        return http.Response(
-          jsonEncode(_appearanceJson(id: 'ap_1', personId: 'person_1')),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      });
-      final client = ApiClient(
-        baseUrl: 'http://api.test',
-        tokenProvider: () => 'tok',
-        httpClient: mock,
-      )..recordRequests = true;
-      final result = await ItemsRepository(client).assignPersonToItem(
-        'item_1',
-        personId: 'person_1',
-        tagId: 'tag_who',
-      );
-      expect(result.id, 'ap_1');
-      for (final r in client.recordedRequests) {
-        expect(r.bodyContainsOwnerField, isFalse);
-      }
-      client.close();
-    });
+    test(
+      'posts personId and tagId to /items/{id}/assign-person (R10)',
+      () async {
+        final mock = MockClient((request) async {
+          expect(request.method, 'POST');
+          expect(request.url.path, '/items/item_1/assign-person');
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          expect(body['personId'], 'person_1');
+          expect(body['tagId'], 'tag_who');
+          expect(body.containsKey('ownerUserId'), isFalse);
+          return http.Response(
+            jsonEncode(_appearanceJson(id: 'ap_1', personId: 'person_1')),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        });
+        final client = ApiClient(
+          baseUrl: 'http://api.test',
+          tokenProvider: () => 'tok',
+          httpClient: mock,
+        )..recordRequests = true;
+        final result = await ItemsRepository(
+          client,
+        ).assignPersonToItem('item_1', personId: 'person_1', tagId: 'tag_who');
+        expect(result.id, 'ap_1');
+        for (final r in client.recordedRequests) {
+          expect(r.bodyContainsOwnerField, isFalse);
+        }
+        client.close();
+      },
+    );
   });
 }

@@ -333,38 +333,6 @@ class _TwoColumnGrid extends StatelessWidget {
   }
 }
 
-({String? personId, String? personName, bool unassign}) _effectivePerson({
-  required PersonAssignIntent? intent,
-  required String? baselinePersonId,
-  required Map<String, String> personNamesById,
-}) {
-  if (intent != null) {
-    if (intent.unassign) {
-      return (personId: null, personName: null, unassign: true);
-    }
-    if (intent.name != null && intent.name!.trim().isNotEmpty) {
-      return (
-        personId: intent.personId,
-        personName: intent.name!.trim(),
-        unassign: false,
-      );
-    }
-    if (intent.personId != null) {
-      return (
-        personId: intent.personId,
-        personName: personNamesById[intent.personId]?.trim(),
-        unassign: false,
-      );
-    }
-  }
-  final id = baselinePersonId;
-  return (
-    personId: id,
-    personName: id != null ? personNamesById[id]?.trim() : null,
-    unassign: false,
-  );
-}
-
 class _CropAssignRow extends StatelessWidget {
   const _CropAssignRow({
     required this.tag,
@@ -401,7 +369,7 @@ class _CropAssignRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final appearance = appearanceForWhoTag(knowledge, tag.id);
-    final effective = _effectivePerson(
+    final effective = effectiveAssignedPerson(
       intent: intent,
       baselinePersonId: appearance?.personId,
       personNamesById: personNamesById,
@@ -528,7 +496,7 @@ class _ItemAssignRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final effective = _effectivePerson(
+    final effective = effectiveAssignedPerson(
       intent: intent,
       baselinePersonId: appearance.personId,
       personNamesById: personNamesById,
@@ -656,7 +624,7 @@ class _IncludedExclusionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final effective = _effectivePerson(
+    final effective = effectiveAssignedPerson(
       intent: intent,
       baselinePersonId: null,
       personNamesById: personNamesById,

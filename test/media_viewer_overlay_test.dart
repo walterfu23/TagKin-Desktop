@@ -52,6 +52,43 @@ void main() {
     expect(find.text('Sam'), findsOneWidget);
   });
 
+  testWidgets('WhoFaceOverlayLayer prefers assigned person name over tag value',
+      (tester) async {
+    final who = Tag(
+      id: 'tag_who_box',
+      itemId: 'item_1',
+      dimension: 'who',
+      value: 'toddler',
+      source: KnowledgeSource.model,
+      status: TagStatus.active,
+      confidence: 0.9,
+      region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.9, xMax: 0.9),
+      schemaVersion: 1,
+      createdAt: '2026-07-24T00:00:00.000Z',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 200,
+            height: 200,
+            child: WhoFaceOverlayLayer(
+              whoOverlays: [who],
+              personNameByWhoTagId: const {'tag_who_box': 'Alex'},
+              viewport: const Size(200, 200),
+              imageSize: const Size(200, 200),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('who-face-overlay-tag_who_box')), findsOneWidget);
+    expect(find.text('Alex'), findsOneWidget);
+    expect(find.text('toddler'), findsNothing);
+  });
+
   testWidgets('WhoFaceOverlayLayer draws nothing when overlays list is empty',
       (tester) async {
     await tester.pumpWidget(

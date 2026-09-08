@@ -15,9 +15,7 @@ class PersonsRepository {
   Future<List<Person>> listPersons() async {
     final response = await _client.get('/persons');
     final json = _client.decodeList(response, '/persons');
-    return json
-        .map((e) => Person.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return json.map((e) => Person.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   /// `GET /persons/{id}` — foreign ids surface as [ApiException] 404 (R10).
@@ -52,10 +50,14 @@ class PersonsRepository {
   /// `POST /persons/appearances/{id}/reassign` — move to another person (R6).
   /// Pass an existing [personId], or [name] to create a new named person then
   /// assign. Exactly one of [personId] / [name] is required.
-  Future<PersonAppearance> reassignAppearance(
+  ///
+  /// Alike faces still on the previous person are swept onto the target as
+  /// unconfirmed unless [propagateAlike] is false (undo).
+  Future<ReassignAppearanceResponse> reassignAppearance(
     String appearanceId, {
     String? personId,
     String? name,
+    bool? propagateAlike,
   }) async {
     assert(
       personId != null || name != null,
@@ -63,10 +65,14 @@ class PersonsRepository {
     );
     final response = await _client.post(
       '/persons/appearances/$appearanceId/reassign',
-      body: ReassignAppearance(personId: personId, name: name).toJson(),
+      body: ReassignAppearance(
+        personId: personId,
+        name: name,
+        propagateAlike: propagateAlike,
+      ).toJson(),
     );
     final json = _client.decodeMap(response, 'reassign-appearance');
-    return PersonAppearance.fromJson(json);
+    return ReassignAppearanceResponse.fromJson(json);
   }
 
   /// `POST /persons/appearances/{id}/confirm` — mark an unconfirmed
@@ -102,9 +108,7 @@ class PersonsRepository {
   ) async {
     final response = await _client.post(
       '/persons/appearances/decline-auto-assign',
-      body: DeclineAutoAssignAppearances(
-        appearanceIds: appearanceIds,
-      ).toJson(),
+      body: DeclineAutoAssignAppearances(appearanceIds: appearanceIds).toJson(),
     );
     final json = _client.decodeMap(response, 'decline-auto-assign');
     return DeclineAutoAssignAppearancesResponse.fromJson(json).appearances;
@@ -124,8 +128,9 @@ class PersonsRepository {
 
   /// `POST /persons/face-groups/{id}/assign` — promote a GroupFA/GroupFM into
   /// a named Person (GroupP when ≥2 faces). Prior FaceGroup is deleted (R6).
-  /// Exactly one of [personId] / [name] is required.
-  Future<PersonDetail> assignFaceGroup(
+  /// Exactly one of [personId] / [name] is required. Same-photo extras are
+  /// returned in [AssignFaceGroupResponse.skippedAppearances].
+  Future<AssignFaceGroupResponse> assignFaceGroup(
     String faceGroupId, {
     String? personId,
     String? name,
@@ -139,7 +144,7 @@ class PersonsRepository {
       body: AssignFaceGroup(personId: personId, name: name).toJson(),
     );
     final json = _client.decodeMap(response, 'assign-face-group');
-    return PersonDetail.fromJson(json);
+    return AssignFaceGroupResponse.fromJson(json);
   }
 
   /// `POST /persons/appearances/unassign` — move appearances to Unassigned.
@@ -195,10 +200,7 @@ class PersonsRepository {
   }) async {
     final response = await _client.get(
       '/persons/appearances/unassigned',
-      query: {
-        'limit': '$limit',
-        'offset': '$offset',
-      },
+      query: {'limit': '$limit', 'offset': '$offset'},
     );
     final json = _client.decodeMap(response, 'unassigned-appearances');
     return UnassignedAppearancesPage.fromJson(json);
@@ -211,10 +213,7 @@ class PersonsRepository {
   }) async {
     final response = await _client.get(
       '/persons/appearances/assigned',
-      query: {
-        'limit': '$limit',
-        'offset': '$offset',
-      },
+      query: {'limit': '$limit', 'offset': '$offset'},
     );
     final json = _client.decodeMap(response, 'assigned-appearances');
     return AssignedAppearancesPage.fromJson(json);
@@ -227,10 +226,7 @@ class PersonsRepository {
   }) async {
     final response = await _client.get(
       '/persons/exclusions',
-      query: {
-        'limit': '$limit',
-        'offset': '$offset',
-      },
+      query: {'limit': '$limit', 'offset': '$offset'},
     );
     final json = _client.decodeMap(response, 'account-exclusions');
     return AccountWhoExclusionsPage.fromJson(json);

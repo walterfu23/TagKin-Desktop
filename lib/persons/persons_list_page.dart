@@ -154,13 +154,7 @@ class _PersonsListPageState extends ConsumerState<PersonsListPage> {
                   );
                 }
 
-                final persons = List<Person>.from(snapshot.data!)
-                  ..sort((a, b) {
-                    final byName = personNameKey(a.name)
-                        .compareTo(personNameKey(b.name));
-                    if (byName != 0) return byName;
-                    return a.id.compareTo(b.id);
-                  });
+                final persons = sortedPersonsByName(snapshot.data!);
 
                 if (persons.isEmpty) {
                   return Center(

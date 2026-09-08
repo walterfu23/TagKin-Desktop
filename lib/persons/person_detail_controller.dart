@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/api/persons_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart' show personsRepositoryProvider;
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/persons/person_name.dart';
 
 /// Lifecycle of a per-person detail controller (D9).
 enum PersonDetailPhase { idle, loading, ready, busy, error }
@@ -42,7 +43,9 @@ class PersonDetailController extends ChangeNotifier {
       final all = await personsRepository.listPersons();
       if (_disposed) return;
       detail = loaded;
-      otherPersons = all.where((p) => p.id != personId).toList();
+      otherPersons = sortedPersonsByName(
+        all.where((p) => p.id != personId),
+      );
       phase = PersonDetailPhase.ready;
       notifyListeners();
     } catch (e) {
@@ -75,30 +78,35 @@ class PersonDetailController extends ChangeNotifier {
 
   /// Moves [appearanceId] onto an existing [personId], or creates a new named
   /// person via [name] then assigns it (R6). Exactly one of [personId] /
-  /// [name] is required.
-  Future<void> reassign(
+  /// [name] is required. Returns the reassign result (including swept faces)
+  /// or null if the controller was disposed or busy.
+  Future<ReassignAppearanceResponse?> reassign(
     String appearanceId, {
     String? personId,
     String? name,
+    bool? propagateAlike,
   }) async {
-    if (detail == null || isBusy) return;
+    if (detail == null || isBusy) return null;
     phase = PersonDetailPhase.busy;
     error = null;
     notifyListeners();
 
     try {
-      await personsRepository.reassignAppearance(
+      final result = await personsRepository.reassignAppearance(
         appearanceId,
         personId: personId,
         name: name,
+        propagateAlike: propagateAlike,
       );
-      if (_disposed) return;
+      if (_disposed) return null;
       await load();
+      return result;
     } catch (e) {
-      if (_disposed) return;
+      if (_disposed) return null;
       error = e;
       phase = PersonDetailPhase.error;
       notifyListeners();
+      return null;
     }
   }
 

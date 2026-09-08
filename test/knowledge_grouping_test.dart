@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/library/item_detail_edits.dart';
 import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 
 import 'fake_items_repository.dart';
@@ -211,6 +212,138 @@ void main() {
     expect(
       itemLevelPersonAssignments(knowledge).map((a) => a.id),
       ['ap_item'],
+    );
+  });
+
+  test('whoOverlayPersonNames is assigned name, draft-aware', () {
+    final item = fixtureItem(id: 'item_1');
+    final knowledge = fixtureKnowledge(
+      item: item,
+      tags: [
+        fixtureTag(
+          id: 'tag_who',
+          dimension: 'who',
+          value: 'toddler',
+          region: const TagRegion(
+            yMin: 0.1,
+            xMin: 0.1,
+            yMax: 0.4,
+            xMax: 0.4,
+          ),
+        ),
+      ],
+      appearances: [
+        fixtureAppearance(
+          id: 'ap_1',
+          personId: 'person_alex',
+          itemId: 'item_1',
+          tagId: 'tag_who',
+        ),
+      ],
+    );
+    const names = {'person_alex': 'Alex', 'person_maya': 'Maya'};
+
+    expect(
+      whoOverlayPersonNames(
+        knowledge: knowledge,
+        cropIntents: const {},
+        personNamesById: names,
+      ),
+      {'tag_who': 'Alex'},
+    );
+    expect(
+      whoOverlayPersonNames(
+        knowledge: knowledge,
+        cropIntents: const {
+          'tag_who': PersonAssignIntent(name: 'Maya'),
+        },
+        personNamesById: names,
+      ),
+      {'tag_who': 'Maya'},
+    );
+    expect(
+      whoOverlayPersonNames(
+        knowledge: knowledge,
+        cropIntents: const {
+          'tag_who': PersonAssignIntent(unassign: true),
+        },
+        personNamesById: names,
+      ),
+      isEmpty,
+    );
+    expect(
+      whoOverlayPersonNames(
+        knowledge: knowledge,
+        cropIntents: const {
+          'tag_who': PersonAssignIntent(exclude: true),
+        },
+        personNamesById: names,
+      ),
+      isEmpty,
+    );
+  });
+
+  test('draftPersonKeysOnItem occupies assigned and draft names', () {
+    final item = fixtureItem(id: 'item_1');
+    const region = TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4);
+    final knowledge = fixtureKnowledge(
+      item: item,
+      tags: [
+        fixtureTag(
+          id: 'tag_a',
+          dimension: 'who',
+          value: 'left',
+          region: region,
+        ),
+        fixtureTag(
+          id: 'tag_b',
+          dimension: 'who',
+          value: 'right',
+          region: region,
+        ),
+      ],
+      appearances: [
+        fixtureAppearance(
+          id: 'ap_a',
+          personId: 'person_maya',
+          itemId: 'item_1',
+          tagId: 'tag_a',
+        ),
+        fixtureAppearance(
+          id: 'ap_b',
+          personId: null,
+          itemId: 'item_1',
+          tagId: 'tag_b',
+        ),
+      ],
+    );
+    const names = {'person_maya': 'Maya'};
+    final occupied = draftPersonKeysOnItem(
+      knowledge: knowledge,
+      cropIntents: const {},
+      appearanceIntents: const {},
+      exclusionIntents: const {},
+      pendingItemAssigns: const [],
+      personNamesById: names,
+      exceptTagId: 'tag_b',
+    );
+    expect(occupied.personIds, {'person_maya'});
+    expect(occupied.nameKeys, {'maya'});
+    expect(
+      personOccupiedOnItem(
+        occupied: occupied,
+        personId: 'person_maya',
+        personNamesById: names,
+      ),
+      isTrue,
+    );
+    expect(
+      personOccupiedOnItem(
+        occupied: occupied,
+        personId: 'person_sam',
+        personNamesById: const {'person_sam': 'Sam'},
+      ),
+      isFalse,
     );
   });
 }

@@ -19,7 +19,8 @@ import 'package:tagkin_desktop/review/local_media_resolver.dart';
 /// (widget tests avoid media_kit init this way).
 ///
 /// [whoOverlays] draws one labeled square per who-tag that has a [TagRegion]
-/// (VLM face box), mapped through [BoxFit.contain].
+/// (VLM face box), mapped through [BoxFit.contain]. [personNameByWhoTagId]
+/// overrides the box label with an assigned person name when present.
 class MediaViewer extends StatelessWidget {
   const MediaViewer({
     super.key,
@@ -28,6 +29,7 @@ class MediaViewer extends StatelessWidget {
     this.player,
     this.videoController,
     this.whoOverlays = const [],
+    this.personNameByWhoTagId = const {},
   });
 
   final ItemType itemType;
@@ -41,6 +43,9 @@ class MediaViewer extends StatelessWidget {
 
   /// Who tags with regions to draw as face overlays on photos.
   final List<Tag> whoOverlays;
+
+  /// Assigned person name per who-tag id; the box falls back to [Tag.value].
+  final Map<String, String> personNameByWhoTagId;
 
   @override
   Widget build(BuildContext context) {
@@ -81,6 +86,7 @@ class MediaViewer extends StatelessWidget {
           child: _PhotoWithWhoOverlays(
             file: resolution.file!,
             whoOverlays: whoOverlays,
+            personNameByWhoTagId: personNameByWhoTagId,
           ),
         ),
       );
@@ -106,10 +112,12 @@ class _PhotoWithWhoOverlays extends StatefulWidget {
   const _PhotoWithWhoOverlays({
     required this.file,
     required this.whoOverlays,
+    this.personNameByWhoTagId = const {},
   });
 
   final File file;
   final List<Tag> whoOverlays;
+  final Map<String, String> personNameByWhoTagId;
 
   @override
   State<_PhotoWithWhoOverlays> createState() => _PhotoWithWhoOverlaysState();
@@ -172,6 +180,7 @@ class _PhotoWithWhoOverlaysState extends State<_PhotoWithWhoOverlays> {
             ),
             WhoFaceOverlayLayer(
               whoOverlays: widget.whoOverlays,
+              personNameByWhoTagId: widget.personNameByWhoTagId,
               viewport: viewport,
               imageSize: imageSize,
             ),
@@ -190,11 +199,13 @@ class WhoFaceOverlayLayer extends StatelessWidget {
     required this.whoOverlays,
     required this.viewport,
     required this.imageSize,
+    this.personNameByWhoTagId = const {},
   });
 
   final List<Tag> whoOverlays;
   final Size viewport;
   final Size imageSize;
+  final Map<String, String> personNameByWhoTagId;
 
   @override
   Widget build(BuildContext context) {
@@ -207,6 +218,7 @@ class WhoFaceOverlayLayer extends StatelessWidget {
               tag: tag,
               viewport: viewport,
               imageSize: imageSize,
+              personName: personNameByWhoTagId[tag.id],
             ),
       ],
     );
@@ -243,11 +255,13 @@ class _WhoFaceOverlay extends StatelessWidget {
     required this.tag,
     required this.viewport,
     required this.imageSize,
+    this.personName,
   });
 
   final Tag tag;
   final Size viewport;
   final Size imageSize;
+  final String? personName;
 
   @override
   Widget build(BuildContext context) {
@@ -260,6 +274,9 @@ class _WhoFaceOverlay extends StatelessWidget {
     if (rect.isEmpty) return const SizedBox.shrink();
 
     final scheme = Theme.of(context).colorScheme;
+    final assigned = personName?.trim();
+    final label =
+        (assigned != null && assigned.isNotEmpty) ? assigned : tag.value;
     return Positioned(
       left: rect.left,
       top: rect.top,
@@ -277,7 +294,7 @@ class _WhoFaceOverlay extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                 child: Text(
-                  tag.value,
+                  label,
                   style: TextStyle(
                     color: scheme.onPrimary,
                     fontSize: 11,

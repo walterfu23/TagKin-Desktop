@@ -35,12 +35,15 @@ FolderIngestQueue _queue({
   ActiveFolderIngestStore? checkpointStore,
   Future<void> Function(String folderPath)? ensureFolderAccess,
   Future<List<String>> Function()? bookmarkedFolders,
+  Future<List<MediaCandidate>> Function(String path)? enumerateFolder,
+  Future<int?> Function()? physicalMemoryBytes,
 }) {
   return FolderIngestQueue(
     itemsRepository: items,
     jobsRepository: jobs,
     isUsageBlocked: () => usageBlocked,
-    enumerateFolder: (path) async => byFolder[path] ?? const [],
+    enumerateFolder:
+        enumerateFolder ?? (path) async => byFolder[path] ?? const [],
     contentHasher: (path) async => 'hash-$path',
     perceptualHasher: (path) async => null,
     onItemUpdated: onItemUpdated,
@@ -48,45 +51,49 @@ FolderIngestQueue _queue({
     checkpointStore: checkpointStore,
     ensureFolderAccess: ensureFolderAccess,
     bookmarkedFolders: bookmarkedFolders,
+    physicalMemoryBytes:
+        physicalMemoryBytes ?? () async => 16 * 1024 * 1024 * 1024,
     prePassFactory: () => PrePassController(
       itemsRepository: items,
-      buildPayload: ({
-        required path,
-        required type,
-        faceEmbedder,
-        skipFaces = false,
-        maxFrames = 20,
-        minIntervalMs = 1000,
-        maxIntervalMs = 15000,
-        sceneCutThreshold = 0.3,
-      }) async {
-        return PrePassBuildResult(
-          payload: PrePassResult(
-            contentHash: 'hash',
-            appearances: [
-              PrePassAppearanceInput(
-                embedding: List<double>.filled(512, 0.0),
-                embeddingModelId: 'stub-face-embed-v1',
+      buildPayload:
+          ({
+            required path,
+            required type,
+            faceEmbedder,
+            skipFaces = false,
+            maxFrames = 20,
+            minIntervalMs = 1000,
+            maxIntervalMs = 15000,
+            sceneCutThreshold = 0.3,
+          }) async {
+            return PrePassBuildResult(
+              payload: PrePassResult(
+                contentHash: 'hash',
+                appearances: [
+                  PrePassAppearanceInput(
+                    embedding: List<double>.filled(512, 0.0),
+                    embeddingModelId: 'stub-face-embed-v1',
+                  ),
+                ],
               ),
-            ],
-          ),
-        );
-      },
+            );
+          },
     ),
     uploadFactory: () => UploadController(
       itemsRepository: items,
       readBytes: (path) async => [0xFF, 0xD8, 0xFF],
-      putBytes: ({
-        required uploadUrl,
-        required bytes,
-        required mimeType,
-        httpClient,
-      }) async {
-        return const ModelHostUploadResult(
-          analysisRef: 'files/test-ref',
-          rawBody: '{}',
-        );
-      },
+      putBytes:
+          ({
+            required uploadUrl,
+            required bytes,
+            required mimeType,
+            httpClient,
+          }) async {
+            return const ModelHostUploadResult(
+              analysisRef: 'files/test-ref',
+              rawBody: '{}',
+            );
+          },
     ),
     whoFaceLinkerFactory: () => WhoFaceLinker(items: items),
   );
@@ -134,6 +141,7 @@ void main() {
       itemsRepository: items,
       jobsRepository: jobs,
       isUsageBlocked: () => false,
+      physicalMemoryBytes: () async => 16 * 1024 * 1024 * 1024,
       enumerateFolder: (path) async {
         while (!releaseScan) {
           await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -144,35 +152,37 @@ void main() {
       perceptualHasher: (path) async => null,
       prePassFactory: () => PrePassController(
         itemsRepository: items,
-        buildPayload: ({
-          required path,
-          required type,
-          faceEmbedder,
-          skipFaces = false,
-          maxFrames = 20,
-          minIntervalMs = 1000,
-          maxIntervalMs = 15000,
-          sceneCutThreshold = 0.3,
-        }) async {
-          return PrePassBuildResult(
-            payload: PrePassResult(contentHash: 'hash'),
-          );
-        },
+        buildPayload:
+            ({
+              required path,
+              required type,
+              faceEmbedder,
+              skipFaces = false,
+              maxFrames = 20,
+              minIntervalMs = 1000,
+              maxIntervalMs = 15000,
+              sceneCutThreshold = 0.3,
+            }) async {
+              return PrePassBuildResult(
+                payload: PrePassResult(contentHash: 'hash'),
+              );
+            },
       ),
       uploadFactory: () => UploadController(
         itemsRepository: items,
         readBytes: (path) async => [0xFF, 0xD8, 0xFF],
-        putBytes: ({
-          required uploadUrl,
-          required bytes,
-          required mimeType,
-          httpClient,
-        }) async {
-          return const ModelHostUploadResult(
-            analysisRef: 'files/test-ref',
-            rawBody: '{}',
-          );
-        },
+        putBytes:
+            ({
+              required uploadUrl,
+              required bytes,
+              required mimeType,
+              httpClient,
+            }) async {
+              return const ModelHostUploadResult(
+                analysisRef: 'files/test-ref',
+                rawBody: '{}',
+              );
+            },
       ),
       whoFaceLinkerFactory: () => WhoFaceLinker(items: items),
     );
@@ -205,6 +215,141 @@ void main() {
     for (var i = 0; i < 80 && queue.hasActiveJobs; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
+  });
+
+  test(
+    'under 8 GiB RAM second folder waits until the first finishes scan',
+    () async {
+      final items = FakeItemsRepository();
+      final jobs = FakeJobsRepository();
+      var releaseScan = false;
+      var inFlight = 0;
+      var maxInFlight = 0;
+      final queue = _queue(
+        items: items,
+        jobs: jobs,
+        byFolder: const {},
+        physicalMemoryBytes: () async => 4 * 1024 * 1024 * 1024,
+        enumerateFolder: (path) async {
+          inFlight++;
+          if (inFlight > maxInFlight) maxInFlight = inFlight;
+          while (!releaseScan) {
+            await Future<void>.delayed(const Duration(milliseconds: 10));
+          }
+          inFlight--;
+          return [_photo('$path/a.jpg')];
+        },
+      );
+
+      expect(
+        await queue.enqueue('/albums/Paris'),
+        FolderIngestEnqueueResult.started,
+      );
+      for (var i = 0; i < 50 && maxInFlight == 0; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(
+        await queue.enqueue('/albums/Rome'),
+        FolderIngestEnqueueResult.started,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      expect(queue.maxParallelJobs, 1);
+      expect(maxInFlight, 1);
+      expect(queue.activeJobCount, 2);
+
+      releaseScan = true;
+      for (var i = 0; i < 80 && queue.hasActiveJobs; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(queue.hasActiveJobs, isFalse);
+      expect(maxInFlight, 1);
+    },
+  );
+
+  test('16 GiB RAM two folders scan at once', () async {
+    final items = FakeItemsRepository();
+    final jobs = FakeJobsRepository();
+    var releaseScan = false;
+    var inFlight = 0;
+    var maxInFlight = 0;
+    final queue = _queue(
+      items: items,
+      jobs: jobs,
+      byFolder: const {},
+      physicalMemoryBytes: () async => 16 * 1024 * 1024 * 1024,
+      enumerateFolder: (path) async {
+        inFlight++;
+        if (inFlight > maxInFlight) maxInFlight = inFlight;
+        while (!releaseScan) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        inFlight--;
+        return [_photo('$path/a.jpg')];
+      },
+    );
+
+    expect(
+      await queue.enqueue('/albums/Paris'),
+      FolderIngestEnqueueResult.started,
+    );
+    expect(
+      await queue.enqueue('/albums/Rome'),
+      FolderIngestEnqueueResult.started,
+    );
+    for (var i = 0; i < 50 && maxInFlight < 2; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(queue.maxParallelJobs, 2);
+    expect(maxInFlight, 2);
+
+    releaseScan = true;
+    for (var i = 0; i < 80 && queue.hasActiveJobs; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(queue.hasActiveJobs, isFalse);
+  });
+
+  test('RAM probe failure keeps two folders in parallel', () async {
+    final items = FakeItemsRepository();
+    final jobs = FakeJobsRepository();
+    var releaseScan = false;
+    var inFlight = 0;
+    var maxInFlight = 0;
+    final queue = _queue(
+      items: items,
+      jobs: jobs,
+      byFolder: const {},
+      physicalMemoryBytes: () async => null,
+      enumerateFolder: (path) async {
+        inFlight++;
+        if (inFlight > maxInFlight) maxInFlight = inFlight;
+        while (!releaseScan) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        inFlight--;
+        return [_photo('$path/a.jpg')];
+      },
+    );
+
+    expect(
+      await queue.enqueue('/albums/Paris'),
+      FolderIngestEnqueueResult.started,
+    );
+    expect(
+      await queue.enqueue('/albums/Rome'),
+      FolderIngestEnqueueResult.started,
+    );
+    for (var i = 0; i < 50 && maxInFlight < 2; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(queue.maxParallelJobs, 2);
+    expect(maxInFlight, 2);
+
+    releaseScan = true;
+    for (var i = 0; i < 80 && queue.hasActiveJobs; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(queue.hasActiveJobs, isFalse);
   });
 
   test('isLoadingPath while any ingest phase is still active', () async {
@@ -288,35 +433,37 @@ void main() {
       },
       prePassFactory: () => PrePassController(
         itemsRepository: items,
-        buildPayload: ({
-          required path,
-          required type,
-          faceEmbedder,
-          skipFaces = false,
-          maxFrames = 20,
-          minIntervalMs = 1000,
-          maxIntervalMs = 15000,
-          sceneCutThreshold = 0.3,
-        }) async {
-          return PrePassBuildResult(
-            payload: PrePassResult(contentHash: 'hash'),
-          );
-        },
+        buildPayload:
+            ({
+              required path,
+              required type,
+              faceEmbedder,
+              skipFaces = false,
+              maxFrames = 20,
+              minIntervalMs = 1000,
+              maxIntervalMs = 15000,
+              sceneCutThreshold = 0.3,
+            }) async {
+              return PrePassBuildResult(
+                payload: PrePassResult(contentHash: 'hash'),
+              );
+            },
       ),
       uploadFactory: () => UploadController(
         itemsRepository: items,
         readBytes: (path) async => [0xFF, 0xD8, 0xFF],
-        putBytes: ({
-          required uploadUrl,
-          required bytes,
-          required mimeType,
-          httpClient,
-        }) async {
-          return const ModelHostUploadResult(
-            analysisRef: 'files/test-ref',
-            rawBody: '{}',
-          );
-        },
+        putBytes:
+            ({
+              required uploadUrl,
+              required bytes,
+              required mimeType,
+              httpClient,
+            }) async {
+              return const ModelHostUploadResult(
+                analysisRef: 'files/test-ref',
+                rawBody: '{}',
+              );
+            },
       ),
       whoFaceLinkerFactory: () => WhoFaceLinker(items: items),
     );
@@ -329,111 +476,115 @@ void main() {
     expect(items.created, hasLength(1));
   });
 
-  test('onItemUpdated patches tagged after each analyze before the job ends',
-      () async {
-    final items = FakeItemsRepository();
-    final jobs = FakeJobsRepository(
-      libraryItems: items,
-      onAnalyzed: items.replaceItem,
-      analyzeDelay: const Duration(milliseconds: 40),
-    );
-    final updated = <Item>[];
-    final queue = _queue(
-      items: items,
-      jobs: jobs,
-      onItemUpdated: updated.add,
-      byFolder: {
-        '/albums/Paris': [
-          _photo('/albums/Paris/a.jpg'),
-          _photo('/albums/Paris/b.jpg'),
-        ],
-      },
-    );
+  test(
+    'onItemUpdated patches tagged after each analyze before the job ends',
+    () async {
+      final items = FakeItemsRepository();
+      final jobs = FakeJobsRepository(
+        libraryItems: items,
+        onAnalyzed: items.replaceItem,
+        analyzeDelay: const Duration(milliseconds: 40),
+      );
+      final updated = <Item>[];
+      final queue = _queue(
+        items: items,
+        jobs: jobs,
+        onItemUpdated: updated.add,
+        byFolder: {
+          '/albums/Paris': [
+            _photo('/albums/Paris/a.jpg'),
+            _photo('/albums/Paris/b.jpg'),
+          ],
+        },
+      );
 
-    await queue.enqueue('/albums/Paris');
+      await queue.enqueue('/albums/Paris');
 
-    var taggedCount = 0;
-    for (var i = 0; i < 100; i++) {
-      taggedCount = updated
-          .where((it) => it.processingStatus == ProcessingStatus.tagged)
-          .length;
-      if (taggedCount >= 1) break;
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-    }
+      var taggedCount = 0;
+      for (var i = 0; i < 100; i++) {
+        taggedCount = updated
+            .where((it) => it.processingStatus == ProcessingStatus.tagged)
+            .length;
+        if (taggedCount >= 1) break;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
 
-    expect(taggedCount, 1);
-    expect(queue.hasActiveJobs, isTrue);
-    expect(queue.jobs.single.phase, FolderIngestJobPhase.processing);
-    expect(queue.jobs.single.statusLabel, contains('Processing'));
-    expect(
-      updated
-          .where((it) => it.processingStatus == ProcessingStatus.tagged)
-          .length,
-      1,
-    );
+      expect(taggedCount, 1);
+      expect(queue.hasActiveJobs, isTrue);
+      expect(queue.jobs.single.phase, FolderIngestJobPhase.processing);
+      expect(queue.jobs.single.statusLabel, contains('Processing'));
+      expect(
+        updated
+            .where((it) => it.processingStatus == ProcessingStatus.tagged)
+            .length,
+        1,
+      );
 
-    for (var i = 0; i < 80 && queue.hasActiveJobs; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-    }
-    expect(queue.hasActiveJobs, isFalse);
-    expect(
-      updated
-          .where((it) => it.processingStatus == ProcessingStatus.tagged)
-          .length,
-      2,
-    );
-  });
+      for (var i = 0; i < 80 && queue.hasActiveJobs; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(queue.hasActiveJobs, isFalse);
+      expect(
+        updated
+            .where((it) => it.processingStatus == ProcessingStatus.tagged)
+            .length,
+        2,
+      );
+    },
+  );
 
-  test('continue-only patches tagged after each analyze before the job ends',
-      () async {
-    final a = fixtureItem(
-      id: 'cont_a',
-      sourceRef: Uri.file('/albums/Paris/a.jpg').toString(),
-      processingStatus: ProcessingStatus.pending,
-    );
-    final b = fixtureItem(
-      id: 'cont_b',
-      sourceRef: Uri.file('/albums/Paris/b.jpg').toString(),
-      processingStatus: ProcessingStatus.pending,
-    );
-    final items = FakeItemsRepository(items: [a, b]);
-    final jobs = FakeJobsRepository(
-      libraryItems: items,
-      onAnalyzed: items.replaceItem,
-      analyzeDelay: const Duration(milliseconds: 40),
-    );
-    final updated = <Item>[];
-    final queue = _queue(
-      items: items,
-      jobs: jobs,
-      onItemUpdated: updated.add,
-      byFolder: const {},
-    );
+  test(
+    'continue-only patches tagged after each analyze before the job ends',
+    () async {
+      final a = fixtureItem(
+        id: 'cont_a',
+        sourceRef: Uri.file('/albums/Paris/a.jpg').toString(),
+        processingStatus: ProcessingStatus.pending,
+      );
+      final b = fixtureItem(
+        id: 'cont_b',
+        sourceRef: Uri.file('/albums/Paris/b.jpg').toString(),
+        processingStatus: ProcessingStatus.pending,
+      );
+      final items = FakeItemsRepository(items: [a, b]);
+      final jobs = FakeJobsRepository(
+        libraryItems: items,
+        onAnalyzed: items.replaceItem,
+        analyzeDelay: const Duration(milliseconds: 40),
+      );
+      final updated = <Item>[];
+      final queue = _queue(
+        items: items,
+        jobs: jobs,
+        onItemUpdated: updated.add,
+        byFolder: const {},
+      );
 
-    await queue.restoreIncompleteFromLibrary();
+      await queue.restoreIncompleteFromLibrary();
 
-    var taggedCount = 0;
-    for (var i = 0; i < 100; i++) {
-      taggedCount = updated
-          .where((it) => it.processingStatus == ProcessingStatus.tagged)
-          .length;
-      if (taggedCount >= 1) break;
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-    }
+      var taggedCount = 0;
+      for (var i = 0; i < 100; i++) {
+        taggedCount = updated
+            .where((it) => it.processingStatus == ProcessingStatus.tagged)
+            .length;
+        if (taggedCount >= 1) break;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
 
-    expect(taggedCount, 1);
-    expect(queue.hasActiveJobs, isTrue);
-    expect(queue.jobs.single.continueExistingOnly, isTrue);
-    expect(queue.jobs.single.phase, FolderIngestJobPhase.processing);
+      expect(taggedCount, 1);
+      expect(queue.hasActiveJobs, isTrue);
+      expect(queue.jobs.single.continueExistingOnly, isTrue);
+      expect(queue.jobs.single.phase, FolderIngestJobPhase.processing);
 
-    await _waitIdle(queue);
-    expect(
-      updated
-          .where((it) => it.processingStatus == ProcessingStatus.tagged)
-          .length,
-      2,
-    );
-  });
+      await _waitIdle(queue);
+      expect(
+        updated
+            .where((it) => it.processingStatus == ProcessingStatus.tagged)
+            .length,
+        2,
+      );
+    },
+  );
 
   test('existing tagged items are not re-pipelined', () async {
     const path = '/albums/Paris/a.jpg';
@@ -529,84 +680,85 @@ void main() {
     expect(queue.jobs.single.phase, FolderIngestJobPhase.done);
   });
 
-  test('restoreInterrupted without account id can retry after id is set',
-      () async {
-    final temp = await Directory.systemTemp.createTemp('tagkin_ingest_ckpt_');
-    addTearDown(() => deleteTempDir(temp));
-    final store = ActiveFolderIngestStore(supportDir: temp);
-    await store.add('acc_1', '/albums/Paris');
+  test(
+    'restoreInterrupted without account id can retry after id is set',
+    () async {
+      final temp = await Directory.systemTemp.createTemp('tagkin_ingest_ckpt_');
+      addTearDown(() => deleteTempDir(temp));
+      final store = ActiveFolderIngestStore(supportDir: temp);
+      await store.add('acc_1', '/albums/Paris');
 
-    String? id;
-    const path = '/albums/Paris/a.jpg';
-    final existing = fixtureItem(
-      id: 'item_retry_restore',
-      sourceRef: Uri.file(path).toString(),
-      processingStatus: ProcessingStatus.pending,
-      analysisRefState: AnalysisRefState.pending,
-    );
-    final items = FakeItemsRepository(items: [existing]);
-    final jobs = FakeJobsRepository();
-    final queue = _queue(
-      items: items,
-      jobs: jobs,
-      byFolder: {
-        '/albums/Paris': [_photo(path)],
-      },
-      accountId: () => id,
-      checkpointStore: store,
-    );
+      String? id;
+      const path = '/albums/Paris/a.jpg';
+      final existing = fixtureItem(
+        id: 'item_retry_restore',
+        sourceRef: Uri.file(path).toString(),
+        processingStatus: ProcessingStatus.pending,
+        analysisRefState: AnalysisRefState.pending,
+      );
+      final items = FakeItemsRepository(items: [existing]);
+      final jobs = FakeJobsRepository();
+      final queue = _queue(
+        items: items,
+        jobs: jobs,
+        byFolder: {
+          '/albums/Paris': [_photo(path)],
+        },
+        accountId: () => id,
+        checkpointStore: store,
+      );
 
-    await queue.restoreInterrupted();
-    expect(queue.jobs, isEmpty);
+      await queue.restoreInterrupted();
+      expect(queue.jobs, isEmpty);
 
-    id = 'acc_1';
-    await queue.restoreInterrupted();
-    await _waitIdle(queue);
+      id = 'acc_1';
+      await queue.restoreInterrupted();
+      await _waitIdle(queue);
 
-    expect(jobs.analyzedItemIds, ['item_retry_restore']);
-    expect(queue.jobs.single.continuedCount, 1);
-  });
+      expect(jobs.analyzedItemIds, ['item_retry_restore']);
+      expect(queue.jobs.single.continuedCount, 1);
+    },
+  );
 
-  test('missing folder access fails the job and drops the checkpoint',
-      () async {
-    final temp = await Directory.systemTemp.createTemp('tagkin_ingest_ckpt_');
-    addTearDown(() => deleteTempDir(temp));
-    final store = ActiveFolderIngestStore(supportDir: temp);
-    await store.add('acc_1', '/albums/Paris');
+  test(
+    'missing folder access fails the job and drops the checkpoint',
+    () async {
+      final temp = await Directory.systemTemp.createTemp('tagkin_ingest_ckpt_');
+      addTearDown(() => deleteTempDir(temp));
+      final store = ActiveFolderIngestStore(supportDir: temp);
+      await store.add('acc_1', '/albums/Paris');
 
-    var enumerated = false;
-    final items = FakeItemsRepository();
-    final jobs = FakeJobsRepository();
-    final queue = FolderIngestQueue(
-      itemsRepository: items,
-      jobsRepository: jobs,
-      isUsageBlocked: () => false,
-      enumerateFolder: (path) async {
-        enumerated = true;
-        return [_photo('$path/a.jpg')];
-      },
-      contentHasher: (path) async => 'hash-$path',
-      perceptualHasher: (path) async => null,
-      accountId: () => 'acc_1',
-      checkpointStore: store,
-      ensureFolderAccess: (_) async {
-        throw FolderAccessException(
-          'Add this folder again to continue ingest.',
-        );
-      },
-    );
+      var enumerated = false;
+      final items = FakeItemsRepository();
+      final jobs = FakeJobsRepository();
+      final queue = FolderIngestQueue(
+        itemsRepository: items,
+        jobsRepository: jobs,
+        isUsageBlocked: () => false,
+        enumerateFolder: (path) async {
+          enumerated = true;
+          return [_photo('$path/a.jpg')];
+        },
+        contentHasher: (path) async => 'hash-$path',
+        perceptualHasher: (path) async => null,
+        accountId: () => 'acc_1',
+        checkpointStore: store,
+        ensureFolderAccess: (_) async {
+          throw FolderAccessException(
+            'Add this folder again to continue ingest.',
+          );
+        },
+      );
 
-    await queue.restoreInterrupted();
-    await _waitIdle(queue);
+      await queue.restoreInterrupted();
+      await _waitIdle(queue);
 
-    expect(enumerated, isFalse);
-    expect(queue.jobs.single.phase, FolderIngestJobPhase.error);
-    expect(
-      queue.jobs.single.statusLabel,
-      contains('Add this folder again'),
-    );
-    expect(await store.listForAccount('acc_1'), isEmpty);
-  });
+      expect(enumerated, isFalse);
+      expect(queue.jobs.single.phase, FolderIngestJobPhase.error);
+      expect(queue.jobs.single.statusLabel, contains('Add this folder again'));
+      expect(await store.listForAccount('acc_1'), isEmpty);
+    },
+  );
 
   test('ensureFolderAccess runs before enumerate', () async {
     var accessCalled = false;
@@ -630,35 +782,37 @@ void main() {
       perceptualHasher: (path) async => null,
       prePassFactory: () => PrePassController(
         itemsRepository: items,
-        buildPayload: ({
-          required path,
-          required type,
-          faceEmbedder,
-          skipFaces = false,
-          maxFrames = 20,
-          minIntervalMs = 1000,
-          maxIntervalMs = 15000,
-          sceneCutThreshold = 0.3,
-        }) async {
-          return PrePassBuildResult(
-            payload: PrePassResult(contentHash: 'hash'),
-          );
-        },
+        buildPayload:
+            ({
+              required path,
+              required type,
+              faceEmbedder,
+              skipFaces = false,
+              maxFrames = 20,
+              minIntervalMs = 1000,
+              maxIntervalMs = 15000,
+              sceneCutThreshold = 0.3,
+            }) async {
+              return PrePassBuildResult(
+                payload: PrePassResult(contentHash: 'hash'),
+              );
+            },
       ),
       uploadFactory: () => UploadController(
         itemsRepository: items,
         readBytes: (path) async => [0xFF, 0xD8, 0xFF],
-        putBytes: ({
-          required uploadUrl,
-          required bytes,
-          required mimeType,
-          httpClient,
-        }) async {
-          return const ModelHostUploadResult(
-            analysisRef: 'files/test-ref',
-            rawBody: '{}',
-          );
-        },
+        putBytes:
+            ({
+              required uploadUrl,
+              required bytes,
+              required mimeType,
+              httpClient,
+            }) async {
+              return const ModelHostUploadResult(
+                analysisRef: 'files/test-ref',
+                rawBody: '{}',
+              );
+            },
       ),
       whoFaceLinkerFactory: () => WhoFaceLinker(items: items),
     );
@@ -670,142 +824,146 @@ void main() {
     expect(enumCalled, isTrue);
   });
 
-  test('restoreIncompleteFromLibrary pipelines pending without create',
-      () async {
-    const path = '/albums/Paris/a.jpg';
-    final existing = fixtureItem(
-      id: 'item_lib',
-      sourceRef: Uri.file(path).toString(),
-      processingStatus: ProcessingStatus.pending,
-      analysisRefState: AnalysisRefState.pending,
-    );
-    var enumerated = false;
-    final items = FakeItemsRepository(items: [existing]);
-    final jobs = FakeJobsRepository(
-      libraryItems: items,
-      onAnalyzed: items.replaceItem,
-    );
-    final queue = FolderIngestQueue(
-      itemsRepository: items,
-      jobsRepository: jobs,
-      isUsageBlocked: () => false,
-      enumerateFolder: (path) async {
-        enumerated = true;
-        return [_photo('$path/a.jpg')];
-      },
-      contentHasher: (path) async => 'hash-$path',
-      perceptualHasher: (path) async => null,
-      prePassFactory: () => PrePassController(
+  test(
+    'restoreIncompleteFromLibrary pipelines pending without create',
+    () async {
+      const path = '/albums/Paris/a.jpg';
+      final existing = fixtureItem(
+        id: 'item_lib',
+        sourceRef: Uri.file(path).toString(),
+        processingStatus: ProcessingStatus.pending,
+        analysisRefState: AnalysisRefState.pending,
+      );
+      var enumerated = false;
+      final items = FakeItemsRepository(items: [existing]);
+      final jobs = FakeJobsRepository(
+        libraryItems: items,
+        onAnalyzed: items.replaceItem,
+      );
+      final queue = FolderIngestQueue(
         itemsRepository: items,
-        buildPayload: ({
-          required path,
-          required type,
-          faceEmbedder,
-          skipFaces = false,
-          maxFrames = 20,
-          minIntervalMs = 1000,
-          maxIntervalMs = 15000,
-          sceneCutThreshold = 0.3,
-        }) async {
-          return PrePassBuildResult(
-            payload: PrePassResult(contentHash: 'hash'),
-          );
+        jobsRepository: jobs,
+        isUsageBlocked: () => false,
+        enumerateFolder: (path) async {
+          enumerated = true;
+          return [_photo('$path/a.jpg')];
         },
-      ),
-      uploadFactory: () => UploadController(
-        itemsRepository: items,
-        readBytes: (path) async => [0xFF, 0xD8, 0xFF],
-        putBytes: ({
-          required uploadUrl,
-          required bytes,
-          required mimeType,
-          httpClient,
-        }) async {
-          return const ModelHostUploadResult(
-            analysisRef: 'files/test-ref',
-            rawBody: '{}',
-          );
-        },
-      ),
-      whoFaceLinkerFactory: () => WhoFaceLinker(items: items),
-    );
+        contentHasher: (path) async => 'hash-$path',
+        perceptualHasher: (path) async => null,
+        prePassFactory: () => PrePassController(
+          itemsRepository: items,
+          buildPayload:
+              ({
+                required path,
+                required type,
+                faceEmbedder,
+                skipFaces = false,
+                maxFrames = 20,
+                minIntervalMs = 1000,
+                maxIntervalMs = 15000,
+                sceneCutThreshold = 0.3,
+              }) async {
+                return PrePassBuildResult(
+                  payload: PrePassResult(contentHash: 'hash'),
+                );
+              },
+        ),
+        uploadFactory: () => UploadController(
+          itemsRepository: items,
+          readBytes: (path) async => [0xFF, 0xD8, 0xFF],
+          putBytes:
+              ({
+                required uploadUrl,
+                required bytes,
+                required mimeType,
+                httpClient,
+              }) async {
+                return const ModelHostUploadResult(
+                  analysisRef: 'files/test-ref',
+                  rawBody: '{}',
+                );
+              },
+        ),
+        whoFaceLinkerFactory: () => WhoFaceLinker(items: items),
+      );
 
-    await queue.restoreIncompleteFromLibrary();
-    await _waitIdle(queue);
+      await queue.restoreIncompleteFromLibrary();
+      await _waitIdle(queue);
 
-    expect(enumerated, isFalse);
-    expect(items.created, isEmpty);
-    expect(jobs.analyzedItemIds, ['item_lib']);
-    expect(queue.jobs.single.continueExistingOnly, isTrue);
-    expect(queue.jobs.single.continuedCount, 1);
-    expect(queue.jobs.single.phase, FolderIngestJobPhase.done);
-  });
+      expect(enumerated, isFalse);
+      expect(items.created, isEmpty);
+      expect(jobs.analyzedItemIds, ['item_lib']);
+      expect(queue.jobs.single.continueExistingOnly, isTrue);
+      expect(queue.jobs.single.continuedCount, 1);
+      expect(queue.jobs.single.phase, FolderIngestJobPhase.done);
+    },
+  );
 
-  test('restoreIncompleteFromLibrary skips tagged and continues failed',
-      () async {
-    final tagged = fixtureItem(
-      id: 'item_ok',
-      sourceRef: Uri.file('/albums/Paris/ok.jpg').toString(),
-      processingStatus: ProcessingStatus.tagged,
-      analysisRefState: AnalysisRefState.ready,
-    );
-    final failed = fixtureItem(
-      id: 'item_fail',
-      sourceRef: Uri.file('/albums/Paris/fail.jpg').toString(),
-      processingStatus: ProcessingStatus.failed,
-      analysisRefState: AnalysisRefState.ready,
-    );
-    final items = FakeItemsRepository(items: [tagged, failed]);
-    final jobs = FakeJobsRepository(
-      libraryItems: items,
-      onAnalyzed: items.replaceItem,
-    );
-    final queue = _queue(
-      items: items,
-      jobs: jobs,
-      byFolder: const {},
-    );
+  test(
+    'restoreIncompleteFromLibrary skips tagged and continues failed',
+    () async {
+      final tagged = fixtureItem(
+        id: 'item_ok',
+        sourceRef: Uri.file('/albums/Paris/ok.jpg').toString(),
+        processingStatus: ProcessingStatus.tagged,
+        analysisRefState: AnalysisRefState.ready,
+      );
+      final failed = fixtureItem(
+        id: 'item_fail',
+        sourceRef: Uri.file('/albums/Paris/fail.jpg').toString(),
+        processingStatus: ProcessingStatus.failed,
+        analysisRefState: AnalysisRefState.ready,
+      );
+      final items = FakeItemsRepository(items: [tagged, failed]);
+      final jobs = FakeJobsRepository(
+        libraryItems: items,
+        onAnalyzed: items.replaceItem,
+      );
+      final queue = _queue(items: items, jobs: jobs, byFolder: const {});
 
-    await queue.restoreIncompleteFromLibrary();
-    await _waitIdle(queue);
+      await queue.restoreIncompleteFromLibrary();
+      await _waitIdle(queue);
 
-    expect(items.created, isEmpty);
-    expect(jobs.analyzedItemIds, ['item_fail']);
-    expect(queue.jobs.single.continuedCount, 1);
-  });
+      expect(items.created, isEmpty);
+      expect(jobs.analyzedItemIds, ['item_fail']);
+      expect(queue.jobs.single.continuedCount, 1);
+    },
+  );
 
-  test('restoreIncompleteFromLibrary collapses nested leaves to bookmark',
-      () async {
-    final day1 = fixtureItem(
-      id: 'item_d1',
-      sourceRef: Uri.file('/albums/Paris/day1/a.jpg').toString(),
-      processingStatus: ProcessingStatus.pending,
-    );
-    final day2 = fixtureItem(
-      id: 'item_d2',
-      sourceRef: Uri.file('/albums/Paris/day2/b.jpg').toString(),
-      processingStatus: ProcessingStatus.pending,
-    );
-    final items = FakeItemsRepository(items: [day1, day2]);
-    final jobs = FakeJobsRepository(
-      libraryItems: items,
-      onAnalyzed: items.replaceItem,
-    );
-    final queue = _queue(
-      items: items,
-      jobs: jobs,
-      byFolder: const {},
-      bookmarkedFolders: () async => ['/albums/Paris'],
-    );
+  test(
+    'restoreIncompleteFromLibrary collapses nested leaves to bookmark',
+    () async {
+      final day1 = fixtureItem(
+        id: 'item_d1',
+        sourceRef: Uri.file('/albums/Paris/day1/a.jpg').toString(),
+        processingStatus: ProcessingStatus.pending,
+      );
+      final day2 = fixtureItem(
+        id: 'item_d2',
+        sourceRef: Uri.file('/albums/Paris/day2/b.jpg').toString(),
+        processingStatus: ProcessingStatus.pending,
+      );
+      final items = FakeItemsRepository(items: [day1, day2]);
+      final jobs = FakeJobsRepository(
+        libraryItems: items,
+        onAnalyzed: items.replaceItem,
+      );
+      final queue = _queue(
+        items: items,
+        jobs: jobs,
+        byFolder: const {},
+        bookmarkedFolders: () async => ['/albums/Paris'],
+      );
 
-    await queue.restoreIncompleteFromLibrary();
-    await _waitIdle(queue);
+      await queue.restoreIncompleteFromLibrary();
+      await _waitIdle(queue);
 
-    expect(queue.jobs, hasLength(1));
-    expect(queue.jobs.single.folderPath, '/albums/Paris');
-    expect(queue.jobs.single.continuedCount, 2);
-    expect(jobs.analyzedItemIds, unorderedEquals(['item_d1', 'item_d2']));
-  });
+      expect(queue.jobs, hasLength(1));
+      expect(queue.jobs.single.folderPath, '/albums/Paris');
+      expect(queue.jobs.single.continuedCount, 2);
+      expect(jobs.analyzedItemIds, unorderedEquals(['item_d1', 'item_d2']));
+    },
+  );
 
   test('restoreOnSignIn does not re-enqueue a checkpointed folder', () async {
     final temp = await Directory.systemTemp.createTemp('tagkin_ingest_ckpt_');
@@ -839,35 +997,37 @@ void main() {
       perceptualHasher: (path) async => null,
       prePassFactory: () => PrePassController(
         itemsRepository: items,
-        buildPayload: ({
-          required path,
-          required type,
-          faceEmbedder,
-          skipFaces = false,
-          maxFrames = 20,
-          minIntervalMs = 1000,
-          maxIntervalMs = 15000,
-          sceneCutThreshold = 0.3,
-        }) async {
-          return PrePassBuildResult(
-            payload: PrePassResult(contentHash: 'hash'),
-          );
-        },
+        buildPayload:
+            ({
+              required path,
+              required type,
+              faceEmbedder,
+              skipFaces = false,
+              maxFrames = 20,
+              minIntervalMs = 1000,
+              maxIntervalMs = 15000,
+              sceneCutThreshold = 0.3,
+            }) async {
+              return PrePassBuildResult(
+                payload: PrePassResult(contentHash: 'hash'),
+              );
+            },
       ),
       uploadFactory: () => UploadController(
         itemsRepository: items,
         readBytes: (path) async => [0xFF, 0xD8, 0xFF],
-        putBytes: ({
-          required uploadUrl,
-          required bytes,
-          required mimeType,
-          httpClient,
-        }) async {
-          return const ModelHostUploadResult(
-            analysisRef: 'files/test-ref',
-            rawBody: '{}',
-          );
-        },
+        putBytes:
+            ({
+              required uploadUrl,
+              required bytes,
+              required mimeType,
+              httpClient,
+            }) async {
+              return const ModelHostUploadResult(
+                analysisRef: 'files/test-ref',
+                rawBody: '{}',
+              );
+            },
       ),
       whoFaceLinkerFactory: () => WhoFaceLinker(items: items),
     );
@@ -912,10 +1072,7 @@ void main() {
 
     expect(enumerated, isFalse);
     expect(queue.jobs.single.phase, FolderIngestJobPhase.error);
-    expect(
-      queue.jobs.single.statusLabel,
-      contains('Add this folder again'),
-    );
+    expect(queue.jobs.single.statusLabel, contains('Add this folder again'));
   });
 }
 

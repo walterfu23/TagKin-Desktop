@@ -239,6 +239,28 @@ class AssignFaceGroup {
   }
 }
 
+class AssignFaceGroupResponse {
+  const AssignFaceGroupResponse({
+    required this.person,
+    required this.skippedAppearances,
+  });
+
+  final PersonDetail person;
+  final List<PersonAppearance> skippedAppearances;
+
+  factory AssignFaceGroupResponse.fromJson(Map<String, dynamic> json) => AssignFaceGroupResponse(
+        person: PersonDetail.fromJson(json['person'] as Map<String, dynamic>),
+        skippedAppearances: (json['skippedAppearances'] as List<dynamic>).map((e) => PersonAppearance.fromJson(e as Map<String, dynamic>)).toList(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['person'] = person.toJson();
+    json['skippedAppearances'] = skippedAppearances.map((e) => e.toJson()).toList();
+    return json;
+  }
+}
+
 class AssignPerson {
   const AssignPerson({
     this.personId,
@@ -1509,20 +1531,46 @@ class ReassignAppearance {
   const ReassignAppearance({
     this.personId,
     this.name,
+    this.propagateAlike,
   });
 
   final String? personId;
   final String? name;
+  final bool? propagateAlike;
 
   factory ReassignAppearance.fromJson(Map<String, dynamic> json) => ReassignAppearance(
         personId: json['personId'] == null ? null : json['personId'] as String,
         name: json['name'] == null ? null : json['name'] as String,
+        propagateAlike: json['propagateAlike'] == null ? null : json['propagateAlike'] as bool,
       );
 
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{};
     if (personId != null) json['personId'] = personId;
     if (name != null) json['name'] = name;
+    if (propagateAlike != null) json['propagateAlike'] = propagateAlike;
+    return json;
+  }
+}
+
+class ReassignAppearanceResponse {
+  const ReassignAppearanceResponse({
+    required this.appearance,
+    required this.alsoMoved,
+  });
+
+  final PersonAppearance appearance;
+  final List<PersonAppearance> alsoMoved;
+
+  factory ReassignAppearanceResponse.fromJson(Map<String, dynamic> json) => ReassignAppearanceResponse(
+        appearance: PersonAppearance.fromJson(json['appearance'] as Map<String, dynamic>),
+        alsoMoved: (json['alsoMoved'] as List<dynamic>).map((e) => PersonAppearance.fromJson(e as Map<String, dynamic>)).toList(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['appearance'] = appearance.toJson();
+    json['alsoMoved'] = alsoMoved.map((e) => e.toJson()).toList();
     return json;
   }
 }

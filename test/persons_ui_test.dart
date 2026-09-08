@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/app_shell.dart';
@@ -462,5 +463,90 @@ void main() {
     expect(persons.reassignCalls.single.appearanceId, 'ap_1');
     expect(persons.reassignCalls.single.personId, 'person_2');
     expect(persons.reassignCalls.single.name, isNull);
+  });
+
+  testWidgets(
+      'person detail: reassign undo restores swept alike faces',
+      (tester) async {
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: 'Sam',
+          appearances: [
+            fixtureAppearance(id: 'ap_1', personId: 'person_1'),
+            fixtureAppearance(
+              id: 'ap_2',
+              personId: 'person_1',
+              itemId: 'item_2',
+              assignmentState: 'unconfirmed',
+            ),
+          ],
+        ),
+        fixturePersonDetail(
+          id: 'person_2',
+          name: 'Alex',
+          appearances: const [],
+        ),
+      ],
+    )..sweepSiblingsOnReassign = true;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+        ],
+        child: const MaterialApp(
+          home: PersonDetailPage(personId: 'person_1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('appearance-reassign-select-ap_1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Alex').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('appearance-reassign-ap_1')));
+    await tester.pumpAndSettle();
+
+    expect(
+      persons.personDetails
+          .firstWhere((p) => p.id == 'person_2')
+          .appearances
+          .map((a) => a.id),
+      containsAll(['ap_1', 'ap_2']),
+    );
+    expect(
+      persons.personDetails
+          .firstWhere((p) => p.id == 'person_1')
+          .appearances,
+      isEmpty,
+    );
+    expect(find.byKey(const Key('person-also-moved')), findsOneWidget);
+    expect(find.byKey(const Key('undo-depth')), findsOneWidget);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.meta);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.meta);
+    await tester.pumpAndSettle();
+
+    expect(
+      persons.personDetails
+          .firstWhere((p) => p.id == 'person_1')
+          .appearances
+          .map((a) => a.id),
+      containsAll(['ap_1', 'ap_2']),
+    );
+    expect(
+      persons.personDetails
+          .firstWhere((p) => p.id == 'person_2')
+          .appearances,
+      isEmpty,
+    );
+    expect(persons.reassignCalls.last.propagateAlike, isFalse);
+    expect(persons.declineAutoAssignAppearancesCalls, [
+      ['ap_2'],
+    ]);
   });
 }

@@ -4,6 +4,7 @@ import 'package:tagkin_desktop/persons/collection_dialogs.dart';
 import 'package:tagkin_desktop/persons/collection_navigation.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
+import 'package:tagkin_desktop/ui/alpha_order.dart';
 
 /// Blocking start gate when the catalog has collections but none was resumed
 /// (missing or stale [CollectionsFile.currentCollectionId]).
@@ -256,7 +257,10 @@ Future<void> runCollectionMenuCommand({
       cols.addFolder(picked);
     case CollectionMenuCommand.removeFolder:
       if (!cols.hasCurrent) return;
-      final members = cols.current.leafFolders;
+      final members = sortedAlphaBy(
+        cols.current.leafFolders,
+        leafFolderLabel,
+      );
       if (members.isEmpty) return;
       final picked = await showDialog<String>(
         context: context,

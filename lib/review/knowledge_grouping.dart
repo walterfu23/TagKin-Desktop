@@ -1,4 +1,6 @@
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/library/item_detail_edits.dart';
+import 'package:tagkin_desktop/persons/person_name.dart';
 
 /// Canonical who/what/when/where dimensions (R2).
 const List<String> kKnowledgeDimensions = <String>[
@@ -113,6 +115,62 @@ List<PersonAppearance> itemLevelPersonAssignments(ItemKnowledge knowledge) {
   ];
 }
 
+/// Draft-aware assigned person for a crop or appearance row.
+({String? personId, String? personName, bool unassign}) effectiveAssignedPerson({
+  required PersonAssignIntent? intent,
+  required String? baselinePersonId,
+  required Map<String, String> personNamesById,
+}) {
+  if (intent != null) {
+    if (intent.unassign) {
+      return (personId: null, personName: null, unassign: true);
+    }
+    if (intent.name != null && intent.name!.trim().isNotEmpty) {
+      return (
+        personId: intent.personId,
+        personName: intent.name!.trim(),
+        unassign: false,
+      );
+    }
+    if (intent.personId != null) {
+      return (
+        personId: intent.personId,
+        personName: personNamesById[intent.personId]?.trim(),
+        unassign: false,
+      );
+    }
+  }
+  final id = baselinePersonId;
+  return (
+    personId: id,
+    personName: id != null ? personNamesById[id]?.trim() : null,
+    unassign: false,
+  );
+}
+
+/// Assigned person name per who-face-crop tag id (draft-aware).
+///
+/// Unassign / exclude drafts omit the tag so the face box keeps `tag.value`.
+Map<String, String> whoOverlayPersonNames({
+  required ItemKnowledge knowledge,
+  required Map<String, PersonAssignIntent> cropIntents,
+  required Map<String, String> personNamesById,
+}) {
+  final out = <String, String>{};
+  for (final tag in whoFaceCropTags(knowledge)) {
+    final intent = cropIntents[tag.id];
+    if (intent?.unassign == true || intent?.exclude == true) continue;
+    final person = effectiveAssignedPerson(
+      intent: intent,
+      baselinePersonId: appearanceForWhoTag(knowledge, tag.id)?.personId,
+      personNamesById: personNamesById,
+    );
+    final name = person.personName?.trim();
+    if (name != null && name.isNotEmpty) out[tag.id] = name;
+  }
+  return out;
+}
+
 /// Photo-detail Knowledge CSV: Who is names then who-tag values; other
 /// dimensions are tag values only.
 List<String> knowledgeCsvValues({
@@ -124,4 +182,85 @@ List<String> knowledgeCsvValues({
     return [...personNames, for (final tag in tags) tag.value];
   }
   return [for (final tag in tags) tag.value];
+}
+
+/// Person ids and name-keys already taken on this item (draft-aware).
+({Set<String> personIds, Set<String> nameKeys}) draftPersonKeysOnItem({
+  required ItemKnowledge knowledge,
+  required Map<String, PersonAssignIntent> cropIntents,
+  required Map<String, PersonAssignIntent> appearanceIntents,
+  required Map<String, PersonAssignIntent> exclusionIntents,
+  required List<PersonAssignIntent> pendingItemAssigns,
+  required Map<String, String> personNamesById,
+  String? exceptTagId,
+  String? exceptAppearanceId,
+  String? exceptExclusionId,
+}) {
+  final personIds = <String>{};
+  final nameKeys = <String>{};
+  void add(String? id, String? name) {
+    if (id != null && id.isNotEmpty) personIds.add(id);
+    final n = name?.trim();
+    if (n != null && n.isNotEmpty) nameKeys.add(personNameKey(n));
+  }
+
+  for (final tag in whoFaceCropTags(knowledge)) {
+    if (tag.id == exceptTagId) continue;
+    final intent = cropIntents[tag.id];
+    if (intent?.unassign == true || intent?.exclude == true) continue;
+    final person = effectiveAssignedPerson(
+      intent: intent,
+      baselinePersonId: appearanceForWhoTag(knowledge, tag.id)?.personId,
+      personNamesById: personNamesById,
+    );
+    add(person.personId, person.personName);
+  }
+  for (final appearance in itemLevelPersonAssignments(knowledge)) {
+    if (appearance.id == exceptAppearanceId) continue;
+    final intent = appearanceIntents[appearance.id];
+    if (intent?.unassign == true) continue;
+    final person = effectiveAssignedPerson(
+      intent: intent,
+      baselinePersonId: appearance.personId,
+      personNamesById: personNamesById,
+    );
+    add(person.personId, person.personName);
+  }
+  for (final intent in pendingItemAssigns) {
+    if (!intent.hasTarget) continue;
+    add(
+      intent.personId,
+      intent.name ??
+          (intent.personId != null ? personNamesById[intent.personId] : null),
+    );
+  }
+  for (final exclusion in knowledge.whoExclusions) {
+    if (exclusion.id == exceptExclusionId) continue;
+    final intent = exclusionIntents[exclusion.id];
+    if (intent == null || !intent.include || !intent.hasTarget) continue;
+    add(
+      intent.personId,
+      intent.name ??
+          (intent.personId != null ? personNamesById[intent.personId] : null),
+    );
+  }
+  return (personIds: personIds, nameKeys: nameKeys);
+}
+
+bool personOccupiedOnItem({
+  required ({Set<String> personIds, Set<String> nameKeys}) occupied,
+  String? personId,
+  String? name,
+  Map<String, String> personNamesById = const {},
+}) {
+  if (personId != null &&
+      personId.isNotEmpty &&
+      occupied.personIds.contains(personId)) {
+    return true;
+  }
+  final resolved = name?.trim().isNotEmpty == true
+      ? name!.trim()
+      : (personId != null ? personNamesById[personId]?.trim() : null);
+  if (resolved == null || resolved.isEmpty) return false;
+  return occupied.nameKeys.contains(personNameKey(resolved));
 }

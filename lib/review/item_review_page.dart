@@ -12,6 +12,7 @@ import 'package:tagkin_desktop/knowledge/tag_edit_dialog.dart';
 import 'package:tagkin_desktop/library/item_detail_edits.dart';
 import 'package:tagkin_desktop/library/item_fields_group.dart';
 import 'package:tagkin_desktop/persons/person_detail_page.dart';
+import 'package:tagkin_desktop/persons/person_name.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/review/key_period_scrubber.dart';
 import 'package:tagkin_desktop/review/knowledge_view.dart';
@@ -307,11 +308,55 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     return true;
   }
 
+  bool _refuseIfPersonOccupied({
+    String? personId,
+    String? name,
+    String? exceptTagId,
+    String? exceptAppearanceId,
+    String? exceptExclusionId,
+  }) {
+    final knowledge =
+        ref.read(reviewControllerProvider(widget.itemId)).knowledge;
+    if (knowledge == null) return false;
+    final occupied = draftPersonKeysOnItem(
+      knowledge: knowledge,
+      cropIntents: _cropIntents,
+      appearanceIntents: _appearanceIntents,
+      exclusionIntents: _exclusionIntents,
+      pendingItemAssigns: _pendingItemAssigns,
+      personNamesById: _personNamesById,
+      exceptTagId: exceptTagId,
+      exceptAppearanceId: exceptAppearanceId,
+      exceptExclusionId: exceptExclusionId,
+    );
+    if (!personOccupiedOnItem(
+      occupied: occupied,
+      personId: personId,
+      name: name,
+      personNamesById: _personNamesById,
+    )) {
+      if (_assignError != null) setState(() => _assignError = null);
+      return false;
+    }
+    final resolved = name?.trim().isNotEmpty == true
+        ? name!.trim()
+        : (personId != null ? _personNamesById[personId] : null);
+    setState(() => _assignError = personAlreadyOnPhotoMessage(resolved));
+    return true;
+  }
+
   Future<void> _assignCrop(
     String tagId, {
     String? personId,
     String? name,
   }) async {
+    if (_refuseIfPersonOccupied(
+      personId: personId,
+      name: name,
+      exceptTagId: tagId,
+    )) {
+      return;
+    }
     _mutateDraft(
       () {
         _cropIntents[tagId] = PersonAssignIntent(
@@ -324,6 +369,9 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
   }
 
   Future<void> _assignItem({String? personId, String? name}) async {
+    if (_refuseIfPersonOccupied(personId: personId, name: name)) {
+      return;
+    }
     _mutateDraft(
       () {
         _pendingItemAssigns.add(
@@ -339,6 +387,13 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     String? personId,
     String? name,
   }) async {
+    if (_refuseIfPersonOccupied(
+      personId: personId,
+      name: name,
+      exceptAppearanceId: appearanceId,
+    )) {
+      return;
+    }
     _mutateDraft(
       () {
         _appearanceIntents[appearanceId] = PersonAssignIntent(
@@ -407,6 +462,13 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     String? personId,
     String? name,
   }) async {
+    if (_refuseIfPersonOccupied(
+      personId: personId,
+      name: name,
+      exceptExclusionId: exclusionId,
+    )) {
+      return;
+    }
     _mutateDraft(
       () {
         _exclusionIntents[exclusionId] = PersonAssignIntent(
@@ -453,6 +515,8 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
         Map<String, PersonAssignIntent>.from(_exclusionIntents);
     final forwardPending = List<PersonAssignIntent>.from(_pendingItemAssigns);
     final createdExclusionIds = <String>[];
+    final alsoMovedIds = <String>[];
+    String? alsoMovedDestName;
     final includedExclusionTagIds = <({String exclusionId, String? tagId})>[];
 
     setState(() {
@@ -495,14 +559,15 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
       if (forwardCrops.isNotEmpty ||
           forwardAppearances.isNotEmpty ||
           forwardPending.isNotEmpty) {
-        createdExclusionIds.addAll(
-          await _applyPersonIntents(
-            knowledge: review.knowledge ?? knowledge,
-            cropIntents: forwardCrops,
-            appearanceIntents: forwardAppearances,
-            pendingItemAssigns: forwardPending,
-          ),
+        final applied = await _applyPersonIntents(
+          knowledge: review.knowledge ?? knowledge,
+          cropIntents: forwardCrops,
+          appearanceIntents: forwardAppearances,
+          pendingItemAssigns: forwardPending,
         );
+        createdExclusionIds.addAll(applied.createdExclusionIds);
+        alsoMovedIds.addAll(applied.alsoMovedIds);
+        alsoMovedDestName = applied.alsoMovedDestName;
       }
       await review.saveItemComment(forwardComment);
       if (!mounted) return;
@@ -516,12 +581,30 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
       _exclusionIntents.clear();
       _pendingItemAssigns.clear();
       _baselineReady = true;
+      if (alsoMovedIds.isNotEmpty) {
+        final n = alsoMovedIds.length;
+        final faces = n == 1
+            ? '1 other alike face'
+            : '$n other alike faces';
+        final dest = alsoMovedDestName?.trim();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            key: const Key('item-also-moved'),
+            content: Text(
+              dest != null && dest.isNotEmpty
+                  ? 'Moved $faces to $dest as unconfirmed.'
+                  : 'Moved $faces as unconfirmed.',
+            ),
+          ),
+        );
+      }
       _undoStack.clear();
       _undoStack.push(
         CallbackUndoableAction(
           label: 'Save item',
           onUndo: () async {
             final items = ref.read(itemsRepositoryProvider);
+            final persons = ref.read(personsRepositoryProvider);
             for (final id in createdExclusionIds) {
               await items.undoWhoExclusion(widget.itemId, id);
             }
@@ -531,12 +614,16 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
                 await items.createWhoExclusion(widget.itemId, tagId);
               }
             }
+            if (alsoMovedIds.isNotEmpty) {
+              await persons.declineAutoAssignAppearances(alsoMovedIds);
+            }
             if (previousCrop.isNotEmpty || previousAppearances.isNotEmpty) {
               await _applyPersonIntents(
                 knowledge: ref.read(reviewControllerProvider(widget.itemId)).knowledge,
                 cropIntents: previousCrop,
                 appearanceIntents: previousAppearances,
                 pendingItemAssigns: const [],
+                propagateAlike: false,
               );
             }
             await review.saveItemComment(previousComment);
@@ -629,16 +716,43 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     }
   }
 
-  Future<List<String>> _applyPersonIntents({
+  Future<
+      ({
+        List<String> createdExclusionIds,
+        List<String> alsoMovedIds,
+        String? alsoMovedDestName,
+      })> _applyPersonIntents({
     required ItemKnowledge? knowledge,
     required Map<String, PersonAssignIntent> cropIntents,
     required Map<String, PersonAssignIntent> appearanceIntents,
     required List<PersonAssignIntent> pendingItemAssigns,
+    bool? propagateAlike,
   }) async {
     final items = ref.read(itemsRepositoryProvider);
     final persons = ref.read(personsRepositoryProvider);
     final unlinked = <String>{};
     final createdExclusionIds = <String>[];
+    final alsoMovedIds = <String>[];
+    String? alsoMovedDestName;
+
+    void noteAlsoMoved(
+      ReassignAppearanceResponse result,
+      PersonAssignIntent intent,
+    ) {
+      if (result.alsoMoved.isEmpty) return;
+      for (final a in result.alsoMoved) {
+        alsoMovedIds.add(a.id);
+      }
+      if (alsoMovedDestName != null && alsoMovedDestName!.isNotEmpty) return;
+      final named = intent.name?.trim();
+      if (named != null && named.isNotEmpty) {
+        alsoMovedDestName = named;
+        return;
+      }
+      final id = result.appearance.personId ?? intent.personId;
+      alsoMovedDestName = id != null ? _personNamesById[id]?.trim() : null;
+    }
+
     for (final e in cropIntents.entries) {
       final intent = e.value;
       final appearance =
@@ -656,13 +770,14 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
         continue;
       }
       if (!intent.hasTarget) continue;
-      if (appearance?.id != null &&
-          intent.personId != null &&
-          intent.name == null) {
-        await persons.reassignAppearance(
+      if (appearance?.id != null) {
+        final result = await persons.reassignAppearance(
           appearance!.id,
           personId: intent.personId,
+          name: intent.name,
+          propagateAlike: propagateAlike,
         );
+        noteAlsoMoved(result, intent);
       } else {
         await items.assignPersonToItem(
           widget.itemId,
@@ -681,11 +796,13 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
         continue;
       }
       if (!intent.hasTarget) continue;
-      await persons.reassignAppearance(
+      final result = await persons.reassignAppearance(
         e.key,
         personId: intent.personId,
         name: intent.name,
+        propagateAlike: propagateAlike,
       );
+      noteAlsoMoved(result, intent);
     }
     for (final intent in pendingItemAssigns) {
       if (!intent.hasTarget) continue;
@@ -695,7 +812,11 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
         name: intent.name,
       );
     }
-    return createdExclusionIds;
+    return (
+      createdExclusionIds: createdExclusionIds,
+      alsoMovedIds: alsoMovedIds,
+      alsoMovedDestName: alsoMovedDestName,
+    );
   }
 
   void _discard() {
@@ -844,6 +965,14 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
       }
     }
     return names;
+  }
+
+  Map<String, String> _whoOverlayNames(ItemKnowledge knowledge) {
+    return whoOverlayPersonNames(
+      knowledge: knowledge,
+      cropIntents: _cropIntents,
+      personNamesById: _personNamesById,
+    );
   }
 
   @override
@@ -1026,6 +1155,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
                         )
                         .toList()
                     : const [],
+                personNameByWhoTagId: _whoOverlayNames(knowledge),
               ),
               if (_assignError != null) ...[
                 const SizedBox(height: 8),

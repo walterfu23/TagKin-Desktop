@@ -19,6 +19,7 @@ import 'package:tagkin_desktop/ingest/folder_bookmark_store.dart';
 import 'package:tagkin_desktop/ingest/folder_picker.dart';
 import 'package:tagkin_desktop/ingest/media_enumerator.dart';
 import 'package:tagkin_desktop/ingest/perceptual_hash.dart';
+import 'package:tagkin_desktop/ingest/physical_memory.dart';
 import 'package:tagkin_desktop/ingest/post_ingest_pipeline_controller.dart';
 import 'package:tagkin_desktop/ingest/upload_controller.dart';
 import 'package:tagkin_desktop/library/library_membership_sync.dart';
@@ -45,11 +46,7 @@ enum FolderIngestJobPhase {
 }
 
 /// Result of [FolderIngestQueue.enqueue].
-enum FolderIngestEnqueueResult {
-  started,
-  alreadyActive,
-  cancelled,
-}
+enum FolderIngestEnqueueResult { started, alreadyActive, cancelled }
 
 /// One folder's background ingest run.
 class FolderIngestJob {
@@ -123,7 +120,8 @@ class FolderIngestJob {
   }
 }
 
-/// App-scoped queue: multiple folders in parallel; same path blocked while active.
+/// App-scoped queue: up to two folders in parallel (one when RAM is under
+/// 8 GiB); same path blocked while active.
 ///
 /// Skip review — auto-registers all dedup representatives, then runs the
 /// post-ingest pipeline for that job only.
@@ -147,6 +145,7 @@ class FolderIngestQueue extends ChangeNotifier {
     this.checkpointStore,
     this.ensureFolderAccess,
     this.bookmarkedFolders,
+    this.physicalMemoryBytes = unknownPhysicalMemoryBytes,
   });
 
   final ItemsRepository itemsRepository;
@@ -183,11 +182,16 @@ class FolderIngestQueue extends ChangeNotifier {
   /// macOS security-scoped ingest roots (empty on Windows / in most tests).
   final Future<List<String>> Function()? bookmarkedFolders;
 
+  /// Total physical RAM in bytes. Tests inject or skip; production provider
+  /// uses [probePhysicalMemoryBytes].
+  final Future<int?> Function() physicalMemoryBytes;
+
   List<FolderIngestJob> _jobs = const [];
   int _libraryRefreshTick = 0;
   bool _disposed = false;
   bool _restoreStarted = false;
-  static const int _maxParallelJobs = 2;
+  int _maxParallelJobs = kDefaultFolderIngestMaxParallelJobs;
+  Future<void>? _resolveCap;
   int _inFlightJobs = 0;
   final List<Completer<void>> _jobWaiters = [];
   List<Item>? _itemsCache;
@@ -206,6 +210,10 @@ class FolderIngestQueue extends ChangeNotifier {
 
   int get activeJobCount => _jobs.where((j) => j.isActive).length;
 
+  /// 1 or 2 after the RAM probe; 2 until the first job slot is acquired.
+  @visibleForTesting
+  int get maxParallelJobs => _maxParallelJobs;
+
   static String normalizePath(String path) => normalizeLeafFolder(path);
 
   /// Whether Faces should hide a folder for this job phase.
@@ -213,8 +221,7 @@ class FolderIngestQueue extends ChangeNotifier {
   /// True for every in-flight phase; Faces lists the leaf only after `done`
   /// or `error` (failed jobs should still reveal whatever items exist).
   static bool hidesFacesFolder(FolderIngestJobPhase phase) =>
-      phase != FolderIngestJobPhase.done &&
-      phase != FolderIngestJobPhase.error;
+      phase != FolderIngestJobPhase.done && phase != FolderIngestJobPhase.error;
 
   /// Whether [path] (ingest root or a nested Faces leaf) is still ingesting.
   bool isLoadingPath(String path) {
@@ -381,7 +388,26 @@ class FolderIngestQueue extends ChangeNotifier {
     return FolderIngestEnqueueResult.started;
   }
 
+  Future<void> _ensureParallelCap() {
+    return _resolveCap ??= () async {
+      try {
+        final bytes = await physicalMemoryBytes();
+        _maxParallelJobs = folderIngestMaxParallelJobs(bytes);
+        if (_maxParallelJobs == kLowRamFolderIngestMaxParallelJobs) {
+          debugPrint(
+            'FolderIngestQueue: physical RAM under 8 GiB; '
+            'one folder at a time',
+          );
+        }
+      } on Object catch (e, st) {
+        debugPrint('FolderIngestQueue: RAM probe failed: $e\n$st');
+        _maxParallelJobs = kDefaultFolderIngestMaxParallelJobs;
+      }
+    }();
+  }
+
   Future<void> _acquireJobSlot() async {
+    await _ensureParallelCap();
     if (_inFlightJobs < _maxParallelJobs) {
       _inFlightJobs++;
       return;
@@ -476,7 +502,8 @@ class FolderIngestQueue extends ChangeNotifier {
             normalizePath(path),
       };
 
-      final nearDupThreshold = samplingPrefs?.call().nearDuplicateThreshold ??
+      final nearDupThreshold =
+          samplingPrefs?.call().nearDuplicateThreshold ??
           nearDuplicateHammingThreshold;
 
       final result = dedupCandidates(
@@ -565,102 +592,105 @@ class FolderIngestQueue extends ChangeNotifier {
     FolderIngestJob job,
     List<IngestOutcome> outcomes,
   ) async {
-      final succeeded = outcomes.where((o) => o.succeeded).length;
-      if (succeeded == 0) {
-        job.phase = FolderIngestJobPhase.done;
-        await _checkpointRemove(job.folderPath);
-        // Reveal Faces + adopt membership (e.g. prior items under this root).
-        await _bumpLibraryAndPublish(job.folderPath);
-        return;
-      }
-
-      // Adopt collection membership now; Faces still hides via isLoadingPath
-      // until this job reaches done/error.
-      job.phase = FolderIngestJobPhase.processing;
-      job.pipelineDone = 0;
-      job.pipelineTotal = succeeded;
+    final succeeded = outcomes.where((o) => o.succeeded).length;
+    if (succeeded == 0) {
+      job.phase = FolderIngestJobPhase.done;
+      await _checkpointRemove(job.folderPath);
+      // Reveal Faces + adopt membership (e.g. prior items under this root).
       await _bumpLibraryAndPublish(job.folderPath);
-      if (_disposed) return;
+      return;
+    }
 
-      final prePass = prePassFactory?.call() ??
-          PrePassController(
-            itemsRepository: itemsRepository,
-            samplingPrefs: samplingPrefs?.call(),
-          );
-      final upload = uploadFactory?.call() ??
-          UploadController(itemsRepository: itemsRepository);
-      final linker = whoFaceLinkerFactory?.call() ??
-          () {
-            final prefs = samplingPrefs?.call();
-            return WhoFaceLinker(
-              items: itemsRepository,
-              autoConfirmMinConfidencePercent: prefs != null &&
-                      prefs.autoConfirmHighConfidencePersonMatches
-                  ? prefs.autoConfirmMinConfidencePercent
-                  : null,
-            );
-          }();
-      final pipeline = PostIngestPipelineController(
-        prePass: prePass,
-        upload: upload,
-        jobsRepository: jobsRepository,
-        whoFaceLinker: linker,
-      );
+    // Adopt collection membership now; Faces still hides via isLoadingPath
+    // until this job reaches done/error.
+    job.phase = FolderIngestJobPhase.processing;
+    job.pipelineDone = 0;
+    job.pipelineTotal = succeeded;
+    await _bumpLibraryAndPublish(job.folderPath);
+    if (_disposed) return;
 
-      void flushLiveItems() {
-        for (final o in upload.outcomes) {
-          final item = o.item;
-          if (item != null) _emitItemUpdated(item);
-        }
-        for (final o in pipeline.analyzeOutcomes) {
-          final item = o.item;
-          if (item != null) _emitItemUpdated(item);
-        }
-      }
-
-      void syncPipelinePhase() {
-        final phase = pipeline.phase;
-        job.pipelineDone = pipeline.itemIndex;
-        job.pipelineTotal = pipeline.itemTotal;
-        if (phase == PostIngestPipelinePhase.runningPrePass ||
-            phase == PostIngestPipelinePhase.runningUpload ||
-            phase == PostIngestPipelinePhase.runningAnalyze) {
-          job.phase = FolderIngestJobPhase.processing;
-        } else if (phase == PostIngestPipelinePhase.error) {
-          job.phase = FolderIngestJobPhase.error;
-          job.error = pipeline.error;
-        }
-        // Job stays `processing` until start() returns — pipeline `done`
-        // after item 1 must not mark the folder job complete.
-        flushLiveItems();
-        _safeNotify();
-      }
-
-      upload.addListener(flushLiveItems);
-      pipeline.addListener(syncPipelinePhase);
-      try {
-        await pipeline.start(
-          ingestOutcomes: outcomes,
-          isUsageBlocked: isUsageBlocked,
-          onPaidReject: onPaidReject,
+    final prePass =
+        prePassFactory?.call() ??
+        PrePassController(
+          itemsRepository: itemsRepository,
+          samplingPrefs: samplingPrefs?.call(),
         );
-      } finally {
-        upload.removeListener(flushLiveItems);
-        pipeline.removeListener(syncPipelinePhase);
-        pipeline.dispose();
-        prePass.dispose();
-        upload.dispose();
-      }
+    final upload =
+        uploadFactory?.call() ??
+        UploadController(itemsRepository: itemsRepository);
+    final linker =
+        whoFaceLinkerFactory?.call() ??
+        () {
+          final prefs = samplingPrefs?.call();
+          return WhoFaceLinker(
+            items: itemsRepository,
+            autoConfirmMinConfidencePercent:
+                prefs != null && prefs.autoConfirmHighConfidencePersonMatches
+                ? prefs.autoConfirmMinConfidencePercent
+                : null,
+          );
+        }();
+    final pipeline = PostIngestPipelineController(
+      prePass: prePass,
+      upload: upload,
+      jobsRepository: jobsRepository,
+      whoFaceLinker: linker,
+    );
 
-      if (_disposed) return;
-      if (pipeline.phase == PostIngestPipelinePhase.error) {
+    void flushLiveItems() {
+      for (final o in upload.outcomes) {
+        final item = o.item;
+        if (item != null) _emitItemUpdated(item);
+      }
+      for (final o in pipeline.analyzeOutcomes) {
+        final item = o.item;
+        if (item != null) _emitItemUpdated(item);
+      }
+    }
+
+    void syncPipelinePhase() {
+      final phase = pipeline.phase;
+      job.pipelineDone = pipeline.itemIndex;
+      job.pipelineTotal = pipeline.itemTotal;
+      if (phase == PostIngestPipelinePhase.runningPrePass ||
+          phase == PostIngestPipelinePhase.runningUpload ||
+          phase == PostIngestPipelinePhase.runningAnalyze) {
+        job.phase = FolderIngestJobPhase.processing;
+      } else if (phase == PostIngestPipelinePhase.error) {
         job.phase = FolderIngestJobPhase.error;
         job.error = pipeline.error;
-      } else {
-        job.phase = FolderIngestJobPhase.done;
       }
-      await _checkpointRemove(job.folderPath);
-      await _bumpLibraryAndPublish(job.folderPath);
+      // Job stays `processing` until start() returns — pipeline `done`
+      // after item 1 must not mark the folder job complete.
+      flushLiveItems();
+      _safeNotify();
+    }
+
+    upload.addListener(flushLiveItems);
+    pipeline.addListener(syncPipelinePhase);
+    try {
+      await pipeline.start(
+        ingestOutcomes: outcomes,
+        isUsageBlocked: isUsageBlocked,
+        onPaidReject: onPaidReject,
+      );
+    } finally {
+      upload.removeListener(flushLiveItems);
+      pipeline.removeListener(syncPipelinePhase);
+      pipeline.dispose();
+      prePass.dispose();
+      upload.dispose();
+    }
+
+    if (_disposed) return;
+    if (pipeline.phase == PostIngestPipelinePhase.error) {
+      job.phase = FolderIngestJobPhase.error;
+      job.error = pipeline.error;
+    } else {
+      job.phase = FolderIngestJobPhase.done;
+    }
+    await _checkpointRemove(job.folderPath);
+    await _bumpLibraryAndPublish(job.folderPath);
   }
 }
 
@@ -710,6 +740,7 @@ final folderIngestQueueProvider = ChangeNotifierProvider<FolderIngestQueue>(
       checkpointStore: activeFolderIngestStore,
       ensureFolderAccess: ensureIngestFolderAccess,
       bookmarkedFolders: folderBookmarkStore.listFolders,
+      physicalMemoryBytes: probePhysicalMemoryBytes,
     );
   },
   dependencies: [

@@ -4,9 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/library/item_detail_edits.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/persons/person_assign_control.dart';
 import 'package:tagkin_desktop/review/item_review_page.dart';
+import 'package:tagkin_desktop/review/knowledge_grouping.dart';
+import 'package:tagkin_desktop/review/media_viewer.dart';
 import 'package:tagkin_desktop/ui/format_local_datetime.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 
@@ -758,10 +761,23 @@ void main() {
     expect(find.byKey(const Key('person-assign-draft-test')), findsWidgets);
     await tester.tap(find.text('test').last);
     await tester.pumpAndSettle();
+    expect(find.byKey(const Key('item-assign-error')), findsOneWidget);
+    expect(
+      find.text('test is already on another face in this photo.'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('item-assign-included-ex_2')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('New person').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('person-name-field')), 'other');
+    await tester.tap(find.byKey(const Key('person-name-save')));
+    await tester.pumpAndSettle();
 
     expect(
       _assignFieldState(tester, const Key('item-assign-included-ex_2')).value,
-      PersonAssignControl.draftValue('test'),
+      PersonAssignControl.draftValue('other'),
     );
     expect(items.assignPersonCalls, isEmpty);
 
@@ -773,7 +789,7 @@ void main() {
     expect(items.assignPersonCalls, hasLength(2));
     expect(
       items.assignPersonCalls.map((c) => c.name).toList(),
-      ['test', 'test'],
+      ['test', 'other'],
     );
   });
 
@@ -926,6 +942,73 @@ void main() {
     expect(find.text('Alex toddler'), findsOneWidget);
     expect(find.textContaining('person_alex'), findsNothing);
     expect(find.byKey(const Key('tag-provenance-tag_who')), findsNothing);
+  });
+
+  testWidgets(
+      'face box label is person name when assigned; live from draft',
+      (tester) async {
+    final knowledge = fixtureKnowledge(
+      item: fixtureItem(
+        id: 'item_1',
+        processingStatus: ProcessingStatus.tagged,
+      ),
+      tags: [
+        fixtureTag(
+          id: 'tag_who',
+          dimension: 'who',
+          value: 'toddler',
+          region: const TagRegion(
+            yMin: 0.1,
+            xMin: 0.1,
+            yMax: 0.4,
+            xMax: 0.4,
+          ),
+        ),
+      ],
+      appearances: [
+        fixtureAppearance(
+          id: 'ap_1',
+          personId: 'person_alex',
+          itemId: 'item_1',
+          tagId: 'tag_who',
+        ),
+      ],
+    );
+    const names = {'person_alex': 'Alex'};
+
+    Widget overlay(Map<String, PersonAssignIntent> intents) {
+      return MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 200,
+            height: 200,
+            child: WhoFaceOverlayLayer(
+              whoOverlays: whoFaceCropTags(knowledge),
+              personNameByWhoTagId: whoOverlayPersonNames(
+                knowledge: knowledge,
+                cropIntents: intents,
+                personNamesById: names,
+              ),
+              viewport: const Size(200, 200),
+              imageSize: const Size(200, 200),
+            ),
+          ),
+        ),
+      );
+    }
+
+    await tester.pumpWidget(overlay(const {}));
+    expect(find.byKey(const Key('who-face-overlay-tag_who')), findsOneWidget);
+    expect(find.text('Alex'), findsOneWidget);
+    expect(find.text('toddler'), findsNothing);
+
+    await tester.pumpWidget(
+      overlay(const {'tag_who': PersonAssignIntent(name: 'Maya')}),
+    );
+    await tester.pump();
+    expect(find.text('Maya'), findsOneWidget);
+    expect(find.text('Alex'), findsNothing);
+    expect(find.text('toddler'), findsNothing);
   });
 
   testWidgets('Excluded faces show crop thumbs', (tester) async {
@@ -1129,5 +1212,268 @@ void main() {
 
     expect(find.byType(ItemDetailPage), findsNothing);
     expect(comments.createItemCalls, isEmpty);
+  });
+
+  testWidgets(
+      'item detail Save reassign sweeps alike faces; undo restores cohort',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final item = fixtureItem(
+      id: 'item_1',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final knowledge = fixtureKnowledge(
+      item: item,
+      tags: [
+        fixtureTag(
+          id: 'tag_who',
+          dimension: 'who',
+          value: 'toddler',
+          region: const TagRegion(
+            yMin: 0.1,
+            xMin: 0.1,
+            yMax: 0.4,
+            xMax: 0.4,
+          ),
+        ),
+      ],
+      appearances: [
+        fixtureAppearance(
+          id: 'ap_1',
+          personId: 'person_2',
+          itemId: 'item_1',
+          tagId: 'tag_who',
+        ),
+      ],
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {'item_1': knowledge},
+    );
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_2',
+          name: 'Sam',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_1',
+              personId: 'person_2',
+              itemId: 'item_1',
+              tagId: 'tag_who',
+            ),
+            fixtureAppearance(
+              id: 'ap_2',
+              personId: 'person_2',
+              itemId: 'item_2',
+              tagId: 'tag_who_2',
+            ),
+          ],
+        ),
+        fixturePersonDetail(
+          id: 'person_3',
+          name: 'Pat',
+          appearances: const [],
+        ),
+      ],
+    )..sweepSiblingsOnReassign = true;
+    items.linkedPersons = persons;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          itemsRepositoryProvider.overrideWithValue(items),
+          personsRepositoryProvider.overrideWithValue(persons),
+          correctionsRepositoryProvider.overrideWithValue(
+            FakeCorrectionsRepository(items: items),
+          ),
+          commentsRepositoryProvider.overrideWithValue(
+            FakeCommentsRepository(),
+          ),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          jobsRepositoryProvider.overrideWithValue(
+            FakeJobsRepository(itemId: 'item_1', item: item),
+          ),
+        ],
+        child: MaterialApp(
+          builder: (context, child) {
+            return ActiveUndoShortcuts(
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
+          home: const Scaffold(
+            body: SingleChildScrollView(
+              child: ItemReviewSection(itemId: 'item_1', openVideo: false),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(
+      find.byKey(const Key('item-assign-face-tag_who')),
+    );
+    await tester.tap(find.byKey(const Key('item-assign-face-tag_who')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Pat').last);
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byKey(const Key('item-detail-save')));
+    await tester.tap(find.byKey(const Key('item-detail-save')));
+    await tester.pumpAndSettle();
+
+    expect(items.assignPersonCalls, isEmpty);
+    expect(persons.reassignCalls, isNotEmpty);
+    expect(persons.reassignCalls.first.appearanceId, 'ap_1');
+    expect(persons.reassignCalls.first.personId, 'person_3');
+    expect(persons.reassignCalls.first.propagateAlike, isNull);
+    expect(
+      persons.personDetails
+          .firstWhere((p) => p.id == 'person_3')
+          .appearances
+          .map((a) => a.id),
+      containsAll(['ap_1', 'ap_2']),
+    );
+    expect(find.byKey(const Key('item-also-moved')), findsOneWidget);
+    expect(find.textContaining('Pat'), findsWidgets);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.meta);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.meta);
+    await tester.pumpAndSettle();
+
+    expect(persons.declineAutoAssignAppearancesCalls, [
+      ['ap_2'],
+    ]);
+    expect(persons.reassignCalls.last.appearanceId, 'ap_1');
+    expect(persons.reassignCalls.last.personId, 'person_2');
+    expect(persons.reassignCalls.last.propagateAlike, isFalse);
+    expect(
+      persons.personDetails
+          .firstWhere((p) => p.id == 'person_2')
+          .appearances
+          .map((a) => a.id),
+      containsAll(['ap_1', 'ap_2']),
+    );
+    expect(
+      persons.personDetails
+          .firstWhere((p) => p.id == 'person_3')
+          .appearances,
+      isEmpty,
+    );
+  });
+
+  testWidgets(
+      'item detail refuses assigning a second face to a person already on the photo',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    const regionA = TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4);
+    const regionB = TagRegion(yMin: 0.1, xMin: 0.5, yMax: 0.4, xMax: 0.8);
+    final item = fixtureItem(
+      id: 'item_1',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final knowledge = fixtureKnowledge(
+      item: item,
+      tags: [
+        fixtureTag(
+          id: 'tag_a',
+          dimension: 'who',
+          value: 'left',
+          region: regionA,
+        ),
+        fixtureTag(
+          id: 'tag_b',
+          dimension: 'who',
+          value: 'right',
+          region: regionB,
+        ),
+      ],
+      appearances: [
+        fixtureAppearance(
+          id: 'ap_a',
+          personId: 'person_maya',
+          itemId: 'item_1',
+          tagId: 'tag_a',
+        ),
+        fixtureAppearance(
+          id: 'ap_b',
+          personId: null,
+          itemId: 'item_1',
+          tagId: 'tag_b',
+        ),
+      ],
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {'item_1': knowledge},
+    );
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_maya',
+          name: 'Maya',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_a',
+              personId: 'person_maya',
+              itemId: 'item_1',
+              tagId: 'tag_a',
+            ),
+          ],
+        ),
+      ],
+    );
+    items.linkedPersons = persons;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          itemsRepositoryProvider.overrideWithValue(items),
+          personsRepositoryProvider.overrideWithValue(persons),
+          correctionsRepositoryProvider.overrideWithValue(
+            FakeCorrectionsRepository(items: items),
+          ),
+          commentsRepositoryProvider.overrideWithValue(
+            FakeCommentsRepository(),
+          ),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          jobsRepositoryProvider.overrideWithValue(
+            FakeJobsRepository(itemId: 'item_1', item: item),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: ItemReviewSection(itemId: 'item_1', openVideo: false),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(
+      find.byKey(const Key('item-assign-face-tag_b')),
+    );
+    await tester.tap(find.byKey(const Key('item-assign-face-tag_b')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Maya').last);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('item-assign-error')), findsOneWidget);
+    expect(
+      find.text('Maya is already on another face in this photo.'),
+      findsOneWidget,
+    );
+    expect(items.assignPersonCalls, isEmpty);
+    expect(persons.reassignCalls, isEmpty);
   });
 }

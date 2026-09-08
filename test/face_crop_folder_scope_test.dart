@@ -35,6 +35,19 @@ void main() {
       ]);
     });
 
+    test('distinctLeafFolders sorts by basename case-insensitively', () {
+      final items = [
+        fixtureItem(id: 'a', sourceRef: 'file:///z/apple/1.jpg'),
+        fixtureItem(id: 'b', sourceRef: 'file:///a/Banana/2.jpg'),
+        fixtureItem(id: 'c', sourceRef: 'file:///m/cherry/3.jpg'),
+      ];
+      expect(distinctLeafFolders(items), [
+        '/z/apple',
+        '/a/Banana',
+        '/m/cherry',
+      ]);
+    });
+
     test('itemIdsInLeafFolder matches exact parent only', () {
       final items = [
         fixtureItem(id: 'a', sourceRef: 'file:///albums/Paris/1.jpg'),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/dirty_leave_prompt.dart';
 import 'package:tagkin_desktop/shell/app_navigator.dart';
+import 'package:tagkin_desktop/ui/alpha_order.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
 /// Asks for a collection name. Returns trimmed non-empty name, or null.
@@ -119,7 +120,7 @@ Future<String?> showOpenCollectionDialog(
       key: const Key('collection-open-dialog'),
       title: const Text('Open collection'),
       children: [
-        for (final c in collections)
+        for (final c in sortedAlphaBy(collections, (c) => c.name))
           SimpleDialogOption(
             key: Key('collection-open-option-${c.id}'),
             onPressed: () => Navigator.of(ctx).pop(c.id),
