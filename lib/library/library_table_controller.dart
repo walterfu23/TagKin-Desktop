@@ -559,7 +559,9 @@ class LibraryTableController extends ChangeNotifier {
     final snapshot = List<LibraryTableRow>.from(_rows);
     for (final row in snapshot) {
       if (!row.knowledgeLoaded || row.whereRaw.isEmpty) continue;
-      final entries = await _whereLabels.resolveAllDisplays(row.whereRaw);
+      final entries = collapseWhereDisplays(
+        await _whereLabels.resolveAllDisplays(row.whereRaw),
+      );
       _replaceRow(row.item.id, (r) => r.copyWith(whereEntries: entries));
     }
   }
@@ -689,7 +691,9 @@ class LibraryTableController extends ChangeNotifier {
           if (_loadGeneration != gen) return;
           final grouped = groupItemLevelTagsByDimension(knowledge.tags);
           final whereRaw = grouped['where']!.map((t) => t.value).toList();
-          final whereEntries = await _whereLabels.resolveAllDisplays(whereRaw);
+          final whereEntries = collapseWhereDisplays(
+            await _whereLabels.resolveAllDisplays(whereRaw),
+          );
           if (_loadGeneration != gen) return;
           _replaceRow(
             id,

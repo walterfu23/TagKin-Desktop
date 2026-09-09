@@ -5,6 +5,7 @@ import 'package:tagkin_desktop/library/processing_status_view.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
+import 'package:tagkin_desktop/ui/alpha_order.dart';
 import 'package:tagkin_desktop/ui/format_local_datetime.dart';
 import 'package:tagkin_desktop/where/where_value_text.dart';
 
@@ -45,10 +46,13 @@ class ItemFieldsGroup extends ConsumerWidget {
     final grouped = knowledge == null
         ? null
         : groupItemLevelTagsByDimension(knowledge!.tags);
-    final personNames = whoPersonNames ??
-        (knowledge == null
-            ? const <String>[]
-            : assignedPersonNames(knowledge!, personNamesById));
+    final personNames = sortedAlphaBy(
+      whoPersonNames ??
+          (knowledge == null
+              ? const <String>[]
+              : assignedPersonNames(knowledge!, personNamesById)),
+      (n) => n,
+    );
 
     return Row(
       key: const Key('item-fields-group'),
@@ -230,17 +234,9 @@ class _KnowledgeField extends StatelessWidget {
     if (values.isEmpty) {
       value = const Text('—');
     } else if (dimension == 'where') {
-      value = Wrap(
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          for (var i = 0; i < tags.length; i++) ...[
-            if (i > 0) const Text(', '),
-            WhereValueText(
-              key: Key('tag-value-${tags[i].id}'),
-              value: tags[i].value,
-            ),
-          ],
-        ],
+      value = WhereValuesText(
+        key: const Key('knowledge-where'),
+        values: [for (final tag in tags) tag.value],
       );
     } else {
       final shown = dimension == 'when'

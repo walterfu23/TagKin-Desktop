@@ -12,20 +12,16 @@ import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'fake_persons_repository.dart';
 
 void main() {
-  testWidgets('persons list renders every (always-named) person',
-      (tester) async {
+  testWidgets('persons list renders every (always-named) person', (
+    tester,
+  ) async {
     final persons = FakePersonsRepository(
       persons: [
         fixturePersonDetail(id: 'person_s', name: 'Sam'),
         fixturePersonDetail(
           id: 'person_c',
           name: 'Confirmed Chris',
-          appearances: [
-            fixtureAppearance(
-              id: 'ap_c',
-              personId: 'person_c',
-            ),
-          ],
+          appearances: [fixtureAppearance(id: 'ap_c', personId: 'person_c')],
         ),
       ],
     );
@@ -124,59 +120,47 @@ void main() {
   });
 
   testWidgets(
-      'persons list reloads when returning to the Persons tab after a rename',
-      (tester) async {
-    final persons = FakePersonsRepository(
-      persons: [
-        fixturePersonDetail(id: 'person_s', name: 'Sam'),
-      ],
-    );
-    final container = ProviderContainer(
-      overrides: [
-        personsRepositoryProvider.overrideWithValue(persons),
-      ],
-    );
-    addTearDown(container.dispose);
+    'persons list reloads when returning to the Persons tab after a rename',
+    (tester) async {
+      final persons = FakePersonsRepository(
+        persons: [fixturePersonDetail(id: 'person_s', name: 'Sam')],
+      );
+      final container = ProviderContainer(
+        overrides: [personsRepositoryProvider.overrideWithValue(persons)],
+      );
+      addTearDown(container.dispose);
 
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: const MaterialApp(home: PersonsListPage()),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Sam'), findsOneWidget);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: PersonsListPage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Sam'), findsOneWidget);
 
-    await persons.renamePerson('person_s', 'Riley');
-    container.read(activeTopLevelTabProvider.notifier).state =
-        TopLevelTab.faces;
-    await tester.pump();
-    container.read(activeTopLevelTabProvider.notifier).state =
-        TopLevelTab.persons;
-    await tester.pumpAndSettle();
+      await persons.renamePerson('person_s', 'Riley');
+      container.read(activeTopLevelTabProvider.notifier).state =
+          TopLevelTab.faces;
+      await tester.pump();
+      container.read(activeTopLevelTabProvider.notifier).state =
+          TopLevelTab.persons;
+      await tester.pumpAndSettle();
 
-    expect(find.text('Riley'), findsOneWidget);
-    expect(find.text('Sam'), findsNothing);
-  });
+      expect(find.text('Riley'), findsOneWidget);
+      expect(find.text('Sam'), findsNothing);
+    },
+  );
 
   testWidgets('person detail: rename round-trips', (tester) async {
     final persons = FakePersonsRepository(
-      persons: [
-        fixturePersonDetail(
-          id: 'person_1',
-          name: 'Sam',
-        ),
-      ],
+      persons: [fixturePersonDetail(id: 'person_1', name: 'Sam')],
     );
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          personsRepositoryProvider.overrideWithValue(persons),
-        ],
-        child: const MaterialApp(
-          home: PersonDetailPage(personId: 'person_1'),
-        ),
+        overrides: [personsRepositoryProvider.overrideWithValue(persons)],
+        child: const MaterialApp(home: PersonDetailPage(personId: 'person_1')),
       ),
     );
     await tester.pumpAndSettle();
@@ -194,35 +178,28 @@ void main() {
     expect(persons.renameCalls.single.name, 'Samantha');
   });
 
-  testWidgets('person detail: rename onto existing name offers merge',
-      (tester) async {
+  testWidgets('person detail: rename onto existing name offers merge', (
+    tester,
+  ) async {
     final persons = FakePersonsRepository(
       persons: [
         fixturePersonDetail(
           id: 'person_1',
           name: 'Sam',
-          appearances: [
-            fixtureAppearance(id: 'ap_s', personId: 'person_1'),
-          ],
+          appearances: [fixtureAppearance(id: 'ap_s', personId: 'person_1')],
         ),
         fixturePersonDetail(
           id: 'person_2',
           name: 'Alex',
-          appearances: [
-            fixtureAppearance(id: 'ap_a', personId: 'person_2'),
-          ],
+          appearances: [fixtureAppearance(id: 'ap_a', personId: 'person_2')],
         ),
       ],
     );
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          personsRepositoryProvider.overrideWithValue(persons),
-        ],
-        child: const MaterialApp(
-          home: PersonDetailPage(personId: 'person_1'),
-        ),
+        overrides: [personsRepositoryProvider.overrideWithValue(persons)],
+        child: const MaterialApp(home: PersonDetailPage(personId: 'person_1')),
       ),
     );
     await tester.pumpAndSettle();
@@ -245,32 +222,24 @@ void main() {
     expect(persons.renameCalls, isEmpty);
   });
 
-  testWidgets('person detail: rename requires a non-empty name (R2)',
-      (tester) async {
+  testWidgets('person detail: rename requires a non-empty name (R2)', (
+    tester,
+  ) async {
     final persons = FakePersonsRepository(
-      persons: [
-        fixturePersonDetail(id: 'person_1', name: 'Sam'),
-      ],
+      persons: [fixturePersonDetail(id: 'person_1', name: 'Sam')],
     );
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          personsRepositoryProvider.overrideWithValue(persons),
-        ],
-        child: const MaterialApp(
-          home: PersonDetailPage(personId: 'person_1'),
-        ),
+        overrides: [personsRepositoryProvider.overrideWithValue(persons)],
+        child: const MaterialApp(home: PersonDetailPage(personId: 'person_1')),
       ),
     );
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('person-rename')));
     await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const Key('person-rename-field')),
-      '   ',
-    );
+    await tester.enterText(find.byKey(const Key('person-rename-field')), '   ');
     await tester.tap(find.byKey(const Key('person-rename-done')));
     await tester.pumpAndSettle();
 
@@ -282,16 +251,12 @@ void main() {
 
   testWidgets('person detail: unassign pops page', (tester) async {
     final persons = FakePersonsRepository(
-      persons: [
-        fixturePersonDetail(id: 'person_1', name: 'Sam'),
-      ],
+      persons: [fixturePersonDetail(id: 'person_1', name: 'Sam')],
     );
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          personsRepositoryProvider.overrideWithValue(persons),
-        ],
+        overrides: [personsRepositoryProvider.overrideWithValue(persons)],
         child: MaterialApp(
           home: Builder(
             builder: (context) => Scaffold(
@@ -300,9 +265,8 @@ void main() {
                 onPressed: () {
                   Navigator.of(context).push(
                     MaterialPageRoute<void>(
-                      builder: (_) => const PersonDetailPage(
-                        personId: 'person_1',
-                      ),
+                      builder: (_) =>
+                          const PersonDetailPage(personId: 'person_1'),
                     ),
                   );
                 },
@@ -360,8 +324,9 @@ void main() {
     expect(result, 'Jordan');
   });
 
-  testWidgets('person detail: unassign / reassign controls present (R6)',
-      (tester) async {
+  testWidgets('person detail: unassign / reassign controls present (R6)', (
+    tester,
+  ) async {
     final persons = FakePersonsRepository(
       persons: [
         fixturePersonDetail(
@@ -382,23 +347,22 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          personsRepositoryProvider.overrideWithValue(persons),
-        ],
-        child: const MaterialApp(
-          home: PersonDetailPage(personId: 'person_1'),
-        ),
+        overrides: [personsRepositoryProvider.overrideWithValue(persons)],
+        child: const MaterialApp(home: PersonDetailPage(personId: 'person_1')),
       ),
     );
     await tester.pumpAndSettle();
 
+    expect(find.byKey(const Key('appearance-thumb-ap_1')), findsOneWidget);
+    expect(find.byKey(const Key('appearance-unassign-ap_1')), findsNothing);
+    await tester.tap(find.byKey(const Key('appearance-thumb-ap_1')));
+    await tester.pumpAndSettle();
     expect(find.byKey(const Key('appearance-unassign-ap_1')), findsOneWidget);
-    expect(
-      find.byKey(const Key('appearance-reassign-ap_1')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('appearance-reassign-ap_1')), findsOneWidget);
 
     // Reassign ap_2 to a brand-new named person via dropdown + name dialog.
+    await tester.tap(find.byKey(const Key('appearance-thumb-ap_2')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('appearance-reassign-select-ap_2')));
     await tester.pumpAndSettle();
     expect(find.text('New person'), findsWidgets);
@@ -408,10 +372,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('person-name-dialog')), findsOneWidget);
-    await tester.enterText(
-      find.byKey(const Key('person-name-field')),
-      'Riley',
-    );
+    await tester.enterText(find.byKey(const Key('person-name-field')), 'Riley');
     await tester.tap(find.byKey(const Key('person-name-save')));
     await tester.pumpAndSettle();
 
@@ -421,53 +382,54 @@ void main() {
   });
 
   testWidgets(
-      'person detail: reassign to an existing person needs no name prompt',
-      (tester) async {
-    final persons = FakePersonsRepository(
-      persons: [
-        fixturePersonDetail(
-          id: 'person_1',
-          name: 'Sam',
-          appearances: [
-            fixtureAppearance(id: 'ap_1', personId: 'person_1'),
-          ],
-        ),
-        fixturePersonDetail(
-          id: 'person_2',
-          name: 'Alex',
-          appearances: const [],
-        ),
-      ],
-    );
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          personsRepositoryProvider.overrideWithValue(persons),
+    'person detail: reassign to an existing person needs no name prompt',
+    (tester) async {
+      final persons = FakePersonsRepository(
+        persons: [
+          fixturePersonDetail(
+            id: 'person_1',
+            name: 'Sam',
+            appearances: [fixtureAppearance(id: 'ap_1', personId: 'person_1')],
+          ),
+          fixturePersonDetail(
+            id: 'person_2',
+            name: 'Alex',
+            appearances: const [],
+          ),
         ],
-        child: const MaterialApp(
-          home: PersonDetailPage(personId: 'person_1'),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [personsRepositoryProvider.overrideWithValue(persons)],
+          child: const MaterialApp(
+            home: PersonDetailPage(personId: 'person_1'),
+          ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('appearance-reassign-select-ap_1')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Alex').last);
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('appearance-reassign-ap_1')));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('appearance-thumb-ap_1')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('appearance-reassign-select-ap_1')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Alex').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('appearance-reassign-ap_1')));
+      await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('person-name-dialog')), findsNothing);
-    expect(persons.reassignCalls.single.appearanceId, 'ap_1');
-    expect(persons.reassignCalls.single.personId, 'person_2');
-    expect(persons.reassignCalls.single.name, isNull);
-  });
+      expect(find.byKey(const Key('person-name-dialog')), findsNothing);
+      expect(persons.reassignCalls.single.appearanceId, 'ap_1');
+      expect(persons.reassignCalls.single.personId, 'person_2');
+      expect(persons.reassignCalls.single.name, isNull);
+    },
+  );
 
-  testWidgets(
-      'person detail: reassign undo restores swept alike faces',
-      (tester) async {
+  testWidgets('person detail: reassign undo restores swept alike faces', (
+    tester,
+  ) async {
     final persons = FakePersonsRepository(
       persons: [
         fixturePersonDetail(
@@ -493,16 +455,14 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          personsRepositoryProvider.overrideWithValue(persons),
-        ],
-        child: const MaterialApp(
-          home: PersonDetailPage(personId: 'person_1'),
-        ),
+        overrides: [personsRepositoryProvider.overrideWithValue(persons)],
+        child: const MaterialApp(home: PersonDetailPage(personId: 'person_1')),
       ),
     );
     await tester.pumpAndSettle();
 
+    await tester.tap(find.byKey(const Key('appearance-thumb-ap_1')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('appearance-reassign-select-ap_1')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Alex').last);
@@ -518,9 +478,7 @@ void main() {
       containsAll(['ap_1', 'ap_2']),
     );
     expect(
-      persons.personDetails
-          .firstWhere((p) => p.id == 'person_1')
-          .appearances,
+      persons.personDetails.firstWhere((p) => p.id == 'person_1').appearances,
       isEmpty,
     );
     expect(find.byKey(const Key('person-also-moved')), findsOneWidget);
@@ -539,9 +497,7 @@ void main() {
       containsAll(['ap_1', 'ap_2']),
     );
     expect(
-      persons.personDetails
-          .firstWhere((p) => p.id == 'person_2')
-          .appearances,
+      persons.personDetails.firstWhere((p) => p.id == 'person_2').appearances,
       isEmpty,
     );
     expect(persons.reassignCalls.last.propagateAlike, isFalse);
@@ -549,4 +505,89 @@ void main() {
       ['ap_2'],
     ]);
   });
+
+  testWidgets('person detail: appearance thumbs sit in one grid row', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: 'Sam',
+          appearances: [
+            fixtureAppearance(id: 'ap_1', personId: 'person_1'),
+            fixtureAppearance(
+              id: 'ap_2',
+              personId: 'person_1',
+              itemId: 'item_2',
+            ),
+          ],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [personsRepositoryProvider.overrideWithValue(persons)],
+        child: const MaterialApp(home: PersonDetailPage(personId: 'person_1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('person-appearances-grid')), findsOneWidget);
+    final first = tester.getTopLeft(
+      find.byKey(const Key('appearance-thumb-ap_1')),
+    );
+    final second = tester.getTopLeft(
+      find.byKey(const Key('appearance-thumb-ap_2')),
+    );
+    expect(first.dy, second.dy);
+    expect(first.dx, lessThan(second.dx));
+  });
+
+  testWidgets(
+    'person detail: tap a face to show its actions; tap again hides',
+    (tester) async {
+      final persons = FakePersonsRepository(
+        persons: [
+          fixturePersonDetail(
+            id: 'person_1',
+            name: 'Sam',
+            appearances: [
+              fixtureAppearance(id: 'ap_1', personId: 'person_1'),
+              fixtureAppearance(id: 'ap_2', personId: 'person_1'),
+            ],
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [personsRepositoryProvider.overrideWithValue(persons)],
+          child: const MaterialApp(
+            home: PersonDetailPage(personId: 'person_1'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('person-appearance-hint')), findsOneWidget);
+      expect(find.byKey(const Key('appearance-detail-ap_1')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('appearance-thumb-ap_1')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('person-appearance-hint')), findsNothing);
+      expect(find.byKey(const Key('appearance-detail-ap_1')), findsOneWidget);
+      expect(find.byKey(const Key('appearance-selected-ap_1')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('appearance-thumb-ap_1')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('person-appearance-hint')), findsOneWidget);
+      expect(find.byKey(const Key('appearance-detail-ap_1')), findsNothing);
+    },
+  );
 }

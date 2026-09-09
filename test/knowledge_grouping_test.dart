@@ -43,13 +43,18 @@ void main() {
     expect(provenanceLabel(tag), 'model · stub · flash · 91%');
   });
 
-  test('assignedPersonNames is unique in first-seen order; skips missing map',
+  test('assignedPersonNames is unique A–Z case-insensitive; skips missing map',
       () {
     final item = fixtureItem(id: 'item_1');
     final knowledge = fixtureKnowledge(
       item: item,
       tags: [fixtureTag(id: 't1', dimension: 'who', value: 'toddler')],
       appearances: [
+        fixtureAppearance(
+          id: 'ap_b',
+          personId: 'person_bea',
+          itemId: 'item_1',
+        ),
         fixtureAppearance(
           id: 'ap_a',
           personId: 'person_alex',
@@ -68,8 +73,8 @@ void main() {
           itemId: 'item_1',
         ),
         fixtureAppearance(
-          id: 'ap_b',
-          personId: 'person_bea',
+          id: 'ap_z',
+          personId: 'person_zoe',
           itemId: 'item_1',
         ),
       ],
@@ -77,9 +82,10 @@ void main() {
     expect(
       assignedPersonNames(knowledge, {
         'person_alex': 'Alex',
-        'person_bea': 'Bea',
+        'person_bea': 'bea',
+        'person_zoe': 'Zoe',
       }),
-      ['Alex', 'Bea'],
+      ['Alex', 'bea', 'Zoe'],
     );
   });
 
@@ -119,6 +125,19 @@ void main() {
       ],
     );
     expect(whoColumnValues(knowledge, const {}), ['toddler']);
+  });
+
+  test('whoColumnValues fallback sorts who-tag values A–Z case-insensitive',
+      () {
+    final item = fixtureItem(id: 'item_1');
+    final knowledge = fixtureKnowledge(
+      item: item,
+      tags: [
+        fixtureTag(id: 't2', dimension: 'who', value: 'Sam'),
+        fixtureTag(id: 't1', dimension: 'who', value: 'ada'),
+      ],
+    );
+    expect(whoColumnValues(knowledge, const {}), ['ada', 'Sam']);
   });
 
   test('knowledgeCsvValues who is names then tag values', () {

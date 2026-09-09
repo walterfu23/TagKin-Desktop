@@ -6,7 +6,6 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/confirm_remove_person_dialog.dart';
-import 'package:tagkin_desktop/persons/face_crop_trays_page.dart';
 import 'package:tagkin_desktop/persons/person_detail_controller.dart';
 import 'package:tagkin_desktop/persons/person_name.dart';
 import 'package:tagkin_desktop/persons/person_name_collision_dialog.dart';
@@ -34,6 +33,7 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
   bool _renaming = false;
   final Map<String, String> _reassignTarget = {};
   final UndoController _undoStack = UndoController();
+  String? _selectedAppearanceId;
 
   @override
   void initState() {
@@ -77,10 +77,9 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
         mergeLabel: 'Merge this person into them',
       );
       if (choice != PersonNameCollisionChoice.merge || !mounted) return;
-      await ref.read(personsRepositoryProvider).mergePerson(
-            controller.personId,
-            clash.id,
-          );
+      await ref
+          .read(personsRepositoryProvider)
+          .mergePerson(controller.personId, clash.id);
       if (!mounted) return;
       ref.read(collectionsControllerProvider).markDirty();
       if (Navigator.of(context).canPop()) {
@@ -114,58 +113,51 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    final controller =
-        ref.watch(personDetailControllerProvider(widget.personId));
+    final controller = ref.watch(
+      personDetailControllerProvider(widget.personId),
+    );
 
     return ActiveUndoHost(
       controller: _undoStack,
       child: UndoShortcuts(
-      controller: _undoStack,
-      onError: (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e')),
-        );
-      },
-      child: ListenableBuilder(
-      listenable: controller,
-      builder: (context, _) {
-        return Scaffold(
-          appBar: AppBar(
-            title: Row(
-              children: [
-                const Text('Person'),
-                const SizedBox(width: 8),
-                UndoDepthBadge(controller: _undoStack),
-              ],
-            ),
-            actions: [
-              if (controller.canUnassign)
-                Tooltip(
-                  message:
-                      'Remove this person. Faces move to Unassigned. '
-                      'Use Unassign on a face to detach only that face.',
-                  child: TextButton(
-                    key: const Key('person-unassign'),
-                    onPressed: () => _confirmRemovePerson(controller),
-                    child: const Text('Remove'),
-                  ),
+        controller: _undoStack,
+        onError: (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('$e')));
+        },
+        child: ListenableBuilder(
+          listenable: controller,
+          builder: (context, _) {
+            return Scaffold(
+              appBar: AppBar(
+                title: Row(
+                  children: [
+                    const Text('Person'),
+                    const SizedBox(width: 8),
+                    UndoDepthBadge(controller: _undoStack),
+                  ],
                 ),
-              TextButton(
-                key: const Key('person-open-trays'),
-                onPressed: () => openFaceCropTrays(
-                  context,
-                  personId: widget.personId,
-                ),
-                child: const Text('Faces'),
+                actions: [
+                  if (controller.canUnassign)
+                    Tooltip(
+                      message:
+                          'Remove this person. Faces move to Unassigned. '
+                          'Use Unassign on a face to detach only that face.',
+                      child: TextButton(
+                        key: const Key('person-unassign'),
+                        onPressed: () => _confirmRemovePerson(controller),
+                        child: const Text('Remove'),
+                      ),
+                    ),
+                ],
               ),
-            ],
-          ),
-          body: _buildBody(controller),
-        );
-      },
-    ),
-    ),
+              body: _buildBody(controller),
+            );
+          },
+        ),
+      ),
     );
   }
 
@@ -197,8 +189,7 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
     if (controller.phase == PersonDetailPhase.error &&
         controller.detail == null) {
       final error = controller.error!;
-      final isNotFound =
-          error is ApiException && error.statusCode == 404;
+      final isNotFound = error is ApiException && error.statusCode == 404;
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -304,190 +295,237 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
           ),
         ],
         const SizedBox(height: 24),
-        Text(
-          'Appearances',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
+        Text('Appearances', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
-        if (detail.appearances.isEmpty)
-          const Text(
-            'No appearances linked to this person.',
-            key: Key('person-appearances-empty'),
-          )
-        else
-          for (final appearance in detail.appearances)
-            _AppearanceCard(
-              appearance: appearance,
-              otherPersons: controller.otherPersons,
-              busy: controller.isBusy,
-              reassignTarget: _reassignTarget[appearance.id] ?? '',
-              onReassignTargetChanged: (value) {
-                setState(() => _reassignTarget[appearance.id] = value);
-              },
-              onUnassign: () async {
-                final appearanceId = appearance.id;
-                final fromPersonId = widget.personId;
-                await controller.unlink(appearanceId);
-                if (mounted && controller.error == null) {
-                  ref.read(collectionsControllerProvider).markDirty();
-                  _undoStack.push(
-                    CallbackUndoableAction(
-                      label: 'Unassign appearance',
-                      onUndo: () async {
-                        await controller.reassign(
-                          appearanceId,
-                          personId: fromPersonId,
-                          propagateAlike: false,
-                        );
-                        if (mounted && controller.error == null) {
-                          ref.read(collectionsControllerProvider).markDirty();
-                        }
-                      },
-                      onRedo: () async {
-                        await controller.unlink(appearanceId);
-                        if (mounted && controller.error == null) {
-                          ref.read(collectionsControllerProvider).markDirty();
-                        }
-                      },
-                    ),
-                  );
-                }
-              },
-              onOpenItem: appearance.itemId == null
-                  ? null
-                  : () => _openItem(appearance.itemId!),
-              onExclude: appearance.itemId == null || appearance.tagId == null
-                  ? null
-                  : () => _excludeAppearance(
-                        appearance.itemId!,
-                        appearance.tagId!,
-                      ),
-              onReassign: () async {
-                final target = _reassignTarget[appearance.id];
-                if (target == null || target.isEmpty) return;
-                final appearanceId = appearance.id;
-                final fromPersonId = widget.personId;
-                String? newPersonName;
-                String? targetPersonId;
-                if (target == _AppearanceCard.newPersonSentinel) {
-                  var typed = await showPersonNameDialog(context);
-                  while (typed != null && mounted) {
-                    final clash = findPersonByName(
-                      [
-                        ...controller.otherPersons,
-                        if (controller.detail != null)
-                          Person(
-                            id: controller.detail!.id,
-                            name: controller.detail!.name,
-                            createdAt: controller.detail!.createdAt,
-                          ),
-                      ],
-                      typed,
-                    );
-                    if (clash == null) {
-                      newPersonName = typed;
-                      break;
-                    }
-                    if (!mounted) return;
-                    final choice = await showPersonNameCollisionDialog(
-                      context,
-                      existingName: clash.name,
-                      mergeLabel: 'Merge this face into them',
-                    );
-                    if (choice == PersonNameCollisionChoice.merge) {
-                      targetPersonId = clash.id;
-                      break;
-                    }
-                    if (!mounted) return;
-                    typed = await showPersonNameDialog(
-                      context,
-                      initialName: typed,
-                    );
-                  }
-                  if ((newPersonName == null && targetPersonId == null) ||
-                      !mounted) {
-                    return;
-                  }
-                } else {
-                  targetPersonId = target;
-                }
-                final result = await controller.reassign(
-                  appearanceId,
-                  personId: targetPersonId,
-                  name: newPersonName,
-                );
-                if (mounted && controller.error == null) {
-                  ref.read(collectionsControllerProvider).markDirty();
-                  final alsoMovedIds = [
-                    for (final a in result?.alsoMoved ?? const <PersonAppearance>[])
-                      a.id,
-                  ];
-                  if (alsoMovedIds.isNotEmpty) {
-                    final n = alsoMovedIds.length;
-                    final faces = n == 1
-                        ? '1 other alike face'
-                        : '$n other alike faces';
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        key: const Key('person-also-moved'),
-                        content: Text(
-                          'Moved $faces as unconfirmed.',
-                        ),
-                      ),
-                    );
-                  }
-                  _undoStack.push(
-                    CallbackUndoableAction(
-                      label: 'Reassign appearance',
-                      onUndo: () async {
-                        if (alsoMovedIds.isNotEmpty) {
-                          await ref
-                              .read(personsRepositoryProvider)
-                              .declineAutoAssignAppearances(alsoMovedIds);
-                        }
-                        await controller.reassign(
-                          appearanceId,
-                          personId: fromPersonId,
-                          propagateAlike: false,
-                        );
-                        if (mounted && controller.error == null) {
-                          ref.read(collectionsControllerProvider).markDirty();
-                        }
-                      },
-                      onRedo: () async {
-                        await controller.reassign(
-                          appearanceId,
-                          personId: targetPersonId,
-                          name: newPersonName,
-                        );
-                        if (mounted && controller.error == null) {
-                          ref.read(collectionsControllerProvider).markDirty();
-                        }
-                      },
-                    ),
-                  );
-                } else if (mounted) {
-                  final err = controller.error;
-                  final api = err is ApiException ? err : null;
-                  final already =
-                      api != null && api.code == 'person_already_on_item';
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      key: Key(
-                        already
-                            ? 'person-already-on-photo'
-                            : 'person-reassign-error',
-                      ),
-                      content: Text(
-                        already ? api.message : 'Reassign failed: $err',
-                      ),
-                    ),
-                  );
-                }
-              },
-            ),
+        ..._appearancesSection(controller, detail),
       ],
     );
+  }
+
+  List<Widget> _appearancesSection(
+    PersonDetailController controller,
+    PersonDetail detail,
+  ) {
+    final appearances = detail.appearances;
+    if (appearances.isEmpty) {
+      return const [
+        Text(
+          'No appearances linked to this person.',
+          key: Key('person-appearances-empty'),
+        ),
+      ];
+    }
+    PersonAppearance? selected;
+    final selectedId = _selectedAppearanceId;
+    if (selectedId != null) {
+      for (final appearance in appearances) {
+        if (appearance.id == selectedId) {
+          selected = appearance;
+          break;
+        }
+      }
+    }
+    final chosen = selected;
+    return [
+      GridView.builder(
+        key: const Key('person-appearances-grid'),
+        padding: EdgeInsets.zero,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 88,
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          childAspectRatio: 1,
+        ),
+        itemCount: appearances.length,
+        itemBuilder: (context, index) {
+          final appearance = appearances[index];
+          return _AppearanceThumbTile(
+            appearance: appearance,
+            selected: appearance.id == chosen?.id,
+            onTap: () {
+              setState(() {
+                _selectedAppearanceId = _selectedAppearanceId == appearance.id
+                    ? null
+                    : appearance.id;
+              });
+            },
+          );
+        },
+      ),
+      const SizedBox(height: 16),
+      if (chosen == null)
+        Text(
+          'Tap a face to see its actions.',
+          key: const Key('person-appearance-hint'),
+          style: Theme.of(context).textTheme.bodySmall,
+        )
+      else
+        _AppearanceActions(
+          appearance: chosen,
+          otherPersons: controller.otherPersons,
+          busy: controller.isBusy,
+          reassignTarget: _reassignTarget[chosen.id] ?? '',
+          onReassignTargetChanged: (value) {
+            setState(() => _reassignTarget[chosen.id] = value);
+          },
+          onUnassign: () => _unlinkAppearance(controller, chosen),
+          onReassign: () => _reassignAppearance(controller, chosen),
+          onOpenItem: chosen.itemId == null
+              ? null
+              : () => _openItem(chosen.itemId!),
+          onExclude: chosen.itemId == null || chosen.tagId == null
+              ? null
+              : () => _excludeAppearance(chosen.itemId!, chosen.tagId!),
+        ),
+    ];
+  }
+
+  Future<void> _unlinkAppearance(
+    PersonDetailController controller,
+    PersonAppearance appearance,
+  ) async {
+    final appearanceId = appearance.id;
+    final fromPersonId = widget.personId;
+    await controller.unlink(appearanceId);
+    if (!mounted || controller.error != null) return;
+    setState(() => _selectedAppearanceId = null);
+    ref.read(collectionsControllerProvider).markDirty();
+    _undoStack.push(
+      CallbackUndoableAction(
+        label: 'Unassign appearance',
+        onUndo: () async {
+          await controller.reassign(
+            appearanceId,
+            personId: fromPersonId,
+            propagateAlike: false,
+          );
+          if (mounted && controller.error == null) {
+            ref.read(collectionsControllerProvider).markDirty();
+          }
+        },
+        onRedo: () async {
+          await controller.unlink(appearanceId);
+          if (mounted && controller.error == null) {
+            setState(() => _selectedAppearanceId = null);
+            ref.read(collectionsControllerProvider).markDirty();
+          }
+        },
+      ),
+    );
+  }
+
+  Future<void> _reassignAppearance(
+    PersonDetailController controller,
+    PersonAppearance appearance,
+  ) async {
+    final target = _reassignTarget[appearance.id];
+    if (target == null || target.isEmpty) return;
+    final appearanceId = appearance.id;
+    final fromPersonId = widget.personId;
+    String? newPersonName;
+    String? targetPersonId;
+    if (target == _AppearanceActions.newPersonSentinel) {
+      var typed = await showPersonNameDialog(context);
+      while (typed != null && mounted) {
+        final clash = findPersonByName([
+          ...controller.otherPersons,
+          if (controller.detail != null)
+            Person(
+              id: controller.detail!.id,
+              name: controller.detail!.name,
+              createdAt: controller.detail!.createdAt,
+            ),
+        ], typed);
+        if (clash == null) {
+          newPersonName = typed;
+          break;
+        }
+        if (!mounted) return;
+        final choice = await showPersonNameCollisionDialog(
+          context,
+          existingName: clash.name,
+          mergeLabel: 'Merge this face into them',
+        );
+        if (choice == PersonNameCollisionChoice.merge) {
+          targetPersonId = clash.id;
+          break;
+        }
+        if (!mounted) return;
+        typed = await showPersonNameDialog(context, initialName: typed);
+      }
+      if ((newPersonName == null && targetPersonId == null) || !mounted) {
+        return;
+      }
+    } else {
+      targetPersonId = target;
+    }
+    final result = await controller.reassign(
+      appearanceId,
+      personId: targetPersonId,
+      name: newPersonName,
+    );
+    if (mounted && controller.error == null) {
+      setState(() => _selectedAppearanceId = null);
+      ref.read(collectionsControllerProvider).markDirty();
+      final alsoMovedIds = [
+        for (final a in result?.alsoMoved ?? const <PersonAppearance>[]) a.id,
+      ];
+      if (alsoMovedIds.isNotEmpty) {
+        final n = alsoMovedIds.length;
+        final faces = n == 1 ? '1 other alike face' : '$n other alike faces';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            key: const Key('person-also-moved'),
+            content: Text('Moved $faces as unconfirmed.'),
+          ),
+        );
+      }
+      _undoStack.push(
+        CallbackUndoableAction(
+          label: 'Reassign appearance',
+          onUndo: () async {
+            if (alsoMovedIds.isNotEmpty) {
+              await ref
+                  .read(personsRepositoryProvider)
+                  .declineAutoAssignAppearances(alsoMovedIds);
+            }
+            await controller.reassign(
+              appearanceId,
+              personId: fromPersonId,
+              propagateAlike: false,
+            );
+            if (mounted && controller.error == null) {
+              ref.read(collectionsControllerProvider).markDirty();
+            }
+          },
+          onRedo: () async {
+            await controller.reassign(
+              appearanceId,
+              personId: targetPersonId,
+              name: newPersonName,
+            );
+            if (mounted && controller.error == null) {
+              setState(() => _selectedAppearanceId = null);
+              ref.read(collectionsControllerProvider).markDirty();
+            }
+          },
+        ),
+      );
+    } else if (mounted) {
+      final err = controller.error;
+      final api = err is ApiException ? err : null;
+      final already = api != null && api.code == 'person_already_on_item';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          key: Key(
+            already ? 'person-already-on-photo' : 'person-reassign-error',
+          ),
+          content: Text(already ? api.message : 'Reassign failed: $err'),
+        ),
+      );
+    }
   }
 
   Future<void> _openItem(String itemId) async {
@@ -505,13 +543,15 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
   }
 
   Future<void> _excludeAppearance(String itemId, String tagId) async {
-    final controller =
-        ref.read(personDetailControllerProvider(widget.personId));
+    final controller = ref.read(
+      personDetailControllerProvider(widget.personId),
+    );
     try {
       await ref.read(itemsRepositoryProvider).createWhoExclusion(itemId, tagId);
       if (!mounted) return;
       await controller.load();
       if (!mounted) return;
+      setState(() => _selectedAppearanceId = null);
       ref.read(collectionsControllerProvider).markDirty();
       if (controller.detail == null) {
         Navigator.of(context).pop();
@@ -536,8 +576,67 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
     }
   }
 }
-class _AppearanceCard extends StatelessWidget {
-  const _AppearanceCard({
+
+class _AppearanceThumbTile extends StatelessWidget {
+  const _AppearanceThumbTile({
+    required this.appearance,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final PersonAppearance appearance;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final itemId = appearance.itemId;
+    final tagId = appearance.tagId;
+    final Widget thumb;
+    if (itemId != null && tagId != null) {
+      thumb = WhoFaceCropThumb(
+        itemId: itemId,
+        tagId: tagId,
+        region: appearance.region,
+        size: 72,
+      );
+    } else {
+      thumb = Tooltip(
+        message: 'This photo',
+        child: Icon(
+          Icons.person_outline,
+          size: 32,
+          key: itemId != null
+              ? Key('appearance-item-level-${appearance.id}')
+              : null,
+        ),
+      );
+    }
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: Key('appearance-thumb-${appearance.id}'),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(4),
+        child: DecoratedBox(
+          key: selected ? Key('appearance-selected-${appearance.id}') : null,
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: selected ? scheme.primary : Colors.transparent,
+              width: 2,
+            ),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Center(child: thumb),
+        ),
+      ),
+    );
+  }
+}
+
+class _AppearanceActions extends StatelessWidget {
+  const _AppearanceActions({
     required this.appearance,
     required this.otherPersons,
     required this.busy,
@@ -564,100 +663,73 @@ class _AppearanceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Column(
-        key: Key('appearance-card-${appearance.id}'),
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (appearance.itemId != null && appearance.tagId != null)
-                InkWell(
-                  key: Key('appearance-open-item-${appearance.id}'),
-                  onTap: busy ? null : onOpenItem,
-                  child: WhoFaceCropThumb(
-                    itemId: appearance.itemId!,
-                    tagId: appearance.tagId!,
-                    region: appearance.region,
-                    size: 72,
-                  ),
-                )
-              else if (appearance.itemId != null)
-                Text(
-                  'This photo',
-                  key: Key('appearance-item-level-${appearance.id}'),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (onOpenItem != null)
-                OutlinedButton(
-                  key: Key('appearance-open-photo-${appearance.id}'),
-                  onPressed: busy ? null : onOpenItem,
-                  child: const Text('Open photo'),
-                ),
-              if (onExclude != null)
-                OutlinedButton(
-                  key: Key('appearance-exclude-${appearance.id}'),
-                  onPressed: busy ? null : onExclude,
-                  child: const Text('Exclude from photo'),
-                ),
+    return Column(
+      key: Key('appearance-detail-${appearance.id}'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            if (onOpenItem != null)
               OutlinedButton(
-                key: Key('appearance-unassign-${appearance.id}'),
-                onPressed: busy ? null : onUnassign,
-                child: const Text('Unassign'),
+                key: Key('appearance-open-photo-${appearance.id}'),
+                onPressed: busy ? null : onOpenItem,
+                child: const Text('Open photo'),
               ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  key: Key('appearance-reassign-select-${appearance.id}'),
-                  // ignore: deprecated_member_use — value is stable across Flutter versions
-                  value: reassignTarget.isEmpty ? null : reassignTarget,
-                  decoration: const InputDecoration(
-                    labelText: 'Reassign to person',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: [
-                    const DropdownMenuItem(
-                      value: newPersonSentinel,
-                      child: Text('New person'),
-                    ),
-                    for (final person in otherPersons)
-                      DropdownMenuItem(
-                        value: person.id,
-                        child: Text(person.name),
-                      ),
-                  ],
-                  onChanged: busy
-                      ? null
-                      : (value) {
-                          if (value != null) onReassignTargetChanged(value);
-                        },
+            if (onExclude != null)
+              OutlinedButton(
+                key: Key('appearance-exclude-${appearance.id}'),
+                onPressed: busy ? null : onExclude,
+                child: const Text('Exclude from photo'),
+              ),
+            OutlinedButton(
+              key: Key('appearance-unassign-${appearance.id}'),
+              onPressed: busy ? null : onUnassign,
+              child: const Text('Unassign'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                key: Key('appearance-reassign-select-${appearance.id}'),
+                // ignore: deprecated_member_use — value is stable across Flutter versions
+                value: reassignTarget.isEmpty ? null : reassignTarget,
+                decoration: const InputDecoration(
+                  labelText: 'Reassign to person',
+                  border: OutlineInputBorder(),
+                  isDense: true,
                 ),
+                items: [
+                  const DropdownMenuItem(
+                    value: newPersonSentinel,
+                    child: Text('New person'),
+                  ),
+                  for (final person in otherPersons)
+                    DropdownMenuItem(
+                      value: person.id,
+                      child: Text(person.name),
+                    ),
+                ],
+                onChanged: busy
+                    ? null
+                    : (value) {
+                        if (value != null) onReassignTargetChanged(value);
+                      },
               ),
-              const SizedBox(width: 8),
-              FilledButton(
-                key: Key('appearance-reassign-${appearance.id}'),
-                onPressed:
-                    busy || reassignTarget.isEmpty ? null : onReassign,
-                child: const Text('Reassign'),
-              ),
-            ],
-          ),
-          const Divider(height: 24),
-        ],
-      ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton(
+              key: Key('appearance-reassign-${appearance.id}'),
+              onPressed: busy || reassignTarget.isEmpty ? null : onReassign,
+              child: const Text('Reassign'),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

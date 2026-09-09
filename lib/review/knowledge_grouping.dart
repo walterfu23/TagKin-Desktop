@@ -1,6 +1,7 @@
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/item_detail_edits.dart';
 import 'package:tagkin_desktop/persons/person_name.dart';
+import 'package:tagkin_desktop/ui/alpha_order.dart';
 
 /// Canonical who/what/when/where dimensions (R2).
 const List<String> kKnowledgeDimensions = <String>[
@@ -44,7 +45,7 @@ String provenanceLabel(Tag tag) {
 }
 
 /// Unique [Person.name]s for appearances on [knowledge] that have a
-/// `personId` present in [namesById], in first-seen order.
+/// `personId` present in [namesById], sorted A–Z case-insensitive.
 List<String> assignedPersonNames(
   ItemKnowledge knowledge,
   Map<String, String> namesById,
@@ -59,21 +60,22 @@ List<String> assignedPersonNames(
     if (name == null || name.isEmpty) continue;
     out.add(name);
   }
-  return out;
+  return sortedAlphaBy(out, (n) => n);
 }
 
 /// Folder-table Who: person names when any assigned appearance resolves;
-/// otherwise active item-level who-tag values.
+/// otherwise active item-level who-tag values. Both lists are A–Z
+/// (case-insensitive).
 List<String> whoColumnValues(
   ItemKnowledge knowledge,
   Map<String, String> namesById,
 ) {
   final names = assignedPersonNames(knowledge, namesById);
   if (names.isNotEmpty) return names;
-  return [
+  return sortedAlphaBy([
     for (final tag in groupItemLevelTagsByDimension(knowledge.tags)['who']!)
       tag.value,
-  ];
+  ], (v) => v);
 }
 
 /// Active who tag with a face box (item-detail crop).

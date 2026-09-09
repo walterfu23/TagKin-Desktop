@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/where/where_label_resolver.dart';
+import 'package:tagkin_desktop/where/where_place_label.dart';
 
 /// Shows a where-tag value as city/state (GPS) or the raw label otherwise.
 class WhereValueText extends ConsumerStatefulWidget {
@@ -47,6 +49,59 @@ class _WhereValueTextState extends ConsumerState<WhereValueText> {
   Widget build(BuildContext context) {
     return Text(
       _label ?? widget.value,
+      style: widget.style,
+    );
+  }
+}
+
+/// Resolves where-tag values, drops redundant labels, shows CSV.
+class WhereValuesText extends ConsumerStatefulWidget {
+  const WhereValuesText({
+    super.key,
+    required this.values,
+    this.style,
+  });
+
+  final List<String> values;
+  final TextStyle? style;
+
+  @override
+  ConsumerState<WhereValuesText> createState() => _WhereValuesTextState();
+}
+
+class _WhereValuesTextState extends ConsumerState<WhereValuesText> {
+  List<String>? _labels;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(covariant WhereValuesText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!listEquals(oldWidget.values, widget.values)) {
+      _labels = null;
+      _resolve();
+    }
+  }
+
+  Future<void> _resolve() async {
+    final raw = List<String>.from(widget.values);
+    final resolved = collapseWhereDisplays(
+      await ref.read(whereLabelResolverProvider).resolveAllDisplays(raw),
+    );
+    if (!mounted || !listEquals(widget.values, raw)) return;
+    setState(() => _labels = [for (final e in resolved) e.label]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final shown = _labels ?? widget.values;
+    if (shown.isEmpty) return Text('—', style: widget.style);
+    return Text(
+      shown.join(', '),
       style: widget.style,
     );
   }

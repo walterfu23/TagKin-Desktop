@@ -128,6 +128,53 @@ void main() {
     expect(row.where, ['San Francisco, CA', 'restaurant']);
   });
 
+  test('GPS city is omitted when a scene already includes the city', () async {
+    final item = fixtureItem(id: 'g', processingStatus: ProcessingStatus.tagged);
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {
+        'g': fixtureKnowledge(
+          item: item,
+          tags: [
+            fixtureTag(
+              id: 'gps',
+              itemId: 'g',
+              dimension: 'where',
+              value: '37.37,-122.12',
+            ),
+            fixtureTag(
+              id: 'scene',
+              itemId: 'g',
+              dimension: 'where',
+              value: 'Los Altos parking lot',
+            ),
+          ],
+        ),
+      },
+    );
+    final controller = LibraryTableController(
+      itemsRepository: items,
+      commentsRepository: FakeCommentsRepository(),
+      thumbCache: LocalThumbCache(),
+      whereLabelResolver: WhereLabelResolver(
+        geocoder: FakeReverseGeocoder({
+          FakeReverseGeocoder.key(37.37, -122.12): const PlaceParts(
+            locality: 'Los Altos',
+            administrativeArea: 'CA',
+            country: 'United States',
+            isoCountryCode: 'US',
+          ),
+        }),
+        deviceCountryCodeProvider: () => 'US',
+      ),
+    );
+    await controller.load();
+    await _awaitKnowledge(controller);
+
+    final row = controller.allRows.single;
+    expect(row.where, ['Los Altos parking lot']);
+  });
+
   test('sort cycles asc → desc → none; multiColumn appends tie-break keys',
       () async {
     final items = <Item>[];

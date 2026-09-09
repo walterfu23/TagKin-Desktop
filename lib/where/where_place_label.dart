@@ -230,6 +230,46 @@ WhereDisplay formatWhereDisplay(
   );
 }
 
+/// True when [prefix] is a case-insensitive whole-word prefix of [full].
+///
+/// Equal strings are not prefixes (exact dupes are handled separately).
+/// `park` is not a prefix of `parking lot` (next character is a letter).
+bool isWholeWordPrefix(String prefix, String full) {
+  final p = prefix.trim().toLowerCase();
+  final f = full.trim().toLowerCase();
+  if (p.isEmpty || f.length <= p.length) return false;
+  if (!f.startsWith(p)) return false;
+  return !_unicodeLetter.hasMatch(f[p.length]);
+}
+
+/// Drops empty labels, case-insensitive exact duplicates, and labels that
+/// are a whole-word prefix of a more specific remaining label (including a
+/// GPS [WhereDisplay.locality] subsumed by a scene that starts with that city).
+List<WhereDisplay> collapseWhereDisplays(Iterable<WhereDisplay> entries) {
+  final unique = <WhereDisplay>[];
+  final seen = <String>{};
+  for (final e in entries) {
+    final label = e.label.trim();
+    if (label.isEmpty) continue;
+    if (!seen.add(label.toLowerCase())) continue;
+    unique.add(e);
+  }
+  return [
+    for (final a in unique)
+      if (!_whereDisplaySubsumed(a, unique)) a,
+  ];
+}
+
+bool _whereDisplaySubsumed(WhereDisplay a, List<WhereDisplay> all) {
+  for (final b in all) {
+    if (identical(a, b)) continue;
+    if (isWholeWordPrefix(a.label, b.label)) return true;
+    final loc = a.locality?.trim() ?? '';
+    if (loc.isNotEmpty && isWholeWordPrefix(loc, b.label)) return true;
+  }
+  return false;
+}
+
 /// Convenience: joined label only (tests / simple callers).
 String? formatWherePlaceLabel(
   PlaceParts place, {

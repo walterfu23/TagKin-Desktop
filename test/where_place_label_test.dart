@@ -286,4 +286,81 @@ void main() {
       expect(await resolver.resolve('10.0,20.0'), '10.0,20.0');
     });
   });
+
+  group('collapseWhereDisplays', () {
+    test('drops city when a scene already includes the city', () {
+      expect(
+        [
+          for (final e in collapseWhereDisplays([
+            WhereDisplay.plain('Los Altos'),
+            WhereDisplay.plain('Los Altos parking lot'),
+          ]))
+            e.label,
+        ],
+        ['Los Altos parking lot'],
+      );
+    });
+
+    test('drops GPS city/state when locality prefixes a scene', () {
+      expect(
+        [
+          for (final e in collapseWhereDisplays([
+            const WhereDisplay(
+              label: 'Los Altos, CA',
+              locality: 'Los Altos',
+              region: 'CA',
+              regionName: 'CA',
+            ),
+            WhereDisplay.plain('Los Altos parking lot'),
+          ]))
+            e.label,
+        ],
+        ['Los Altos parking lot'],
+      );
+    });
+
+    test('keeps city plus an unrelated scene', () {
+      expect(
+        [
+          for (final e in collapseWhereDisplays([
+            const WhereDisplay(
+              label: 'San Francisco, CA',
+              locality: 'San Francisco',
+              region: 'CA',
+              regionName: 'CA',
+            ),
+            WhereDisplay.plain('restaurant'),
+          ]))
+            e.label,
+        ],
+        ['San Francisco, CA', 'restaurant'],
+      );
+    });
+
+    test('park does not subsume parking lot', () {
+      expect(
+        [
+          for (final e in collapseWhereDisplays([
+            WhereDisplay.plain('park'),
+            WhereDisplay.plain('parking lot'),
+          ]))
+            e.label,
+        ],
+        ['park', 'parking lot'],
+      );
+    });
+
+    test('exact case-insensitive dedupe keeps first spelling', () {
+      expect(
+        [
+          for (final e in collapseWhereDisplays([
+            WhereDisplay.plain('Los Altos'),
+            WhereDisplay.plain('los altos'),
+          ]))
+            e.label,
+        ],
+        ['Los Altos'],
+      );
+    });
+  });
 }

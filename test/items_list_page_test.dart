@@ -262,7 +262,7 @@ void main() {
       tester
           .widget<Tooltip>(find.byKey(const Key('item-who-tooltip-item_who')))
           .message,
-      'Sam, Ada',
+      'Ada, Sam',
     );
   });
 
@@ -279,6 +279,9 @@ void main() {
       'Christopher Bartholomew',
       'Anastasia Montgomery',
     ];
+    final sortedNames = [...names]..sort(
+        (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
+      );
     await _pumpLibrary(
       tester,
       items: FakeItemsRepository(
@@ -307,7 +310,7 @@ void main() {
       tester
           .widget<Tooltip>(find.byKey(const Key('item-who-tooltip-item_who')))
           .message,
-      names.join(', '),
+      sortedNames.join(', '),
     );
     await tester.tap(find.byKey(const Key('item-who-more-item_who')));
     await tester.pumpAndSettle();
