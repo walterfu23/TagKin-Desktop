@@ -101,6 +101,21 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/ProcessingStatus"
+        - name: limit
+          in: query
+          required: false
+          description: Max rows to return (default 2000, max 5000).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5000
+        - name: offset
+          in: query
+          required: false
+          description: Rows to skip (default 0).
+          schema:
+            type: integer
+            minimum: 0
       responses:
         "200":
           description: Items owned by the authenticated account

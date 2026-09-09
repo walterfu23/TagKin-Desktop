@@ -1,15 +1,22 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/app_shell.dart';
+import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/person_detail_page.dart';
 import 'package:tagkin_desktop/persons/person_name_dialog.dart';
 import 'package:tagkin_desktop/persons/persons_list_page.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 
+import 'fake_comments_repository.dart';
+import 'fake_corrections_repository.dart';
+import 'fake_items_repository.dart';
+import 'fake_jobs_repository.dart';
 import 'fake_persons_repository.dart';
+import 'fake_usage_repository.dart';
 
 void main() {
   testWidgets('persons list renders every (always-named) person', (
@@ -539,6 +546,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('person-appearances-grid')), findsOneWidget);
+    expect(find.byKey(const Key('person-detail-id')), findsNothing);
     final first = tester.getTopLeft(
       find.byKey(const Key('appearance-thumb-ap_1')),
     );
@@ -584,10 +592,73 @@ void main() {
       expect(find.byKey(const Key('appearance-detail-ap_1')), findsOneWidget);
       expect(find.byKey(const Key('appearance-selected-ap_1')), findsOneWidget);
 
+      await tester.runAsync(
+        () => Future<void>.delayed(kDoubleTapTimeout),
+      );
       await tester.tap(find.byKey(const Key('appearance-thumb-ap_1')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('person-appearance-hint')), findsOneWidget);
       expect(find.byKey(const Key('appearance-detail-ap_1')), findsNothing);
     },
   );
+
+  testWidgets('person detail: double-click a face opens the photo', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final item = fixtureItem(
+      id: 'item_1',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: 'Sam',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_1',
+              personId: 'person_1',
+              itemId: 'item_1',
+            ),
+          ],
+        ),
+      ],
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {'item_1': fixtureKnowledge(item: item)},
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          itemsRepositoryProvider.overrideWithValue(items),
+          correctionsRepositoryProvider.overrideWithValue(
+            FakeCorrectionsRepository(items: items),
+          ),
+          commentsRepositoryProvider.overrideWithValue(
+            FakeCommentsRepository(),
+          ),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          jobsRepositoryProvider.overrideWithValue(
+            FakeJobsRepository(itemId: 'item_1', item: item),
+          ),
+        ],
+        child: const MaterialApp(home: PersonDetailPage(personId: 'person_1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final thumb = find.byKey(const Key('appearance-thumb-ap_1'));
+    await tester.tap(thumb);
+    await tester.tap(thumb);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('item-detail')), findsOneWidget);
+  });
 }

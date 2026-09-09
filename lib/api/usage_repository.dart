@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 
@@ -15,13 +13,6 @@ class UsageRepository {
   /// `GET /usage` — current usage, reservation, limits, and kill-switch.
   Future<UsageSummary> getUsage() async {
     final response = await _client.get('/usage');
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected /usage response shape',
-      );
-    }
-    return UsageSummary.fromJson(json);
+    return UsageSummary.fromJson(_client.decodeMap(response, '/usage'));
   }
 }

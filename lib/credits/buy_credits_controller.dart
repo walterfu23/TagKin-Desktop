@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:tagkin_desktop/api/api_messages.dart';
 import 'package:tagkin_desktop/api/credits_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart'
     show creditsRepositoryProvider, checkoutUrlLauncherProvider;
@@ -56,7 +57,7 @@ class BuyCreditsController extends ChangeNotifier {
       selected = offers.isEmpty ? null : offers.first;
       phase = BuyCreditsPhase.ready;
     } catch (e) {
-      errorMessage = e.toString();
+      errorMessage = apiUserMessage(e);
       phase = BuyCreditsPhase.failed;
     }
     notifyListeners();
@@ -95,7 +96,7 @@ class BuyCreditsController extends ChangeNotifier {
       phase = BuyCreditsPhase.awaitingBrowser;
       _startPolling();
     } catch (e) {
-      errorMessage = e.toString();
+      errorMessage = apiUserMessage(e);
       phase = BuyCreditsPhase.failed;
     }
     notifyListeners();
@@ -120,7 +121,7 @@ class BuyCreditsController extends ChangeNotifier {
         phase = BuyCreditsPhase.awaitingBrowser;
       }
     } catch (e) {
-      errorMessage = e.toString();
+      errorMessage = apiUserMessage(e);
       phase = BuyCreditsPhase.failed;
       _stopPolling();
     }
@@ -139,7 +140,7 @@ class BuyCreditsController extends ChangeNotifier {
     try {
       purchase = await creditsRepository.cancelPurchase(current.purchaseId);
     } catch (e) {
-      errorMessage = e.toString();
+      errorMessage = apiUserMessage(e);
     }
     phase = BuyCreditsPhase.ready;
     notifyListeners();

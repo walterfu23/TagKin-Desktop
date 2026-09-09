@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 
@@ -19,27 +17,16 @@ class JobsRepository {
   /// message; callers must not auto-retry around it.
   Future<AnalyzeResultResponse> analyzeItem(String itemId) async {
     final response = await _client.post('/items/$itemId/analyze');
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected analyze response shape',
-      );
-    }
-    return AnalyzeResultResponse.fromJson(json);
+    return AnalyzeResultResponse.fromJson(
+      _client.decodeMap(response, 'analyze'),
+    );
   }
 
   /// `GET /items/{id}/jobs` — most-recent-first durable jobs for the item.
   Future<List<Job>> listItemJobs(String itemId) async {
     final response = await _client.get('/items/$itemId/jobs');
-    final json = jsonDecode(response.body);
-    if (json is! List<dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected /jobs response shape',
-      );
-    }
-    return json
+    return _client
+        .decodeList(response, '/jobs')
         .map((e) => Job.fromJson(e as Map<String, dynamic>))
         .toList();
   }
@@ -47,14 +34,7 @@ class JobsRepository {
   /// `POST /items/{id}/cancel` — stop unfinished work; release reservation.
   Future<CancelItemResponse> cancelItem(String itemId) async {
     final response = await _client.post('/items/$itemId/cancel');
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected cancel response shape',
-      );
-    }
-    return CancelItemResponse.fromJson(json);
+    return CancelItemResponse.fromJson(_client.decodeMap(response, 'cancel'));
   }
 
   /// `DELETE /items/{id}` — soft-delete TagKin metadata; never touches local

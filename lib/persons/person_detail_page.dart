@@ -6,6 +6,7 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/confirm_remove_person_dialog.dart';
+import 'package:tagkin_desktop/persons/face_crop/face_crop_tap.dart';
 import 'package:tagkin_desktop/persons/person_detail_controller.dart';
 import 'package:tagkin_desktop/persons/person_name.dart';
 import 'package:tagkin_desktop/persons/person_name_collision_dialog.dart';
@@ -33,6 +34,7 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
   bool _renaming = false;
   final Map<String, String> _reassignTarget = {};
   final UndoController _undoStack = UndoController();
+  final FaceCropTapTracker _faceTapTracker = FaceCropTapTracker();
   String? _selectedAppearanceId;
 
   @override
@@ -140,6 +142,7 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
                   ],
                 ),
                 actions: [
+                  const AppNavTabButtons(),
                   if (controller.canUnassign)
                     Tooltip(
                       message:
@@ -234,12 +237,6 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
               ),
             ),
           ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          detail.id,
-          key: const Key('person-detail-id'),
-          style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 16),
         if (_renaming)
@@ -344,13 +341,7 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
           return _AppearanceThumbTile(
             appearance: appearance,
             selected: appearance.id == chosen?.id,
-            onTap: () {
-              setState(() {
-                _selectedAppearanceId = _selectedAppearanceId == appearance.id
-                    ? null
-                    : appearance.id;
-              });
-            },
+            onTap: () => _onAppearanceTap(appearance),
           );
         },
       ),
@@ -380,6 +371,21 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
               : () => _excludeAppearance(chosen.itemId!, chosen.tagId!),
         ),
     ];
+  }
+
+  void _onAppearanceTap(PersonAppearance appearance) {
+    if (_faceTapTracker.registerTap(appearance.id)) {
+      final itemId = appearance.itemId;
+      if (itemId != null) {
+        _openItem(itemId);
+      }
+      return;
+    }
+    setState(() {
+      _selectedAppearanceId = _selectedAppearanceId == appearance.id
+          ? null
+          : appearance.id;
+    });
   }
 
   Future<void> _unlinkAppearance(

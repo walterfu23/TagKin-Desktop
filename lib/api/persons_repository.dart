@@ -116,7 +116,7 @@ class PersonsRepository {
 
   /// `POST /persons/appearances/{id}/unconfirm` — restore unconfirmed after
   /// Confirm undo (D12).
-  Future<PersonAppearance?> tryRestoreUnconfirmedAssignment(
+  Future<PersonAppearance> tryRestoreUnconfirmedAssignment(
     String appearanceId,
   ) async {
     final response = await _client.post(
@@ -249,5 +249,115 @@ class PersonsRepository {
     );
     final json = _client.decodeMap(response, 'merge-person');
     return PersonDetail.fromJson(json);
+  }
+}
+
+/// Server tray GETs cap at 500 rows; Faces still filters client-side by
+/// folder, so one page can hide in-folder faces. Walk [offset] until a short
+/// page (or [kFacesTrayFetchMaxPages]) so the folder filter sees the full set.
+const kFacesTrayFetchPageSize = 500;
+const kFacesTrayFetchMaxPages = 40;
+
+extension PersonsRepositoryTrayPages on PersonsRepository {
+  Future<List<PersonAppearance>> listAllUnassignedAppearances({
+    int pageSize = kFacesTrayFetchPageSize,
+  }) async {
+    final limit = pageSize.clamp(1, kFacesTrayFetchPageSize);
+    final all = <PersonAppearance>[];
+    var offset = 0;
+    for (var i = 0; i < kFacesTrayFetchMaxPages; i++) {
+      final page = await listUnassignedAppearances(
+        limit: limit,
+        offset: offset,
+      );
+      all.addAll(page.appearances);
+      if (page.appearances.length < page.limit) break;
+      offset += page.limit;
+    }
+    return all;
+  }
+
+  Future<List<PersonAppearance>> listAllAssignedAppearances({
+    int pageSize = kFacesTrayFetchPageSize,
+  }) async {
+    final limit = pageSize.clamp(1, kFacesTrayFetchPageSize);
+    final all = <PersonAppearance>[];
+    var offset = 0;
+    for (var i = 0; i < kFacesTrayFetchMaxPages; i++) {
+      final page = await listAssignedAppearances(
+        limit: limit,
+        offset: offset,
+      );
+      all.addAll(page.appearances);
+      if (page.appearances.length < page.limit) break;
+      offset += page.limit;
+    }
+    return all;
+  }
+
+  Future<List<WhoExclusion>> listAllAccountWhoExclusions({
+    int pageSize = kFacesTrayFetchPageSize,
+  }) async {
+    final limit = pageSize.clamp(1, kFacesTrayFetchPageSize);
+    final all = <WhoExclusion>[];
+    var offset = 0;
+    for (var i = 0; i < kFacesTrayFetchMaxPages; i++) {
+      final page = await listAccountWhoExclusions(
+        limit: limit,
+        offset: offset,
+      );
+      all.addAll(page.exclusions);
+      if (page.exclusions.length < page.limit) break;
+      offset += page.limit;
+    }
+    return all;
+  }
+
+  Future<PersonAppearance?> findUnassignedAppearanceByTagId(String tagId) async {
+    var offset = 0;
+    for (var i = 0; i < kFacesTrayFetchMaxPages; i++) {
+      final page = await listUnassignedAppearances(
+        limit: kFacesTrayFetchPageSize,
+        offset: offset,
+      );
+      for (final a in page.appearances) {
+        if (a.tagId == tagId) return a;
+      }
+      if (page.appearances.length < page.limit) return null;
+      offset += page.limit;
+    }
+    return null;
+  }
+
+  Future<PersonAppearance?> findAssignedAppearanceByTagId(String tagId) async {
+    var offset = 0;
+    for (var i = 0; i < kFacesTrayFetchMaxPages; i++) {
+      final page = await listAssignedAppearances(
+        limit: kFacesTrayFetchPageSize,
+        offset: offset,
+      );
+      for (final a in page.appearances) {
+        if (a.tagId == tagId) return a;
+      }
+      if (page.appearances.length < page.limit) return null;
+      offset += page.limit;
+    }
+    return null;
+  }
+
+  Future<WhoExclusion?> findExclusionByCreatedFromTagId(String tagId) async {
+    var offset = 0;
+    for (var i = 0; i < kFacesTrayFetchMaxPages; i++) {
+      final page = await listAccountWhoExclusions(
+        limit: kFacesTrayFetchPageSize,
+        offset: offset,
+      );
+      for (final e in page.exclusions) {
+        if (e.createdFromTagId == tagId) return e;
+      }
+      if (page.exclusions.length < page.limit) return null;
+      offset += page.limit;
+    }
+    return null;
   }
 }

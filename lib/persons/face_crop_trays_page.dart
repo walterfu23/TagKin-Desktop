@@ -1,18 +1,18 @@
 import 'dart:async';
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
+import 'package:tagkin_desktop/api/persons_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
-import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/persons/confirm_remove_person_dialog.dart';
 import 'package:tagkin_desktop/persons/face_crop/face_crop_focus.dart';
+import 'package:tagkin_desktop/persons/face_crop/face_crop_tap.dart';
 import 'package:tagkin_desktop/persons/face_crop_drag.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/persons/person_detail_controller.dart';
@@ -28,6 +28,7 @@ import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 import 'package:tagkin_desktop/undo/undoable_action.dart';
 
 export 'face_crop/face_crop_focus.dart';
+export 'face_crop/face_crop_tap.dart';
 
 /// One successful tray move — enough to patch local lists without a full reload.
 class _FaceMoveResult {
@@ -105,33 +106,6 @@ FaceCropSelectMode faceCropSelectMode() {
   if (faceCropShiftPressed()) return FaceCropSelectMode.range;
   if (faceCropMetaPressed()) return FaceCropSelectMode.toggle;
   return FaceCropSelectMode.replace;
-}
-
-/// Resolves Finder-style single vs double click without [GestureDetector.onDoubleTap]
-/// (that delays [onTap] and breaks [WidgetTester.pumpAndSettle] / immediate select chrome).
-class FaceCropTapTracker {
-  String? _lastId;
-  DateTime? _lastAt;
-
-  /// Returns true if this tap should open the item (second click of a double-click).
-  bool registerTap(String id) {
-    final now = DateTime.now();
-    if (_lastId == id &&
-        _lastAt != null &&
-        now.difference(_lastAt!) < kDoubleTapTimeout) {
-      _lastId = null;
-      _lastAt = null;
-      return true;
-    }
-    _lastId = id;
-    _lastAt = now;
-    return false;
-  }
-
-  void clear() {
-    _lastId = null;
-    _lastAt = null;
-  }
 }
 
 /// Side-by-side Faces trays: Assigned | Unassigned | Excluded.
@@ -231,8 +205,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   final UndoController _undoStack = UndoController();
   final FocusNode _trayFocusNode = FocusNode(debugLabel: 'faces-trays');
 
-  int get _trayPageLimit =>
-      ref.read(desktopPrefsProvider).facesTrayPageLimit.clamp(50, 500);
+  /// Quiet refresh failed; trays keep last good data with a banner.
+  String? _traySyncError;
 
   int _lastIngestRefreshTick = 0;
   bool _lastIngestHadActiveJobs = false;
@@ -918,6 +892,10 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       }
     } catch (e, st) {
       debugPrint('Faces quiet folder refresh failed: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _traySyncError = 'Could not refresh Faces. Try Refresh.';
+      });
     }
   }
 
@@ -975,27 +953,27 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           ? <String>{}
           : itemIdsInLeafFolder(items, folder);
 
-      final persons = await personsRepo.listPersons();
-      final assignedPage = await personsRepo.listAssignedAppearances(
-        limit: _trayPageLimit,
-      );
-      final unPage = await personsRepo.listUnassignedAppearances(
-        limit: _trayPageLimit,
-      );
-      final exPage = await personsRepo.listAccountWhoExclusions(
-        limit: _trayPageLimit,
-      );
+      final trayResults = await Future.wait<Object>([
+        personsRepo.listPersons(),
+        personsRepo.listAllAssignedAppearances(),
+        personsRepo.listAllUnassignedAppearances(),
+        personsRepo.listAllAccountWhoExclusions(),
+      ]);
+      final persons = trayResults[0] as List<Person>;
+      final assignedAll = trayResults[1] as List<PersonAppearance>;
+      final unassignedAll = trayResults[2] as List<PersonAppearance>;
+      final exclusionsAll = trayResults[3] as List<WhoExclusion>;
 
-      final assignedOverview = assignedPage.appearances
+      final assignedOverview = assignedAll
           .where((a) => a.itemId != null && scopedIds.contains(a.itemId))
           .toList();
       final unconfirmedCountByPerson = _computeUnconfirmedCountByPerson(
         assignedOverview,
       );
-      final unassigned = unPage.appearances
+      final unassigned = unassignedAll
           .where((a) => a.itemId != null && scopedIds.contains(a.itemId))
           .toList();
-      final excluded = exPage.exclusions
+      final excluded = exclusionsAll
           .where((e) => scopedIds.contains(e.itemId))
           .toList();
 
@@ -1073,6 +1051,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         _unassigned = unassigned;
         _excluded = excluded;
         _itemsById = {for (final it in items) it.id: it};
+        _traySyncError = null;
         _loading = false;
       });
       if (pid != null) _scrollToCluster(pid);
@@ -1872,10 +1851,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   /// undo hops make frozen ids unsafe for [undoWhoExclusion].
   Future<String?> _liveExclusionIdForTag(String tagId) async {
     final persons = ref.read(personsRepositoryProvider);
-    final page = await persons.listAccountWhoExclusions(limit: _trayPageLimit);
-    for (final e in page.exclusions) {
-      if (e.createdFromTagId == tagId) return e.id;
-    }
+    final live = await persons.findExclusionByCreatedFromTagId(tagId);
+    if (live != null) return live.id;
     for (final e in _excluded) {
       if (e.createdFromTagId == tagId) return e.id;
     }
@@ -2101,16 +2078,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                   tagId: tagId,
                   fallbackExclusionId: liveExclusionId,
                 );
-                final page = await persons.listUnassignedAppearances(
-                  limit: _trayPageLimit,
+                final match = await persons.findUnassignedAppearanceByTagId(
+                  tagId,
                 );
-                PersonAppearance? match;
-                for (final a in page.appearances) {
-                  if (a.tagId == tagId) {
-                    match = a;
-                    break;
-                  }
-                }
                 if (match == null) {
                   throw StateError(
                     'Could not find appearance after undo exclude',
@@ -2119,28 +2089,10 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                 await persons.reassignAppearance(match.id, personId: pid);
               },
               redo: () async {
-                final page = await persons.listUnassignedAppearances(
-                  limit: _trayPageLimit,
+                var match = await persons.findUnassignedAppearanceByTagId(
+                  tagId,
                 );
-                PersonAppearance? match;
-                for (final a in page.appearances) {
-                  if (a.tagId == tagId) {
-                    match = a;
-                    break;
-                  }
-                }
-                if (match == null) {
-                  // Still Assigned (first redo after forward exclude)?
-                  final assignedPage = await persons.listAssignedAppearances(
-                    limit: _trayPageLimit,
-                  );
-                  for (final a in assignedPage.appearances) {
-                    if (a.tagId == tagId) {
-                      match = a;
-                      break;
-                    }
-                  }
-                }
+                match ??= await persons.findAssignedAppearanceByTagId(tagId);
                 if (match == null) {
                   throw StateError(
                     'Could not find appearance after redo exclude',
@@ -2192,16 +2144,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                   tagId: tagId,
                   fallbackExclusionId: liveExclusionId,
                 );
-                final page = await persons.listUnassignedAppearances(
-                  limit: _trayPageLimit,
+                final match = await persons.findUnassignedAppearanceByTagId(
+                  tagId,
                 );
-                PersonAppearance? match;
-                for (final a in page.appearances) {
-                  if (a.tagId == tagId) {
-                    match = a;
-                    break;
-                  }
-                }
                 if (match == null) {
                   throw StateError(
                     'Could not find appearance after undo exclude',
@@ -2279,16 +2224,10 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           // Server mints a new appearance id; resolve it so the tray updates
           // immediately and loose multi-select can be reselected.
           final tagId = data.tagId ?? data.createdFromTagId;
-          final page = await persons.listUnassignedAppearances(
-            limit: _trayPageLimit,
-          );
-          PersonAppearance? match;
-          for (final a in page.appearances) {
-            if (a.tagId == tagId) {
-              match = a;
-              break;
-            }
+          if (tagId == null) {
+            throw StateError('Could not find appearance after undo exclude');
           }
+          final match = await persons.findUnassignedAppearanceByTagId(tagId);
           if (match == null) {
             throw StateError('Could not find appearance after undo exclude');
           }
@@ -2336,16 +2275,10 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         if (data.isExclusion && data.exclusionId != null) {
           await items.undoWhoExclusion(data.itemId, data.exclusionId!);
           final tagId = data.tagId ?? data.createdFromTagId;
-          final page = await persons.listUnassignedAppearances(
-            limit: _trayPageLimit,
-          );
-          PersonAppearance? match;
-          for (final a in page.appearances) {
-            if (a.tagId == tagId) {
-              match = a;
-              break;
-            }
+          if (tagId == null) {
+            throw StateError('Could not find appearance after undo exclude');
           }
+          final match = await persons.findUnassignedAppearanceByTagId(tagId);
           if (match == null) {
             throw StateError('Could not find appearance after undo exclude');
           }
@@ -2711,28 +2644,28 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       final personsRepo = ref.read(personsRepositoryProvider);
       final results = await Future.wait<Object>([
         personsRepo.listPersons(),
-        personsRepo.listAssignedAppearances(limit: _trayPageLimit),
-        personsRepo.listUnassignedAppearances(limit: _trayPageLimit),
-        personsRepo.listAccountWhoExclusions(limit: _trayPageLimit),
+        personsRepo.listAllAssignedAppearances(),
+        personsRepo.listAllUnassignedAppearances(),
+        personsRepo.listAllAccountWhoExclusions(),
       ]);
       if (!mounted || epoch != _traySyncEpoch) return;
 
       final persons = results[0] as List<Person>;
-      final assignedPage = results[1] as AssignedAppearancesPage;
-      final unPage = results[2] as UnassignedAppearancesPage;
-      final exPage = results[3] as AccountWhoExclusionsPage;
+      final assignedAll = results[1] as List<PersonAppearance>;
+      final unassignedAll = results[2] as List<PersonAppearance>;
+      final exclusionsAll = results[3] as List<WhoExclusion>;
       final scopedIds = _scopedItemIds;
 
-      final assignedOverview = assignedPage.appearances
+      final assignedOverview = assignedAll
           .where((a) => a.itemId != null && scopedIds.contains(a.itemId))
           .toList();
       final unconfirmedCountByPerson = _computeUnconfirmedCountByPerson(
         assignedOverview,
       );
-      final unassigned = unPage.appearances
+      final unassigned = unassignedAll
           .where((a) => a.itemId != null && scopedIds.contains(a.itemId))
           .toList();
-      final excluded = exPage.exclusions
+      final excluded = exclusionsAll
           .where((e) => scopedIds.contains(e.itemId))
           .toList();
 
@@ -2773,10 +2706,15 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         _unconfirmedCountByPerson = unconfirmedCountByPerson;
         _unassigned = unassigned;
         _excluded = excluded;
+        _traySyncError = null;
       });
       _pruneOrRemapLooseSelection();
     } catch (e, st) {
       debugPrint('Faces quiet tray refresh failed: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _traySyncError = 'Could not refresh Faces. Try Refresh.';
+      });
     }
   }
 
@@ -3223,16 +3161,8 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                       tagId: tagId,
                       fallbackExclusionId: liveExclusionId,
                     );
-                    final page = await persons.listUnassignedAppearances(
-                      limit: _trayPageLimit,
-                    );
-                    PersonAppearance? match;
-                    for (final a in page.appearances) {
-                      if (a.tagId == tagId) {
-                        match = a;
-                        break;
-                      }
-                    }
+                    final match =
+                        await persons.findUnassignedAppearanceByTagId(tagId);
                     if (match == null) {
                       throw StateError(
                         'Could not find appearance after undo exclude',
@@ -3244,26 +3174,10 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                     );
                   },
                   redo: () async {
-                    final page = await persons.listUnassignedAppearances(
-                      limit: _trayPageLimit,
-                    );
-                    PersonAppearance? match;
-                    for (final a in page.appearances) {
-                      if (a.tagId == tagId) {
-                        match = a;
-                        break;
-                      }
-                    }
-                    if (match == null) {
-                      final assignedPage = await persons
-                          .listAssignedAppearances(limit: _trayPageLimit);
-                      for (final a in assignedPage.appearances) {
-                        if (a.tagId == tagId) {
-                          match = a;
-                          break;
-                        }
-                      }
-                    }
+                    var match =
+                        await persons.findUnassignedAppearanceByTagId(tagId);
+                    match ??=
+                        await persons.findAssignedAppearanceByTagId(tagId);
                     if (match == null) {
                       throw StateError(
                         'Could not find appearance after redo exclude',
@@ -3797,6 +3711,24 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                       UndoDepthBadge(controller: _undoStack),
                     ],
                   ),
+                  bottom: _traySyncError == null || _loading || _error != null
+                      ? null
+                      : PreferredSize(
+                          preferredSize: const Size.fromHeight(32),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                _traySyncError!,
+                                key: const Key('face-crop-trays-sync-error'),
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                   actions: [
                     if (!_loading && _error == null)
                       Padding(

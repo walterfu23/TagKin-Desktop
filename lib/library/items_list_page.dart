@@ -16,6 +16,7 @@ import 'package:tagkin_desktop/persons/who_face_linker.dart';
 import 'package:tagkin_desktop/credits/credits_navigation.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
+import 'package:tagkin_desktop/ui/async_state_view.dart';
 import 'package:tagkin_desktop/usage/credits_remaining.dart';
 import 'package:tagkin_desktop/usage/usage_banner.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
@@ -423,9 +424,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     required bool retryEnabled,
   }) {
     if (table.loading && table.allRows.isEmpty) {
-      return const Center(
-        child: CircularProgressIndicator(key: Key('items-loading')),
-      );
+      return const AsyncStateView.loading(key: Key('items-loading'));
     }
     if (table.error != null && table.allRows.isEmpty) {
       return Center(
@@ -452,11 +451,9 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     }
 
     if (table.allRows.isEmpty) {
-      return const Center(
-        child: Text(
-          'No items yet',
-          key: Key('items-empty'),
-        ),
+      return const AsyncStateView.empty(
+        key: Key('items-empty'),
+        message: 'No items yet',
       );
     }
 

@@ -62,7 +62,7 @@ class MediaCandidate {
   });
 
   /// Absolute local filesystem path (never sent to `tagkin-api`; only a
-  /// derived `sourceRef` is, via [BatchIngestController]).
+  /// derived `sourceRef` is, via [FolderIngestQueue]).
   final String path;
   final ItemType type;
   final int size;
@@ -140,7 +140,7 @@ class MediaEnumerator {
   }
 }
 
-/// Top-level tear-off used as `BatchIngestController`'s default
+/// Top-level tear-off used as [FolderIngestQueue]'s default
 /// `enumerateFolder` dependency — a plain function type is easier to
 /// override in tests than a class instance.
 Future<List<MediaCandidate>> enumerateMedia(String rootPath) =>

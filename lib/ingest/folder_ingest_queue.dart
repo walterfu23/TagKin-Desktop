@@ -12,7 +12,8 @@ import 'package:tagkin_desktop/app_shell.dart'
         signedInAccountIdProvider;
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/active_folder_ingest_store.dart';
-import 'package:tagkin_desktop/ingest/batch_ingest_controller.dart';
+import 'package:tagkin_desktop/ingest/ingest_io.dart';
+import 'package:tagkin_desktop/ingest/ingest_outcome.dart';
 import 'package:tagkin_desktop/ingest/content_hash.dart';
 import 'package:tagkin_desktop/ingest/dedup.dart';
 import 'package:tagkin_desktop/ingest/folder_bookmark_store.dart';

@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:tagkin_desktop/contract/contract.dart';
-import 'package:tagkin_desktop/ingest/batch_ingest_controller.dart';
+import 'package:tagkin_desktop/ingest/ingest_outcome.dart';
 import 'package:tagkin_desktop/prepass/prepass_controller.dart';
 
 import 'fake_items_repository.dart';

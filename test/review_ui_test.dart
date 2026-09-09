@@ -1689,6 +1689,98 @@ void main() {
     );
   });
 
+  testWidgets('Double-click an assigned face opens person detail',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final item = fixtureItem(
+      id: 'item_1',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final knowledge = fixtureKnowledge(
+      item: item,
+      tags: [
+        fixtureTag(
+          id: 'tag_who',
+          dimension: 'who',
+          value: 'toddler',
+          region: const TagRegion(
+            yMin: 0.1,
+            xMin: 0.1,
+            yMax: 0.4,
+            xMax: 0.4,
+          ),
+        ),
+      ],
+      appearances: [
+        fixtureAppearance(
+          id: 'ap_1',
+          personId: 'person_alex',
+          itemId: 'item_1',
+          tagId: 'tag_who',
+        ),
+      ],
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {'item_1': knowledge},
+    );
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_alex',
+          name: 'Alex',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_1',
+              personId: 'person_alex',
+              itemId: 'item_1',
+              tagId: 'tag_who',
+            ),
+          ],
+        ),
+      ],
+    );
+    items.linkedPersons = persons;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          itemsRepositoryProvider.overrideWithValue(items),
+          personsRepositoryProvider.overrideWithValue(persons),
+          correctionsRepositoryProvider.overrideWithValue(
+            FakeCorrectionsRepository(items: items),
+          ),
+          commentsRepositoryProvider.overrideWithValue(
+            FakeCommentsRepository(),
+          ),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          jobsRepositoryProvider.overrideWithValue(
+            FakeJobsRepository(itemId: 'item_1', item: item),
+          ),
+        ],
+        child: const MaterialApp(
+          home: ItemDetailPage(itemId: 'item_1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final tile = find.byKey(const Key('item-face-tile-tag_who'));
+    await tester.ensureVisible(tile);
+    await tester.tap(tile);
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('person-detail')), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('person-detail-name'))).data,
+      'Alex',
+    );
+  });
+
   testWidgets('Open person is absent when the face is unassigned',
       (tester) async {
     tester.view.physicalSize = const Size(1200, 2000);
@@ -1751,5 +1843,71 @@ void main() {
       find.byKey(const Key('item-face-open-person-tag_who')),
       findsNothing,
     );
+  });
+
+  testWidgets('Double-click an unassigned face stays selected', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final item = fixtureItem(
+      id: 'item_1',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final knowledge = fixtureKnowledge(
+      item: item,
+      tags: [
+        fixtureTag(
+          id: 'tag_who',
+          dimension: 'who',
+          value: 'toddler',
+          region: const TagRegion(
+            yMin: 0.1,
+            xMin: 0.1,
+            yMax: 0.4,
+            xMax: 0.4,
+          ),
+        ),
+      ],
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {'item_1': knowledge},
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          itemsRepositoryProvider.overrideWithValue(items),
+          personsRepositoryProvider.overrideWithValue(
+            FakePersonsRepository(persons: const []),
+          ),
+          correctionsRepositoryProvider.overrideWithValue(
+            FakeCorrectionsRepository(items: items),
+          ),
+          commentsRepositoryProvider.overrideWithValue(
+            FakeCommentsRepository(),
+          ),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          jobsRepositoryProvider.overrideWithValue(
+            FakeJobsRepository(itemId: 'item_1', item: item),
+          ),
+        ],
+        child: const MaterialApp(
+          home: ItemDetailPage(itemId: 'item_1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final tile = find.byKey(const Key('item-face-tile-tag_who'));
+    await tester.ensureVisible(tile);
+    await tester.tap(tile);
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('person-detail')), findsNothing);
+    expect(find.byKey(const Key('item-face-selected-tag_who')), findsOneWidget);
+    expect(find.byKey(const Key('item-face-actions')), findsOneWidget);
   });
 }

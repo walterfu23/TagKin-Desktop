@@ -5,7 +5,7 @@ import 'package:tagkin_desktop/api/jobs_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart'
     show itemsRepositoryProvider, jobsRepositoryProvider;
 import 'package:tagkin_desktop/contract/contract.dart';
-import 'package:tagkin_desktop/ingest/batch_ingest_controller.dart';
+import 'package:tagkin_desktop/ingest/ingest_outcome.dart';
 import 'package:tagkin_desktop/ingest/upload_controller.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';

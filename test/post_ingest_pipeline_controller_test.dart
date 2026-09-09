@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
-import 'package:tagkin_desktop/ingest/batch_ingest_controller.dart';
+import 'package:tagkin_desktop/ingest/ingest_outcome.dart';
 import 'package:tagkin_desktop/ingest/model_host_uploader.dart';
 import 'package:tagkin_desktop/ingest/post_ingest_pipeline_controller.dart';
 import 'package:tagkin_desktop/ingest/upload_controller.dart';

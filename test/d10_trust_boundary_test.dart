@@ -39,9 +39,8 @@ void main() {
     final files = [
       File('lib/api/corrections_repository.dart'),
       File('lib/api/comments_repository.dart'),
-      File('lib/knowledge/corrections_history_view.dart'),
       File('lib/knowledge/comments_view.dart'),
-      File('lib/knowledge/tag_edit_dialog.dart'),
+      File('lib/knowledge/key_period_bounds_dialog.dart'),
       File('lib/review/review_controller.dart'),
     ];
     for (final file in files) {
@@ -61,9 +60,8 @@ void main() {
     final files = [
       File('lib/api/corrections_repository.dart'),
       File('lib/api/comments_repository.dart'),
-      File('lib/knowledge/corrections_history_view.dart'),
       File('lib/knowledge/comments_view.dart'),
-      File('lib/knowledge/tag_edit_dialog.dart'),
+      File('lib/knowledge/key_period_bounds_dialog.dart'),
     ];
     for (final file in files) {
       final source = file.readAsStringSync();
@@ -80,13 +78,13 @@ void main() {
   });
 
   test('corrections/comments UI uses canonical domain terms (R2)', () {
-    final history =
-        File('lib/knowledge/corrections_history_view.dart').readAsStringSync();
     final comments =
         File('lib/knowledge/comments_view.dart').readAsStringSync();
     final knowledge =
         File('lib/review/knowledge_view.dart').readAsStringSync();
-    final combined = '$history\n$comments\n$knowledge';
+    final review =
+        File('lib/review/review_controller.dart').readAsStringSync();
+    final combined = '$comments\n$knowledge\n$review';
     expect(combined.contains('tag') || combined.contains('Tag'), isTrue);
     expect(combined.contains('comment') || combined.contains('Comment'), isTrue);
     expect(combined.contains('Correction'), isTrue);

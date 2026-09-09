@@ -388,7 +388,7 @@ class FakePersonsRepository implements PersonsRepository {
   /// Test/undo helper: restore [assignmentState] to unconfirmed on an assigned
   /// appearance (no real API equivalent yet).
   @override
-  Future<PersonAppearance?> tryRestoreUnconfirmedAssignment(
+  Future<PersonAppearance> tryRestoreUnconfirmedAssignment(
     String appearanceId,
   ) async {
     final found = _findAppearance(appearanceId);

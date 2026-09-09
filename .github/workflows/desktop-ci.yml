@@ -59,6 +59,9 @@ jobs:
             exit 1
           fi
 
+      - name: Branding drift
+        run: dart run tool/gen_branding.dart --check
+
       - name: analyze
         run: flutter analyze
 

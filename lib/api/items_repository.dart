@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 
@@ -14,20 +12,23 @@ class ItemsRepository {
   final ApiClient _client;
 
   /// `GET /items` — optional [status] filter (server-side coarse filter).
-  /// Client library table owns sort / text filter / pagination.
-  Future<List<Item>> listItems({ProcessingStatus? status}) async {
+  /// Optional [limit]/[offset] match the documented server cap (default 2000,
+  /// max 5000). Client library table owns sort / text filter / pagination.
+  Future<List<Item>> listItems({
+    ProcessingStatus? status,
+    int? limit,
+    int? offset,
+  }) async {
+    final query = <String, String>{};
+    if (status != null) query['status'] = status.wire;
+    if (limit != null) query['limit'] = '$limit';
+    if (offset != null) query['offset'] = '$offset';
     final response = await _client.get(
       '/items',
-      query: status == null ? null : {'status': status.wire},
+      query: query.isEmpty ? null : query,
     );
-    final json = jsonDecode(response.body);
-    if (json is! List<dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected /items response shape',
-      );
-    }
-    return json
+    return _client
+        .decodeList(response, '/items')
         .map((e) => Item.fromJson(e as Map<String, dynamic>))
         .toList();
   }
@@ -35,14 +36,7 @@ class ItemsRepository {
   /// `GET /items/{id}` — foreign ids surface as [ApiException] 404 (R10).
   Future<Item> getItem(String id) async {
     final response = await _client.get('/items/$id');
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected /items/{id} response shape',
-      );
-    }
-    return Item.fromJson(json);
+    return Item.fromJson(_client.decodeMap(response, '/items/{id}'));
   }
 
   /// `GET /items/{id}/knowledge` — approved who/what/when/where projection (D8).
@@ -52,27 +46,15 @@ class ItemsRepository {
   /// (R10). Foreign ids surface as [ApiException] 404.
   Future<ItemKnowledge> getKnowledge(String itemId) async {
     final response = await _client.get('/items/$itemId/knowledge');
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected /items/{id}/knowledge response shape',
-      );
-    }
-    return ItemKnowledge.fromJson(json);
+    return ItemKnowledge.fromJson(
+      _client.decodeMap(response, '/items/{id}/knowledge'),
+    );
   }
 
   /// `POST /items` — metadata/refs only ([CreateItem]); plumbing for D3.
   Future<Item> createItem(CreateItem input) async {
     final response = await _client.post('/items', body: input.toJson());
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected create-item response shape',
-      );
-    }
-    return Item.fromJson(json);
+    return Item.fromJson(_client.decodeMap(response, 'create-item'));
   }
 
   /// `POST /items/{id}/pre-pass-result` — vectors/metadata/text only (D4).
@@ -87,14 +69,9 @@ class ItemsRepository {
       '/items/$itemId/pre-pass-result',
       body: input.toJson(),
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected pre-pass-result response shape',
-      );
-    }
-    return PrePassResultResponse.fromJson(json);
+    return PrePassResultResponse.fromJson(
+      _client.decodeMap(response, 'pre-pass-result'),
+    );
   }
 
   /// `POST /items/{id}/upload-grant` — mint a short-lived model-host URL (D5).
@@ -109,14 +86,7 @@ class ItemsRepository {
       '/items/$itemId/upload-grant',
       body: input.toJson(),
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected upload-grant response shape',
-      );
-    }
-    return UploadGrant.fromJson(json);
+    return UploadGrant.fromJson(_client.decodeMap(response, 'upload-grant'));
   }
 
   /// `POST /items/{id}/analysis-ref` — record model-host ref after direct
@@ -129,14 +99,7 @@ class ItemsRepository {
       '/items/$itemId/analysis-ref',
       body: input.toJson(),
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected analysis-ref response shape',
-      );
-    }
-    return Item.fromJson(json);
+    return Item.fromJson(_client.decodeMap(response, 'analysis-ref'));
   }
 
   /// `POST /items/{id}/link-people` — run server-side likeness matching (D9).
@@ -145,14 +108,9 @@ class ItemsRepository {
   /// button; humans assign via [assignPersonToItem] (R6).
   Future<LinkPeopleResponse> linkPeopleForItem(String itemId) async {
     final response = await _client.post('/items/$itemId/link-people');
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected link-people response shape',
-      );
-    }
-    return LinkPeopleResponse.fromJson(json);
+    return LinkPeopleResponse.fromJson(
+      _client.decodeMap(response, 'link-people'),
+    );
   }
 
   /// `POST /items/{id}/assign-person` — assign a face crop (`tagId`) or, when
@@ -175,14 +133,9 @@ class ItemsRepository {
         tagId: tagId,
       ).toJson(),
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected assign-person response shape',
-      );
-    }
-    return PersonAppearance.fromJson(json);
+    return PersonAppearance.fromJson(
+      _client.decodeMap(response, 'assign-person'),
+    );
   }
 
   /// `POST /items/{id}/who-appearances` — face-crop embeddings for who tags,
@@ -195,14 +148,9 @@ class ItemsRepository {
       '/items/$itemId/who-appearances',
       body: input.toJson(),
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected who-appearances response shape',
-      );
-    }
-    return WhoAppearancesResponse.fromJson(json);
+    return WhoAppearancesResponse.fromJson(
+      _client.decodeMap(response, 'who-appearances'),
+    );
   }
 
   /// `POST /items/{id}/who-exclusions` — durable exclude face from this photo.
@@ -212,16 +160,11 @@ class ItemsRepository {
   ) async {
     final response = await _client.post(
       '/items/$itemId/who-exclusions',
-      body: {'tagId': tagId},
+      body: CreateWhoExclusionRequest(tagId: tagId).toJson(),
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected who-exclusion response shape',
-      );
-    }
-    return CreateWhoExclusionResult.fromJson(json);
+    return CreateWhoExclusionResult.fromJson(
+      _client.decodeMap(response, 'who-exclusion'),
+    );
   }
 
   /// `DELETE /items/{id}/who-exclusions/{exclusionId}` — undo exclude (R6).
@@ -232,13 +175,7 @@ class ItemsRepository {
     final response = await _client.delete(
       '/items/$itemId/who-exclusions/$exclusionId',
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected undo who-exclusion response shape',
-      );
-    }
+    final json = _client.decodeMap(response, 'undo who-exclusion');
     final exclusion = json['exclusion'];
     if (exclusion is! Map<String, dynamic>) {
       throw ApiException(

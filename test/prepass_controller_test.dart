@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
-import 'package:tagkin_desktop/ingest/batch_ingest_controller.dart';
+import 'package:tagkin_desktop/ingest/ingest_outcome.dart';
 import 'package:tagkin_desktop/prepass/face_embedder.dart';
 import 'package:tagkin_desktop/prepass/frame_sampler.dart';
 import 'package:tagkin_desktop/prepass/prepass_controller.dart';

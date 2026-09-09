@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:tagkin_desktop/api/api_client.dart';
+import 'package:tagkin_desktop/api/api_messages.dart';
 import 'package:tagkin_desktop/api/credits_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart' show creditsRepositoryProvider;
 import 'package:tagkin_desktop/contract/contract.dart';
@@ -74,23 +74,7 @@ class RedeemCodeController extends ChangeNotifier {
     notifyListeners();
   }
 
-  static String _messageFor(Object e) {
-    if (e is ApiException) {
-      switch (e.code) {
-        case 'redeemCodeInvalid':
-          return 'That code is not valid.';
-        case 'redeemCodeExpired':
-          return 'That code has expired.';
-        case 'redeemCodeAlreadyUsed':
-          return 'That code has already been used.';
-        case 'redeemRateLimited':
-          return 'Too many attempts. Try again later.';
-        default:
-          return e.message;
-      }
-    }
-    return e.toString();
-  }
+  static String _messageFor(Object e) => apiUserMessage(e);
 }
 
 final redeemCodeControllerProvider = Provider.autoDispose<RedeemCodeController>(

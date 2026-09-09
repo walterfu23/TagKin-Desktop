@@ -53,10 +53,9 @@ class DesktopPrefsController extends ChangeNotifier {
   }
 }
 
-/// Syncs prefs that non-Riverpod code reads (e.g. ONNX detect threshold).
+/// Syncs prefs that non-Riverpod code reads (ONNX detect threshold).
 void applyDesktopPrefsRuntime(DesktopPrefs prefs) {
-  OnnxFaceEmbedder.defaultDetectScoreThreshold =
-      prefs.facesDetectScoreThreshold;
+  onnxDetectScoreThreshold = prefs.facesDetectScoreThreshold;
 }
 
 final desktopPrefsControllerProvider =

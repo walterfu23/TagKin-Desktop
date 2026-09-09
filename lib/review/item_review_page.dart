@@ -8,7 +8,7 @@ import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/app_shell.dart'
     show itemsRepositoryProvider, personsRepositoryProvider;
 import 'package:tagkin_desktop/contract/contract.dart';
-import 'package:tagkin_desktop/knowledge/tag_edit_dialog.dart';
+import 'package:tagkin_desktop/knowledge/key_period_bounds_dialog.dart';
 import 'package:tagkin_desktop/library/item_detail_edits.dart';
 import 'package:tagkin_desktop/library/item_fields_group.dart';
 import 'package:tagkin_desktop/persons/person_detail_page.dart';
@@ -72,6 +72,8 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
   bool _ownsEdits = false;
   List<Person> _persons = const [];
   Map<String, String> _personNamesById = {};
+  String? _personLoadError;
+  String? _videoOpenError;
   String _comment = '';
   String _commentBaseline = '';
   final Map<String, PersonAssignIntent> _cropIntents = {};
@@ -110,12 +112,14 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
       setState(() {
         _persons = people;
         _personNamesById = {for (final p in people) p.id: p.name};
+        _personLoadError = null;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _persons = const [];
         _personNamesById = {};
+        _personLoadError = 'Could not load people for assign.';
       });
     }
   }
@@ -154,12 +158,14 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
       setState(() {
         _player = opened.player;
         _videoController = opened.controller;
+        _videoOpenError = null;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _player = null;
         _videoController = null;
+        _videoOpenError = 'Could not open this video.';
       });
       _videoOpen.clear();
     }
@@ -1122,6 +1128,13 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
               ),
             ],
             const SizedBox(height: 12),
+            if (_personLoadError != null) ...[
+              Text(
+                _personLoadError!,
+                key: const Key('item-review-persons-error'),
+              ),
+              const SizedBox(height: 12),
+            ],
             if (review.phase == ReviewPhase.loading)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 16),
@@ -1139,6 +1152,13 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
             else if (knowledge != null && media != null) ...[
               if (media.status != LocalMediaStatus.available) ...[
                 _MediaStatusBanner(resolution: media),
+                const SizedBox(height: 12),
+              ],
+              if (_videoOpenError != null) ...[
+                Text(
+                  _videoOpenError!,
+                  key: const Key('item-review-video-error'),
+                ),
                 const SizedBox(height: 12),
               ],
               MediaViewer(

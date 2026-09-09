@@ -36,16 +36,12 @@ import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/prefs/settings_navigation.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_status_banner.dart';
+import 'package:tagkin_desktop/shell/app_nav_tab_buttons.dart';
 import 'package:tagkin_desktop/shell/quit_navigation.dart';
 import 'package:window_manager/window_manager.dart';
 
-/// Top-level signed-in destinations (Folders / Faces / Persons).
-enum TopLevelTab { folders, faces, persons }
-
-/// Which top-level tab is visible in [_SignedInScaffold].
-final activeTopLevelTabProvider = StateProvider<TopLevelTab>(
-  (ref) => TopLevelTab.folders,
-);
+export 'package:tagkin_desktop/shell/app_nav_tab_buttons.dart'
+    show AppNavTabButtons, TopLevelTab, activeTopLevelTabProvider;
 
 /// Signed-in [Account.id] for crash-resume ingest checkpoints. Null until the
 /// signed-in shell's first frame (after `GET /me`).
@@ -1256,36 +1252,7 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
                     },
                     icon: const Icon(Icons.menu),
                   ),
-                IconButton(
-                  key: const Key('nav-folders'),
-                  tooltip: 'Folders',
-                  onPressed: () => _selectTab(TopLevelTab.folders),
-                  icon: Icon(
-                    activeTab == TopLevelTab.folders
-                        ? Icons.folder
-                        : Icons.folder_outlined,
-                  ),
-                ),
-                IconButton(
-                  key: const Key('nav-face-crops'),
-                  tooltip: 'Faces',
-                  onPressed: () => _selectTab(TopLevelTab.faces),
-                  icon: Icon(
-                    activeTab == TopLevelTab.faces
-                        ? Icons.face_retouching_natural
-                        : Icons.face_retouching_natural_outlined,
-                  ),
-                ),
-                IconButton(
-                  key: const Key('nav-persons'),
-                  tooltip: 'Persons',
-                  onPressed: () => _selectTab(TopLevelTab.persons),
-                  icon: Icon(
-                    activeTab == TopLevelTab.persons
-                        ? Icons.people
-                        : Icons.people_outline,
-                  ),
-                ),
+                AppNavTabButtons(onSelected: _selectTab),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: Center(

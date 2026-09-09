@@ -10,6 +10,7 @@ import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prepass/face_embedder.dart';
 import 'package:tagkin_desktop/prepass/onnx_face_embedder.dart';
+import 'package:tagkin_desktop/ui/async_state_view.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 
 /// Library-wide persons list (D9). Every person is always named (R2) — the
@@ -115,10 +116,8 @@ class _PersonsListPageState extends ConsumerState<PersonsListPage> {
               future: _future,
               builder: (context, snapshot) {
                 if (snapshot.connectionState != ConnectionState.done) {
-                  return const Center(
-                    child: CircularProgressIndicator(
-                      key: Key('persons-loading'),
-                    ),
+                  return const AsyncStateView.loading(
+                    key: Key('persons-loading'),
                   );
                 }
                 if (snapshot.hasError) {
@@ -157,19 +156,13 @@ class _PersonsListPageState extends ConsumerState<PersonsListPage> {
                 final persons = sortedPersonsByName(snapshot.data!);
 
                 if (persons.isEmpty) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        _modelsMissing
-                            ? 'No persons yet — install face models, restart, '
-                                'and re-analyze photos that have who face boxes.'
-                            : 'No persons yet — analyze photos with who face '
-                                'boxes so likeness can link across items.',
-                        key: const Key('persons-empty'),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
+                  return AsyncStateView.empty(
+                    key: const Key('persons-empty'),
+                    message: _modelsMissing
+                        ? 'No persons yet — install face models, restart, '
+                            'and re-analyze photos that have who face boxes.'
+                        : 'No persons yet — analyze photos with who face '
+                            'boxes so likeness can link across items.',
                   );
                 }
 

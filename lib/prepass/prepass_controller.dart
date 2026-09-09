@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/api/items_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart' show itemsRepositoryProvider;
 import 'package:tagkin_desktop/contract/contract.dart';
-import 'package:tagkin_desktop/ingest/batch_ingest_controller.dart';
+import 'package:tagkin_desktop/ingest/ingest_outcome.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prepass/face_embedder.dart';

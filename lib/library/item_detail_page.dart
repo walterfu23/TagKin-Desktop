@@ -7,6 +7,7 @@ import 'package:tagkin_desktop/jobs/jobs_controller.dart';
 import 'package:tagkin_desktop/library/item_detail_edits.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/review/item_review_page.dart';
+import 'package:tagkin_desktop/ui/async_state_view.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 import 'package:tagkin_desktop/widgets/sure_action_button.dart';
 
@@ -72,10 +73,8 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
             final item = jobs.item ?? snapshot.data;
             if (item == null) {
               if (snapshot.connectionState != ConnectionState.done) {
-                return const Center(
-                  child: CircularProgressIndicator(
-                    key: Key('item-detail-loading'),
-                  ),
+                return const AsyncStateView.loading(
+                  key: Key('item-detail-loading'),
                 );
               }
               if (snapshot.hasError) {
@@ -146,6 +145,10 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
                 appBar: AppBar(
                   title: const Text('Item'),
                   actions: [
+                    AppNavTabButtons(
+                      onBeforeNavigate: () async =>
+                          await _edits.confirmLeave?.call() ?? true,
+                    ),
                     ListenableBuilder(
                       listenable: _edits.undo,
                       builder: (context, _) {

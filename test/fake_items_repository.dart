@@ -118,11 +118,23 @@ class FakeItemsRepository implements ItemsRepository {
   ItemKnowledge? peekKnowledge(String itemId) => _knowledgeByItemId[itemId];
 
   @override
-  Future<List<Item>> listItems({ProcessingStatus? status}) async {
+  Future<List<Item>> listItems({
+    ProcessingStatus? status,
+    int? limit,
+    int? offset,
+  }) async {
     if (onListItems != null) await onListItems!();
     if (listError != null) throw listError!;
-    if (status == null) return List<Item>.from(_items);
-    return _items.where((i) => i.processingStatus == status).toList();
+    var rows = status == null
+        ? List<Item>.from(_items)
+        : _items.where((i) => i.processingStatus == status).toList();
+    if (offset != null && offset > 0) {
+      rows = rows.skip(offset).toList();
+    }
+    if (limit != null && limit > 0) {
+      rows = rows.take(limit).toList();
+    }
+    return rows;
   }
 
   @override

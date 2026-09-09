@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:http/http.dart' as http;
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
@@ -47,14 +45,9 @@ class CorrectionsRepository {
       '/items/$itemId/captured-at',
       body: input.toJson(),
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected captured-at response shape',
-      );
-    }
-    return CapturedAtMutationResult.fromJson(json);
+    return CapturedAtMutationResult.fromJson(
+      _client.decodeMap(response, 'captured-at'),
+    );
   }
 
   /// `PATCH /key-periods/{keyPeriodId}` — correct start/end bounds (R6).
@@ -66,14 +59,9 @@ class CorrectionsRepository {
       '/key-periods/$keyPeriodId',
       body: input.toJson(),
     );
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected key-period-bounds response shape',
-      );
-    }
-    return KeyPeriodMutationResult.fromJson(json);
+    return KeyPeriodMutationResult.fromJson(
+      _client.decodeMap(response, 'key-period-bounds'),
+    );
   }
 
   /// `POST /corrections/{correctionId}/undo` — restore prior approved value.
@@ -81,38 +69,21 @@ class CorrectionsRepository {
   /// Person-linking undos use S7/D9 native inverse ops, not this endpoint.
   Future<UndoCorrectionResult> undoCorrection(String correctionId) async {
     final response = await _client.post('/corrections/$correctionId/undo');
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected undo-correction response shape',
-      );
-    }
-    return UndoCorrectionResult.fromJson(json);
+    return UndoCorrectionResult.fromJson(
+      _client.decodeMap(response, 'undo-correction'),
+    );
   }
 
   /// `POST /corrections/{correctionId}/redo` — re-apply original correction
   /// after undo when the entity is still in the undone state (S8 / R6).
   Future<RedoCorrectionResult> redoCorrection(String correctionId) async {
     final response = await _client.post('/corrections/$correctionId/redo');
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected redo-correction response shape',
-      );
-    }
-    return RedoCorrectionResult.fromJson(json);
+    return RedoCorrectionResult.fromJson(
+      _client.decodeMap(response, 'redo-correction'),
+    );
   }
 
   TagMutationResult _tagMutation(http.Response response, String label) {
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected $label response shape',
-      );
-    }
-    return TagMutationResult.fromJson(json);
+    return TagMutationResult.fromJson(_client.decodeMap(response, label));
   }
 }

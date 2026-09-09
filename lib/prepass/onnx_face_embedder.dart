@@ -15,6 +15,10 @@ import 'package:tagkin_desktop/prepass/scrfd.dart';
 /// Bumped when preprocess changes (letterbox / align / normalize) so old vectors don't mix.
 const String kOnnxArcfaceEmbeddingModelId = 'onnx-arcface-w600k-r50-v5';
 
+/// SCRFD score floor read at detect time. Prefs assign this because
+/// [getFaceEmbedder] constructs a new embedder per call.
+double onnxDetectScoreThreshold = 0.2;
+
 /// Pad [src] to a square canvas (mid-gray) preserving aspect ratio — no stretch.
 @visibleForTesting
 img.Image letterboxToSquare(img.Image src, {int padValue = 127}) {
@@ -236,9 +240,6 @@ class OnnxFaceEmbedder implements FaceEmbedder {
   final OrtSession _recog;
   final OrtSession? _det;
   final String modelId;
-
-  /// SCRFD score floor; updated from [DesktopPrefs.facesDetectScoreThreshold].
-  static double defaultDetectScoreThreshold = 0.2;
 
   static const int _inputSize = 112;
   static const int _detSize = 640;
@@ -490,7 +491,7 @@ class OnnxFaceEmbedder implements FaceEmbedder {
         inputHeight: _detSize,
         inputWidth: _detSize,
         detScale: packed.detScale,
-        threshold: defaultDetectScoreThreshold,
+        threshold: onnxDetectScoreThreshold,
       );
     } catch (e, st) {
       debugPrint('OnnxFaceEmbedder: SCRFD detect failed: $e\n$st');

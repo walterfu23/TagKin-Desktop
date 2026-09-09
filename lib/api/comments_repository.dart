@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:http/http.dart' as http;
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
@@ -17,14 +15,8 @@ class CommentsRepository {
   /// key-period-level comments on that item).
   Future<List<Comment>> listItemComments(String itemId) async {
     final response = await _client.get('/items/$itemId/comments');
-    final json = jsonDecode(response.body);
-    if (json is! List<dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected /items/{id}/comments response shape',
-      );
-    }
-    return json
+    return _client
+        .decodeList(response, '/items/{id}/comments')
         .map((e) => Comment.fromJson(e as Map<String, dynamic>))
         .toList();
   }
@@ -71,13 +63,6 @@ class CommentsRepository {
   }
 
   Comment _comment(http.Response response, String label) {
-    final json = jsonDecode(response.body);
-    if (json is! Map<String, dynamic>) {
-      throw ApiException(
-        statusCode: response.statusCode,
-        message: 'Unexpected $label response shape',
-      );
-    }
-    return Comment.fromJson(json);
+    return Comment.fromJson(_client.decodeMap(response, label));
   }
 }

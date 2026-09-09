@@ -12,7 +12,7 @@ import 'package:image/image.dart' as img;
 import 'package:integration_test/integration_test.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
-import 'package:tagkin_desktop/ingest/batch_ingest_controller.dart';
+import 'package:tagkin_desktop/ingest/ingest_io.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/ingest/folder_picker.dart';
 import 'package:tagkin_desktop/main.dart';

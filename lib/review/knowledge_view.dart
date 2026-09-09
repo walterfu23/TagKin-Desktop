@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/item_detail_edits.dart';
+import 'package:tagkin_desktop/persons/face_crop/face_crop_tap.dart';
 import 'package:tagkin_desktop/persons/person_assign_control.dart';
 import 'package:tagkin_desktop/persons/who_exclusion_crop_thumb.dart';
 import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
@@ -11,7 +12,8 @@ const double _kFaceThumbSize = 72;
 const double _kFaceCellWidth = 96;
 
 /// Per-crop / whole-item assign, plus excluded-face thumbs.
-/// Face crops sit in a compact thumb+name grid; actions appear after tap.
+/// Face crops sit in a compact thumb+name grid; tap selects, double-click an
+/// assigned face opens that person.
 class KnowledgeView extends StatefulWidget {
   const KnowledgeView({
     super.key,
@@ -75,9 +77,35 @@ class KnowledgeView extends StatefulWidget {
 
 class _KnowledgeViewState extends State<KnowledgeView> {
   String? _selected;
+  final FaceCropTapTracker _faceTapTracker = FaceCropTapTracker();
 
   void _toggle(String id) {
     setState(() => _selected = _selected == id ? null : id);
+  }
+
+  String? _cropPersonId(Tag tag) {
+    final appearance = appearanceForWhoTag(widget.knowledge, tag.id);
+    return effectiveAssignedPerson(
+      intent: widget.cropIntents[tag.id],
+      baselinePersonId: appearance?.personId,
+      personNamesById: widget.personNamesById,
+    ).personId;
+  }
+
+  String? _includedPersonId(WhoExclusion exclusion) {
+    return effectiveAssignedPerson(
+      intent: widget.exclusionIntents[exclusion.id],
+      baselinePersonId: null,
+      personNamesById: widget.personNamesById,
+    ).personId;
+  }
+
+  void _onFaceTileTap(String sel, String? personId) {
+    if (_faceTapTracker.registerTap(sel)) {
+      if (personId != null) widget.onPersonTap?.call(personId);
+      return;
+    }
+    _toggle(sel);
   }
 
   String _cropCaption(Tag tag) {
@@ -209,7 +237,7 @@ class _KnowledgeViewState extends State<KnowledgeView> {
             tileKey: Key('item-face-tile-${tag.id}'),
             selectedKey: Key('item-face-selected-${tag.id}'),
             selected: _selected == 'crop:${tag.id}',
-            onTap: () => _toggle('crop:${tag.id}'),
+            onTap: () => _onFaceTileTap('crop:${tag.id}', _cropPersonId(tag)),
             thumb: WhoFaceCropThumb(
               itemId: appearanceForWhoTag(knowledge, tag.id)?.itemId ??
                   widget.itemId ??
@@ -230,7 +258,10 @@ class _KnowledgeViewState extends State<KnowledgeView> {
             tileKey: Key('item-face-tile-included-${exclusion.id}'),
             selectedKey: Key('item-face-selected-included-${exclusion.id}'),
             selected: _selected == 'included:${exclusion.id}',
-            onTap: () => _toggle('included:${exclusion.id}'),
+            onTap: () => _onFaceTileTap(
+              'included:${exclusion.id}',
+              _includedPersonId(exclusion),
+            ),
             thumb: WhoExclusionCropThumb(
               key: Key('who-exclusion-included-${exclusion.id}'),
               itemId: exclusion.itemId,
