@@ -5,9 +5,14 @@ import 'package:tagkin_desktop/persons/person_assign_control.dart';
 import 'package:tagkin_desktop/persons/who_exclusion_crop_thumb.dart';
 import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
 import 'package:tagkin_desktop/review/knowledge_grouping.dart';
+import 'package:tagkin_desktop/ui/alpha_order.dart';
 
-/// Per-crop / whole-item assign in a two-column grid, plus excluded-face thumbs.
-class KnowledgeView extends StatelessWidget {
+const double _kFaceThumbSize = 72;
+const double _kFaceCellWidth = 96;
+
+/// Per-crop / whole-item assign, plus excluded-face thumbs.
+/// Face crops sit in a compact thumb+name grid; actions appear after tap.
+class KnowledgeView extends StatefulWidget {
   const KnowledgeView({
     super.key,
     required this.knowledge,
@@ -65,109 +70,245 @@ class KnowledgeView extends StatelessWidget {
   final void Function(int index)? onRemovePendingItemAssign;
 
   @override
+  State<KnowledgeView> createState() => _KnowledgeViewState();
+}
+
+class _KnowledgeViewState extends State<KnowledgeView> {
+  String? _selected;
+
+  void _toggle(String id) {
+    setState(() => _selected = _selected == id ? null : id);
+  }
+
+  String _cropCaption(Tag tag) {
+    final appearance = appearanceForWhoTag(widget.knowledge, tag.id);
+    final effective = effectiveAssignedPerson(
+      intent: widget.cropIntents[tag.id],
+      baselinePersonId: appearance?.personId,
+      personNamesById: widget.personNamesById,
+    );
+    final personName = effective.personName;
+    if (personName != null && personName.isNotEmpty) return personName;
+    final whoLabel = tag.value.trim();
+    return whoLabel.isNotEmpty ? whoLabel : 'Unassigned';
+  }
+
+  String _includedCaption(WhoExclusion exclusion) {
+    final effective = effectiveAssignedPerson(
+      intent: widget.exclusionIntents[exclusion.id],
+      baselinePersonId: null,
+      personNamesById: widget.personNamesById,
+    );
+    final personName = effective.personName;
+    if (personName != null && personName.isNotEmpty) return personName;
+    return 'Unassigned';
+  }
+
+  Future<void> _excludeCrop(String tagId) async {
+    await widget.onExcludeCrop!(tagId);
+    if (!mounted) return;
+    if (_selected == 'crop:$tagId') setState(() => _selected = null);
+  }
+
+  Future<void> _excludeIncluded(String exclusionId) async {
+    await widget.onExcludeIncludedExclusion!(exclusionId);
+    if (!mounted) return;
+    if (_selected == 'included:$exclusionId') {
+      setState(() => _selected = null);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final knowledge = widget.knowledge;
     final crops = whoFaceCropTags(knowledge);
     final itemAssignments = itemLevelPersonAssignments(knowledge);
     final included = [
       for (final exclusion in knowledge.whoExclusions)
-        if (exclusionIntents[exclusion.id]?.include == true) exclusion,
+        if (widget.exclusionIntents[exclusion.id]?.include == true) exclusion,
     ];
     final draftPersonNames = uniqueDraftPersonNames(
-      persons: persons,
+      persons: widget.persons,
       names: [
-        for (final intent in cropIntents.values) intent.name,
-        for (final intent in appearanceIntents.values) intent.name,
-        for (final intent in exclusionIntents.values) intent.name,
-        for (final intent in pendingItemAssigns) intent.name,
+        for (final intent in widget.cropIntents.values) intent.name,
+        for (final intent in widget.appearanceIntents.values) intent.name,
+        for (final intent in widget.exclusionIntents.values) intent.name,
+        for (final intent in widget.pendingItemAssigns) intent.name,
       ],
     );
-    final cells = <Widget>[];
     final visibleCrops = [
       for (final tag in crops)
-        if (cropIntents[tag.id]?.exclude != true) tag,
+        if (widget.cropIntents[tag.id]?.exclude != true) tag,
     ];
     if (visibleCrops.isNotEmpty || included.isNotEmpty) {
+      return _faceGrid(
+        visibleCrops: visibleCrops,
+        included: included,
+        draftPersonNames: draftPersonNames,
+      );
+    }
+
+    final cells = <Widget>[];
+    for (final appearance in itemAssignments) {
+      cells.add(
+        _ItemAssignRow(
+          appearance: appearance,
+          personNamesById: widget.personNamesById,
+          persons: widget.persons,
+          draftPersonNames: draftPersonNames,
+          intent: widget.appearanceIntents[appearance.id],
+          enabled: widget.assignEnabled,
+          onPersonTap: widget.onPersonTap,
+          onReassignAppearance: widget.onReassignAppearance,
+          onUnassign: widget.onUnassign,
+        ),
+      );
+    }
+    for (var i = 0; i < widget.pendingItemAssigns.length; i++) {
+      final intent = widget.pendingItemAssigns[i];
+      cells.add(
+        _PendingItemAssignRow(
+          index: i,
+          intent: intent,
+          enabled: widget.assignEnabled,
+          onRemove: widget.onRemovePendingItemAssign,
+        ),
+      );
+    }
+    if (widget.onAssignItem != null) {
+      cells.add(
+        PersonAssignControl(
+          key: const Key('item-assign-person'),
+          persons: widget.persons,
+          draftPersonNames: draftPersonNames,
+          enabled: widget.assignEnabled,
+          label: itemAssignments.isEmpty && widget.pendingItemAssigns.isEmpty
+              ? 'Assign to person'
+              : 'Assign another person',
+          onAssign: ({personId, name}) =>
+              widget.onAssignItem!(personId: personId, name: name),
+        ),
+      );
+    }
+    if (cells.isEmpty) return const SizedBox.shrink();
+    return _ItemAssignList(cells: cells);
+  }
+
+  Widget _faceGrid({
+    required List<Tag> visibleCrops,
+    required List<WhoExclusion> included,
+    required List<String> draftPersonNames,
+  }) {
+    final knowledge = widget.knowledge;
+    final entries = <({String sel, String caption, Widget tile})>[
+      for (final tag in visibleCrops)
+        (
+          sel: 'crop:${tag.id}',
+          caption: _cropCaption(tag),
+          tile: _FaceTile(
+            tileKey: Key('item-face-tile-${tag.id}'),
+            selectedKey: Key('item-face-selected-${tag.id}'),
+            selected: _selected == 'crop:${tag.id}',
+            onTap: () => _toggle('crop:${tag.id}'),
+            thumb: WhoFaceCropThumb(
+              itemId: appearanceForWhoTag(knowledge, tag.id)?.itemId ??
+                  widget.itemId ??
+                  knowledge.item.id,
+              tagId: tag.id,
+              knowledge: knowledge,
+              size: _kFaceThumbSize,
+            ),
+            caption: _cropCaption(tag),
+            captionKey: Key('appearance-crop-${tag.id}'),
+          ),
+        ),
+      for (final exclusion in included)
+        (
+          sel: 'included:${exclusion.id}',
+          caption: _includedCaption(exclusion),
+          tile: _FaceTile(
+            tileKey: Key('item-face-tile-included-${exclusion.id}'),
+            selectedKey: Key('item-face-selected-included-${exclusion.id}'),
+            selected: _selected == 'included:${exclusion.id}',
+            onTap: () => _toggle('included:${exclusion.id}'),
+            thumb: WhoExclusionCropThumb(
+              key: Key('who-exclusion-included-${exclusion.id}'),
+              itemId: exclusion.itemId,
+              region: exclusion.region,
+              item: knowledge.item,
+              size: _kFaceThumbSize,
+            ),
+            caption: _includedCaption(exclusion),
+            captionKey: Key('appearance-included-${exclusion.id}'),
+          ),
+        ),
+    ];
+    final ordered = sortedAlphaBy(entries, (e) => e.caption);
+    final selected = _selected;
+    final selectedVisible =
+        selected != null && ordered.any((e) => e.sel == selected);
+    Tag? selectedTag;
+    WhoExclusion? selectedIncluded;
+    if (selectedVisible && selected.startsWith('crop:')) {
+      final id = selected.substring(5);
       for (final tag in visibleCrops) {
-        cells.add(
-          _CropAssignRow(
-            tag: tag,
-            knowledge: knowledge,
-            itemId: itemId,
-            persons: persons,
-            personNamesById: personNamesById,
-            draftPersonNames: draftPersonNames,
-            intent: cropIntents[tag.id],
-            enabled: assignEnabled,
-            onPersonTap: onPersonTap,
-            onAssignCrop: onAssignCrop,
-            onUnassign: onUnassign,
-            onExcludeCrop: onExcludeCrop,
-          ),
-        );
+        if (tag.id == id) {
+          selectedTag = tag;
+          break;
+        }
       }
+    } else if (selectedVisible && selected.startsWith('included:')) {
+      final id = selected.substring(9);
       for (final exclusion in included) {
-        cells.add(
-          _IncludedExclusionRow(
-            exclusion: exclusion,
-            item: knowledge.item,
-            persons: persons,
-            personNamesById: personNamesById,
-            draftPersonNames: draftPersonNames,
-            intent: exclusionIntents[exclusion.id],
-            enabled: assignEnabled,
-            onAssign: onAssignIncludedExclusion,
-            onExclude: onExcludeIncludedExclusion,
-          ),
-        );
-      }
-    } else {
-      for (final appearance in itemAssignments) {
-        cells.add(
-          _ItemAssignRow(
-            appearance: appearance,
-            personNamesById: personNamesById,
-            persons: persons,
-            draftPersonNames: draftPersonNames,
-            intent: appearanceIntents[appearance.id],
-            enabled: assignEnabled,
-            onPersonTap: onPersonTap,
-            onReassignAppearance: onReassignAppearance,
-            onUnassign: onUnassign,
-          ),
-        );
-      }
-      for (var i = 0; i < pendingItemAssigns.length; i++) {
-        final intent = pendingItemAssigns[i];
-        cells.add(
-          _PendingItemAssignRow(
-            index: i,
-            intent: intent,
-            enabled: assignEnabled,
-            onRemove: onRemovePendingItemAssign,
-          ),
-        );
-      }
-      if (onAssignItem != null) {
-        cells.add(
-          PersonAssignControl(
-            key: const Key('item-assign-person'),
-            persons: persons,
-            draftPersonNames: draftPersonNames,
-            enabled: assignEnabled,
-            label: itemAssignments.isEmpty && pendingItemAssigns.isEmpty
-                ? 'Assign to person'
-                : 'Assign another person',
-            onAssign: ({personId, name}) =>
-                onAssignItem!(personId: personId, name: name),
-          ),
-        );
+        if (exclusion.id == id) {
+          selectedIncluded = exclusion;
+          break;
+        }
       }
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (cells.isNotEmpty) _TwoColumnGrid(cells: cells),
+        Wrap(
+          key: const Key('item-face-assign-grid'),
+          spacing: 8,
+          runSpacing: 8,
+          children: [for (final e in ordered) e.tile],
+        ),
+        const SizedBox(height: 16),
+        if (!selectedVisible)
+          Text(
+            'Tap a face to see its actions.',
+            key: const Key('item-face-hint'),
+            style: Theme.of(context).textTheme.bodySmall,
+          )
+        else if (selectedTag != null)
+          _CropActions(
+            tag: selectedTag,
+            knowledge: knowledge,
+            persons: widget.persons,
+            personNamesById: widget.personNamesById,
+            draftPersonNames: draftPersonNames,
+            intent: widget.cropIntents[selectedTag.id],
+            enabled: widget.assignEnabled,
+            onAssignCrop: widget.onAssignCrop,
+            onUnassign: widget.onUnassign,
+            onExcludeCrop: widget.onExcludeCrop == null ? null : _excludeCrop,
+          )
+        else if (selectedIncluded != null)
+          _IncludedActions(
+            exclusion: selectedIncluded,
+            persons: widget.persons,
+            personNamesById: widget.personNamesById,
+            draftPersonNames: draftPersonNames,
+            intent: widget.exclusionIntents[selectedIncluded.id],
+            enabled: widget.assignEnabled,
+            onAssign: widget.onAssignIncludedExclusion,
+            onExclude: widget.onExcludeIncludedExclusion == null
+                ? null
+                : _excludeIncluded,
+          ),
       ],
     );
   }
@@ -210,7 +351,7 @@ class ExcludedFacesStrip extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Wrap(
-          spacing: 12,
+          spacing: 8,
           runSpacing: 8,
           children: [
             for (final exclusion in saved)
@@ -220,7 +361,7 @@ class ExcludedFacesStrip extends StatelessWidget {
                   itemId: exclusion.itemId,
                   region: exclusion.region,
                   item: knowledge.item,
-                  size: 40,
+                  size: _kFaceThumbSize,
                 ),
                 includeKey: Key('item-include-exclusion-${exclusion.id}'),
                 onInclude: onIncludeExclusion == null
@@ -236,7 +377,7 @@ class ExcludedFacesStrip extends StatelessWidget {
                     itemId: knowledge.item.id,
                     region: tag.region!,
                     item: knowledge.item,
-                    size: 40,
+                    size: _kFaceThumbSize,
                   ),
                   includeKey: Key('item-include-face-${tag.id}'),
                   onInclude: onIncludeDraftCrop == null
@@ -281,69 +422,79 @@ class _ExcludedFaceCell extends StatelessWidget {
   }
 }
 
-class _TwoColumnGrid extends StatelessWidget {
-  const _TwoColumnGrid({required this.cells});
+class _FaceTile extends StatelessWidget {
+  const _FaceTile({
+    required this.tileKey,
+    required this.selectedKey,
+    required this.selected,
+    required this.onTap,
+    required this.thumb,
+    required this.caption,
+    required this.captionKey,
+  });
 
-  final List<Widget> cells;
+  final Key tileKey;
+  final Key selectedKey;
+  final bool selected;
+  final VoidCallback onTap;
+  final Widget thumb;
+  final String caption;
+  final Key captionKey;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final twoCols = constraints.maxWidth >= 640;
-        if (!twoCols) {
-          return Column(
-            key: const Key('item-face-assign-grid'),
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (final cell in cells)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: cell,
-                ),
-            ],
-          );
-        }
-        final rows = <Widget>[];
-        for (var i = 0; i < cells.length; i += 2) {
-          rows.add(
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: _kFaceCellWidth,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: tileKey,
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(4),
+          child: DecoratedBox(
+            key: selected ? selectedKey : null,
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: selected ? scheme.primary : Colors.transparent,
+                width: 2,
+              ),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(2),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Expanded(child: cells[i]),
-                  const SizedBox(width: 24),
-                  Expanded(
-                    child:
-                        i + 1 < cells.length ? cells[i + 1] : const SizedBox(),
+                  thumb,
+                  const SizedBox(height: 6),
+                  Text(
+                    caption,
+                    key: captionKey,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
               ),
             ),
-          );
-        }
-        return Column(
-          key: const Key('item-face-assign-grid'),
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: rows,
-        );
-      },
+          ),
+        ),
+      ),
     );
   }
 }
 
-class _CropAssignRow extends StatelessWidget {
-  const _CropAssignRow({
+class _CropActions extends StatelessWidget {
+  const _CropActions({
     required this.tag,
     required this.knowledge,
-    this.itemId,
     required this.persons,
     required this.personNamesById,
     this.draftPersonNames = const [],
     this.intent,
     required this.enabled,
-    this.onPersonTap,
     this.onAssignCrop,
     this.onUnassign,
     this.onExcludeCrop,
@@ -351,13 +502,11 @@ class _CropAssignRow extends StatelessWidget {
 
   final Tag tag;
   final ItemKnowledge knowledge;
-  final String? itemId;
   final List<Person> persons;
   final Map<String, String> personNamesById;
   final List<String> draftPersonNames;
   final PersonAssignIntent? intent;
   final bool enabled;
-  final void Function(String personId)? onPersonTap;
   final Future<void> Function(
     String tagId, {
     String? personId,
@@ -377,92 +526,73 @@ class _CropAssignRow extends StatelessWidget {
     final personId = effective.personId;
     final personName = effective.personName;
     final named = personName != null && personName.isNotEmpty;
-    final whoLabel = tag.value.trim();
-    final label = [
-      if (named) personName,
-      if (whoLabel.isNotEmpty) whoLabel,
-      if (!named && whoLabel.isEmpty) 'Unnamed',
-    ].join(' ');
-    final cropItemId = appearance?.itemId ?? itemId;
     final canUnassign = appearance?.id != null &&
         personId != null &&
         onUnassign != null &&
         !effective.unassign;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          if (cropItemId != null) ...[
-            WhoFaceCropThumb(
-              itemId: cropItemId,
-              tagId: tag.id,
-              knowledge: knowledge,
-              size: 40,
-            ),
-            const SizedBox(width: 8),
-          ],
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (personId != null && onPersonTap != null)
-                  InkWell(
-                    key: Key('appearance-person-link-${appearance?.id}'),
-                    onTap: () => onPersonTap!(personId),
-                    child: Text(
-                      label,
-                      key: Key('appearance-crop-${tag.id}'),
-                    ),
-                  )
-                else
-                  Text(
-                    label,
-                    key: Key('appearance-crop-${tag.id}'),
-                  ),
-                if (onAssignCrop != null) ...[
-                  const SizedBox(height: 6),
-                  PersonAssignControl(
-                    key: Key('item-assign-face-${tag.id}'),
-                    persons: persons,
-                    currentPersonId: personId,
-                    currentPersonName: personName,
-                    draftPersonNames: draftPersonNames,
-                    enabled: enabled,
-                    label: named ? 'Reassign' : 'Assign',
-                    onAssign: ({personId, name}) => onAssignCrop!(
-                      tag.id,
-                      personId: personId,
-                      name: name,
-                    ),
-                  ),
-                ],
-                if (canUnassign || onExcludeCrop != null)
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      if (canUnassign)
-                        TextButton(
-                          key: Key('item-unassign-${appearance!.id}'),
-                          onPressed: enabled
-                              ? () => onUnassign!(appearance.id)
-                              : null,
-                          child: const Text('Unassign'),
-                        ),
-                      if (onExcludeCrop != null)
-                        TextButton(
-                          key: Key('item-exclude-face-${tag.id}'),
-                          onPressed:
-                              enabled ? () => onExcludeCrop!(tag.id) : null,
-                          child: const Text('Exclude from photo'),
-                        ),
-                    ],
-                  ),
-              ],
+    return Column(
+      key: const Key('item-face-actions'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (onAssignCrop != null)
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 320),
+            child: PersonAssignControl(
+              key: Key('item-assign-face-${tag.id}'),
+              persons: persons,
+              currentPersonId: personId,
+              currentPersonName: personName,
+              draftPersonNames: draftPersonNames,
+              enabled: enabled,
+              label: named ? 'Reassign' : 'Assign',
+              onAssign: ({personId, name}) => onAssignCrop!(
+                tag.id,
+                personId: personId,
+                name: name,
+              ),
             ),
           ),
-        ],
-      ),
+        if (canUnassign || onExcludeCrop != null)
+          Wrap(
+            spacing: 8,
+            children: [
+              if (canUnassign)
+                TextButton(
+                  key: Key('item-unassign-${appearance!.id}'),
+                  onPressed:
+                      enabled ? () => onUnassign!(appearance.id) : null,
+                  child: const Text('Unassign'),
+                ),
+              if (onExcludeCrop != null)
+                TextButton(
+                  key: Key('item-exclude-face-${tag.id}'),
+                  onPressed: enabled ? () => onExcludeCrop!(tag.id) : null,
+                  child: const Text('Exclude from photo'),
+                ),
+            ],
+          ),
+      ],
+    );
+  }
+}
+
+class _ItemAssignList extends StatelessWidget {
+  const _ItemAssignList({required this.cells});
+
+  final List<Widget> cells;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      key: const Key('item-face-assign-grid'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final cell in cells)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: cell,
+          ),
+      ],
     );
   }
 }
@@ -595,10 +725,9 @@ class _PendingItemAssignRow extends StatelessWidget {
   }
 }
 
-class _IncludedExclusionRow extends StatelessWidget {
-  const _IncludedExclusionRow({
+class _IncludedActions extends StatelessWidget {
+  const _IncludedActions({
     required this.exclusion,
-    required this.item,
     required this.persons,
     required this.personNamesById,
     this.draftPersonNames = const [],
@@ -609,7 +738,6 @@ class _IncludedExclusionRow extends StatelessWidget {
   });
 
   final WhoExclusion exclusion;
-  final Item item;
   final List<Person> persons;
   final Map<String, String> personNamesById;
   final List<String> draftPersonNames;
@@ -632,56 +760,35 @@ class _IncludedExclusionRow extends StatelessWidget {
     final personId = effective.personId;
     final personName = effective.personName;
     final named = personName != null && personName.isNotEmpty;
-    final label = named ? personName : 'Unnamed';
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          WhoExclusionCropThumb(
-            key: Key('who-exclusion-included-${exclusion.id}'),
-            itemId: exclusion.itemId,
-            region: exclusion.region,
-            item: item,
-            size: 40,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  label,
-                  key: Key('appearance-included-${exclusion.id}'),
-                ),
-                if (onAssign != null) ...[
-                  const SizedBox(height: 6),
-                  PersonAssignControl(
-                    key: Key('item-assign-included-${exclusion.id}'),
-                    persons: persons,
-                    currentPersonId: personId,
-                    currentPersonName: personName,
-                    draftPersonNames: draftPersonNames,
-                    enabled: enabled,
-                    label: named ? 'Reassign' : 'Assign',
-                    onAssign: ({personId, name}) => onAssign!(
-                      exclusion.id,
-                      personId: personId,
-                      name: name,
-                    ),
-                  ),
-                ],
-                if (onExclude != null)
-                  TextButton(
-                    key: Key('item-exclude-included-${exclusion.id}'),
-                    onPressed: enabled ? () => onExclude!(exclusion.id) : null,
-                    child: const Text('Exclude from photo'),
-                  ),
-              ],
+    return Column(
+      key: const Key('item-face-actions'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (onAssign != null)
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 320),
+            child: PersonAssignControl(
+              key: Key('item-assign-included-${exclusion.id}'),
+              persons: persons,
+              currentPersonId: personId,
+              currentPersonName: personName,
+              draftPersonNames: draftPersonNames,
+              enabled: enabled,
+              label: named ? 'Reassign' : 'Assign',
+              onAssign: ({personId, name}) => onAssign!(
+                exclusion.id,
+                personId: personId,
+                name: name,
+              ),
             ),
           ),
-        ],
-      ),
+        if (onExclude != null)
+          TextButton(
+            key: Key('item-exclude-included-${exclusion.id}'),
+            onPressed: enabled ? () => onExclude!(exclusion.id) : null,
+            child: const Text('Exclude from photo'),
+          ),
+      ],
     );
   }
 }

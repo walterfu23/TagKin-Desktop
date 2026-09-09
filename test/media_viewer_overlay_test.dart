@@ -109,4 +109,26 @@ void main() {
 
     expect(find.byKey(const Key('who-face-overlay-tag_who_box')), findsNothing);
   });
+
+  testWidgets('video pane opts out of SelectionArea so player controls can tap',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SelectionArea(
+          child: VideoPlaybackPane(child: Text('player')),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('media-video')), findsOneWidget);
+    expect(find.byKey(const Key('media-video-selection-off')), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.byKey(const Key('media-video')),
+        matching: find.byKey(const Key('media-video-selection-off')),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('player'), findsOneWidget);
+  });
 }

@@ -100,10 +100,28 @@ class MediaViewer extends StatelessWidget {
       );
     }
 
-    return SizedBox(
-      key: const Key('media-video'),
-      height: 240,
+    return VideoPlaybackPane(
       child: Video(controller: controller),
+    );
+  }
+}
+
+/// Local video viewport. Opted out of route [SelectionArea] so media_kit
+/// play/pause receive taps.
+class VideoPlaybackPane extends StatelessWidget {
+  const VideoPlaybackPane({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return SelectionContainer.disabled(
+      key: const Key('media-video-selection-off'),
+      child: SizedBox(
+        key: const Key('media-video'),
+        height: 240,
+        child: child,
+      ),
     );
   }
 }

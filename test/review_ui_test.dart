@@ -29,6 +29,23 @@ FormFieldState<String> _assignFieldState(WidgetTester tester, Key key) {
   );
 }
 
+Future<void> _selectItemFace(WidgetTester tester, String tagId) async {
+  final tile = find.byKey(Key('item-face-tile-$tagId'));
+  await tester.ensureVisible(tile);
+  await tester.tap(tile);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _selectIncludedFace(
+  WidgetTester tester,
+  String exclusionId,
+) async {
+  final tile = find.byKey(Key('item-face-tile-included-$exclusionId'));
+  await tester.ensureVisible(tile);
+  await tester.tap(tile);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets('KnowledgeView renders who/what/when/where as CSV',
       (tester) async {
@@ -251,6 +268,8 @@ void main() {
 
     expect(find.byKey(const Key('item-link-people')), findsNothing);
     expect(find.byKey(const Key('item-assign-person')), findsNothing);
+    expect(find.byKey(const Key('item-assign-face-tag_who')), findsNothing);
+    await _selectItemFace(tester, 'tag_who');
     await tester.ensureVisible(find.byKey(const Key('item-assign-face-tag_who')));
     await tester.tap(find.byKey(const Key('item-assign-face-tag_who')));
     await tester.pumpAndSettle();
@@ -347,6 +366,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.byKey(const Key('item-exclude-face-tag_who')), findsNothing);
+    await _selectItemFace(tester, 'tag_who');
     expect(find.byKey(const Key('item-exclude-face-tag_who')), findsOneWidget);
     await tester.ensureVisible(
       find.byKey(const Key('item-exclude-face-tag_who')),
@@ -433,6 +454,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await _selectItemFace(tester, 'tag_who');
     await tester.ensureVisible(
       find.byKey(const Key('item-exclude-face-tag_who')),
     );
@@ -457,7 +479,8 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.meta);
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('item-assign-face-tag_who')), findsOneWidget);
+    expect(find.byKey(const Key('item-face-tile-tag_who')), findsOneWidget);
+    expect(find.byKey(const Key('item-assign-face-tag_who')), findsNothing);
     expect(find.byKey(const Key('who-exclusion-draft-tag_who')), findsNothing);
     expect(find.byKey(const Key('undo-depth')), findsNothing);
     expect(items.createWhoExclusionCalls, isEmpty);
@@ -523,6 +546,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await _selectItemFace(tester, 'tag_who');
     await tester.ensureVisible(
       find.byKey(const Key('item-exclude-face-tag_who')),
     );
@@ -538,7 +562,8 @@ void main() {
 
     expect(items.createWhoExclusionCalls, isEmpty);
     expect(items.undoWhoExclusionCalls, isEmpty);
-    expect(find.byKey(const Key('item-assign-face-tag_who')), findsOneWidget);
+    expect(find.byKey(const Key('item-face-tile-tag_who')), findsOneWidget);
+    expect(find.byKey(const Key('item-assign-face-tag_who')), findsNothing);
     expect(find.byKey(const Key('who-exclusion-draft-tag_who')), findsNothing);
     expect(find.byKey(const Key('item-detail-save')), findsOneWidget);
     expect(
@@ -618,6 +643,8 @@ void main() {
       find.byKey(const Key('who-exclusion-included-ex_1')),
       findsOneWidget,
     );
+    expect(find.byKey(const Key('item-assign-included-ex_1')), findsNothing);
+    await _selectIncludedFace(tester, 'ex_1');
     expect(find.byKey(const Key('item-assign-included-ex_1')), findsOneWidget);
 
     await tester.ensureVisible(
@@ -737,6 +764,7 @@ void main() {
     await tester.tap(find.byKey(const Key('item-include-exclusion-ex_2')));
     await tester.pumpAndSettle();
 
+    await _selectIncludedFace(tester, 'ex_1');
     await tester.ensureVisible(
       find.byKey(const Key('item-assign-included-ex_1')),
     );
@@ -753,6 +781,10 @@ void main() {
       PersonAssignControl.draftValue('test'),
     );
 
+    await tester.ensureVisible(
+      find.byKey(const Key('item-face-tile-included-ex_2')),
+    );
+    await _selectIncludedFace(tester, 'ex_2');
     await tester.ensureVisible(
       find.byKey(const Key('item-assign-included-ex_2')),
     );
@@ -939,7 +971,11 @@ void main() {
 
     expect(find.byKey(const Key('knowledge-who')), findsOneWidget);
     expect(find.text('Alex, toddler'), findsOneWidget);
-    expect(find.text('Alex toddler'), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('appearance-crop-tag_who'))).data,
+      'Alex',
+    );
+    expect(find.text('Alex toddler'), findsNothing);
     expect(find.textContaining('person_alex'), findsNothing);
     expect(find.byKey(const Key('tag-provenance-tag_who')), findsNothing);
   });
@@ -1070,7 +1106,7 @@ void main() {
     );
   });
 
-  testWidgets('Face-person cells pair left-right under File/Comment',
+  testWidgets('Face-person cells sit in a compact row under File/Comment',
       (tester) async {
     tester.view.physicalSize = const Size(1200, 2000);
     tester.view.devicePixelRatio = 1.0;
@@ -1133,15 +1169,96 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final left = tester.getTopLeft(find.byKey(const Key('item-assign-face-tag_a')));
+    expect(find.byKey(const Key('item-assign-face-tag_a')), findsNothing);
+    expect(find.byKey(const Key('item-face-hint')), findsOneWidget);
+    final left = tester.getTopLeft(find.byKey(const Key('item-face-tile-tag_a')));
     final right =
-        tester.getTopLeft(find.byKey(const Key('item-assign-face-tag_b')));
+        tester.getTopLeft(find.byKey(const Key('item-face-tile-tag_b')));
     expect(left.dx, lessThan(right.dx));
     expect((left.dy - right.dy).abs(), lessThan(24));
     expect(
       left.dy,
       greaterThan(tester.getTopLeft(find.byKey(const Key('item-comment-field'))).dy),
     );
+    expect(
+      tester.widget<Text>(find.byKey(const Key('appearance-crop-tag_a'))).data,
+      'left',
+    );
+    expect(
+      tester.widget<Text>(find.byKey(const Key('appearance-crop-tag_b'))).data,
+      'right',
+    );
+  });
+
+  testWidgets('item face tiles sort A–Z by caption case-insensitive',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    const regionA = TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4);
+    const regionB = TagRegion(yMin: 0.1, xMin: 0.5, yMax: 0.4, xMax: 0.8);
+    final item = fixtureItem(
+      id: 'item_1',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final knowledge = fixtureKnowledge(
+      item: item,
+      tags: [
+        fixtureTag(
+          id: 'tag_sam',
+          dimension: 'who',
+          value: 'Sam',
+          region: regionA,
+        ),
+        fixtureTag(
+          id: 'tag_ada',
+          dimension: 'who',
+          value: 'ada',
+          region: regionB,
+        ),
+      ],
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {'item_1': knowledge},
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          itemsRepositoryProvider.overrideWithValue(items),
+          personsRepositoryProvider.overrideWithValue(
+            FakePersonsRepository(persons: const []),
+          ),
+          correctionsRepositoryProvider.overrideWithValue(
+            FakeCorrectionsRepository(items: items),
+          ),
+          commentsRepositoryProvider.overrideWithValue(
+            FakeCommentsRepository(),
+          ),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          jobsRepositoryProvider.overrideWithValue(
+            FakeJobsRepository(itemId: 'item_1', item: item),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: ItemReviewSection(itemId: 'item_1', openVideo: false),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final ada =
+        tester.getTopLeft(find.byKey(const Key('item-face-tile-tag_ada')));
+    final sam =
+        tester.getTopLeft(find.byKey(const Key('item-face-tile-tag_sam')));
+    expect(ada.dx, lessThan(sam.dx));
+    expect((ada.dy - sam.dy).abs(), lessThan(24));
   });
 
   testWidgets('unsaved item edits prompt Save/Discard/Cancel on back',
@@ -1314,6 +1431,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await _selectItemFace(tester, 'tag_who');
     await tester.ensureVisible(
       find.byKey(const Key('item-assign-face-tag_who')),
     );
@@ -1460,6 +1578,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await _selectItemFace(tester, 'tag_b');
     await tester.ensureVisible(
       find.byKey(const Key('item-assign-face-tag_b')),
     );
