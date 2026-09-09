@@ -33,7 +33,12 @@ void main() {
           tags: [
             fixtureTag(id: 'w1', itemId: 'a', dimension: 'who', value: 'Sam'),
             fixtureTag(id: 't1', itemId: 'a', dimension: 'what', value: 'swim'),
-            fixtureTag(id: 'r1', itemId: 'a', dimension: 'where', value: 'pool'),
+            fixtureTag(
+              id: 'r1',
+              itemId: 'a',
+              dimension: 'where',
+              value: 'pool',
+            ),
           ],
         ),
         'b': fixtureKnowledge(
@@ -82,7 +87,10 @@ void main() {
   });
 
   test('GPS where tags become city/state labels', () async {
-    final item = fixtureItem(id: 'g', processingStatus: ProcessingStatus.tagged);
+    final item = fixtureItem(
+      id: 'g',
+      processingStatus: ProcessingStatus.tagged,
+    );
     final items = FakeItemsRepository(
       items: [item],
       knowledgeByItemId: {
@@ -129,7 +137,10 @@ void main() {
   });
 
   test('GPS city is omitted when a scene already includes the city', () async {
-    final item = fixtureItem(id: 'g', processingStatus: ProcessingStatus.tagged);
+    final item = fixtureItem(
+      id: 'g',
+      processingStatus: ProcessingStatus.tagged,
+    );
     final items = FakeItemsRepository(
       items: [item],
       knowledgeByItemId: {
@@ -175,80 +186,86 @@ void main() {
     expect(row.where, ['Los Altos parking lot']);
   });
 
-  test('sort cycles asc → desc → none; multiColumn appends tie-break keys',
-      () async {
-    final items = <Item>[];
-    final knowledge = <String, ItemKnowledge>{};
-    for (var i = 0; i < 4; i++) {
-      final id = 'item_$i';
-      final item = fixtureItem(
-        id: id,
-        processingStatus: ProcessingStatus.tagged,
+  test(
+    'sort cycles asc → desc → none; multiColumn appends tie-break keys',
+    () async {
+      final items = <Item>[];
+      final knowledge = <String, ItemKnowledge>{};
+      for (var i = 0; i < 4; i++) {
+        final id = 'item_$i';
+        final item = fixtureItem(
+          id: id,
+          processingStatus: ProcessingStatus.tagged,
+        );
+        items.add(item);
+        knowledge[id] = fixtureKnowledge(
+          item: item,
+          tags: [
+            fixtureTag(
+              id: 'who_$i',
+              itemId: id,
+              dimension: 'who',
+              value: i < 2 ? 'Sam' : 'Ada',
+            ),
+            fixtureTag(
+              id: 'what_$i',
+              itemId: id,
+              dimension: 'what',
+              value: i.isEven ? 'zoo' : 'apple',
+            ),
+          ],
+        );
+      }
+      final repo = FakeItemsRepository(
+        items: items,
+        knowledgeByItemId: knowledge,
       );
-      items.add(item);
-      knowledge[id] = fixtureKnowledge(
-        item: item,
-        tags: [
-          fixtureTag(
-            id: 'who_$i',
-            itemId: id,
-            dimension: 'who',
-            value: i < 2 ? 'Sam' : 'Ada',
-          ),
-          fixtureTag(
-            id: 'what_$i',
-            itemId: id,
-            dimension: 'what',
-            value: i.isEven ? 'zoo' : 'apple',
-          ),
-        ],
+      final controller = LibraryTableController(
+        itemsRepository: repo,
+        commentsRepository: FakeCommentsRepository(),
+        thumbCache: LocalThumbCache(),
+        pageSize: 50,
+        knowledgeConcurrency: 4,
       );
-    }
-    final repo = FakeItemsRepository(items: items, knowledgeByItemId: knowledge);
-    final controller = LibraryTableController(
-      itemsRepository: repo,
-      commentsRepository: FakeCommentsRepository(),
-      thumbCache: LocalThumbCache(),
-      pageSize: 50,
-      knowledgeConcurrency: 4,
-    );
-    await controller.load();
-    await _awaitKnowledge(controller);
+      await controller.load();
+      await _awaitKnowledge(controller);
 
-    controller.toggleSort(LibrarySortColumn.who);
-    expect(controller.sortKeys, hasLength(1));
-    expect(controller.sortKeys.first.ascending, isTrue);
-    expect(controller.filteredSorted.first.who.first, 'Ada');
+      controller.toggleSort(LibrarySortColumn.who);
+      expect(controller.sortKeys, hasLength(1));
+      expect(controller.sortKeys.first.ascending, isTrue);
+      expect(controller.filteredSorted.first.who.first, 'Ada');
 
-    controller.toggleSort(LibrarySortColumn.who);
-    expect(controller.sortKeys.first.ascending, isFalse);
-    expect(controller.filteredSorted.first.who.first, 'Sam');
+      controller.toggleSort(LibrarySortColumn.who);
+      expect(controller.sortKeys.first.ascending, isFalse);
+      expect(controller.filteredSorted.first.who.first, 'Sam');
 
-    controller.toggleSort(LibrarySortColumn.who);
-    expect(controller.sortKeys, isEmpty);
+      controller.toggleSort(LibrarySortColumn.who);
+      expect(controller.sortKeys, isEmpty);
 
-    controller.toggleSort(LibrarySortColumn.who);
-    controller.toggleSort(LibrarySortColumn.what, multiColumn: true);
-    expect(controller.sortKeys, hasLength(2));
-    // Within Ada (asc), apple before zoo.
-    final adaRows =
-        controller.filteredSorted.where((r) => r.who.first == 'Ada').toList();
-    expect(adaRows.first.what.first, 'apple');
-    expect(adaRows.last.what.first, 'zoo');
+      controller.toggleSort(LibrarySortColumn.who);
+      controller.toggleSort(LibrarySortColumn.what, multiColumn: true);
+      expect(controller.sortKeys, hasLength(2));
+      // Within Ada (asc), apple before zoo.
+      final adaRows = controller.filteredSorted
+          .where((r) => r.who.first == 'Ada')
+          .toList();
+      expect(adaRows.first.what.first, 'apple');
+      expect(adaRows.last.what.first, 'zoo');
 
-    // Multi-cycle secondary: desc then remove.
-    controller.toggleSort(LibrarySortColumn.what, multiColumn: true);
-    expect(controller.sortKeys.last.ascending, isFalse);
-    controller.toggleSort(LibrarySortColumn.what, multiColumn: true);
-    expect(controller.sortKeys, hasLength(1));
+      // Multi-cycle secondary: desc then remove.
+      controller.toggleSort(LibrarySortColumn.what, multiColumn: true);
+      expect(controller.sortKeys.last.ascending, isFalse);
+      controller.toggleSort(LibrarySortColumn.what, multiColumn: true);
+      expect(controller.sortKeys, hasLength(1));
 
-    // Stack two keys then collapse when multi-column is turned off.
-    controller.toggleSort(LibrarySortColumn.what, multiColumn: true);
-    expect(controller.sortKeys, hasLength(2));
-    controller.enforceSingleColumn();
-    expect(controller.sortKeys, hasLength(1));
-    expect(controller.sortKeys.first.column, LibrarySortColumn.who);
-  });
+      // Stack two keys then collapse when multi-column is turned off.
+      controller.toggleSort(LibrarySortColumn.what, multiColumn: true);
+      expect(controller.sortKeys, hasLength(2));
+      controller.enforceSingleColumn();
+      expect(controller.sortKeys, hasLength(1));
+      expect(controller.sortKeys.first.column, LibrarySortColumn.who);
+    },
+  );
 
   test('who sort is case-insensitive', () async {
     final names = ['sam', 'Bob', 'ada'];
@@ -286,10 +303,11 @@ void main() {
     await _awaitKnowledge(controller);
 
     controller.toggleSort(LibrarySortColumn.who);
-    expect(
-      controller.filteredSorted.map((r) => r.who.first).toList(),
-      ['ada', 'Bob', 'sam'],
-    );
+    expect(controller.filteredSorted.map((r) => r.who.first).toList(), [
+      'ada',
+      'Bob',
+      'sam',
+    ]);
   });
 
   test('filter and pagination', () async {
@@ -314,7 +332,10 @@ void main() {
         ],
       );
     }
-    final repo = FakeItemsRepository(items: items, knowledgeByItemId: knowledge);
+    final repo = FakeItemsRepository(
+      items: items,
+      knowledgeByItemId: knowledge,
+    );
     final controller = LibraryTableController(
       itemsRepository: repo,
       commentsRepository: FakeCommentsRepository(),
@@ -361,7 +382,7 @@ void main() {
     // Common ancestor /users/w has two child folders → auto-expanded.
     // File group /users/w/test stays collapsed by default.
     final initial = controller.visibleEntries;
-    expect(initial, hasLength(3)); // /users/w + test group + other singleton
+    expect(initial, hasLength(3)); // /users/w + other singleton + test group
     expect(
       initial[0],
       isA<LibraryPathGroupHeader>()
@@ -371,100 +392,111 @@ void main() {
     );
     expect(
       initial[1],
+      isA<LibraryItemEntry>()
+          .having((e) => e.row.item.id, 'id', 'c')
+          .having((e) => e.sourceDisplay, 'display', 'other/c.jpg'),
+    );
+    expect(
+      initial[2],
       isA<LibraryPathGroupHeader>()
           .having((h) => h.dir, 'dir', shared)
           .having((h) => h.label, 'label', 'test')
           .having((h) => h.count, 'count', 2)
           .having((h) => h.collapsed, 'collapsed', isTrue),
     );
-    expect(
-      initial[2],
-      isA<LibraryItemEntry>()
-          .having((e) => e.row.item.id, 'id', 'c')
-          .having((e) => e.sourceDisplay, 'display', 'other/c.jpg'),
-    );
 
     controller.toggleCollapseSourceDir(shared);
     final expanded = controller.visibleEntries;
-    expect(expanded, hasLength(5)); // /users/w + test header + a + b + c
+    expect(expanded, hasLength(5)); // /users/w + other + test header + a + b
     expect(
-      expanded[2],
+      expanded[3],
       isA<LibraryItemEntry>()
           .having((e) => e.row.item.id, 'id', 'a')
           .having((e) => e.sourceDisplay, 'display', 'a.jpg'),
     );
     expect(
-      expanded[3],
+      expanded[4],
       isA<LibraryItemEntry>()
           .having((e) => e.row.item.id, 'id', 'b')
           .having((e) => e.sourceDisplay, 'display', 'b.mp4'),
     );
   });
 
-  test('date folders under shared parent are expanded; file groups stay collapsed',
-      () async {
-    const root = '/users/w/test';
-    final a = fixtureItem(
-      id: 'a',
-      sourceRef: 'file://$root/20260508/a.jpg',
-      processingStatus: ProcessingStatus.tagged,
-    );
-    final b = fixtureItem(
-      id: 'b',
-      sourceRef: 'file://$root/20260508/b.jpg',
-      processingStatus: ProcessingStatus.tagged,
-    );
-    final c = fixtureItem(
-      id: 'c',
-      sourceRef: 'file://$root/20260506/c.jpg',
-      processingStatus: ProcessingStatus.tagged,
-    );
-    final controller = LibraryTableController(
-      itemsRepository: FakeItemsRepository(items: [a, b, c]),
-      commentsRepository: FakeCommentsRepository(),
-      thumbCache: LocalThumbCache(),
-      knowledgeConcurrency: 3,
-    );
-    await controller.load();
+  test(
+    'date folders under shared parent are expanded; file groups stay collapsed',
+    () async {
+      const root = '/users/w/test';
+      final a = fixtureItem(
+        id: 'a',
+        sourceRef: 'file://$root/20260508/a.jpg',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final b = fixtureItem(
+        id: 'b',
+        sourceRef: 'file://$root/20260508/b.jpg',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final c = fixtureItem(
+        id: 'c',
+        sourceRef: 'file://$root/20260506/c.jpg',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final controller = LibraryTableController(
+        itemsRepository: FakeItemsRepository(items: [a, b, c]),
+        commentsRepository: FakeCommentsRepository(),
+        thumbCache: LocalThumbCache(),
+        knowledgeConcurrency: 3,
+      );
+      await controller.load();
 
-    final mid = controller.visibleEntries;
-    expect(mid, hasLength(3)); // root header + 20260508 group + singleton c
-    expect(
-      mid[0],
-      isA<LibraryPathGroupHeader>()
-          .having((h) => h.dir, 'dir', root)
-          .having((h) => h.count, 'count', 3)
-          .having((h) => h.collapsed, 'collapsed', isFalse),
-    );
-    expect(
-      mid[1],
-      isA<LibraryPathGroupHeader>()
-          .having((h) => h.dir, 'dir', '$root/20260508')
-          .having((h) => h.label, 'label', '20260508')
-          .having((h) => h.count, 'count', 2)
-          .having((h) => h.collapsed, 'collapsed', isTrue),
-    );
-    expect(
-      mid[2],
-      isA<LibraryItemEntry>()
-          .having((e) => e.row.item.id, 'id', 'c')
-          .having((e) => e.sourceDisplay, 'display', '20260506/c.jpg'),
-    );
+      final mid = controller.visibleEntries;
+      expect(
+        mid,
+        hasLength(3),
+      ); // root header + 20260506 singleton + 20260508 group
+      expect(
+        mid[0],
+        isA<LibraryPathGroupHeader>()
+            .having((h) => h.dir, 'dir', root)
+            .having((h) => h.count, 'count', 3)
+            .having((h) => h.collapsed, 'collapsed', isFalse),
+      );
+      expect(
+        mid[1],
+        isA<LibraryItemEntry>()
+            .having((e) => e.row.item.id, 'id', 'c')
+            .having((e) => e.sourceDisplay, 'display', '20260506/c.jpg'),
+      );
+      expect(
+        mid[2],
+        isA<LibraryPathGroupHeader>()
+            .having((h) => h.dir, 'dir', '$root/20260508')
+            .having((h) => h.label, 'label', '20260508')
+            .having((h) => h.count, 'count', 2)
+            .having((h) => h.collapsed, 'collapsed', isTrue),
+      );
 
-    controller.toggleCollapseSourceDir('$root/20260508');
-    final open = controller.visibleEntries;
-    expect(open, hasLength(5));
-    expect(
-      open[2],
-      isA<LibraryItemEntry>()
-          .having((e) => e.sourceDisplay, 'display', 'a.jpg'),
-    );
-    expect(
-      open[3],
-      isA<LibraryItemEntry>()
-          .having((e) => e.sourceDisplay, 'display', 'b.jpg'),
-    );
-  });
+      controller.toggleCollapseSourceDir('$root/20260508');
+      final open = controller.visibleEntries;
+      expect(open, hasLength(5));
+      expect(
+        open[3],
+        isA<LibraryItemEntry>().having(
+          (e) => e.sourceDisplay,
+          'display',
+          'a.jpg',
+        ),
+      );
+      expect(
+        open[4],
+        isA<LibraryItemEntry>().having(
+          (e) => e.sourceDisplay,
+          'display',
+          'b.jpg',
+        ),
+      );
+    },
+  );
 
   test('adding a sibling album auto-expands the shared parent', () async {
     const root = '/users/w/albums';
@@ -510,6 +542,75 @@ void main() {
       containsAll(['d1', 'd2']),
     );
   });
+
+  test(
+    'sibling folders sort A–Z case-insensitive after a later ingest',
+    () async {
+      const root = '/users/w/albums';
+      Item file(String id, String folder, String name) => fixtureItem(
+        id: id,
+        sourceRef: 'file://$root/$folder/$name',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final repo = FakeItemsRepository(
+        items: [file('z1', 'zeta', 'a.jpg'), file('z2', 'zeta', 'b.jpg')],
+      );
+      final controller = LibraryTableController(
+        itemsRepository: repo,
+        commentsRepository: FakeCommentsRepository(),
+        thumbCache: LocalThumbCache(),
+        knowledgeConcurrency: 4,
+      );
+      await controller.load();
+
+      repo
+        ..addItem(file('a1', 'Alpha', 'c.jpg'))
+        ..addItem(file('a2', 'Alpha', 'd.jpg'));
+      await controller.load();
+
+      final headers = controller.visibleEntries
+          .whereType<LibraryPathGroupHeader>()
+          .where((h) => h.dir != root)
+          .map((h) => h.label)
+          .toList();
+      expect(headers, ['Alpha', 'zeta']);
+    },
+  );
+
+  test(
+    'sibling singleton albums sort A–Z when the later ingest is first A–Z',
+    () async {
+      const root = '/users/w/albums';
+      final day2 = fixtureItem(
+        id: 'd2',
+        sourceRef: 'file://$root/Day2/b.jpg',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final day1 = fixtureItem(
+        id: 'd1',
+        sourceRef: 'file://$root/Day1/a.jpg',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final repo = FakeItemsRepository(items: [day2]);
+      final controller = LibraryTableController(
+        itemsRepository: repo,
+        commentsRepository: FakeCommentsRepository(),
+        thumbCache: LocalThumbCache(),
+        knowledgeConcurrency: 3,
+      );
+      await controller.load();
+      repo.addItem(day1);
+      await controller.load();
+
+      expect(
+        controller.visibleEntries
+            .whereType<LibraryItemEntry>()
+            .map((e) => e.sourceDisplay)
+            .toList(),
+        ['Day1/a.jpg', 'Day2/b.jpg'],
+      );
+    },
+  );
 
   test('file-only shared dir stays collapsed by default', () async {
     const shared = '/users/w/test';
@@ -590,49 +691,52 @@ void main() {
     );
   });
 
-  test('expanded source folder stays open after reload removes an item', () async {
-    const shared = '/users/w/photos';
-    final a = fixtureItem(
-      id: 'a',
-      sourceRef: 'file://$shared/a.jpg',
-      processingStatus: ProcessingStatus.tagged,
-    );
-    final b = fixtureItem(
-      id: 'b',
-      sourceRef: 'file://$shared/b.jpg',
-      processingStatus: ProcessingStatus.tagged,
-    );
-    final items = FakeItemsRepository(items: [a, b]);
-    final controller = LibraryTableController(
-      itemsRepository: items,
-      commentsRepository: FakeCommentsRepository(),
-      thumbCache: LocalThumbCache(),
-      knowledgeConcurrency: 2,
-    );
-    await controller.load();
+  test(
+    'expanded source folder stays open after reload removes an item',
+    () async {
+      const shared = '/users/w/photos';
+      final a = fixtureItem(
+        id: 'a',
+        sourceRef: 'file://$shared/a.jpg',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final b = fixtureItem(
+        id: 'b',
+        sourceRef: 'file://$shared/b.jpg',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final items = FakeItemsRepository(items: [a, b]);
+      final controller = LibraryTableController(
+        itemsRepository: items,
+        commentsRepository: FakeCommentsRepository(),
+        thumbCache: LocalThumbCache(),
+        knowledgeConcurrency: 2,
+      );
+      await controller.load();
 
-    final header = controller.visibleEntries
-        .whereType<LibraryPathGroupHeader>()
-        .single;
-    expect(header.collapsed, isTrue);
-    controller.toggleCollapseSourceDir(header.dir);
-    expect(controller.expandedSourceDirs.contains(header.dir), isTrue);
-    expect(
-      controller.visibleEntries.whereType<LibraryItemEntry>(),
-      hasLength(2),
-    );
+      final header = controller.visibleEntries
+          .whereType<LibraryPathGroupHeader>()
+          .single;
+      expect(header.collapsed, isTrue);
+      controller.toggleCollapseSourceDir(header.dir);
+      expect(controller.expandedSourceDirs.contains(header.dir), isTrue);
+      expect(
+        controller.visibleEntries.whereType<LibraryItemEntry>(),
+        hasLength(2),
+      );
 
-    // Simulate delete of one item then list reload (same as UI _retry).
-    items.removeItem('a');
-    await controller.load();
+      // Simulate delete of one item then list reload (same as UI _retry).
+      items.removeItem('a');
+      await controller.load();
 
-    expect(controller.expandedSourceDirs.contains(header.dir), isTrue);
-    expect(controller.allRows, hasLength(1));
-    expect(
-      controller.visibleEntries.whereType<LibraryItemEntry>(),
-      hasLength(1),
-    );
-  });
+      expect(controller.expandedSourceDirs.contains(header.dir), isTrue);
+      expect(controller.allRows, hasLength(1));
+      expect(
+        controller.visibleEntries.whereType<LibraryItemEntry>(),
+        hasLength(1),
+      );
+    },
+  );
 
   test('adoptItem updates processingStatus and keeps who/what', () async {
     final failed = fixtureItem(
@@ -684,40 +788,42 @@ void main() {
     expect(controller.allRows.single.what, ['swim']);
   });
 
-  test('adoptItem insert then load keeps tagged over stale pending fetch',
-      () async {
-    final pending = fixtureItem(
-      id: 'a',
-      sourceRef: 'file:///albums/x/a.jpg',
-      processingStatus: ProcessingStatus.pending,
-    );
-    final items = FakeItemsRepository(items: [pending]);
-    final controller = LibraryTableController(
-      itemsRepository: items,
-      commentsRepository: FakeCommentsRepository(),
-      thumbCache: LocalThumbCache(),
-      knowledgeConcurrency: 1,
-    );
-    await controller.load();
-    expect(
-      controller.allRows.single.item.processingStatus,
-      ProcessingStatus.pending,
-    );
-
-    controller.adoptItem(
-      fixtureItem(
+  test(
+    'adoptItem insert then load keeps tagged over stale pending fetch',
+    () async {
+      final pending = fixtureItem(
         id: 'a',
         sourceRef: 'file:///albums/x/a.jpg',
-        processingStatus: ProcessingStatus.tagged,
-      ),
-    );
-    await controller.load();
+        processingStatus: ProcessingStatus.pending,
+      );
+      final items = FakeItemsRepository(items: [pending]);
+      final controller = LibraryTableController(
+        itemsRepository: items,
+        commentsRepository: FakeCommentsRepository(),
+        thumbCache: LocalThumbCache(),
+        knowledgeConcurrency: 1,
+      );
+      await controller.load();
+      expect(
+        controller.allRows.single.item.processingStatus,
+        ProcessingStatus.pending,
+      );
 
-    expect(
-      controller.allRows.single.item.processingStatus,
-      ProcessingStatus.tagged,
-    );
-  });
+      controller.adoptItem(
+        fixtureItem(
+          id: 'a',
+          sourceRef: 'file:///albums/x/a.jpg',
+          processingStatus: ProcessingStatus.tagged,
+        ),
+      );
+      await controller.load();
+
+      expect(
+        controller.allRows.single.item.processingStatus,
+        ProcessingStatus.tagged,
+      );
+    },
+  );
 
   test('adoptItem inserts a row when the id is not loaded yet', () async {
     final items = FakeItemsRepository();
@@ -731,10 +837,7 @@ void main() {
     expect(controller.allRows, isEmpty);
 
     controller.adoptItem(
-      fixtureItem(
-        id: 'new_item',
-        processingStatus: ProcessingStatus.tagged,
-      ),
+      fixtureItem(id: 'new_item', processingStatus: ProcessingStatus.tagged),
     );
     expect(controller.allRows, hasLength(1));
     expect(controller.allRows.single.item.id, 'new_item');
@@ -806,54 +909,53 @@ void main() {
     expect(controller.allRows.single.who, ['toddler']);
   });
 
-  test('Who column is person names only when appearances are assigned',
-      () async {
-    final item = fixtureItem(
-      id: 'a',
-      processingStatus: ProcessingStatus.tagged,
-    );
-    final items = FakeItemsRepository(
-      items: [item],
-      knowledgeByItemId: {
-        'a': fixtureKnowledge(
-          item: item,
-          tags: [
-            fixtureTag(
-              id: 'w1',
-              itemId: 'a',
-              dimension: 'who',
-              value: 'toddler',
-            ),
-          ],
-          appearances: [
-            fixtureAppearance(
-              id: 'ap_1',
-              personId: 'person_alex',
-              itemId: 'a',
-              tagId: 'w1',
-            ),
-          ],
+  test(
+    'Who column is person names only when appearances are assigned',
+    () async {
+      final item = fixtureItem(
+        id: 'a',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final items = FakeItemsRepository(
+        items: [item],
+        knowledgeByItemId: {
+          'a': fixtureKnowledge(
+            item: item,
+            tags: [
+              fixtureTag(
+                id: 'w1',
+                itemId: 'a',
+                dimension: 'who',
+                value: 'toddler',
+              ),
+            ],
+            appearances: [
+              fixtureAppearance(
+                id: 'ap_1',
+                personId: 'person_alex',
+                itemId: 'a',
+                tagId: 'w1',
+              ),
+            ],
+          ),
+        },
+      );
+      final controller = LibraryTableController(
+        itemsRepository: items,
+        commentsRepository: FakeCommentsRepository(),
+        personsRepository: FakePersonsRepository(
+          persons: [fixturePersonDetail(id: 'person_alex', name: 'Alex')],
         ),
-      },
-    );
-    final controller = LibraryTableController(
-      itemsRepository: items,
-      commentsRepository: FakeCommentsRepository(),
-      personsRepository: FakePersonsRepository(
-        persons: [
-          fixturePersonDetail(id: 'person_alex', name: 'Alex'),
-        ],
-      ),
-      thumbCache: LocalThumbCache(),
-      knowledgeConcurrency: 1,
-    );
-    await controller.load();
-    await _awaitKnowledge(controller);
-    expect(controller.allRows.single.who, ['Alex']);
-  });
+        thumbCache: LocalThumbCache(),
+        knowledgeConcurrency: 1,
+      );
+      await controller.load();
+      await _awaitKnowledge(controller);
+      expect(controller.allRows.single.who, ['Alex']);
+    },
+  );
 
-  test('Who column dedupes two faces of the same person to one name',
-      () async {
+  test('Who column dedupes two faces of the same person to one name', () async {
     final item = fixtureItem(
       id: 'a',
       processingStatus: ProcessingStatus.tagged,
@@ -888,9 +990,7 @@ void main() {
       itemsRepository: items,
       commentsRepository: FakeCommentsRepository(),
       personsRepository: FakePersonsRepository(
-        persons: [
-          fixturePersonDetail(id: 'person_alex', name: 'Alex'),
-        ],
+        persons: [fixturePersonDetail(id: 'person_alex', name: 'Alex')],
       ),
       thumbCache: LocalThumbCache(),
       knowledgeConcurrency: 1,
@@ -900,22 +1000,24 @@ void main() {
     expect(controller.allRows.single.who, ['Alex']);
   });
 
-  test('load after dispose does not notify (teardown / autoDispose race)',
-      () async {
-    final gate = Completer<void>();
-    final items = FakeItemsRepository(
-      items: [fixtureItem(id: 'a')],
-      onListItems: () => gate.future,
-    );
-    final controller = LibraryTableController(
-      itemsRepository: items,
-      commentsRepository: FakeCommentsRepository(),
-      thumbCache: LocalThumbCache(),
-    );
-    final pending = controller.load();
-    controller.dispose();
-    gate.complete();
-    await pending;
-    await pumpEventQueue();
-  });
+  test(
+    'load after dispose does not notify (teardown / autoDispose race)',
+    () async {
+      final gate = Completer<void>();
+      final items = FakeItemsRepository(
+        items: [fixtureItem(id: 'a')],
+        onListItems: () => gate.future,
+      );
+      final controller = LibraryTableController(
+        itemsRepository: items,
+        commentsRepository: FakeCommentsRepository(),
+        thumbCache: LocalThumbCache(),
+      );
+      final pending = controller.load();
+      controller.dispose();
+      gate.complete();
+      await pending;
+      await pumpEventQueue();
+    },
+  );
 }

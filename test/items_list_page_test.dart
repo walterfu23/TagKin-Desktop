@@ -440,8 +440,17 @@ void main() {
   });
 
   testWidgets('sort header reorders by who', (tester) async {
-    final a = fixtureItem(id: 'a', processingStatus: ProcessingStatus.tagged);
-    final b = fixtureItem(id: 'b', processingStatus: ProcessingStatus.tagged);
+    const shared = '/users/w/test';
+    final a = fixtureItem(
+      id: 'a',
+      sourceRef: 'file://$shared/a.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final b = fixtureItem(
+      id: 'b',
+      sourceRef: 'file://$shared/b.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
     await _pumpLibrary(
       tester,
       items: FakeItemsRepository(
@@ -463,6 +472,9 @@ void main() {
       ),
     );
     await tester.pump(const Duration(milliseconds: 50));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('source-group-toggle-$shared')));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('sort-header-who')));

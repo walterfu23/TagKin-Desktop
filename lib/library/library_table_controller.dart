@@ -20,6 +20,7 @@ import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/where/where_label_resolver.dart';
 import 'package:tagkin_desktop/where/where_place_label.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
+import 'package:tagkin_desktop/ui/alpha_order.dart';
 
 /// Columns that support header sorting on the library table.
 enum LibrarySortColumn { who, what, where, source, comment, type, status }
@@ -167,8 +168,8 @@ class LibraryTableController extends ChangeNotifier {
     WhereLabelResolver? whereLabelResolver,
     this._pageSize = 50,
     this.knowledgeConcurrency = 6,
-  })  : _thumbCache = thumbCache ?? LocalThumbCache(),
-        _whereLabels = whereLabelResolver ?? WhereLabelResolver();
+  }) : _thumbCache = thumbCache ?? LocalThumbCache(),
+       _whereLabels = whereLabelResolver ?? WhereLabelResolver();
 
   final ItemsRepository itemsRepository;
   final CommentsRepository commentsRepository;
@@ -642,6 +643,7 @@ class LibraryTableController extends ChangeNotifier {
         walk(child);
       }
     }
+
     walk(root);
     return out;
   }
@@ -799,23 +801,23 @@ class LibraryTableController extends ChangeNotifier {
 
 final libraryTableControllerProvider =
     ChangeNotifierProvider.autoDispose<LibraryTableController>(
-  (ref) {
-    return LibraryTableController(
-      itemsRepository: ref.watch(itemsRepositoryProvider),
-      commentsRepository: ref.watch(commentsRepositoryProvider),
-      personsRepository: ref.watch(personsRepositoryProvider),
-      whereLabelResolver: ref.watch(whereLabelResolverProvider),
-      pageSize: ref.read(desktopPrefsProvider).libraryPageSize,
+      (ref) {
+        return LibraryTableController(
+          itemsRepository: ref.watch(itemsRepositoryProvider),
+          commentsRepository: ref.watch(commentsRepositoryProvider),
+          personsRepository: ref.watch(personsRepositoryProvider),
+          whereLabelResolver: ref.watch(whereLabelResolverProvider),
+          pageSize: ref.read(desktopPrefsProvider).libraryPageSize,
+        );
+      },
+      dependencies: [
+        itemsRepositoryProvider,
+        commentsRepositoryProvider,
+        personsRepositoryProvider,
+        whereLabelResolverProvider,
+        desktopPrefsProvider,
+      ],
     );
-  },
-  dependencies: [
-    itemsRepositoryProvider,
-    commentsRepositoryProvider,
-    personsRepositoryProvider,
-    whereLabelResolverProvider,
-    desktopPrefsProvider,
-  ],
-);
 
 /// Builds a compressed directory trie and flattens it to visible library rows.
 List<LibraryVisibleEntry> _buildPathGroupedEntries({
@@ -848,7 +850,8 @@ List<LibraryVisibleEntry> _buildPathGroupedEntries({
     for (final topNode in _collectTopNodes(child)) {
       tops.add(
         _TopEmit(
-          firstIndex: topNode.firstIndex(indexOf),
+          sortLabel: leafFolderLabel(topNode.absolutePath),
+          tiebreak: topNode.absolutePath,
           emit: (list) => _emitPathNode(
             node: topNode,
             depth: 0,
@@ -865,18 +868,15 @@ List<LibraryVisibleEntry> _buildPathGroupedEntries({
   for (final row in noPath) {
     tops.add(
       _TopEmit(
-        firstIndex: indexOf[row.item.id] ?? 0,
+        sortLabel: row.sourceLabel,
+        tiebreak: row.item.id,
         emit: (list) => list.add(
-          LibraryItemEntry(
-            row: row,
-            depth: 0,
-            sourceDisplay: row.sourceLabel,
-          ),
+          LibraryItemEntry(row: row, depth: 0, sourceDisplay: row.sourceLabel),
         ),
       ),
     );
   }
-  tops.sort((a, b) => a.firstIndex.compareTo(b.firstIndex));
+  tops.sort(_compareTopEmits);
   for (final top in tops) {
     top.emit(out);
   }
@@ -884,10 +884,31 @@ List<LibraryVisibleEntry> _buildPathGroupedEntries({
 }
 
 class _TopEmit {
-  _TopEmit({required this.firstIndex, required this.emit});
+  _TopEmit({
+    required this.sortLabel,
+    required this.tiebreak,
+    required this.emit,
+  });
 
-  final int firstIndex;
+  final String sortLabel;
+  final String tiebreak;
   final void Function(List<LibraryVisibleEntry>) emit;
+}
+
+int _compareTopEmits(_TopEmit a, _TopEmit b) {
+  final byLabel = compareLabelsAlpha(a.sortLabel, b.sortLabel);
+  return byLabel != 0 ? byLabel : compareLabelsAlpha(a.tiebreak, b.tiebreak);
+}
+
+int _compareFolderNodes(_PathNode a, _PathNode b) {
+  final ca = a.compressed;
+  final cb = b.compressed;
+  final byLabel = compareLabelsAlpha(
+    leafFolderLabel(ca.absolutePath),
+    leafFolderLabel(cb.absolutePath),
+  );
+  if (byLabel != 0) return byLabel;
+  return compareLabelsAlpha(ca.absolutePath, cb.absolutePath);
 }
 
 /// True for `/` or a Windows drive root — never a useful library group header.
@@ -1031,8 +1052,7 @@ void _emitPathChildren({
   required p.Context ctx,
   required List<LibraryVisibleEntry> out,
 }) {
-  final kids = parent.children.values.toList()
-    ..sort((a, b) => a.firstIndex(indexOf).compareTo(b.firstIndex(indexOf)));
+  final kids = parent.children.values.toList()..sort(_compareFolderNodes);
   for (final child in kids) {
     _emitPathNode(
       node: child.compressed,
@@ -1072,12 +1092,6 @@ void _emitSingletonFiles({
     final display = parentAbs == null || parentAbs.isEmpty
         ? row.sourceLabel
         : ctx.relative(row.sourceLabel, from: parentAbs);
-    out.add(
-      LibraryItemEntry(
-        row: row,
-        depth: depth,
-        sourceDisplay: display,
-      ),
-    );
+    out.add(LibraryItemEntry(row: row, depth: depth, sourceDisplay: display));
   }
 }
