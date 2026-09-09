@@ -292,6 +292,7 @@ class _KnowledgeViewState extends State<KnowledgeView> {
             draftPersonNames: draftPersonNames,
             intent: widget.cropIntents[selectedTag.id],
             enabled: widget.assignEnabled,
+            onPersonTap: widget.onPersonTap,
             onAssignCrop: widget.onAssignCrop,
             onUnassign: widget.onUnassign,
             onExcludeCrop: widget.onExcludeCrop == null ? null : _excludeCrop,
@@ -304,6 +305,7 @@ class _KnowledgeViewState extends State<KnowledgeView> {
             draftPersonNames: draftPersonNames,
             intent: widget.exclusionIntents[selectedIncluded.id],
             enabled: widget.assignEnabled,
+            onPersonTap: widget.onPersonTap,
             onAssign: widget.onAssignIncludedExclusion,
             onExclude: widget.onExcludeIncludedExclusion == null
                 ? null
@@ -495,6 +497,7 @@ class _CropActions extends StatelessWidget {
     this.draftPersonNames = const [],
     this.intent,
     required this.enabled,
+    this.onPersonTap,
     this.onAssignCrop,
     this.onUnassign,
     this.onExcludeCrop,
@@ -507,6 +510,7 @@ class _CropActions extends StatelessWidget {
   final List<String> draftPersonNames;
   final PersonAssignIntent? intent;
   final bool enabled;
+  final void Function(String personId)? onPersonTap;
   final Future<void> Function(
     String tagId, {
     String? personId,
@@ -526,6 +530,7 @@ class _CropActions extends StatelessWidget {
     final personId = effective.personId;
     final personName = effective.personName;
     final named = personName != null && personName.isNotEmpty;
+    final canOpenPerson = personId != null && onPersonTap != null;
     final canUnassign = appearance?.id != null &&
         personId != null &&
         onUnassign != null &&
@@ -552,10 +557,17 @@ class _CropActions extends StatelessWidget {
               ),
             ),
           ),
-        if (canUnassign || onExcludeCrop != null)
+        if (canOpenPerson || canUnassign || onExcludeCrop != null)
           Wrap(
             spacing: 8,
             children: [
+              if (canOpenPerson)
+                OutlinedButton(
+                  key: Key('item-face-open-person-${tag.id}'),
+                  onPressed:
+                      enabled ? () => onPersonTap!(personId) : null,
+                  child: const Text('Open person'),
+                ),
               if (canUnassign)
                 TextButton(
                   key: Key('item-unassign-${appearance!.id}'),
@@ -733,6 +745,7 @@ class _IncludedActions extends StatelessWidget {
     this.draftPersonNames = const [],
     this.intent,
     required this.enabled,
+    this.onPersonTap,
     this.onAssign,
     this.onExclude,
   });
@@ -743,6 +756,7 @@ class _IncludedActions extends StatelessWidget {
   final List<String> draftPersonNames;
   final PersonAssignIntent? intent;
   final bool enabled;
+  final void Function(String personId)? onPersonTap;
   final Future<void> Function(
     String exclusionId, {
     String? personId,
@@ -760,6 +774,7 @@ class _IncludedActions extends StatelessWidget {
     final personId = effective.personId;
     final personName = effective.personName;
     final named = personName != null && personName.isNotEmpty;
+    final canOpenPerson = personId != null && onPersonTap != null;
     return Column(
       key: const Key('item-face-actions'),
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -782,11 +797,24 @@ class _IncludedActions extends StatelessWidget {
               ),
             ),
           ),
-        if (onExclude != null)
-          TextButton(
-            key: Key('item-exclude-included-${exclusion.id}'),
-            onPressed: enabled ? () => onExclude!(exclusion.id) : null,
-            child: const Text('Exclude from photo'),
+        if (canOpenPerson || onExclude != null)
+          Wrap(
+            spacing: 8,
+            children: [
+              if (canOpenPerson)
+                OutlinedButton(
+                  key: Key('item-face-open-person-included-${exclusion.id}'),
+                  onPressed:
+                      enabled ? () => onPersonTap!(personId) : null,
+                  child: const Text('Open person'),
+                ),
+              if (onExclude != null)
+                TextButton(
+                  key: Key('item-exclude-included-${exclusion.id}'),
+                  onPressed: enabled ? () => onExclude!(exclusion.id) : null,
+                  child: const Text('Exclude from photo'),
+                ),
+            ],
           ),
       ],
     );
