@@ -19,6 +19,8 @@ import 'package:tagkin_desktop/persons/person_detail_controller.dart';
 import 'package:tagkin_desktop/persons/person_name.dart';
 import 'package:tagkin_desktop/persons/person_name_collision_dialog.dart';
 import 'package:tagkin_desktop/persons/person_name_dialog.dart';
+import 'package:tagkin_desktop/persons/person_picker_dialog.dart';
+import 'package:tagkin_desktop/persons/person_search.dart';
 import 'package:tagkin_desktop/persons/who_exclusion_crop_thumb.dart';
 import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
 import 'package:tagkin_desktop/undo/undo_controller.dart';
@@ -170,6 +172,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   String? _personId;
   PersonDetailController? _assignedController;
   List<Person> _persons = const [];
+  List<String> _recentPersonIds = const [];
   List<PersonAppearance> _assignedOverview = const [];
   List<PersonAppearance> _unassigned = const [];
   List<WhoExclusion> _excluded = const [];
@@ -1332,10 +1335,16 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     }
   }
 
+  /// Quiet re-sync when the user returns to Faces (photo detail, tab switch).
+  Future<void> _refreshTraysOnReturn() async {
+    if (_loading || _busy) return;
+    await _refreshTraysQuietly();
+  }
+
   Future<void> _openItem(String itemId) async {
     final container = ProviderScope.containerOf(context);
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
+    final deleted = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
         builder: (_) => UndoSelectableRoute(
           child: UncontrolledProviderScope(
             container: container,
@@ -1344,6 +1353,13 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         ),
       ),
     );
+    if (!mounted) return;
+    // Item detail commits face edits on Save without notifying Faces.
+    if (deleted == true) {
+      await _reload();
+    } else {
+      await _refreshTraysOnReturn();
+    }
   }
 
   Future<void> _confirmUnconfirmedAppearance(
@@ -1475,8 +1491,6 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   /// "unnamed" mint step.
   Future<void> _setNameFromAppearance(String appearanceId) async {
     if (_busy) return;
-    final resolved = await _promptUniquePersonName();
-    if (resolved == null || !mounted) return;
     PersonAppearance? found;
     for (final a in [..._unassigned, ..._assignedOverview]) {
       if (a.id == appearanceId) {
@@ -1484,6 +1498,17 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         break;
       }
     }
+    final disabledPersonIds = <String>{
+      for (final a in _assignedOverview)
+        if (a.itemId != null &&
+            a.itemId == found?.itemId &&
+            a.personId != null)
+          a.personId!,
+    };
+    final resolved = await _promptSetNamePerson(
+      disabledPersonIds: disabledPersonIds,
+    );
+    if (resolved == null || !mounted) return;
     if (resolved.personId != null &&
         found?.itemId != null &&
         _itemsClaimedByPerson(resolved.personId!).contains(found!.itemId)) {
@@ -1511,6 +1536,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       final newId = updated.personId;
       if (newId != null) {
         _personId = newId;
+        _rememberRecentPerson(newId);
       }
       await _reload();
       _markCollectionDirty();
@@ -1562,7 +1588,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   /// named person (R6).
   Future<void> _setFaceGroupName(String faceGroupId) async {
     if (_busy) return;
-    final resolved = await _promptUniquePersonName(title: 'Name this group');
+    final resolved = await _promptSetNamePerson(title: 'Name this group');
     if (resolved == null || !mounted) return;
     final groupMemberTagIds = [
       for (final a in _scopedAppearances(_unassigned))
@@ -1581,6 +1607,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       );
       final detail = result.person;
       _personId = detail.id;
+      _rememberRecentPerson(detail.id);
       final assignedFromGroup = [
         for (final a in detail.appearances)
           if (a.tagId != null && groupMemberTagIds.contains(a.tagId)) a.id,
@@ -3710,6 +3737,14 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       }
     });
 
+    // IndexedStack keeps this page mounted; re-sync when Faces is re-selected
+    // so item-detail Save (and other tab work) lands in the trays.
+    ref.listen<TopLevelTab>(activeTopLevelTabProvider, (previous, next) {
+      if (next == TopLevelTab.faces && previous != next) {
+        unawaited(_refreshTraysOnReturn());
+      }
+    });
+
     // Claim SelectAllTextIntent so app-wide SelectionArea does not steal Cmd+A
     // onto shell text (e.g. folder activity banner). Loose faces only.
     // Cmd/Ctrl+Z is hosted by ActiveUndoShortcuts above SelectableScope
@@ -4222,6 +4257,40 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  void _rememberRecentPerson(String id) {
+    _recentPersonIds = rememberRecentPersonId(_recentPersonIds, id);
+  }
+
+  List<String> get _inFolderPersonIdsForPicker {
+    final inFolder = _personIdsFromAppearances(_assignedOverview);
+    return [
+      for (final p in sortedPersonsByName(_persons))
+        if (inFolder.contains(p.id)) p.id,
+    ];
+  }
+
+  /// Searchable existing-person picker for Set name (R6). **New person** with
+  /// nothing typed hands off to [_promptUniquePersonName], the same naming
+  /// (and duplicate-name merge) flow as the New person drop target.
+  Future<({String? name, String? personId})?> _promptSetNamePerson({
+    String title = 'Set name',
+    Set<String> disabledPersonIds = const {},
+  }) async {
+    final picked = await showPersonPickerDialog(
+      context,
+      persons: _persons,
+      title: title,
+      disabledPersonIds: disabledPersonIds,
+      inFolderPersonIds: _inFolderPersonIdsForPicker,
+      recentPersonIds: _recentPersonIds,
+    );
+    if (picked == null || !mounted) return null;
+    if (picked.createNew) {
+      return _promptUniquePersonName();
+    }
+    return (name: picked.name, personId: picked.personId);
   }
 
   /// Free name to mint, existing [personId] to assign to, or null if cancelled.

@@ -11,7 +11,7 @@ flutter analyze
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host '==> flutter test (unit/widget + D12 undo)'
-flutter test test/undo/undo_controller_test.dart test/review_controller_test.dart test/knowledge_corrections_ui_test.dart
+flutter test test/undo/undo_controller_test.dart test/undo/undo_depth_badge_test.dart test/review_controller_test.dart test/knowledge_corrections_ui_test.dart
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Invoke-TagKinR8SecretScan

@@ -75,9 +75,24 @@ class ClerkAuthState extends clerk.Auth with ChangeNotifier {
     _errors.close();
   }
 
-  void _processDeepLink(Uri? link) {
+  Future<void> _processDeepLink(Uri? link) async {
     if (link case Uri link) {
-      parseDeepLink(link);
+      // Hold the same update lock as safelyCall so a timer-fired
+      // refreshClient cannot adopt a session-less client while the
+      // rotating-token nonce exchange is in flight (external-browser SSO).
+      _updateLock.lock();
+      try {
+        await parseDeepLink(link);
+      } on clerk.ClerkError catch (error) {
+        handleError(error);
+      } on Exception catch (error, stack) {
+        debugPrint('ClerkAuthState: $error\n$stack');
+        handleError(clerk.ClerkError.external(error));
+      } finally {
+        if (_updateLock.release()) {
+          update();
+        }
+      }
     }
   }
 
@@ -335,16 +350,30 @@ class ClerkAuthState extends clerk.Auth with ChangeNotifier {
   /// If the link contains no known [clerk.Strategy], it is assumed that the
   /// final element of the [uri.path] will be the name of the strategy to use
   Future<bool> parseDeepLink(Uri uri) async {
-    if (signIn?.verification case clerk.Verification verification
-        when verification.status.isVerified == false) {
-      if (verification.strategy.isSSO) {
-        if (uri.queryParameters[_kRotatingTokenNonce] case String token) {
-          await completeOAuthSignIn(token: token);
-        } else {
-          await refreshClient();
-          await transfer();
-        }
+    final token = uri.queryParameters[_kRotatingTokenNonce];
+    if (token != null && token.isNotEmpty) {
+      if (signIn == null && signUp == null) {
+        debugPrint(
+          'OAuth callback ignored: no in-progress sign-in (start Google again)',
+        );
+        return false;
       }
+      await completeOAuthSignIn(token: token);
+      if (signIn?.isTransferable == true || signUp?.isTransferable == true) {
+        await transfer();
+      }
+      return true;
+    }
+
+    // Match the signed-out wait UI: OAuth lives on firstFactorVerification
+    // even when `verification` is null (status not needs_first_factor).
+    final verification =
+        signIn?.firstFactorVerification ?? signIn?.verification;
+    if (verification != null &&
+        verification.status.isVerified == false &&
+        verification.strategy.isSSO) {
+      await refreshClient();
+      await transfer();
     } else if (user is clerk.User) {
       update();
     }

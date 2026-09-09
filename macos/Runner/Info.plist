@@ -36,6 +36,10 @@
 	<!-- Safari Allow must activate this process (in-progress Clerk SSO), not spawn a second TagKin.app. -->
 	<key>LSMultipleInstancesProhibited</key>
 	<true/>
+	<!-- app_links + AppDelegate own tagkindesktop://; Flutter must not
+	     treat the OAuth callback as a navigation route. -->
+	<key>FlutterDeepLinkingEnabled</key>
+	<false/>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSHumanReadableCopyright</key>

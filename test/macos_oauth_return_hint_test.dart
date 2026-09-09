@@ -60,6 +60,8 @@ void main() {
     final plist = File('macos/Runner/Info.plist').readAsStringSync();
     expect(plist, contains('<string>tagkindesktop</string>'));
     expect(plist, contains('<key>LSMultipleInstancesProhibited</key>'));
+    expect(plist, contains('<key>FlutterDeepLinkingEnabled</key>'));
+    expect(plist, contains('<false/>'));
   });
 
   test('AppDelegate forwards Safari Allow openURLs to AppLinks', () {

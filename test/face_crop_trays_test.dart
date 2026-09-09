@@ -84,6 +84,14 @@ Future<void> _pumpUntilCropImages(WidgetTester tester) async {
   }
 }
 
+Future<void> _createPersonInPicker(WidgetTester tester, String name) async {
+  expect(find.byKey(const Key('person-picker-dialog')), findsOneWidget);
+  await tester.enterText(find.byKey(const Key('person-picker-search')), name);
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('person-picker-create')));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   setUp(() {
     faceCropLastLeafFolder = null;
@@ -187,6 +195,107 @@ void main() {
     expect(find.byKey(const Key('face-crop-person-name')), findsOneWidget);
     expect(find.byKey(const Key('face-crop-person-unassign')), findsOneWidget);
   });
+
+  testWidgets(
+    'face crop trays: returning to Faces re-syncs after a server assign',
+    (tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final persons = FakePersonsRepository(
+        persons: [
+          fixturePersonDetail(
+            id: 'person_1',
+            name: 'Sam',
+            appearances: [
+              fixtureAppearance(
+                id: 'ap_assigned',
+                personId: 'person_1',
+                itemId: 'item_a',
+                tagId: 'tag_a',
+                region: const TagRegion(
+                  yMin: 0.1,
+                  xMin: 0.1,
+                  yMax: 0.4,
+                  xMax: 0.4,
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+      persons.unassignedAppearances.add(
+        fixtureAppearance(
+          id: 'ap_u',
+          personId: null,
+          itemId: 'item_u',
+          tagId: 'tag_u',
+          region: const TagRegion(
+            yMin: 0.2,
+            xMin: 0.2,
+            yMax: 0.5,
+            xMax: 0.5,
+          ),
+        ),
+      );
+
+      final container = ProviderContainer(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          itemsRepositoryProvider.overrideWithValue(
+            _itemsInAlbum(['item_a', 'item_u']),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(activeTopLevelTabProvider.notifier).state =
+          TopLevelTab.faces;
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: FaceCropTraysPage(initialPersonId: 'person_1'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('face-crop-tray-unassigned')),
+          matching: find.byKey(const Key('face-crop-appearance-ap_u')),
+        ),
+        findsOneWidget,
+      );
+
+      // Same as item-detail Save: API mutated while Faces stayed mounted.
+      await persons.reassignAppearance('ap_u', personId: 'person_1');
+      container.read(activeTopLevelTabProvider.notifier).state =
+          TopLevelTab.persons;
+      await tester.pump();
+      container.read(activeTopLevelTabProvider.notifier).state =
+          TopLevelTab.faces;
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('face-crop-tray-unassigned')),
+          matching: find.byKey(const Key('face-crop-appearance-ap_u')),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('face-crop-tray-assigned')),
+          matching: find.byKey(const Key('face-crop-appearance-ap_u')),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('face crop trays: unassigned + excluded tiles show Image crops', (
     tester,
@@ -849,10 +958,8 @@ void main() {
     await tester.tap(find.byKey(const Key('face-crop-set-name-ap_u')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('person-name-dialog')), findsOneWidget);
-    await tester.enterText(find.byKey(const Key('person-name-field')), 'Riley');
-    await tester.tap(find.byKey(const Key('person-name-save')));
-    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('person-picker-dialog')), findsOneWidget);
+    await _createPersonInPicker(tester, 'Riley');
 
     expect(persons.reassignCalls, hasLength(1));
     expect(persons.reassignCalls.single.appearanceId, 'ap_u');
@@ -867,6 +974,145 @@ void main() {
       'Riley',
     );
   });
+
+  testWidgets(
+    'face crop trays: Set name assigns a Folder2 face to an existing '
+    'out-of-folder person without typing',
+    (tester) async {
+      final persons = FakePersonsRepository(
+        persons: [
+          fixturePersonDetail(
+            id: 'person_1',
+            name: 'Person1',
+            appearances: [
+              fixtureAppearance(
+                id: 'ap_f1',
+                personId: 'person_1',
+                itemId: 'item_folder1',
+                tagId: 'tag_f1',
+              ),
+            ],
+          ),
+        ],
+      );
+      persons.unassignedAppearances.add(
+        fixtureAppearance(
+          id: 'ap_f2',
+          personId: null,
+          itemId: 'item_folder2',
+          tagId: 'tag_f2',
+          region: const TagRegion(yMin: 0.2, xMin: 0.2, yMax: 0.5, xMax: 0.5),
+        ),
+      );
+      final items = FakeItemsRepository(
+        items: [
+          fixtureItem(
+            id: 'item_folder1',
+            sourceRef: 'file:///albums/Folder1/a.jpg',
+            processingStatus: ProcessingStatus.tagged,
+            contentHash: null,
+          ),
+          fixtureItem(
+            id: 'item_folder2',
+            sourceRef: 'file:///albums/Folder2/b.jpg',
+            processingStatus: ProcessingStatus.tagged,
+            contentHash: null,
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            personsRepositoryProvider.overrideWithValue(persons),
+            itemsRepositoryProvider.overrideWithValue(items),
+          ],
+          child: const MaterialApp(
+            home: FaceCropTraysPage(initialLeafFolder: '/albums/Folder2'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('face-crop-set-name-ap_f2')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('person-picker-dialog')), findsOneWidget);
+      expect(
+        find.byKey(const Key('person-picker-option-person_1')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('person-picker-option-person_1')));
+      await tester.pumpAndSettle();
+
+      expect(persons.reassignCalls, hasLength(1));
+      expect(persons.reassignCalls.single.appearanceId, 'ap_f2');
+      expect(persons.reassignCalls.single.personId, 'person_1');
+      expect(persons.reassignCalls.single.name, isNull);
+      expect(
+        tester.widget<Text>(find.byKey(const Key('face-crop-person-name'))).data,
+        'Person1',
+      );
+    },
+  );
+
+  testWidgets(
+    'face crop trays: Set name greys a person already on this photo',
+    (tester) async {
+      final persons = FakePersonsRepository(
+        persons: [
+          fixturePersonDetail(
+            id: 'person_1',
+            name: 'Sam',
+            appearances: [
+              fixtureAppearance(
+                id: 'ap_a',
+                personId: 'person_1',
+                itemId: 'item_same',
+                tagId: 'tag_a',
+              ),
+            ],
+          ),
+        ],
+      );
+      persons.unassignedAppearances.add(
+        fixtureAppearance(
+          id: 'ap_b',
+          personId: null,
+          itemId: 'item_same',
+          tagId: 'tag_b',
+          region: const TagRegion(yMin: 0.2, xMin: 0.5, yMax: 0.5, xMax: 0.8),
+        ),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            personsRepositoryProvider.overrideWithValue(persons),
+            itemsRepositoryProvider.overrideWithValue(
+              _itemsInAlbum(['item_same']),
+            ),
+          ],
+          child: const MaterialApp(home: FaceCropTraysPage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('face-crop-set-name-ap_b')));
+      await tester.pumpAndSettle();
+
+      final tile = tester.widget<ListTile>(
+        find.byKey(const Key('person-picker-option-person_1')),
+      );
+      expect(tile.enabled, isFalse);
+      expect(find.text('already on this photo'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('person-picker-option-person_1')));
+      await tester.pumpAndSettle();
+      expect(persons.reassignCalls, isEmpty);
+      await tester.tap(find.byKey(const Key('person-picker-cancel')));
+      await tester.pumpAndSettle();
+    },
+  );
 
   testWidgets('face crop trays: click selects; Cmd+click multi-selects', (
     tester,
@@ -1522,10 +1768,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('person-name-dialog')), findsOneWidget);
-      await tester.enterText(find.byKey(const Key('person-name-field')), 'Sam');
-      await tester.tap(find.byKey(const Key('person-name-save')));
-      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('person-picker-dialog')), findsOneWidget);
+      await _createPersonInPicker(tester, 'Sam');
 
       expect(persons.assignFaceGroupCalls, hasLength(1));
       expect(persons.assignFaceGroupCalls.single.faceGroupId, 'fg_1');
@@ -1540,6 +1784,91 @@ void main() {
             .widget<Text>(find.byKey(const Key('face-crop-person-name')))
             .data,
         'Sam',
+      );
+    },
+  );
+
+  testWidgets(
+    'face crop trays: New person in the Set name picker names a Similar-faces group',
+    (tester) async {
+      final persons = FakePersonsRepository(
+        persons: [
+          fixturePersonDetail(
+            id: 'person_1',
+            name: 'Person1',
+            appearances: const [],
+          ),
+        ],
+      );
+      persons.unassignedAppearances.addAll([
+        fixtureAppearance(
+          id: 'ap_a',
+          personId: null,
+          faceGroupId: 'fg_1',
+          faceGroupKind: FaceGroupKind.fa,
+          itemId: 'item_a',
+          tagId: 'tag_a',
+          region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
+        ),
+        fixtureAppearance(
+          id: 'ap_b',
+          personId: null,
+          faceGroupId: 'fg_1',
+          faceGroupKind: FaceGroupKind.fa,
+          itemId: 'item_b',
+          tagId: 'tag_b',
+          region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
+        ),
+      ]);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            personsRepositoryProvider.overrideWithValue(persons),
+            itemsRepositoryProvider.overrideWithValue(
+              _itemsInAlbum(['item_a', 'item_b']),
+            ),
+          ],
+          child: const MaterialApp(home: FaceCropTraysPage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const Key('face-crop-facegroup-set-name-fg_1')),
+      );
+      await tester.pumpAndSettle();
+
+      // New person is offered even though an existing person is listed and
+      // nothing has been typed into the search box.
+      expect(
+        find.byKey(const Key('person-picker-option-person_1')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('person-picker-create')), findsOneWidget);
+      expect(find.text('New person'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('person-picker-create')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('person-name-dialog')), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const Key('person-name-field')),
+        'Riley',
+      );
+      await tester.tap(find.byKey(const Key('person-name-save')));
+      await tester.pumpAndSettle();
+
+      expect(persons.assignFaceGroupCalls, hasLength(1));
+      expect(persons.assignFaceGroupCalls.single.faceGroupId, 'fg_1');
+      expect(persons.assignFaceGroupCalls.single.name, 'Riley');
+      expect(persons.assignFaceGroupCalls.single.personId, isNull);
+      expect(find.byKey(const Key('face-crop-facegroup-fg_1')), findsNothing);
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('face-crop-person-name')))
+            .data,
+        'Riley',
       );
     },
   );
@@ -1600,9 +1929,7 @@ void main() {
         find.byKey(const Key('face-crop-facegroup-set-name-fg_same')),
       );
       await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const Key('person-name-field')), 'Sam');
-      await tester.tap(find.byKey(const Key('person-name-save')));
-      await tester.pumpAndSettle();
+      await _createPersonInPicker(tester, 'Sam');
 
       expect(persons.assignFaceGroupCalls, hasLength(1));
       expect(

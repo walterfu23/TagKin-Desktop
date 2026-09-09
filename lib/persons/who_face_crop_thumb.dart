@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,60 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/face_crop_cache.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
+
+/// LRU of `personId →` representative appearance for [PersonListFaceThumb].
+///
+/// Without this, every picker/list row calls `GET /persons/{id}` on mount and
+/// again whenever the row rebuilds after a scroll-away.
+class PersonAppearanceMemo {
+  PersonAppearanceMemo._();
+
+  static final PersonAppearanceMemo instance = PersonAppearanceMemo._();
+
+  static const int maxEntries = 200;
+
+  final LinkedHashMap<String, PersonAppearance?> _cache = LinkedHashMap();
+  final Map<String, Future<PersonAppearance?>> _inflight = {};
+
+  Future<PersonAppearance?> getOrLoad(
+    String personId,
+    Future<PersonAppearance?> Function() load,
+  ) {
+    if (_cache.containsKey(personId)) {
+      final cached = _cache.remove(personId);
+      _cache[personId] = cached;
+      return Future<PersonAppearance?>.value(cached);
+    }
+    final pending = _inflight[personId];
+    if (pending != null) return pending;
+    final future = () async {
+      try {
+        final value = await load();
+        _inflight.remove(personId);
+        _store(personId, value);
+        return value;
+      } catch (_) {
+        _inflight.remove(personId);
+        rethrow;
+      }
+    }();
+    _inflight[personId] = future;
+    return future;
+  }
+
+  void _store(String personId, PersonAppearance? appearance) {
+    _cache[personId] = appearance;
+    if (_cache.length > maxEntries) {
+      _cache.remove(_cache.keys.first);
+    }
+  }
+
+  /// Test/debug hook — drops cached rows (in-flight loads still complete).
+  @visibleForTesting
+  void clear() {
+    _cache.clear();
+  }
+}
 
 /// Who-face crop thumbnail for a person appearance (D9).
 ///
@@ -236,14 +291,20 @@ class _PersonListFaceThumbState extends ConsumerState<PersonListFaceThumb> {
     }
   }
 
-  Future<PersonAppearance?> _load() async {
-    final detail = await ref
-        .read(personsRepositoryProvider)
-        .getPerson(widget.personId);
-    for (final a in detail.appearances) {
-      if (a.itemId != null && a.tagId != null) return a;
-    }
-    return detail.appearances.isEmpty ? null : detail.appearances.first;
+  Future<PersonAppearance?> _load() {
+    return PersonAppearanceMemo.instance.getOrLoad(widget.personId, () async {
+      try {
+        final detail = await ref
+            .read(personsRepositoryProvider)
+            .getPerson(widget.personId);
+        for (final a in detail.appearances) {
+          if (a.itemId != null && a.tagId != null) return a;
+        }
+        return detail.appearances.isEmpty ? null : detail.appearances.first;
+      } catch (_) {
+        return null;
+      }
+    });
   }
 
   @override

@@ -426,6 +426,17 @@ void main() {
         authState.terminate();
       });
 
+      test('ignores rotating token when no sign-in is in progress', () async {
+        final authState = await createSignedOutAuthState();
+        final uri = Uri.parse(
+            'tagkindesktop://oauth/callback?rotating_token_nonce=stale');
+
+        final result = await authState.parseDeepLink(uri);
+
+        expect(result, isFalse);
+        authState.terminate();
+      });
+
       test('handles deep link with rotating token', () async {
         final user = createTestUser();
         final session = createTestSession(user: user);

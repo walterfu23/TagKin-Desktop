@@ -170,6 +170,14 @@ void main() {
 
     expect(persons.unlinkCalls, ['ap_a']);
     expect(find.byKey(const Key('undo-depth')), findsOneWidget);
+    final badge = tester.widget<Text>(find.byKey(const Key('undo-depth')));
+    final titleSize =
+        Theme.of(tester.element(find.text('Faces')))
+            .textTheme
+            .titleLarge
+            ?.fontSize ??
+        22;
+    expect(badge.style!.fontSize!, lessThan(titleSize));
 
     await _cmdZ(tester);
 
@@ -210,11 +218,13 @@ void main() {
 
     await tester.tap(find.byKey(const Key('face-crop-set-name-ap_u')));
     await tester.pumpAndSettle();
+    expect(find.byKey(const Key('person-picker-dialog')), findsOneWidget);
     await tester.enterText(
-      find.byKey(const Key('person-name-field')),
+      find.byKey(const Key('person-picker-search')),
       'Riley',
     );
-    await tester.tap(find.byKey(const Key('person-name-save')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('person-picker-create')));
     await tester.pumpAndSettle();
 
     expect(persons.unassignedAppearances, isEmpty);
@@ -230,6 +240,64 @@ void main() {
       reason: 'Cmd+Z after Set name should return the face to Unassigned',
     );
     expect(find.byKey(const Key('undo-depth')), findsNothing);
+  });
+
+  testWidgets(
+      'Set name onto an existing person then Cmd+Z unlinks',
+      (tester) async {
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: 'Sam',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_a',
+              personId: 'person_1',
+              itemId: 'item_a',
+              tagId: 'tag_a',
+            ),
+          ],
+        ),
+      ],
+    );
+    persons.unassignedAppearances.add(
+      fixtureAppearance(
+        id: 'ap_u',
+        personId: null,
+        itemId: 'item_u',
+        tagId: 'tag_u',
+        region: const TagRegion(
+          yMin: 0.2,
+          xMin: 0.2,
+          yMax: 0.5,
+          xMax: 0.5,
+        ),
+      ),
+    );
+
+    await _pumpFacesUndoHost(
+      tester,
+      persons: persons,
+      itemIds: const ['item_a', 'item_u'],
+    );
+
+    await tester.tap(find.byKey(const Key('face-crop-set-name-ap_u')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('person-picker-option-person_1')));
+    await tester.pumpAndSettle();
+
+    expect(persons.reassignCalls.single.personId, 'person_1');
+    expect(persons.reassignCalls.single.name, isNull);
+    expect(persons.unassignedAppearances, isEmpty);
+
+    await _cmdZ(tester);
+
+    expect(persons.unlinkCalls, contains('ap_u'));
+    expect(
+      persons.unassignedAppearances.any((a) => a.id == 'ap_u'),
+      isTrue,
+    );
   });
 
   testWidgets(
@@ -277,11 +345,13 @@ void main() {
       find.byKey(const Key('face-crop-facegroup-set-name-fg_1')),
     );
     await tester.pumpAndSettle();
+    expect(find.byKey(const Key('person-picker-dialog')), findsOneWidget);
     await tester.enterText(
-      find.byKey(const Key('person-name-field')),
+      find.byKey(const Key('person-picker-search')),
       'Sam',
     );
-    await tester.tap(find.byKey(const Key('person-name-save')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('person-picker-create')));
     await tester.pumpAndSettle();
 
     expect(persons.assignFaceGroupCalls, hasLength(1));

@@ -2,13 +2,13 @@ import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:ui' show AppExitResponse;
 
-import 'package:app_links/app_links.dart';
 import 'package:clerk_auth/clerk_auth.dart' show RetryOptions, Strategy;
 import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:tagkin_desktop/auth/macos_oauth_deep_links.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/api/comments_repository.dart';
 import 'package:tagkin_desktop/api/corrections_repository.dart';
@@ -141,41 +141,12 @@ class TestSession {
   final Future<void> Function()? onSignOut;
 }
 
-/// Custom URL scheme macOS routes OAuth callbacks back into the app through
-/// (registered in `macos/Runner/Info.plist` `CFBundleURLTypes`).
-const _oauthRedirectScheme = 'tagkindesktop';
-
 /// Deep-link target for [ClerkAuthConfig.redirectionGenerator] — only OAuth
 /// strategies get a bespoke redirect; other strategies (password/email code)
 /// return null so they're unaffected.
 Uri? _oauthRedirectUri(BuildContext context, Strategy strategy) {
   if (!strategy.isOauth) return null;
-  return Uri(scheme: _oauthRedirectScheme, host: 'oauth', path: '/callback');
-}
-
-/// Initial open + later `tagkindesktop://` hops (app_links 7 has no allUriLinkStream).
-Stream<Uri?> _macosOauthDeepLinks() async* {
-  final links = AppLinks();
-  try {
-    final initial = await links.getInitialLink();
-    if (initial != null) {
-      _debugOauthDeepLink(initial);
-      yield initial;
-    }
-  } catch (_) {}
-  yield* links.uriLinkStream.map<Uri?>((uri) {
-    _debugOauthDeepLink(uri);
-    return uri;
-  });
-}
-
-void _debugOauthDeepLink(Uri uri) {
-  if (!kDebugMode) return;
-  final hasNonce = uri.queryParameters.containsKey('rotating_token_nonce');
-  debugPrint(
-    'macOS OAuth callback ${uri.scheme}://${uri.host}${uri.path}'
-    '${hasNonce ? ' (has nonce)' : ' (missing nonce)'}',
-  );
+  return Uri(scheme: kOauthRedirectScheme, host: 'oauth', path: '/callback');
 }
 
 /// Auth-gated shell: Clerk sign-in when configured, else a configure prompt;
@@ -211,6 +182,10 @@ class AuthShell extends ConsumerWidget {
         httpConnectionTimeout: const Duration(seconds: 15),
         retryOptions: const RetryOptions(maxAttempts: 3),
         sessionTokenPolling: false,
+        // Default 9.7s client refresh races the rotating-token nonce exchange
+        // after Safari Allow and can replace the new session with a
+        // session-less client (login screen stays up / flashes back).
+        clientRefreshPeriod: Duration.zero,
         loading: const _ClerkBootLoading(),
         // macOS only: send OAuth (Google, etc.) to the system browser instead
         // of the in-app WKWebView popup. The embedded webview hits an
@@ -220,7 +195,7 @@ class AuthShell extends ConsumerWidget {
         // flutter/flutter#170316, #184557). Windows uses WebView2, not
         // WKWebView, so it is not affected and keeps the in-app popup.
         redirectionGenerator: Platform.isMacOS ? _oauthRedirectUri : null,
-        deepLinkStream: Platform.isMacOS ? _macosOauthDeepLinks() : null,
+        deepLinkStream: Platform.isMacOS ? macosOauthDeepLinks() : null,
       ),
       child: ClerkErrorListener(
         child: ClerkAuthBuilder(
