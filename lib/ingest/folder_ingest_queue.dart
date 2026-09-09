@@ -54,9 +54,14 @@ class FolderIngestJob {
   FolderIngestJob({
     required this.folderPath,
     this.continueExistingOnly = false,
+    this.collectionId,
   });
 
   final String folderPath;
+
+  /// Collection that started this job (banner + membership claim).
+  /// Null when no collection session was open at enqueue.
+  final String? collectionId;
 
   /// Skip enumerate / create; pipeline incomplete library items under this root.
   final bool continueExistingOnly;
@@ -141,6 +146,8 @@ class FolderIngestQueue extends ChangeNotifier {
     this.uploadFactory,
     this.whoFaceLinkerFactory,
     this.onLibraryMembershipPublish,
+    this.currentCollectionId,
+    this.collectionIdForFolder,
     this.onItemUpdated,
     this.accountId,
     this.checkpointStore,
@@ -164,9 +171,18 @@ class FolderIngestQueue extends ChangeNotifier {
   final UploadController Function()? uploadFactory;
   final WhoFaceLinker Function()? whoFaceLinkerFactory;
 
-  /// Adopt / claim leaves for the open collection after register (or done).
-  /// Receives the ingest root path so owned-elsewhere leaves can be claimed.
-  final Future<void> Function(String folderPath)? onLibraryMembershipPublish;
+  /// Adopt / claim leaves after register (or done).
+  /// [collectionId] is the collection that started the job, when known.
+  final Future<void> Function(
+    String folderPath, {
+    String? collectionId,
+  })? onLibraryMembershipPublish;
+
+  /// Open collection at enqueue time (Add from folder).
+  final String? Function()? currentCollectionId;
+
+  /// Collection that already owns [folderPath], used on crash-resume enqueue.
+  final String? Function(String folderPath)? collectionIdForFolder;
 
   /// Live Folders-row patch as upload/analyze finishes (no full table reload).
   final void Function(Item item)? onItemUpdated;
@@ -211,6 +227,20 @@ class FolderIngestQueue extends ChangeNotifier {
 
   int get activeJobCount => _jobs.where((j) => j.isActive).length;
 
+  /// Jobs whose [FolderIngestJob.collectionId] matches [collectionId].
+  ///
+  /// When [collectionId] is null (no open collection), returns every job.
+  List<FolderIngestJob> jobsForCollection(String? collectionId) {
+    if (collectionId == null) return jobs;
+    return [
+      for (final j in _jobs)
+        if (j.collectionId == collectionId) j,
+    ];
+  }
+
+  int activeJobCountForCollection(String? collectionId) =>
+      jobsForCollection(collectionId).where((j) => j.isActive).length;
+
   /// 1 or 2 after the RAM probe; 2 until the first job slot is acquired.
   @visibleForTesting
   int get maxParallelJobs => _maxParallelJobs;
@@ -239,11 +269,14 @@ class FolderIngestQueue extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _publishMembership(String folderPath) async {
+  Future<void> _publishMembership(
+    String folderPath, {
+    String? collectionId,
+  }) async {
     final hook = onLibraryMembershipPublish;
     if (hook == null || _disposed) return;
     try {
-      await hook(folderPath);
+      await hook(folderPath, collectionId: collectionId);
     } catch (e, st) {
       debugPrint('FolderIngestQueue membership publish failed: $e\n$st');
     }
@@ -263,9 +296,14 @@ class FolderIngestQueue extends ChangeNotifier {
   }
 
   /// Bump library refresh and adopt membership from an unfiltered item list.
-  Future<void> _bumpLibraryAndPublish(String folderPath) async {
+  Future<void> _bumpLibraryAndPublish(
+    FolderIngestJob job,
+  ) async {
     _libraryRefreshTick++;
-    await _publishMembership(folderPath);
+    await _publishMembership(
+      job.folderPath,
+      collectionId: job.collectionId,
+    );
     _safeNotify();
   }
 
@@ -303,7 +341,11 @@ class FolderIngestQueue extends ChangeNotifier {
     final paths = await store.listForAccount(id);
     for (final path in paths) {
       if (_disposed) return;
-      await enqueue(path);
+      await enqueue(
+        path,
+        collectionId:
+            collectionIdForFolder?.call(path) ?? currentCollectionId?.call(),
+      );
     }
   }
 
@@ -321,7 +363,12 @@ class FolderIngestQueue extends ChangeNotifier {
     for (final root in roots) {
       if (_disposed) return;
       if (_hasActiveJobCovering(root)) continue;
-      await enqueue(root, continueExistingOnly: true);
+      await enqueue(
+        root,
+        continueExistingOnly: true,
+        collectionId:
+            collectionIdForFolder?.call(root) ?? currentCollectionId?.call(),
+      );
     }
   }
 
@@ -373,6 +420,7 @@ class FolderIngestQueue extends ChangeNotifier {
   Future<FolderIngestEnqueueResult> enqueue(
     String folderPath, {
     bool continueExistingOnly = false,
+    String? collectionId,
   }) async {
     final normalized = normalizePath(folderPath);
     if (_jobs.any((j) => j.folderPath == normalized && j.isActive)) {
@@ -381,6 +429,7 @@ class FolderIngestQueue extends ChangeNotifier {
     final job = FolderIngestJob(
       folderPath: normalized,
       continueExistingOnly: continueExistingOnly,
+      collectionId: collectionId ?? currentCollectionId?.call(),
     );
     _jobs = [..._jobs, job];
     _safeNotify();
@@ -569,7 +618,7 @@ class FolderIngestQueue extends ChangeNotifier {
       job.phase = FolderIngestJobPhase.error;
       job.error = e;
       await _checkpointRemove(job.folderPath);
-      await _bumpLibraryAndPublish(job.folderPath);
+      await _bumpLibraryAndPublish(job);
     }
   }
 
@@ -598,7 +647,7 @@ class FolderIngestQueue extends ChangeNotifier {
       job.phase = FolderIngestJobPhase.done;
       await _checkpointRemove(job.folderPath);
       // Reveal Faces + adopt membership (e.g. prior items under this root).
-      await _bumpLibraryAndPublish(job.folderPath);
+      await _bumpLibraryAndPublish(job);
       return;
     }
 
@@ -607,7 +656,7 @@ class FolderIngestQueue extends ChangeNotifier {
     job.phase = FolderIngestJobPhase.processing;
     job.pipelineDone = 0;
     job.pipelineTotal = succeeded;
-    await _bumpLibraryAndPublish(job.folderPath);
+    await _bumpLibraryAndPublish(job);
     if (_disposed) return;
 
     final prePass =
@@ -691,7 +740,7 @@ class FolderIngestQueue extends ChangeNotifier {
       job.phase = FolderIngestJobPhase.done;
     }
     await _checkpointRemove(job.folderPath);
-    await _bumpLibraryAndPublish(job.folderPath);
+    await _bumpLibraryAndPublish(job);
   }
 }
 
@@ -724,7 +773,14 @@ final folderIngestQueueProvider = ChangeNotifierProvider<FolderIngestQueue>(
       contentHasher: ref.read(contentHasherProvider),
       perceptualHasher: ref.read(perceptualHasherProvider),
       samplingPrefs: () => ref.read(desktopPrefsProvider),
-      onLibraryMembershipPublish: (folderPath) async {
+      currentCollectionId: () {
+        final cols = ref.read(collectionsControllerProvider);
+        return cols.sessionReady ? cols.current.id : null;
+      },
+      collectionIdForFolder: (path) {
+        return ref.read(collectionsControllerProvider).ownerCollectionId(path);
+      },
+      onLibraryMembershipPublish: (folderPath, {collectionId}) async {
         final cols = ref.read(collectionsControllerProvider);
         final table = ref.read(libraryTableControllerProvider);
         await publishCollectionMembershipFromLibrary(
@@ -732,6 +788,7 @@ final folderIngestQueueProvider = ChangeNotifierProvider<FolderIngestQueue>(
           cols: cols,
           table: table,
           claimUnderFolder: folderPath,
+          claimForCollectionId: collectionId,
         );
       },
       onItemUpdated: (item) {

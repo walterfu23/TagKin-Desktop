@@ -464,55 +464,108 @@ class CollectionsController extends ChangeNotifier {
     return true;
   }
 
-  /// Move [folders] onto the open collection, stripping them from any other
+  /// Move [folders] onto [collectionId], stripping them from any other
   /// collection (one-folder-one-collection). Persists immediately without *
-  /// — used when Add-from-folder claims leaves for the open collection.
+  /// — used when Add-from-folder claims leaves for the collection that
+  /// started ingest (even if another collection is open).
   ///
   /// Returns true when membership or another collection changed.
   Future<bool> claimFoldersForCurrent(Iterable<String> folders) async {
     final cur = _current;
     if (cur == null || !sessionReady) return false;
+    return claimFoldersFor(cur.id, folders);
+  }
+
+  /// Like [claimFoldersForCurrent] for any catalog (or current) collection.
+  Future<bool> claimFoldersFor(
+    String collectionId,
+    Iterable<String> folders,
+  ) async {
+    if (collectionId.isEmpty) return false;
     final claim = <String>{
       for (final f in folders)
         if (normalizeLeafFolder(f) case final key when key.isNotEmpty) key,
     };
     if (claim.isEmpty) return false;
 
-    var catalogChanged = false;
-    final updatedOthers = <Collection>[];
-    for (final c in _catalog.collections) {
-      if (c.id == cur.id) {
-        updatedOthers.add(c);
-        continue;
+    Collection? target;
+    if (_current?.id == collectionId) {
+      target = _current;
+    } else {
+      for (final c in _catalog.collections) {
+        if (c.id == collectionId) {
+          target = c;
+          break;
+        }
+      }
+    }
+    if (target == null) return false;
+
+    var changed = false;
+    final nextList = <Collection>[];
+    var sawCurrent = false;
+    void addRow(Collection c) {
+      if (_current != null && c.id == _current!.id) sawCurrent = true;
+      if (c.id == collectionId) {
+        nextList.add(c);
+        return;
       }
       final nextLeaves = [
         for (final f in c.leafFolders)
           if (!claim.contains(normalizeLeafFolder(f))) f,
       ];
       if (nextLeaves.length != c.leafFolders.length) {
-        catalogChanged = true;
-        updatedOthers.add(c.copyWith(leafFolders: nextLeaves));
+        changed = true;
+        nextList.add(c.copyWith(leafFolders: nextLeaves));
       } else {
-        updatedOthers.add(c);
+        nextList.add(c);
       }
     }
-    if (catalogChanged) {
-      _catalog = _catalog.copyWith(collections: updatedOthers);
+
+    for (final c in _catalog.collections) {
+      if (_current != null && c.id == _current!.id) {
+        addRow(_current!);
+      } else {
+        addRow(c);
+      }
+    }
+    if (_current != null && !sawCurrent) addRow(_current!);
+
+    if (!nextList.any((c) => c.id == collectionId)) {
+      addRow(target);
     }
 
-    final next = List<String>.of(cur.leafFolders);
-    var membershipChanged = false;
+    final targetIndex = nextList.indexWhere((c) => c.id == collectionId);
+    if (targetIndex < 0) return false;
+    final priorTarget = nextList[targetIndex];
+    final nextTargetLeaves = List<String>.of(priorTarget.leafFolders);
     for (final f in claim) {
-      if (_folderIn(next, f)) continue;
-      next.add(f);
-      membershipChanged = true;
+      if (_folderIn(nextTargetLeaves, f)) continue;
+      nextTargetLeaves.add(f);
+      changed = true;
     }
-    if (!catalogChanged && !membershipChanged) return false;
+    if (!changed) return false;
+    nextList[targetIndex] = priorTarget.copyWith(leafFolders: nextTargetLeaves);
 
-    final updated = cur.copyWith(leafFolders: next);
-    _current = updated;
-    await _writeCurrentToCatalog(updated);
-    _captureBaseline();
+    _catalog = CollectionsFile(
+      collections: nextList,
+      currentCollectionId: _catalog.currentCollectionId,
+      recentCollectionIds: _catalog.recentCollectionIds,
+    );
+    await _store.save(_catalog);
+
+    final cur = _current;
+    if (cur != null) {
+      for (final c in nextList) {
+        if (c.id != cur.id) continue;
+        final foldersChanged = !_listEq(c.leafFolders, cur.leafFolders);
+        _current = c;
+        if (foldersChanged || c.id == collectionId) {
+          _captureBaseline();
+        }
+        break;
+      }
+    }
     notifyListeners();
     return true;
   }

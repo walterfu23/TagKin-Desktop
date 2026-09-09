@@ -12,13 +12,15 @@ import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 /// previously could be shrunk out of membership).
 ///
 /// When [claimUnderFolder] is set (folder ingest finish), leaves under that
-/// root are **claimed** for the open collection even if another collection
-/// previously owned them — Add-from-folder means "show this folder here".
+/// root are **claimed** for [claimForCollectionId] (the collection that
+/// started ingest) or the open collection when that id is omitted.
+/// Add-from-folder on the open collection still means "show this folder here".
 Future<void> publishCollectionMembershipFromLibrary({
   required ItemsRepository items,
   required CollectionsController cols,
   required LibraryTableController table,
   String? claimUnderFolder,
+  String? claimForCollectionId,
 }) async {
   if (!cols.hasCurrent) return;
   final all = await items.listItems();
@@ -32,21 +34,29 @@ Future<void> publishCollectionMembershipFromLibrary({
       for (final f in folders)
         if (f == root || pathIsUnderFolder(f, root)) f,
     ];
+    final targetId = (claimForCollectionId != null &&
+            claimForCollectionId.isNotEmpty)
+        ? claimForCollectionId
+        : cols.current.id;
     if (under.isNotEmpty) {
-      await cols.claimFoldersForCurrent(under);
-      // Ensure newly claimed sibling leaves are visible in the Folders tree.
-      for (final leaf in under) {
-        var dir = normalizeLeafFolder(leaf);
-        while (dir.isNotEmpty && dir != p.posix.dirname(dir)) {
-          table.expandedSourceDirs.add(dir);
-          final parent = p.posix.dirname(dir);
-          if (parent == dir) break;
-          dir = parent;
+      await cols.claimFoldersFor(targetId, under);
+      if (targetId == cols.current.id) {
+        // Ensure newly claimed sibling leaves are visible in the Folders tree.
+        for (final leaf in under) {
+          var dir = normalizeLeafFolder(leaf);
+          while (dir.isNotEmpty && dir != p.posix.dirname(dir)) {
+            table.expandedSourceDirs.add(dir);
+            final parent = p.posix.dirname(dir);
+            if (parent == dir) break;
+            dir = parent;
+          }
         }
       }
-    } else if (cols.current.leafFolders.isEmpty && folders.isNotEmpty) {
+    } else if (targetId == cols.current.id &&
+        cols.current.leafFolders.isEmpty &&
+        folders.isNotEmpty) {
       await cols.fillMembershipIfEmpty(folders);
-    } else {
+    } else if (targetId == cols.current.id) {
       cols.adoptUnownedFolders(folders);
     }
   } else if (cols.current.leafFolders.isEmpty && folders.isNotEmpty) {

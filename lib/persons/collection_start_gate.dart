@@ -78,7 +78,6 @@ class CollectionStartGate extends ConsumerWidget {
                     cols.setLibraryFolders(libraryFolders);
                     final ok = await cols.create(
                       name: name,
-                      seedFolders: libraryFolders,
                     );
                     if (!context.mounted) return;
                     if (!ok) {
@@ -148,7 +147,6 @@ Future<void> runCollectionMenuCommand({
       if (name == null || !context.mounted) return;
       final ok = await cols.create(
         name: name,
-        seedFolders: libraryFolders,
         resolveDirty: dirty,
       );
       if (!ok && context.mounted) {

@@ -184,4 +184,59 @@ void main() {
       contains('/Users/w/test/20260508'),
     );
   });
+
+  test('publish claims ingest root into origin collection not the open one',
+      () async {
+    final items = FakeItemsRepository(
+      items: [
+        fixtureItem(
+          id: 'old1',
+          sourceRef: 'file:///albums/Old/1.jpg',
+          processingStatus: ProcessingStatus.pending,
+          contentHash: 'h1',
+        ),
+      ],
+    );
+    final store = MemoryCollectionsStore(
+      const CollectionsFile(
+        collections: [
+          Collection(
+            id: 'c1',
+            name: 'First',
+            leafFolders: ['/albums/Old'],
+          ),
+          Collection(
+            id: 'c2',
+            name: 'Second',
+            leafFolders: [],
+          ),
+        ],
+        currentCollectionId: 'c2',
+      ),
+    );
+    final cols = CollectionsController(store: store);
+    await cols.load();
+    expect(await cols.open('c2'), isTrue);
+
+    final table = LibraryTableController(
+      itemsRepository: items,
+      commentsRepository: FakeCommentsRepository(),
+    );
+
+    await publishCollectionMembershipFromLibrary(
+      items: items,
+      cols: cols,
+      table: table,
+      claimUnderFolder: '/albums/Old',
+      claimForCollectionId: 'c1',
+    );
+
+    expect(cols.current.id, 'c2');
+    expect(cols.current.leafFolders, isEmpty);
+    expect(
+      cols.catalog.collections.firstWhere((c) => c.id == 'c1').leafFolders,
+      ['/albums/Old'],
+    );
+    expect(table.collectionLeafFolders, isEmpty);
+  });
 }

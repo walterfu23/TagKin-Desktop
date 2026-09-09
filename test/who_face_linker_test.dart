@@ -22,9 +22,11 @@ class _FixedModelEmbedder implements FaceEmbedder {
   _FixedModelEmbedder(this.modelId);
 
   final String modelId;
+  final List<Uint8List> seen = [];
 
   @override
   Future<List<FaceAppearance>> embed(Uint8List bytes) async {
+    seen.add(bytes);
     return [
       FaceAppearance(
         embedding: List<double>.filled(kFaceEmbeddingDim, 0.01),
@@ -32,6 +34,44 @@ class _FixedModelEmbedder implements FaceEmbedder {
       ),
     ];
   }
+}
+
+/// Bytes that are not JPEG/PNG — `package:image` cannot decode them.
+Uint8List _undecodableHeicLike() =>
+    Uint8List.fromList([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70]);
+
+Future<(Item, FakeItemsRepository, File)> _whoItemWithFile({
+  required String fileName,
+  required List<int> bytes,
+}) async {
+  final dir = await Directory.systemTemp.createTemp('who_heic_');
+  addTearDown(() => deleteTempDir(dir));
+  final file = File(p.join(dir.path, fileName));
+  await file.writeAsBytes(bytes);
+  final item = fixtureItem(
+    id: 'item_1',
+    type: ItemType.photo,
+    sourceRef: Uri.file(file.path).toString(),
+    processingStatus: ProcessingStatus.tagged,
+    contentHash: null,
+  );
+  final items = FakeItemsRepository(items: [item]);
+  items.setKnowledge(
+    item.id,
+    fixtureKnowledge(
+      item: item,
+      tags: [
+        fixtureTag(
+          id: '00000000-0000-4000-8000-000000000002',
+          itemId: item.id,
+          dimension: 'who',
+          value: 'Someone',
+          region: const TagRegion(yMin: 0.2, xMin: 0.2, yMax: 0.6, xMax: 0.6),
+        ),
+      ],
+    ),
+  );
+  return (item, items, file);
 }
 
 void main() {
@@ -62,17 +102,19 @@ void main() {
     expect(img.decodeImage(crop), isNotNull);
   });
 
-  test('cropWhoFaceJpegAsync returns a non-empty jpeg for a valid region',
-      () async {
-    final image = img.Image(width: 100, height: 100);
-    img.fill(image, color: img.ColorRgb8(200, 100, 50));
-    final bytes = Uint8List.fromList(img.encodeJpg(image));
-    const region = TagRegion(yMin: 0.2, xMin: 0.2, yMax: 0.6, xMax: 0.6);
-    final crop = await cropWhoFaceJpegAsync(bytes, region);
-    expect(crop, isNotNull);
-    expect(crop!.length, greaterThan(50));
-    expect(img.decodeImage(crop), isNotNull);
-  });
+  test(
+    'cropWhoFaceJpegAsync returns a non-empty jpeg for a valid region',
+    () async {
+      final image = img.Image(width: 100, height: 100);
+      img.fill(image, color: img.ColorRgb8(200, 100, 50));
+      final bytes = Uint8List.fromList(img.encodeJpg(image));
+      const region = TagRegion(yMin: 0.2, xMin: 0.2, yMax: 0.6, xMax: 0.6);
+      final crop = await cropWhoFaceJpegAsync(bytes, region);
+      expect(crop, isNotNull);
+      expect(crop!.length, greaterThan(50));
+      expect(img.decodeImage(crop), isNotNull);
+    },
+  );
 
   test('cropManyWhoFacesJpeg decodes once and crops every region', () {
     final image = img.Image(width: 120, height: 120);
@@ -116,40 +158,36 @@ void main() {
     expect(crops, [null, null]);
   });
 
-  test('cropManyWhoFacesJpegAsync decodes once and crops every region',
-      () async {
-    final image = img.Image(width: 100, height: 100);
-    img.fill(image, color: img.ColorRgb8(50, 60, 70));
-    final bytes = Uint8List.fromList(img.encodeJpg(image));
-    const regions = [
-      TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
-      TagRegion(yMin: 0.5, xMin: 0.5, yMax: 0.9, xMax: 0.9),
-    ];
+  test(
+    'cropManyWhoFacesJpegAsync decodes once and crops every region',
+    () async {
+      final image = img.Image(width: 100, height: 100);
+      img.fill(image, color: img.ColorRgb8(50, 60, 70));
+      final bytes = Uint8List.fromList(img.encodeJpg(image));
+      const regions = [
+        TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
+        TagRegion(yMin: 0.5, xMin: 0.5, yMax: 0.9, xMax: 0.9),
+      ];
 
-    final crops = await cropManyWhoFacesJpegAsync(bytes, regions);
+      final crops = await cropManyWhoFacesJpegAsync(bytes, regions);
 
-    expect(crops, hasLength(2));
-    expect(crops[0], isNotNull);
-    expect(crops[1], isNotNull);
-  });
+      expect(crops, hasLength(2));
+      expect(crops[0], isNotNull);
+      expect(crops[1], isNotNull);
+    },
+  );
 
   test('canCropLocalMediaForDisplay allows available and hashMismatch', () {
     final file = File('/tmp/unused');
     expect(
       canCropLocalMediaForDisplay(
-        LocalMediaResolution(
-          status: LocalMediaStatus.available,
-          file: file,
-        ),
+        LocalMediaResolution(status: LocalMediaStatus.available, file: file),
       ),
       isTrue,
     );
     expect(
       canCropLocalMediaForDisplay(
-        LocalMediaResolution(
-          status: LocalMediaStatus.hashMismatch,
-          file: file,
-        ),
+        LocalMediaResolution(status: LocalMediaStatus.hashMismatch, file: file),
       ),
       isTrue,
     );
@@ -186,21 +224,13 @@ void main() {
             itemId: item.id,
             dimension: 'who',
             value: 'Someone',
-            region: const TagRegion(
-              yMin: 0.2,
-              xMin: 0.2,
-              yMax: 0.6,
-              xMax: 0.6,
-            ),
+            region: const TagRegion(yMin: 0.2, xMin: 0.2, yMax: 0.6, xMax: 0.6),
           ),
         ],
       ),
     );
 
-    final linker = WhoFaceLinker(
-      items: items,
-      embedder: StubFaceEmbedder(),
-    );
+    final linker = WhoFaceLinker(items: items, embedder: StubFaceEmbedder());
     final result = await linker.linkWhoFacesForItem(item);
     expect(result, isNull);
     expect(items.whoAppearancesRecorded, isEmpty);
@@ -231,12 +261,7 @@ void main() {
             itemId: item.id,
             dimension: 'who',
             value: 'Someone',
-            region: const TagRegion(
-              yMin: 0.2,
-              xMin: 0.2,
-              yMax: 0.6,
-              xMax: 0.6,
-            ),
+            region: const TagRegion(yMin: 0.2, xMin: 0.2, yMax: 0.6, xMax: 0.6),
           ),
         ],
       ),
@@ -284,12 +309,7 @@ void main() {
             itemId: item.id,
             dimension: 'who',
             value: 'Someone',
-            region: const TagRegion(
-              yMin: 0.2,
-              xMin: 0.2,
-              yMax: 0.6,
-              xMax: 0.6,
-            ),
+            region: const TagRegion(yMin: 0.2, xMin: 0.2, yMax: 0.6, xMax: 0.6),
           ),
         ],
       ),
@@ -304,5 +324,73 @@ void main() {
       items.whoAppearancesRecorded.single.autoConfirmMinConfidencePercent,
       isNull,
     );
+  });
+
+  test(
+    'WhoFaceLinker converts HEIC bytes before embedding (not raw HEIC)',
+    () async {
+      final jpeg = _solidJpeg();
+      final (item, items, _) = await _whoItemWithFile(
+        fileName: 'shot.heic',
+        bytes: _undecodableHeicLike(),
+      );
+      final embedder = _FixedModelEmbedder('onnx-arcface-w600k-r50-v5');
+      var convertCalls = 0;
+
+      final linker = WhoFaceLinker(
+        items: items,
+        embedder: embedder,
+        heicToJpeg: (raw) async {
+          convertCalls++;
+          expect(raw, equals(_undecodableHeicLike()));
+          return jpeg;
+        },
+      );
+      final result = await linker.linkWhoFacesForItem(item);
+
+      expect(convertCalls, 1);
+      expect(result, isNotNull);
+      expect(items.whoAppearancesRecorded, hasLength(1));
+      expect(embedder.seen, hasLength(1));
+      expect(img.decodeImage(embedder.seen.single), isNotNull);
+    },
+  );
+
+  test('WhoFaceLinker skips posting when HEIC convert fails', () async {
+    final (item, items, _) = await _whoItemWithFile(
+      fileName: 'shot.heic',
+      bytes: _undecodableHeicLike(),
+    );
+    final embedder = _FixedModelEmbedder('onnx-arcface-w600k-r50-v5');
+
+    final linker = WhoFaceLinker(
+      items: items,
+      embedder: embedder,
+      heicToJpeg: (_) async => null,
+    );
+    final result = await linker.linkWhoFacesForItem(item);
+
+    expect(result, isNull);
+    expect(items.whoAppearancesRecorded, isEmpty);
+    expect(embedder.seen, isEmpty);
+  });
+
+  test('WhoFaceLinker does not convert JPEG before embedding', () async {
+    final jpeg = _solidJpeg();
+    final (item, items, _) = await _whoItemWithFile(
+      fileName: 'shot.jpg',
+      bytes: jpeg,
+    );
+    final embedder = _FixedModelEmbedder('onnx-arcface-w600k-r50-v5');
+
+    final linker = WhoFaceLinker(
+      items: items,
+      embedder: embedder,
+      heicToJpeg: (_) async =>
+          throw StateError('JPEG path must not convert HEIC'),
+    );
+    final result = await linker.linkWhoFacesForItem(item);
+    expect(result, isNotNull);
+    expect(embedder.seen, hasLength(1));
   });
 }

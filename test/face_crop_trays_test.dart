@@ -4445,6 +4445,126 @@ void main() {
   );
 
   testWidgets(
+    'face crop trays: Collection2 Set name reuses a Collection1 person',
+    (tester) async {
+      final store = MemoryCollectionsStore(
+        const CollectionsFile(
+          collections: [
+            Collection(
+              id: 'c1',
+              name: 'First',
+              leafFolders: ['/albums/Old'],
+            ),
+            Collection(
+              id: 'c2',
+              name: 'Second',
+              leafFolders: ['/albums/New'],
+            ),
+          ],
+          currentCollectionId: 'c2',
+        ),
+      );
+      final persons = FakePersonsRepository(
+        persons: [
+          fixturePersonDetail(
+            id: 'person_sam',
+            name: 'Sam',
+            appearances: [
+              fixtureAppearance(
+                id: 'ap_old',
+                personId: 'person_sam',
+                itemId: 'item_old',
+                tagId: 'tag_old',
+              ),
+            ],
+          ),
+        ],
+      );
+      persons.unassignedAppearances.add(
+        fixtureAppearance(
+          id: 'ap_new',
+          personId: null,
+          itemId: 'item_new',
+          tagId: 'tag_new',
+          region: const TagRegion(yMin: 0.2, xMin: 0.2, yMax: 0.5, xMax: 0.5),
+        ),
+      );
+      final items = FakeItemsRepository(
+        items: [
+          fixtureItem(
+            id: 'item_old',
+            sourceRef: 'file:///albums/Old/a.jpg',
+            processingStatus: ProcessingStatus.tagged,
+            contentHash: null,
+          ),
+          fixtureItem(
+            id: 'item_new',
+            sourceRef: 'file:///albums/New/b.jpg',
+            processingStatus: ProcessingStatus.tagged,
+            contentHash: null,
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            personsRepositoryProvider.overrideWithValue(persons),
+            itemsRepositoryProvider.overrideWithValue(items),
+            collectionsStoreProvider.overrideWithValue(store),
+          ],
+          child: const MaterialApp(
+            home: FaceCropTraysPage(initialLeafFolder: '/albums/New'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final cols = ProviderScope.containerOf(
+        tester.element(find.byType(FaceCropTraysPage)),
+      ).read(collectionsControllerProvider);
+      if (!cols.loaded) await cols.load();
+      if (!cols.sessionReady || cols.current.id != 'c2') {
+        expect(await cols.open('c2'), isTrue);
+        await tester.pumpAndSettle();
+      }
+
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('face-crop-collection-label')))
+            .data,
+        'Second',
+      );
+      expect(find.byKey(const Key('face-crop-appearance-ap_new')), findsOneWidget);
+      expect(find.byKey(const Key('face-crop-appearance-ap_old')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('face-crop-set-name-ap_new')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('person-picker-dialog')), findsOneWidget);
+      expect(
+        find.byKey(const Key('person-picker-option-person_sam')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('person-picker-option-person_sam')));
+      await tester.pumpAndSettle();
+
+      expect(persons.reassignCalls, hasLength(1));
+      expect(persons.reassignCalls.single.appearanceId, 'ap_new');
+      expect(persons.reassignCalls.single.personId, 'person_sam');
+      expect(persons.reassignCalls.single.name, isNull);
+      expect(
+        tester.widget<Text>(find.byKey(const Key('face-crop-person-name'))).data,
+        'Sam',
+      );
+
+      await tester.tap(find.byKey(const Key('face-crop-folder-select')));
+      await tester.pumpAndSettle();
+      expect(find.text('New').last, findsOneWidget);
+      expect(find.text('Old'), findsNothing);
+    },
+  );
+
+  testWidgets(
     'face crop trays: assign still works with named collection open',
     (tester) async {
       final store = MemoryCollectionsStore(

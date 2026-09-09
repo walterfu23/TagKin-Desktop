@@ -1,9 +1,11 @@
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:tagkin_desktop/api/items_repository.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/ingest/model_upload_image.dart';
+import 'package:tagkin_desktop/ingest/upload_mime.dart';
 import 'package:tagkin_desktop/prepass/face_embedder.dart';
 import 'package:tagkin_desktop/prepass/onnx_face_embedder.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
@@ -181,10 +183,13 @@ class WhoFaceLinker {
     required this._items,
     FaceEmbedder? embedder,
     this.autoConfirmMinConfidencePercent,
-  }) : _embedder = embedder ?? getFaceEmbedder();
+    Future<Uint8List?> Function(Uint8List bytes)? heicToJpeg,
+  }) : _embedder = embedder ?? getFaceEmbedder(),
+       _heicToJpeg = heicToJpeg ?? convertHeicLikeToJpeg;
 
   final ItemsRepository _items;
   final FaceEmbedder _embedder;
+  final Future<Uint8List?> Function(Uint8List bytes) _heicToJpeg;
 
   /// When non-null, sent on who-appearances so high-confidence named matches
   /// may auto-confirm. Omit (null) to never auto-confirm.
@@ -218,7 +223,17 @@ class WhoFaceLinker {
         .toList();
     if (whoWithRegion.isEmpty) return null;
 
-    final bytes = await media.file!.readAsBytes();
+    final raw = await media.file!.readAsBytes();
+    final path = media.path ?? media.file!.path;
+    final bytes = await _jpegBytesForEmbed(path, raw);
+    if (bytes == null) {
+      debugPrint(
+        'WhoFaceLinker: could not decode HEIC/HEIF ($path) — '
+        'likeness linking skipped',
+      );
+      return null;
+    }
+
     final inputs = <WhoAppearanceInput>[];
     var embedder = _embedder;
     if (embedder is LazyOnnxOrStubFaceEmbedder) {
@@ -249,7 +264,19 @@ class WhoFaceLinker {
         ),
       );
     }
-    if (inputs.isEmpty) return null;
+    if (inputs.isEmpty) {
+      debugPrint(
+        'WhoFaceLinker: no face embeddings for item ${item.id} '
+        '($path, ${whoWithRegion.length} who-tags) — likeness linking skipped',
+      );
+      return null;
+    }
+    if (inputs.length != whoWithRegion.length) {
+      debugPrint(
+        'WhoFaceLinker: embedded ${inputs.length}/${whoWithRegion.length} '
+        'who-tags for $path',
+      );
+    }
 
     return _items.recordWhoAppearances(
       item.id,
@@ -258,5 +285,13 @@ class WhoFaceLinker {
         autoConfirmMinConfidencePercent: autoConfirmMinConfidencePercent,
       ),
     );
+  }
+
+  /// HEIC/HEIF must be JPEG before ONNX/`package:image` — same convert as
+  /// model-host upload. Other stills pass through.
+  Future<Uint8List?> _jpegBytesForEmbed(String path, Uint8List raw) async {
+    final mime = mimeTypeForPath(path, ItemType.photo);
+    if (mime != 'image/heic' && mime != 'image/heif') return raw;
+    return _heicToJpeg(raw);
   }
 }

@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:tagkin_desktop/api/jobs_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart' show jobsRepositoryProvider;
 import 'package:tagkin_desktop/ingest/folder_bookmark_store.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 
 /// Phase of one background folder-remove job.
@@ -27,11 +28,15 @@ class FolderRemoveJob {
   FolderRemoveJob({
     required this.folderPath,
     required this.itemIds,
+    this.collectionId,
   }) : total = itemIds.length;
 
   final String folderPath;
   final List<String> itemIds;
   final int total;
+
+  /// Collection that started this remove (banner scoping).
+  final String? collectionId;
 
   FolderRemoveJobPhase phase = FolderRemoveJobPhase.running;
   Object? error;
@@ -68,12 +73,16 @@ class FolderRemoveQueue extends ChangeNotifier {
   FolderRemoveQueue({
     required this.jobsRepository,
     this.removeBookmark,
+    this.currentCollectionId,
   });
 
   final JobsRepository jobsRepository;
 
   /// Best-effort bookmark cleanup; defaults to [folderBookmarkStore.remove].
   final Future<void> Function(String dir)? removeBookmark;
+
+  /// Open collection at enqueue time.
+  final String? Function()? currentCollectionId;
 
   List<FolderRemoveJob> _jobs = const [];
   int _libraryRefreshTick = 0;
@@ -87,6 +96,17 @@ class FolderRemoveQueue extends ChangeNotifier {
   bool get hasActiveJobs => _jobs.any((j) => j.isActive);
 
   int get activeJobCount => _jobs.where((j) => j.isActive).length;
+
+  List<FolderRemoveJob> jobsForCollection(String? collectionId) {
+    if (collectionId == null) return jobs;
+    return [
+      for (final j in _jobs)
+        if (j.collectionId == collectionId) j,
+    ];
+  }
+
+  int activeJobCountForCollection(String? collectionId) =>
+      jobsForCollection(collectionId).where((j) => j.isActive).length;
 
   static String normalizePath(String path) => normalizeLeafFolder(path);
 
@@ -121,6 +141,7 @@ class FolderRemoveQueue extends ChangeNotifier {
     final job = FolderRemoveJob(
       folderPath: normalized,
       itemIds: List<String>.from(itemIds),
+      collectionId: currentCollectionId?.call(),
     );
     _jobs = [..._jobs, job];
     _safeNotify();
@@ -175,9 +196,13 @@ final folderRemoveQueueProvider = ChangeNotifierProvider<FolderRemoveQueue>(
   (ref) {
     return FolderRemoveQueue(
       jobsRepository: ref.watch(jobsRepositoryProvider),
+      currentCollectionId: () {
+        final cols = ref.read(collectionsControllerProvider);
+        return cols.sessionReady ? cols.current.id : null;
+      },
     );
   },
   // Required when the signed-in shell overrides jobsRepositoryProvider
   // (same pattern as folderIngestQueueProvider).
-  dependencies: [jobsRepositoryProvider],
+  dependencies: [jobsRepositoryProvider, collectionsControllerProvider],
 );

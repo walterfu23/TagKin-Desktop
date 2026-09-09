@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/library/folder_remove_queue.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
 
 /// Global folder activity progress — ingest + remove, visible from any signed-in page.
 class FolderIngestStatusBanner extends ConsumerStatefulWidget {
@@ -20,18 +21,25 @@ class _FolderIngestStatusBannerState
   Widget build(BuildContext context) {
     final ingest = ref.watch(folderIngestQueueProvider);
     final remove = ref.watch(folderRemoveQueueProvider);
+    final cols = ref.watch(collectionsControllerProvider);
     return ListenableBuilder(
-      listenable: Listenable.merge([ingest, remove]),
+      listenable: Listenable.merge([ingest, remove, cols]),
       builder: (context, _) {
-        if (ingest.jobs.isEmpty && remove.jobs.isEmpty) {
+        final collectionId =
+            cols.sessionReady ? cols.current.id : null;
+        final ingestJobs = ingest.jobsForCollection(collectionId);
+        final removeJobs = remove.jobsForCollection(collectionId);
+        if (ingestJobs.isEmpty && removeJobs.isEmpty) {
           return const SizedBox.shrink();
         }
         final scheme = Theme.of(context).colorScheme;
-        final loadingActive = ingest.activeJobCount;
-        final removingActive = remove.activeJobCount;
+        final loadingActive =
+            ingest.activeJobCountForCollection(collectionId);
+        final removingActive =
+            remove.activeJobCountForCollection(collectionId);
         final active = loadingActive + removingActive;
-        final ingestAlreadyInLibrary = ingest.jobs.isNotEmpty &&
-            ingest.jobs.every(
+        final ingestAlreadyInLibrary = ingestJobs.isNotEmpty &&
+            ingestJobs.every(
               (j) =>
                   !j.isActive &&
                   j.phase == FolderIngestJobPhase.done &&
@@ -39,8 +47,8 @@ class _FolderIngestStatusBannerState
                   j.continuedCount == 0 &&
                   j.alreadyInLibraryCount > 0,
             );
-        final ingestNothingNew = ingest.jobs.isNotEmpty &&
-            ingest.jobs.every(
+        final ingestNothingNew = ingestJobs.isNotEmpty &&
+            ingestJobs.every(
               (j) =>
                   !j.isActive &&
                   j.phase == FolderIngestJobPhase.done &&
@@ -50,8 +58,8 @@ class _FolderIngestStatusBannerState
         final summary = _summary(
           loadingActive: loadingActive,
           removingActive: removingActive,
-          ingestFinished: ingest.jobs.isNotEmpty && loadingActive == 0,
-          removeFinished: remove.jobs.isNotEmpty && removingActive == 0,
+          ingestFinished: ingestJobs.isNotEmpty && loadingActive == 0,
+          removeFinished: removeJobs.isNotEmpty && removingActive == 0,
           ingestNothingNew: ingestNothingNew,
           ingestAlreadyInLibrary: ingestAlreadyInLibrary,
         );
@@ -113,7 +121,7 @@ class _FolderIngestStatusBannerState
                 ),
               ),
               if (_expanded) ...[
-                for (final job in ingest.jobs)
+                for (final job in ingestJobs)
                   ListTile(
                     dense: true,
                     title: Text(job.folderLabel),
@@ -130,7 +138,7 @@ class _FolderIngestStatusBannerState
                             icon: const Icon(Icons.close, size: 18),
                           ),
                   ),
-                for (final job in remove.jobs)
+                for (final job in removeJobs)
                   ListTile(
                     key: Key('folder-remove-job-${job.folderPath}'),
                     dense: true,

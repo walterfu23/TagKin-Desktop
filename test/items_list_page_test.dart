@@ -60,6 +60,10 @@ List<Override> _sessionOverrides({
         // Future can stall FakeAsync while a remove spinner keeps
         // pumpAndSettle alive (CI hang).
         removeBookmark: (_) async {},
+        currentCollectionId: () {
+          final cols = ref.read(collectionsControllerProvider);
+          return cols.sessionReady ? cols.current.id : null;
+        },
       );
     }),
     personsRepositoryProvider.overrideWithValue(FakePersonsRepository()),

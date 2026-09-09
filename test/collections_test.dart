@@ -162,6 +162,27 @@ void main() {
       expect(controller.current.leafFolders, ['/b']);
     });
 
+    test('claimFoldersFor writes origin collection while another is open',
+        () async {
+      await controller.create(name: 'First', seedFolders: ['/old']);
+      final firstId = controller.current.id;
+      expect(await controller.create(name: 'Second'), isTrue);
+      expect(controller.current.leafFolders, isEmpty);
+      expect(
+        await controller.claimFoldersFor(firstId, ['/old', '/also']),
+        isTrue,
+      );
+      expect(controller.current.name, 'Second');
+      expect(controller.current.leafFolders, isEmpty);
+      expect(
+        controller.catalog.collections
+            .firstWhere((c) => c.id == firstId)
+            .leafFolders
+            .toSet(),
+        {'/old', '/also'},
+      );
+    });
+
     test('create seedFolders skips paths owned by another collection',
         () async {
       await controller.create(name: 'Trip', seedFolders: ['/a']);
