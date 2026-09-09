@@ -20,6 +20,7 @@ import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/review/media_viewer.dart';
 import 'package:tagkin_desktop/review/review_controller.dart';
+import 'package:tagkin_desktop/review/video_open_claim.dart';
 import 'package:tagkin_desktop/undo/undo_controller.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 import 'package:tagkin_desktop/undo/undoable_action.dart';
@@ -63,7 +64,7 @@ class ItemReviewSection extends ConsumerStatefulWidget {
 class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
   Player? _player;
   VideoController? _videoController;
-  String? _openedPath;
+  final _videoOpen = VideoOpenClaim();
   bool _saving = false;
   String? _assignError;
   late final ItemDetailEdits _edits = widget.edits ?? ItemDetailEdits();
@@ -126,6 +127,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     _edits.confirmLeave = null;
     if (_ownsEdits) _edits.dispose();
     _disposePlayer();
+    _videoOpen.clear();
     super.dispose();
   }
 
@@ -133,34 +135,33 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     _player?.dispose();
     _player = null;
     _videoController = null;
-    _openedPath = null;
   }
 
   Future<void> _ensureVideoOpen(LocalMediaResolution media) async {
     if (!widget.openVideo) return;
     if (!media.isAvailable) return;
     final path = media.path;
-    if (path == null || path == _openedPath) return;
+    if (path == null) return;
+    if (!_videoOpen.claim(path)) return;
 
     _disposePlayer();
     try {
       final opened = await openLocalVideo(media.file!);
-      if (!mounted) {
+      if (!mounted || !_videoOpen.isCurrent(path)) {
         await opened.player.dispose();
         return;
       }
       setState(() {
         _player = opened.player;
         _videoController = opened.controller;
-        _openedPath = path;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _player = null;
         _videoController = null;
-        _openedPath = null;
       });
+      _videoOpen.clear();
     }
   }
 
