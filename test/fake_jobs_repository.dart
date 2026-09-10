@@ -11,6 +11,7 @@ class FakeJobsRepository implements JobsRepository {
     Item? item,
     List<Job>? jobs,
     this.analyzeError,
+    this.analyzeFailuresRemaining = 0,
     this.jobsError,
     this.cancelError,
     this.deleteError,
@@ -19,13 +20,19 @@ class FakeJobsRepository implements JobsRepository {
     this.onAnalyzed,
     this.libraryItems,
   })  : item = item ?? fixtureItem(id: itemId),
-        _jobs = List<Job>.from(jobs ?? const []);
+        _jobs = List<Job>.from(jobs ?? const []),
+        _initialAnalyzeFailures = analyzeFailuresRemaining;
 
   String itemId;
   Item item;
   final List<Job> _jobs;
 
   final Object? analyzeError;
+
+  /// Throw [analyzeError] (or a generic exception) this many times, then succeed.
+  int analyzeFailuresRemaining;
+  final int _initialAnalyzeFailures;
+
   final Object? jobsError;
   final Object? cancelError;
   final Object? deleteError;
@@ -74,7 +81,13 @@ class FakeJobsRepository implements JobsRepository {
     if (analyzeDelay != null) {
       await Future<void>.delayed(analyzeDelay!);
     }
-    if (analyzeError != null) throw analyzeError!;
+    if (analyzeFailuresRemaining > 0) {
+      analyzeFailuresRemaining--;
+      throw analyzeError ?? Exception('analyze failed');
+    }
+    if (analyzeError != null && _initialAnalyzeFailures == 0) {
+      throw analyzeError!;
+    }
     // Accept any item id so batch post-ingest analyze can cover multiple
     // photos created in one folder session.
     final base = libraryItems?.peekItem(id) ?? item;

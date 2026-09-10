@@ -12,6 +12,23 @@ import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prepass/prepass_controller.dart';
 import 'package:tagkin_desktop/usage/usage_gate.dart';
 
+/// Matches API `INVALID_PHOTO_ANALYZE_MESSAGE` (model 400 INVALID_ARGUMENT).
+const kInvalidPhotoAnalyzeMessage =
+    'This file could not be analyzed. It may not be a valid photo (for example a renamed or corrupt file).';
+
+/// Failures that must not be auto-retried after ingest (credit, 400 validation).
+bool isPermanentAnalyzeFailure(Object? error) {
+  if (error is ApiException) {
+    if (isCreditRejectCode(error.code) || isHardCreditStop(error.code)) {
+      return true;
+    }
+    if (error.statusCode == 400) return true;
+    if (error.message.contains(kInvalidPhotoAnalyzeMessage)) return true;
+  }
+  final text = error?.toString() ?? '';
+  return text.contains(kInvalidPhotoAnalyzeMessage);
+}
+
 /// High-level phases of the automatic D4 → D5 → D7 chain after folder ingest.
 enum PostIngestPipelinePhase {
   idle,
@@ -62,6 +79,8 @@ class PostIngestPipelineController extends ChangeNotifier {
   List<AnalyzeOutcome> analyzeOutcomes = const [];
   Object? error;
   bool _started = false;
+  bool _didAutoRetryAnalyze = false;
+  List<IngestOutcome> _ingestOutcomes = const [];
 
   /// 1-based index of the item currently in the chain; 0 before start.
   int itemIndex = 0;
@@ -106,6 +125,30 @@ class PostIngestPipelineController extends ChangeNotifier {
     );
   }
 
+  /// Re-analyzes failed items from the last [start] once (transient only).
+  ///
+  /// Skips credit rejects and 400 validation (invalid/renamed file). No-op
+  /// if already retried, busy, or there is nothing eligible.
+  Future<void> retryFailedAnalyzeOnce() async {
+    if (_didAutoRetryAnalyze || isBusy) return;
+    if (phase != PostIngestPipelinePhase.done) return;
+    final retryIds = {
+      for (final o in analyzeOutcomes)
+        if (!o.succeeded && !isPermanentAnalyzeFailure(o.error)) o.itemId,
+    };
+    if (retryIds.isEmpty) return;
+    _didAutoRetryAnalyze = true;
+    phase = PostIngestPipelinePhase.runningAnalyze;
+    notifyListeners();
+    final subset = [
+      for (final o in _ingestOutcomes)
+        if (o.item != null && retryIds.contains(o.item!.id)) o,
+    ];
+    await _analyzePhotos(subset, replaceExisting: true);
+    phase = PostIngestPipelinePhase.done;
+    notifyListeners();
+  }
+
   /// Re-runs the full chain after a partial failure or usage skip.
   Future<void> retryFailed({
     required List<IngestOutcome> ingestOutcomes,
@@ -134,6 +177,7 @@ class PostIngestPipelineController extends ChangeNotifier {
     required List<IngestOutcome> ingestOutcomes,
     required bool Function() isUsageBlocked,
   }) async {
+    _ingestOutcomes = ingestOutcomes;
     final succeeded =
         ingestOutcomes.where((o) => o.succeeded && o.item != null).toList();
     itemTotal = succeeded.length;
@@ -193,7 +237,10 @@ class PostIngestPipelineController extends ChangeNotifier {
   }
 
   /// Returns true when a hard credit stop should halt the rest of the chain.
-  Future<bool> _analyzePhotos(List<IngestOutcome> ingestOutcomes) async {
+  Future<bool> _analyzePhotos(
+    List<IngestOutcome> ingestOutcomes, {
+    bool replaceExisting = false,
+  }) async {
     final typeById = <String, ItemType>{
       for (final o in ingestOutcomes)
         if (o.item != null) o.item!.id: o.item!.type,
@@ -209,7 +256,10 @@ class PostIngestPipelineController extends ChangeNotifier {
         )
         .toList();
 
-    final newOutcomes = List<AnalyzeOutcome>.from(analyzeOutcomes);
+    final newOutcomes = [
+      for (final o in analyzeOutcomes)
+        if (!(replaceExisting && currentIds.contains(o.itemId))) o,
+    ];
     for (final uploadOutcome in photoUploads) {
       try {
         final result =
@@ -247,6 +297,8 @@ class PostIngestPipelineController extends ChangeNotifier {
 
   void reset() {
     _started = false;
+    _didAutoRetryAnalyze = false;
+    _ingestOutcomes = const [];
     phase = PostIngestPipelinePhase.idle;
     analyzeOutcomes = const [];
     itemIndex = 0;

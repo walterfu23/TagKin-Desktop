@@ -794,6 +794,7 @@ class FolderIngestQueue extends ChangeNotifier {
         isUsageBlocked: isUsageBlocked,
         onPaidReject: onPaidReject,
       );
+      await pipeline.retryFailedAnalyzeOnce();
     } finally {
       upload.removeListener(flushLiveItems);
       pipeline.removeListener(syncPipelinePhase);

@@ -134,6 +134,32 @@ void main() {
     expect(queue.libraryRefreshTick, greaterThan(0));
   });
 
+  test('ingest auto-retries a transient analyze failure once', () async {
+    final items = FakeItemsRepository();
+    final jobs = FakeJobsRepository(
+      libraryItems: items,
+      onAnalyzed: items.replaceItem,
+      analyzeFailuresRemaining: 1,
+    );
+    final queue = _queue(
+      items: items,
+      jobs: jobs,
+      byFolder: {
+        '/albums/Paris': [_photo('/albums/Paris/a.jpg')],
+      },
+    );
+
+    await queue.enqueue('/albums/Paris');
+    await _waitIdle(queue);
+
+    expect(queue.jobs.single.phase, FolderIngestJobPhase.done);
+    expect(jobs.analyzeCallCount, 2);
+    expect(
+      items.peekItem(jobs.analyzedItemIds.last)?.processingStatus,
+      ProcessingStatus.tagged,
+    );
+  });
+
   test('second enqueue of active path is refused', () async {
     final items = FakeItemsRepository();
     final jobs = FakeJobsRepository();

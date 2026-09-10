@@ -336,6 +336,105 @@ void main() {
       expect(pipeline.analyzeOutcomes.single.succeeded, isFalse);
     });
 
+    test('retryFailedAnalyzeOnce succeeds after a transient analyze failure',
+        () async {
+      final photo = fixtureItem(id: 'item_1', type: ItemType.photo);
+      final items = FakeItemsRepository(items: [photo]);
+      var analyzeCount = 0;
+      final jobs = _SelectiveAnalyzeJobs(
+        onAnalyze: (id) async {
+          analyzeCount++;
+          if (analyzeCount == 1) throw Exception('transient');
+          return AnalyzeResultResponse(
+            item: fixtureItem(id: id, type: ItemType.photo),
+            tagIds: const [],
+            provider: 'stub',
+            modelId: 'stub',
+            escalated: false,
+          );
+        },
+      );
+      final pipeline = PostIngestPipelineController(
+        prePass: _stubPrePass(items),
+        upload: _stubUpload(items),
+        jobsRepository: jobs,
+        whoFaceLinker: WhoFaceLinker(items: items),
+      );
+
+      await pipeline.start(
+        ingestOutcomes: [_ingest(item: photo, path: '/a.jpg')],
+        usageBlocked: false,
+      );
+      expect(pipeline.analyzeOutcomes.single.succeeded, isFalse);
+
+      await pipeline.retryFailedAnalyzeOnce();
+      expect(analyzeCount, 2);
+      expect(pipeline.analyzeOutcomes, hasLength(1));
+      expect(pipeline.analyzeOutcomes.single.succeeded, isTrue);
+
+      await pipeline.retryFailedAnalyzeOnce();
+      expect(analyzeCount, 2);
+    });
+
+    test('retryFailedAnalyzeOnce does not retry a 400 invalid photo', () async {
+      final photo = fixtureItem(id: 'item_1', type: ItemType.photo);
+      final items = FakeItemsRepository(items: [photo]);
+      var analyzeCount = 0;
+      final jobs = _SelectiveAnalyzeJobs(
+        onAnalyze: (id) async {
+          analyzeCount++;
+          throw ApiException(
+            statusCode: 400,
+            code: 'bad_request',
+            message: kInvalidPhotoAnalyzeMessage,
+          );
+        },
+      );
+      final pipeline = PostIngestPipelineController(
+        prePass: _stubPrePass(items),
+        upload: _stubUpload(items),
+        jobsRepository: jobs,
+        whoFaceLinker: WhoFaceLinker(items: items),
+      );
+
+      await pipeline.start(
+        ingestOutcomes: [_ingest(item: photo, path: '/a.jpg')],
+        usageBlocked: false,
+      );
+      await pipeline.retryFailedAnalyzeOnce();
+      expect(analyzeCount, 1);
+      expect(pipeline.analyzeOutcomes.single.succeeded, isFalse);
+    });
+
+    test('retryFailedAnalyzeOnce does not retry outOfCredits', () async {
+      final photo = fixtureItem(id: 'item_1', type: ItemType.photo);
+      final items = FakeItemsRepository(items: [photo]);
+      var analyzeCount = 0;
+      final jobs = _SelectiveAnalyzeJobs(
+        onAnalyze: (id) async {
+          analyzeCount++;
+          throw ApiException(
+            statusCode: 409,
+            code: 'outOfCredits',
+            message: 'Out of credits',
+          );
+        },
+      );
+      final pipeline = PostIngestPipelineController(
+        prePass: _stubPrePass(items),
+        upload: _stubUpload(items),
+        jobsRepository: jobs,
+        whoFaceLinker: WhoFaceLinker(items: items),
+      );
+
+      await pipeline.start(
+        ingestOutcomes: [_ingest(item: photo, path: '/a.jpg')],
+        usageBlocked: false,
+      );
+      await pipeline.retryFailedAnalyzeOnce();
+      expect(analyzeCount, 1);
+    });
+
     test('start is idempotent within a session', () async {
       final photo = fixtureItem(id: 'item_1', type: ItemType.photo);
       final items = FakeItemsRepository(items: [photo]);
