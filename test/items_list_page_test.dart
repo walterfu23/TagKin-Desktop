@@ -425,6 +425,26 @@ void main() {
     expect(find.text('Source'), findsNothing);
   });
 
+  testWidgets('File column icon is photo or video by item type', (tester) async {
+    final photo = fixtureItem(id: 'file_photo', type: ItemType.photo);
+    final video = fixtureItem(id: 'file_video', type: ItemType.video);
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(items: [photo, video]),
+    );
+    await tester.pumpAndSettle();
+
+    IconData iconOf(String id) {
+      final button = tester.widget<IconButton>(
+        find.byKey(Key('item-source-$id')),
+      );
+      return (button.icon as Icon).icon!;
+    }
+
+    expect(iconOf('file_photo'), Icons.image_outlined);
+    expect(iconOf('file_video'), Icons.videocam_outlined);
+  });
+
   testWidgets('sort header reorders by who', (tester) async {
     const shared = '/users/w/test';
     final a = fixtureItem(

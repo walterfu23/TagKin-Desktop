@@ -116,7 +116,9 @@ void main() {
       expect(DesktopPrefs.defaults.nearDuplicateThreshold, 4);
       expect(DesktopPrefs.defaults.sampleMinIntervalMs, 1000);
       expect(DesktopPrefs.defaults.sampleMaxIntervalMs, 15000);
-      expect(DesktopPrefs.defaults.softMaxFramesPerItem, 500);
+      expect(DesktopPrefs.sampleMaxIntervalMsMax, 60000);
+      expect(DesktopPrefs.defaults.softMaxFramesPerItem, 50);
+      expect(DesktopPrefs.softMaxFramesPerItemMax, 50);
       expect(DesktopPrefs.defaults.sceneCutThreshold, 0.3);
       expect(DesktopPrefs.defaults.facesDetectScoreThreshold, 0.2);
       expect(DesktopPrefs.defaults.facesTrayPageLimit, 500);
@@ -144,7 +146,7 @@ void main() {
         nearDuplicateThreshold: 6,
         sampleMinIntervalMs: 800,
         sampleMaxIntervalMs: 12000,
-        softMaxFramesPerItem: 200,
+        softMaxFramesPerItem: 40,
         sceneCutThreshold: 0.4,
         facesDetectScoreThreshold: 0.35,
         facesTrayPageLimit: 200,
@@ -155,6 +157,15 @@ void main() {
       );
       await store.save(prefs);
       expect(await store.load(), prefs);
+    });
+
+    test('fromJson clamps legacy video sample prefs to the current ranges', () {
+      final prefs = DesktopPrefs.fromJson({
+        'video.sampleMaxIntervalMs': 120000,
+        'video.softMaxFramesPerItem': 500,
+      });
+      expect(prefs.sampleMaxIntervalMs, DesktopPrefs.sampleMaxIntervalMsMax);
+      expect(prefs.softMaxFramesPerItem, DesktopPrefs.softMaxFramesPerItemMax);
     });
 
     test('fromJson defaults showFaceOverlays to true when missing', () {

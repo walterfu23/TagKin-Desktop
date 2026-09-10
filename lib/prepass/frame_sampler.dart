@@ -14,7 +14,7 @@ const int kDefaultMaxSampleIntervalMs = 15000;
 
 /// Soft ceiling so a multi-hour static clip does not explode cost/UX.
 /// Busy scene-cut videos naturally get more frames via short periods.
-const int kDefaultSoftMaxFramesPerItem = 500;
+const int kDefaultSoftMaxFramesPerItem = 50;
 
 /// Cap on JPEGs sent to the image VLM (one representative frame per key
 /// period, then thinned). Matches API `TAGGING_MAX_FRAMES_PER_ITEM` default.

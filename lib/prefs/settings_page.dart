@@ -806,7 +806,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     helper:
                         'Widest spacing between frames in long, uneventful '
                         'stretches. Smaller = denser sampling of long clips. '
-                        'Default 15000 ms.',
+                        'Default 15000 ms (500–60000). A long clip may space '
+                        'frames wider than this when the soft max binds.',
                     value: _sampleMaxIntervalMs,
                     min: DesktopPrefs.sampleMaxIntervalMsMin,
                     max: DesktopPrefs.sampleMaxIntervalMsMax,
@@ -819,7 +820,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     helper:
                         'Soft cap on sample frames taken from one video so '
                         'long clips stay manageable. Raise for longer '
-                        'coverage; lower to speed up pre-pass. Default 500.',
+                        'coverage; lower to speed up pre-pass. Default 50 '
+                        '(10–50). Wins over max interval on long clips.',
                     value: _softMaxFramesPerItem,
                     min: DesktopPrefs.softMaxFramesPerItemMin,
                     max: DesktopPrefs.softMaxFramesPerItemMax,

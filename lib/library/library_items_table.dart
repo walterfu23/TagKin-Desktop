@@ -1188,7 +1188,13 @@ class _FileReveal extends StatelessWidget {
       waitDuration: Duration.zero,
       child: IconButton(
         key: Key('item-source-${item.id}'),
-        icon: const Icon(Icons.insert_drive_file_outlined, size: 18),
+        icon: Icon(
+          item.type == ItemType.video
+              ? Icons.videocam_outlined
+              : Icons.image_outlined,
+          size: 18,
+          semanticLabel: item.type == ItemType.video ? 'Video' : 'Photo',
+        ),
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
         visualDensity: VisualDensity.compact,

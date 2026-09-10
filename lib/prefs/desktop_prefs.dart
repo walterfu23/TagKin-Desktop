@@ -17,7 +17,7 @@ class DesktopPrefs {
     this.nearDuplicateThreshold = 4,
     this.sampleMinIntervalMs = 1000,
     this.sampleMaxIntervalMs = 15000,
-    this.softMaxFramesPerItem = 500,
+    this.softMaxFramesPerItem = 50,
     this.sceneCutThreshold = 0.3,
     this.facesDetectScoreThreshold = 0.2,
     this.facesTrayPageLimit = 500,
@@ -59,7 +59,7 @@ class DesktopPrefs {
   /// Max spacing (ms) between video sample frames in a long key period.
   final int sampleMaxIntervalMs;
 
-  /// Soft ceiling on sample frames per video item.
+  /// Soft ceiling on sample frames per video item (Settings max 50).
   final int softMaxFramesPerItem;
 
   /// FFmpeg scene-cut sensitivity (lower → more cuts).
@@ -118,11 +118,11 @@ class DesktopPrefs {
   static const sampleMinIntervalMsStep = 100;
 
   static const sampleMaxIntervalMsMin = 500;
-  static const sampleMaxIntervalMsMax = 120000;
+  static const sampleMaxIntervalMsMax = 60000;
   static const sampleMaxIntervalMsStep = 500;
 
   static const softMaxFramesPerItemMin = 10;
-  static const softMaxFramesPerItemMax = 2000;
+  static const softMaxFramesPerItemMax = 50;
   static const softMaxFramesPerItemStep = 10;
 
   static const sceneCutThresholdMin = 0.05;
@@ -309,7 +309,7 @@ class DesktopPrefs {
       ),
       softMaxFramesPerItem: intVal(
         'video.softMaxFramesPerItem',
-        500,
+        50,
         min: softMaxFramesPerItemMin,
         max: softMaxFramesPerItemMax,
       ),

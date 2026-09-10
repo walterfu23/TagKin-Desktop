@@ -83,7 +83,7 @@ void main() {
 
     test('two-hour video is not starved to ~1 frame/minute', () {
       // Single long period 120 minutes with maxInterval 15s → many samples,
-      // soft budget ~4/min * 120 = 480, clamped by soft max 500.
+      // soft budget ~4/min * 120 = 480, clamped by an explicit 500 cap.
       final plan = planSampleTimestamps(
         keyPeriods: const [
           PrePassKeyPeriodInput(startMs: 0, endMs: 120 * 60 * 1000),
@@ -92,6 +92,17 @@ void main() {
         maxIntervalMs: 15000,
       );
       expect(plan.length, greaterThan(120)); // better than 1/min
+    });
+
+    test('default soft max 50 thins a long static clip past max interval', () {
+      final plan = planSampleTimestamps(
+        keyPeriods: const [
+          PrePassKeyPeriodInput(startMs: 0, endMs: 4 * 60 * 60 * 1000),
+        ],
+        maxIntervalMs: 15000,
+      );
+      expect(plan.length, lessThanOrEqualTo(kDefaultSoftMaxFramesPerItem));
+      expect(plan.length, greaterThan(1));
     });
   });
 
