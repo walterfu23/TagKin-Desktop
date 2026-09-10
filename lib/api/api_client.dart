@@ -15,6 +15,19 @@ class UnauthorizedException implements Exception {
   String toString() => 'UnauthorizedException: $message';
 }
 
+/// Thrown when tagkin-api returns 426 `client_too_old`.
+///
+/// The version header is not a security boundary; this is a support gate so
+/// the desktop can show Update required.
+class ClientTooOldException implements Exception {
+  ClientTooOldException({this.message = 'Client too old'});
+
+  final String message;
+
+  @override
+  String toString() => 'ClientTooOldException: $message';
+}
+
 /// Thrown for non-401 HTTP failures with the contract [Error] shape when present.
 class ApiException implements Exception {
   ApiException({
@@ -45,6 +58,8 @@ class ApiClient {
     required this.tokenProvider,
     http.Client? httpClient,
     this.timeout = const Duration(seconds: 30),
+    this.clientIdentity,
+    this.onClientTooOld,
   }) : _http = httpClient ?? http.Client();
 
   /// tagkin-api origin, no trailing slash.
@@ -52,6 +67,12 @@ class ApiClient {
 
   /// Returns the current Clerk session JWT, or null when signed out.
   final TokenProvider tokenProvider;
+
+  /// `tagkin-desktop/<semver> (<platform>)`. Null omits the header (fail open).
+  final String? clientIdentity;
+
+  /// Invoked when a 426 `client_too_old` response is mapped.
+  final void Function(ClientTooOldException error)? onClientTooOld;
 
   final http.Client _http;
 
@@ -79,6 +100,10 @@ class ApiClient {
     final token = await tokenProvider();
     if (token != null && token.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';
+    }
+    final identity = clientIdentity;
+    if (identity != null && identity.isNotEmpty) {
+      headers['X-TagKin-Client'] = identity;
     }
     return headers;
   }
@@ -167,6 +192,13 @@ class ApiClient {
       throw UnauthorizedException(
         message: _messageFromBody(response.body) ?? 'Unauthorized',
       );
+    }
+    if (response.statusCode == 426) {
+      final error = ClientTooOldException(
+        message: _messageFromBody(response.body) ?? 'Client too old',
+      );
+      onClientTooOld?.call(error);
+      throw error;
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final parsed = _tryParseError(response.body);

@@ -11,6 +11,8 @@ import 'package:tagkin_desktop/library/items_list_page.dart';
 import 'package:tagkin_desktop/shell/app_navigator.dart';
 import 'package:tagkin_desktop/shell/tagkin_platform_menu.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
+import 'package:tagkin_desktop/update/client_identity.dart';
+import 'package:tagkin_desktop/update/client_support_providers.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -29,7 +31,22 @@ Future<void> main() async {
   }
   // D8 local video key-period scrubber (media_kit / libmpv).
   MediaKit.ensureInitialized();
-  runApp(const ProviderScope(child: TagKinDesktopApp()));
+  ClientIdentity identity = ClientIdentity.testFallback;
+  if (!_runningInFlutterTest) {
+    try {
+      identity = await ClientIdentity.fromPlatform();
+    } catch (_) {
+      identity = ClientIdentity.testFallback;
+    }
+  }
+  runApp(
+    ProviderScope(
+      overrides: [
+        clientIdentityProvider.overrideWithValue(identity),
+      ],
+      child: const TagKinDesktopApp(),
+    ),
+  );
 }
 
 class TagKinDesktopApp extends StatelessWidget {

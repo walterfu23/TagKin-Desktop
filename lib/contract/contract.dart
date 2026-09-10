@@ -8,16 +8,19 @@ class Account {
     required this.id,
     this.email,
     required this.createdAt,
+    this.clientSupport,
   });
 
   final String id;
   final String? email;
   final String createdAt;
+  final ClientSupport? clientSupport;
 
   factory Account.fromJson(Map<String, dynamic> json) => Account(
         id: json['id'] as String,
         email: json['email'] == null ? null : json['email'] as String,
         createdAt: json['createdAt'] as String,
+        clientSupport: json['clientSupport'] == null ? null : ClientSupport.fromJson(json['clientSupport'] as Map<String, dynamic>),
       );
 
   Map<String, dynamic> toJson() {
@@ -25,6 +28,7 @@ class Account {
     json['id'] = id;
     if (email != null) json['email'] = email;
     json['createdAt'] = createdAt;
+    if (clientSupport != null) json['clientSupport'] = clientSupport?.toJson();
     return json;
   }
 }
@@ -355,6 +359,56 @@ class CapturedAtMutationResult {
     json['correction'] = correction.toJson();
     return json;
   }
+}
+
+class ClientSupport {
+  const ClientSupport({
+    required this.status,
+    this.minVersion,
+    this.latestVersion,
+    this.downloadUrl,
+  });
+
+  final ClientSupportStatus status;
+  final String? minVersion;
+  final String? latestVersion;
+  final String? downloadUrl;
+
+  factory ClientSupport.fromJson(Map<String, dynamic> json) => ClientSupport(
+        status: ClientSupportStatus.fromWire(json['status'] as String),
+        minVersion: json['minVersion'] == null ? null : json['minVersion'] as String,
+        latestVersion: json['latestVersion'] == null ? null : json['latestVersion'] as String,
+        downloadUrl: json['downloadUrl'] == null ? null : json['downloadUrl'] as String,
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['status'] = status.wire;
+    if (minVersion != null) json['minVersion'] = minVersion;
+    if (latestVersion != null) json['latestVersion'] = latestVersion;
+    if (downloadUrl != null) json['downloadUrl'] = downloadUrl;
+    return json;
+  }
+}
+
+enum ClientSupportStatus {
+  ok('ok'),
+  warn('warn'),
+  blocked('blocked');
+
+  const ClientSupportStatus(this.wire);
+
+  final String wire;
+
+  static ClientSupportStatus fromWire(String value) {
+    for (final e in values) {
+      if (e.wire == value) return e;
+    }
+    throw FormatException('Unknown ClientSupportStatus: $value');
+  }
+
+  @override
+  String toString() => wire;
 }
 
 class Comment {

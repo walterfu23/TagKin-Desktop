@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:tagkin_desktop/api/me_repository.dart';
+import 'package:tagkin_desktop/app_shell.dart';
+import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/credits/credits_navigation.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
+import 'package:tagkin_desktop/update/client_support_providers.dart';
 import 'package:tagkin_desktop/usage/credits_remaining.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
@@ -250,6 +254,35 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Settings restored to defaults')),
     );
+  }
+
+  Future<void> _checkForUpdates() async {
+    try {
+      final account = await MeRepository(ref.read(apiClientProvider)).getMe();
+      if (!mounted) return;
+      ref.read(clientSupportProvider.notifier).state = account.clientSupport;
+      final status = account.clientSupport?.status;
+      if (status == ClientSupportStatus.blocked) {
+        Navigator.of(context).pop();
+        ref.read(forceUpdateRequiredProvider.notifier).state = true;
+        return;
+      }
+      if (status == ClientSupportStatus.warn) {
+        ref.read(clientWarnDismissedProvider.notifier).state = false;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('A newer version of TagKin is available.')),
+        );
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You’re up to date.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not check for updates: $e')),
+      );
+    }
   }
 
   Future<void> _onPopAttempt() async {
@@ -855,6 +888,39 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     ),
                     onTap: () => pushTrialCardPage(context),
                   ),
+                ],
+              ),
+              _settingsGroup(
+                title: 'About',
+                subtitle:
+                    'This computer’s TagKin version. Check for updates talks to tagkin-api; installing a new build still needs a download until auto-update is wired.',
+                children: [
+                  ListTile(
+                    key: const Key('settings-about-version'),
+                    title: const Text('Version'),
+                    subtitle: Text(ref.watch(clientIdentityProvider).version),
+                  ),
+                  ListTile(
+                    key: const Key('settings-check-for-updates'),
+                    title: const Text('Check for updates'),
+                    subtitle: const Text(
+                      'Ask the server whether this version is still current',
+                    ),
+                    onTap: _checkForUpdates,
+                  ),
+                  if (ref.watch(clientSupportProvider)?.downloadUrl != null)
+                    ListTile(
+                      key: const Key('settings-download-tagkin'),
+                      title: const Text('Download TagKin'),
+                      subtitle: const Text('Open the latest installer in your browser'),
+                      onTap: () {
+                        final raw = ref.read(clientSupportProvider)?.downloadUrl;
+                        final url = raw == null ? null : Uri.tryParse(raw);
+                        if (url != null) {
+                          ref.read(checkoutUrlLauncherProvider)(url);
+                        }
+                      },
+                    ),
                 ],
               ),
             ],

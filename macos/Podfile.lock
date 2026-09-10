@@ -4,6 +4,9 @@ PODS:
     - FlutterMacOS
   - media_kit_video (0.0.1):
     - FlutterMacOS
+  - passkeys_darwin (0.0.1):
+    - Flutter
+    - FlutterMacOS
   - ua_client_hints (1.7.0):
     - FlutterMacOS
   - window_manager (0.2.0):
@@ -13,6 +16,7 @@ DEPENDENCIES:
   - FlutterMacOS (from `Flutter/ephemeral`)
   - media_kit_libs_macos_video (from `Flutter/ephemeral/.symlinks/plugins/media_kit_libs_macos_video/macos`)
   - media_kit_video (from `Flutter/ephemeral/.symlinks/plugins/media_kit_video/macos`)
+  - passkeys_darwin (from `Flutter/ephemeral/.symlinks/plugins/passkeys_darwin/darwin`)
   - ua_client_hints (from `Flutter/ephemeral/.symlinks/plugins/ua_client_hints/macos`)
   - window_manager (from `Flutter/ephemeral/.symlinks/plugins/window_manager/macos`)
 
@@ -23,6 +27,8 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/media_kit_libs_macos_video/macos
   media_kit_video:
     :path: Flutter/ephemeral/.symlinks/plugins/media_kit_video/macos
+  passkeys_darwin:
+    :path: Flutter/ephemeral/.symlinks/plugins/passkeys_darwin/darwin
   ua_client_hints:
     :path: Flutter/ephemeral/.symlinks/plugins/ua_client_hints/macos
   window_manager:
@@ -32,6 +38,7 @@ SPEC CHECKSUMS:
   FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
   media_kit_libs_macos_video: 85a23e549b5f480e72cae3e5634b5514bc692f65
   media_kit_video: fa6564e3799a0a28bff39442334817088b7ca758
+  passkeys_darwin: 0a09d3b26cea8de1ec3bb8f8c7c159981f63bbc7
   ua_client_hints: bb84da85d9d5d605d40598b3c1ae3bfd2598e201
   window_manager: 1d01fa7ac65a6e6f83b965471b1a7fdd3f06166c
 

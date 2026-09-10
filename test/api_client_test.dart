@@ -80,6 +80,64 @@ void main() {
       client.close();
     });
 
+    test('sends X-TagKin-Client when identity is set', () async {
+      final mock = MockClient((request) async {
+        expect(
+          request.headers['X-TagKin-Client'],
+          'tagkin-desktop/1.0.0+1 (macos)',
+        );
+        return http.Response('{}', 200);
+      });
+      final client = ApiClient(
+        baseUrl: 'http://api.test',
+        tokenProvider: () => 'tok',
+        httpClient: mock,
+        clientIdentity: 'tagkin-desktop/1.0.0+1 (macos)',
+      );
+      await client.get('/me');
+      client.close();
+    });
+
+    test('omits X-TagKin-Client when identity is unset', () async {
+      final mock = MockClient((request) async {
+        expect(request.headers.containsKey('X-TagKin-Client'), isFalse);
+        return http.Response('{}', 200);
+      });
+      final client = ApiClient(
+        baseUrl: 'http://api.test',
+        tokenProvider: () => 'tok',
+        httpClient: mock,
+      );
+      await client.get('/me');
+      client.close();
+    });
+
+    test('426 maps to ClientTooOldException and notifies', () async {
+      var notified = 0;
+      final mock = MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'code': 'client_too_old',
+            'message': 'Update to 1.0.0',
+          }),
+          426,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      final client = ApiClient(
+        baseUrl: 'http://api.test',
+        tokenProvider: () => 'tok',
+        httpClient: mock,
+        onClientTooOld: (_) => notified++,
+      );
+      await expectLater(
+        client.get('/items'),
+        throwsA(isA<ClientTooOldException>()),
+      );
+      expect(notified, 1);
+      client.close();
+    });
+
     test('JSON Content-Type only — no multipart/bytes to tagkin-api (R1)', () async {
       final mock = MockClient((request) async {
         expect(request.headers['Content-Type'], 'application/json');

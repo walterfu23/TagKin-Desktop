@@ -38,6 +38,9 @@ import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_status_banner.dart';
 import 'package:tagkin_desktop/shell/app_nav_tab_buttons.dart';
 import 'package:tagkin_desktop/shell/quit_navigation.dart';
+import 'package:tagkin_desktop/update/client_support_providers.dart';
+import 'package:tagkin_desktop/update/client_update_banner.dart';
+import 'package:tagkin_desktop/update/update_required_page.dart';
 import 'package:window_manager/window_manager.dart';
 
 export 'package:tagkin_desktop/shell/app_nav_tab_buttons.dart'
@@ -493,6 +496,10 @@ class _TestSignedInHostState extends ConsumerState<_TestSignedInHost> {
     _client = ApiClient(
       baseUrl: ref.read(appConfigProvider).apiUrl,
       tokenProvider: () => widget.session.token,
+      clientIdentity: ref.read(clientIdentityProvider).headerValue,
+      onClientTooOld: (_) {
+        ref.read(forceUpdateRequiredProvider.notifier).state = true;
+      },
     );
   }
 
@@ -524,7 +531,7 @@ class _TestSignedInHostState extends ConsumerState<_TestSignedInHost> {
   }
 }
 
-class _ClerkSignedInHost extends StatefulWidget {
+class _ClerkSignedInHost extends ConsumerStatefulWidget {
   const _ClerkSignedInHost({
     required this.authState,
     required this.persistor,
@@ -538,17 +545,27 @@ class _ClerkSignedInHost extends StatefulWidget {
   final Widget signedInHome;
 
   @override
-  State<_ClerkSignedInHost> createState() => _ClerkSignedInHostState();
+  ConsumerState<_ClerkSignedInHost> createState() => _ClerkSignedInHostState();
 }
 
-class _ClerkSignedInHostState extends State<_ClerkSignedInHost> {
-  late final ApiClient _client = ApiClient(
-    baseUrl: widget.config.apiUrl,
-    tokenProvider: () async {
-      final token = await widget.authState.sessionToken();
-      return token.jwt;
-    },
-  );
+class _ClerkSignedInHostState extends ConsumerState<_ClerkSignedInHost> {
+  late final ApiClient _client;
+
+  @override
+  void initState() {
+    super.initState();
+    _client = ApiClient(
+      baseUrl: widget.config.apiUrl,
+      tokenProvider: () async {
+        final token = await widget.authState.sessionToken();
+        return token.jwt;
+      },
+      clientIdentity: ref.read(clientIdentityProvider).headerValue,
+      onClientTooOld: (_) {
+        ref.read(forceUpdateRequiredProvider.notifier).state = true;
+      },
+    );
+  }
 
   @override
   void dispose() {
@@ -583,7 +600,7 @@ class _ClerkSignedInHostState extends State<_ClerkSignedInHost> {
 }
 
 /// Loads `GET /me` once, then shows [signedInHome] with account chrome.
-class AccountBootstrap extends StatefulWidget {
+class AccountBootstrap extends ConsumerStatefulWidget {
   const AccountBootstrap({
     super.key,
     required this.loadAccount,
@@ -602,11 +619,21 @@ class AccountBootstrap extends StatefulWidget {
   final Widget signedInHome;
 
   @override
-  State<AccountBootstrap> createState() => _AccountBootstrapState();
+  ConsumerState<AccountBootstrap> createState() => _AccountBootstrapState();
 }
 
-class _AccountBootstrapState extends State<AccountBootstrap> {
-  late Future<Account> _future = widget.loadAccount();
+class _AccountBootstrapState extends ConsumerState<AccountBootstrap> {
+  late Future<Account> _future = _load();
+
+  Future<Account> _load() {
+    return widget.loadAccount().then((account) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(clientSupportProvider.notifier).state = account.clientSupport;
+      });
+      return account;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -622,6 +649,13 @@ class _AccountBootstrapState extends State<AccountBootstrap> {
         }
         if (snapshot.hasError) {
           final error = snapshot.error!;
+          if (error is ClientTooOldException) {
+            return UpdateRequiredPage(
+              support: null,
+              onSignOut: widget.onSignOut,
+              launchUrl: ref.read(checkoutUrlLauncherProvider),
+            );
+          }
           if (error is UnauthorizedException) {
             return Scaffold(
               body: Center(
@@ -644,7 +678,7 @@ class _AccountBootstrapState extends State<AccountBootstrap> {
                         key: const Key('account-retry'),
                         onPressed: () {
                           setState(() {
-                            _future = widget.loadAccount();
+                            _future = _load();
                           });
                         },
                         child: const Text('Retry'),
@@ -680,7 +714,7 @@ class _AccountBootstrapState extends State<AccountBootstrap> {
                       key: const Key('account-retry'),
                       onPressed: () {
                         setState(() {
-                          _future = widget.loadAccount();
+                          _future = _load();
                         });
                       },
                       child: const Text('Retry'),
@@ -700,6 +734,13 @@ class _AccountBootstrapState extends State<AccountBootstrap> {
         }
 
         final account = snapshot.data!;
+        if (account.clientSupport?.status == ClientSupportStatus.blocked) {
+          return UpdateRequiredPage(
+            support: account.clientSupport,
+            onSignOut: widget.onSignOut,
+            launchUrl: ref.read(checkoutUrlLauncherProvider),
+          );
+        }
         return _SignedInScaffold(
           account: account,
           onSignOut: widget.onSignOut,
@@ -1075,6 +1116,17 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
       unawaited(_runCollectionCommand(next));
     });
 
+    final support = ref.watch(clientSupportProvider) ?? widget.account.clientSupport;
+    final blocked = ref.watch(forceUpdateRequiredProvider) ||
+        support?.status == ClientSupportStatus.blocked;
+    if (blocked) {
+      return UpdateRequiredPage(
+        support: support,
+        onSignOut: widget.onSignOut,
+        launchUrl: ref.watch(checkoutUrlLauncherProvider),
+      );
+    }
+
     final cols = ref.watch(collectionsControllerProvider);
     final table = ref.watch(libraryTableControllerProvider);
     final libraryFolders = distinctLeafFolders(
@@ -1277,6 +1329,9 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          ClientUpdateBanner(
+            launchUrl: ref.watch(checkoutUrlLauncherProvider),
+          ),
           const FolderIngestStatusBanner(),
           Expanded(
             // Offstage IndexedStack siblings must not participate in

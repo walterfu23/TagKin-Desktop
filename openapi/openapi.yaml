@@ -7,7 +7,12 @@ info:
     caches, or stores user media bytes (Rules R1/R5/R7). Domain names here are the
     single source of truth for all code and UI (R2). Every durable record is
     account-scoped and the owner is derived from the authenticated caller, never
-    from a client-supplied field (R10).
+    from a client-supplied field (R10). Desktop clients send optional header
+    `X-TagKin-Client` (`tagkin-desktop/<semver> (<platform>)`). That header is
+    not a security boundary. When it is below `MIN_DESKTOP_CLIENT_VERSION`,
+    authenticated library routes return 426 `client_too_old`; `/health` and
+    `/me` stay open so the app can show Update required. Missing or unparseable
+    headers fail open.
 servers:
   - url: http://localhost:8787
     description: Local development
@@ -81,6 +86,13 @@ paths:
       tags: [system]
       operationId: getMe
       summary: Current authenticated account (owner derived from token, never the body)
+      description: >
+        Owner is derived from the bearer token (R10). Optional `clientSupport`
+        reports whether this `X-TagKin-Client` is current, behind latest, or
+        below the minimum. `/me` itself is never 426 so a blocked desktop can
+        still bootstrap and render Update required.
+      parameters:
+        - $ref: "#/components/parameters/TagKinClient"
       responses:
         "200":
           description: The authenticated account
@@ -1803,6 +1815,19 @@ components:
       bearerFormat: JWT
       description: Session/JWT validated server-side; owner is derived from it (R10).
 
+  parameters:
+    TagKinClient:
+      name: X-TagKin-Client
+      in: header
+      required: false
+      schema:
+        type: string
+        example: tagkin-desktop/1.0.0+1 (macos)
+      description: >
+        Desktop identity. Not a security boundary. Below the configured
+        minimum, routes other than /health and /me return 426 client_too_old.
+        Missing or unparseable values fail open.
+
   responses:
     Unauthorized:
       description: Missing or invalid authorization
@@ -1810,6 +1835,17 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    ClientTooOld:
+      description: >
+        Desktop client is below MIN_DESKTOP_CLIENT_VERSION. Update and retry.
+        `/health` and `/me` never return this.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            code: client_too_old
+            message: This TagKin desktop version is no longer supported. Update to 1.0.0 or newer.
     BadRequest:
       description: Malformed request body or query
       content:
@@ -1875,6 +1911,33 @@ components:
         message:
           type: string
 
+    ClientSupportStatus:
+      type: string
+      description: >
+        Standing of this desktop build vs the API's configured floor and latest.
+        `ok` current, `warn` behind latest, `blocked` below minimum.
+      enum: [ok, warn, blocked]
+
+    ClientSupport:
+      type: object
+      description: >
+        Additive `/me` field so desktop can nudge or block before other calls.
+        Omitted when neither MIN nor LATEST desktop version is configured.
+      required: [status]
+      properties:
+        status:
+          $ref: "#/components/schemas/ClientSupportStatus"
+        minVersion:
+          type: string
+          description: Configured minimum desktop semver (when set).
+        latestVersion:
+          type: string
+          description: Configured latest desktop semver (when set).
+        downloadUrl:
+          type: string
+          format: uri
+          description: HTTPS URL for the Update required / warn Download button.
+
     Account:
       type: object
       description: A TagKin user account. Owns exactly one private library.
@@ -1889,6 +1952,8 @@ components:
         createdAt:
           type: string
           format: date-time
+        clientSupport:
+          $ref: "#/components/schemas/ClientSupport"
 
     ItemType:
       type: string
