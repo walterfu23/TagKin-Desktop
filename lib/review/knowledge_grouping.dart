@@ -29,6 +29,32 @@ Map<String, List<Tag>> groupItemLevelTagsByDimension(List<Tag> tags) {
   return grouped;
 }
 
+/// Active tags for Folders / item-detail CSV: item-level plus unique
+/// key-period values (videos would otherwise look empty).
+Map<String, List<Tag>> groupDisplayTagsByDimension(ItemKnowledge knowledge) {
+  final grouped = groupItemLevelTagsByDimension(knowledge.tags);
+  final seen = {
+    for (final d in kKnowledgeDimensions)
+      d: {for (final t in grouped[d]!) t.value.toLowerCase()},
+  };
+  void add(Tag tag) {
+    if (tag.status != TagStatus.active) return;
+    final bucket = grouped[tag.dimension];
+    final keys = seen[tag.dimension];
+    if (bucket == null || keys == null) return;
+    final key = tag.value.toLowerCase();
+    if (!keys.add(key)) return;
+    bucket.add(tag);
+  }
+
+  for (final period in knowledge.keyPeriods) {
+    for (final tag in period.tags) {
+      add(tag);
+    }
+  }
+  return grouped;
+}
+
 /// Human-readable label for a provenance chip (source / provider / model / confidence).
 String provenanceLabel(Tag tag) {
   final parts = <String>[tag.source.wire];
@@ -73,7 +99,7 @@ List<String> whoColumnValues(
   final names = assignedPersonNames(knowledge, namesById);
   if (names.isNotEmpty) return names;
   return sortedAlphaBy([
-    for (final tag in groupItemLevelTagsByDimension(knowledge.tags)['who']!)
+    for (final tag in groupDisplayTagsByDimension(knowledge)['who']!)
       tag.value,
   ], (v) => v);
 }
@@ -86,14 +112,62 @@ bool tagIsWhoFaceCrop(Tag tag) {
 }
 
 bool itemHasWhoFaceCrops(ItemKnowledge knowledge) {
-  return knowledge.tags.any(tagIsWhoFaceCrop);
+  return whoFaceCropTags(knowledge).isNotEmpty;
 }
 
 List<Tag> whoFaceCropTags(ItemKnowledge knowledge) {
-  return [
-    for (final tag in knowledge.tags)
-      if (tagIsWhoFaceCrop(tag)) tag,
-  ];
+  final seen = <String>{};
+  final out = <Tag>[];
+  void add(Tag tag) {
+    if (!tagIsWhoFaceCrop(tag) || !seen.add(tag.id)) return;
+    out.add(tag);
+  }
+
+  for (final tag in knowledge.tags) {
+    add(tag);
+  }
+  for (final period in knowledge.keyPeriods) {
+    for (final tag in period.tags) {
+      add(tag);
+    }
+  }
+  return out;
+}
+
+/// Sample-frame timestamp for a who tag on a video key period, if any.
+int? sampleTimestampMsForWhoTag(ItemKnowledge knowledge, Tag tag) {
+  return sampleTimestampMsForTagId(knowledge, tag.id, tag.keyPeriodId);
+}
+
+int? sampleTimestampMsForTagId(
+  ItemKnowledge knowledge,
+  String tagId, [
+  String? keyPeriodId,
+]) {
+  if (keyPeriodId != null) {
+    for (final period in knowledge.keyPeriods) {
+      if (period.id == keyPeriodId) return period.sampleTimestampMs;
+    }
+  }
+  for (final period in knowledge.keyPeriods) {
+    if (period.tags.any((t) => t.id == tagId)) return period.sampleTimestampMs;
+  }
+  return null;
+}
+
+/// Who-face crop tag plus its video sample timestamp (null on photos).
+({Tag tag, int? sampleTimestampMs})? findWhoFaceTag(
+  ItemKnowledge knowledge,
+  String tagId,
+) {
+  for (final tag in whoFaceCropTags(knowledge)) {
+    if (tag.id != tagId) continue;
+    return (
+      tag: tag,
+      sampleTimestampMs: sampleTimestampMsForWhoTag(knowledge, tag),
+    );
+  }
+  return null;
 }
 
 PersonAppearance? appearanceForWhoTag(
@@ -197,6 +271,8 @@ List<String> knowledgeCsvValues({
   String? exceptTagId,
   String? exceptAppearanceId,
   String? exceptExclusionId,
+  /// When set (video key-period crop), occupancy is that period only.
+  String? sameKeyPeriodId,
 }) {
   final personIds = <String>{};
   final nameKeys = <String>{};
@@ -208,6 +284,9 @@ List<String> knowledgeCsvValues({
 
   for (final tag in whoFaceCropTags(knowledge)) {
     if (tag.id == exceptTagId) continue;
+    if (sameKeyPeriodId != null && tag.keyPeriodId != sameKeyPeriodId) {
+      continue;
+    }
     final intent = cropIntents[tag.id];
     if (intent?.unassign == true || intent?.exclude == true) continue;
     final person = effectiveAssignedPerson(
@@ -218,6 +297,7 @@ List<String> knowledgeCsvValues({
     add(person.personId, person.personName);
   }
   for (final appearance in itemLevelPersonAssignments(knowledge)) {
+    if (sameKeyPeriodId != null) continue;
     if (appearance.id == exceptAppearanceId) continue;
     final intent = appearanceIntents[appearance.id];
     if (intent?.unassign == true) continue;
@@ -229,6 +309,7 @@ List<String> knowledgeCsvValues({
     add(person.personId, person.personName);
   }
   for (final intent in pendingItemAssigns) {
+    if (sameKeyPeriodId != null) continue;
     if (!intent.hasTarget) continue;
     add(
       intent.personId,

@@ -365,4 +365,164 @@ void main() {
       isFalse,
     );
   });
+
+  test('groupDisplayTagsByDimension unions item-level and key-period values',
+      () {
+    final item = fixtureItem(id: 'item_v', type: ItemType.video);
+    final knowledge = fixtureKnowledge(
+      item: item,
+      tags: [fixtureTag(id: 't_item', dimension: 'what', value: 'picnic')],
+      keyPeriods: [
+        KeyPeriodKnowledge(
+          id: 'kp_1',
+          itemId: item.id,
+          startMs: 0,
+          endMs: 2000,
+          sampleTimestampMs: 500,
+          tags: [
+            fixtureTag(
+              id: 't_period',
+              itemId: item.id,
+              keyPeriodId: 'kp_1',
+              dimension: 'what',
+              value: 'swimming',
+            ),
+            fixtureTag(
+              id: 't_dup',
+              itemId: item.id,
+              keyPeriodId: 'kp_1',
+              dimension: 'what',
+              value: 'Picnic',
+            ),
+          ],
+        ),
+      ],
+    );
+    expect(
+      groupDisplayTagsByDimension(knowledge)['what']!.map((t) => t.value),
+      ['picnic', 'swimming'],
+    );
+  });
+
+  test('whoFaceCropTags includes key-period who boxes', () {
+    final item = fixtureItem(id: 'item_v', type: ItemType.video);
+    const region = TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4);
+    final knowledge = fixtureKnowledge(
+      item: item,
+      tags: const [],
+      keyPeriods: [
+        KeyPeriodKnowledge(
+          id: 'kp_1',
+          itemId: item.id,
+          startMs: 0,
+          endMs: 2000,
+          sampleTimestampMs: 800,
+          tags: [
+            fixtureTag(
+              id: 't_who',
+              itemId: item.id,
+              keyPeriodId: 'kp_1',
+              dimension: 'who',
+              value: 'Sam',
+              region: region,
+            ),
+          ],
+        ),
+      ],
+    );
+    expect(whoFaceCropTags(knowledge).single.id, 't_who');
+    expect(sampleTimestampMsForTagId(knowledge, 't_who'), 800);
+  });
+
+  test('draftPersonKeysOnItem occupancy is per key period on video', () {
+    final item = fixtureItem(id: 'item_v', type: ItemType.video);
+    const region = TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4);
+    final knowledge = fixtureKnowledge(
+      item: item,
+      tags: const [],
+      keyPeriods: [
+        KeyPeriodKnowledge(
+          id: 'kp_a',
+          itemId: item.id,
+          startMs: 0,
+          endMs: 2000,
+          sampleTimestampMs: 500,
+          tags: [
+            fixtureTag(
+              id: 'tag_a',
+              itemId: item.id,
+              keyPeriodId: 'kp_a',
+              dimension: 'who',
+              value: 'left',
+              region: region,
+            ),
+          ],
+        ),
+        KeyPeriodKnowledge(
+          id: 'kp_b',
+          itemId: item.id,
+          startMs: 2000,
+          endMs: 4000,
+          sampleTimestampMs: 3000,
+          tags: [
+            fixtureTag(
+              id: 'tag_b',
+              itemId: item.id,
+              keyPeriodId: 'kp_b',
+              dimension: 'who',
+              value: 'right',
+              region: region,
+            ),
+          ],
+        ),
+      ],
+      appearances: [
+        fixtureAppearance(
+          id: 'ap_a',
+          personId: 'person_maya',
+          itemId: item.id,
+          tagId: 'tag_a',
+        ),
+        fixtureAppearance(
+          id: 'ap_b',
+          personId: 'person_maya',
+          itemId: item.id,
+          tagId: 'tag_b',
+        ),
+      ],
+    );
+    const names = {'person_maya': 'Maya'};
+    final occupiedA = draftPersonKeysOnItem(
+      knowledge: knowledge,
+      cropIntents: const {},
+      appearanceIntents: const {},
+      exclusionIntents: const {},
+      pendingItemAssigns: const [],
+      personNamesById: names,
+      exceptTagId: 'tag_b',
+      sameKeyPeriodId: 'kp_b',
+    );
+    expect(occupiedA.personIds, isEmpty);
+    final occupiedB = draftPersonKeysOnItem(
+      knowledge: knowledge,
+      cropIntents: const {},
+      appearanceIntents: const {},
+      exclusionIntents: const {},
+      pendingItemAssigns: const [],
+      personNamesById: names,
+      exceptTagId: 'tag_a',
+      sameKeyPeriodId: 'kp_a',
+    );
+    expect(occupiedB.personIds, isEmpty);
+    final occupiedSame = draftPersonKeysOnItem(
+      knowledge: knowledge,
+      cropIntents: const {},
+      appearanceIntents: const {},
+      exclusionIntents: const {},
+      pendingItemAssigns: const [],
+      personNamesById: names,
+      sameKeyPeriodId: 'kp_a',
+    );
+    expect(occupiedSame.personIds, {'person_maya'});
+  });
 }

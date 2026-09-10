@@ -281,6 +281,7 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
         itemId: prev.itemId,
         startMs: input.startMs,
         endMs: input.endMs,
+        sampleTimestampMs: prev.sampleTimestampMs,
         tags: prev.tags,
       );
       final correction = _correction(

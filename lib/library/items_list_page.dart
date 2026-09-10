@@ -215,7 +215,6 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
       for (final item in items)
         if (ids.contains(item.id) &&
             item.processingStatus == ProcessingStatus.failed &&
-            item.type == ItemType.photo &&
             item.analysisRefState == AnalysisRefState.ready)
           item,
     ];
@@ -224,7 +223,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           key: Key('folder-retry-none'),
-          content: Text('No failed photos in this folder to retry.'),
+          content: Text('No failed items in this folder to retry.'),
         ),
       );
       return;

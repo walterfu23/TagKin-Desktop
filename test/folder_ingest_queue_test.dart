@@ -34,7 +34,7 @@ FolderIngestQueue _queue({
   void Function(Item item)? onItemUpdated,
   String? Function()? accountId,
   ActiveFolderIngestStore? checkpointStore,
-  Future<void> Function(String folderPath)? ensureFolderAccess,
+  Future<String?> Function(String folderPath)? ensureFolderAccess,
   Future<List<String>> Function()? bookmarkedFolders,
   Future<List<MediaCandidate>> Function(String path)? enumerateFolder,
   Future<int?> Function()? physicalMemoryBytes,
@@ -773,6 +773,7 @@ void main() {
       ensureFolderAccess: (_) async {
         expect(enumCalled, isFalse);
         accessCalled = true;
+        return null;
       },
       enumerateFolder: (path) async {
         expect(accessCalled, isTrue);
@@ -1106,6 +1107,116 @@ void main() {
 
     hold.complete(const []);
     await _waitIdle(queue);
+  });
+
+  test('re-ingest after library delete creates items again', () async {
+    final items = FakeItemsRepository();
+    final jobs = FakeJobsRepository();
+    final queue = _queue(
+      items: items,
+      jobs: jobs,
+      byFolder: {
+        '/albums/Paris': [_photo('/albums/Paris/a.jpg')],
+      },
+    );
+
+    expect(await queue.enqueue('/albums/Paris'), FolderIngestEnqueueResult.started);
+    await _waitIdle(queue);
+    expect(items.created, hasLength(1));
+    expect(queue.jobs.single.createdCount, 1);
+
+    items.removeItem('item_1');
+    expect(
+      await queue.enqueue('/albums/Paris'),
+      FolderIngestEnqueueResult.started,
+    );
+    await _waitIdle(queue);
+
+    expect(queue.jobs.last.phase, FolderIngestJobPhase.done);
+    expect(queue.jobs.last.createdCount, 1);
+    expect(items.created, hasLength(2));
+  });
+
+  test('enumerate FileSystemException marks the job failed', () async {
+    final items = FakeItemsRepository();
+    final jobs = FakeJobsRepository();
+    final queue = FolderIngestQueue(
+      itemsRepository: items,
+      jobsRepository: jobs,
+      isUsageBlocked: () => false,
+      enumerateFolder: (_) async {
+        throw const FileSystemException('Operation not permitted');
+      },
+      contentHasher: (path) async => 'hash-$path',
+      perceptualHasher: (path) async => null,
+      physicalMemoryBytes: () async => 16 * 1024 * 1024 * 1024,
+    );
+    addTearDown(queue.dispose);
+
+    await queue.enqueue('/albums/Paris');
+    await _waitIdle(queue);
+
+    expect(queue.jobs.single.phase, FolderIngestJobPhase.error);
+    expect(queue.jobs.single.statusLabel, isNot(contains('nothing new')));
+    expect(items.created, isEmpty);
+  });
+
+  test('all createItem failures mark the job failed', () async {
+    final items = FakeItemsRepository()..createError = Exception('register failed');
+    final jobs = FakeJobsRepository();
+    final queue = _queue(
+      items: items,
+      jobs: jobs,
+      byFolder: {
+        '/albums/Paris': [_photo('/albums/Paris/a.jpg')],
+      },
+    );
+
+    await queue.enqueue('/albums/Paris');
+    await _waitIdle(queue);
+
+    expect(queue.jobs.single.phase, FolderIngestJobPhase.error);
+    expect(queue.jobs.single.statusLabel, contains('register failed'));
+    expect(queue.jobs.single.createdCount, 0);
+  });
+
+  test('empty enumerate is no supported media, not nothing new', () async {
+    final items = FakeItemsRepository();
+    final jobs = FakeJobsRepository();
+    final queue = _queue(
+      items: items,
+      jobs: jobs,
+      byFolder: const {'/albums/Paris': []},
+    );
+
+    await queue.enqueue('/albums/Paris');
+    await _waitIdle(queue);
+
+    expect(queue.jobs.single.phase, FolderIngestJobPhase.done);
+    expect(queue.jobs.single.noSupportedMedia, isTrue);
+    expect(queue.jobs.single.statusLabel, 'Done (no supported photos or videos)');
+  });
+
+  test('enumerates the path returned by ensureFolderAccess', () async {
+    String? enumerated;
+    final items = FakeItemsRepository();
+    final jobs = FakeJobsRepository();
+    final queue = _queue(
+      items: items,
+      jobs: jobs,
+      byFolder: const {},
+      ensureFolderAccess: (_) async => '/resolved/Paris',
+      enumerateFolder: (path) async {
+        enumerated = path;
+        return [_photo('$path/a.jpg')];
+      },
+    );
+
+    await queue.enqueue('/albums/Paris');
+    await _waitIdle(queue);
+
+    expect(enumerated, '/resolved/Paris');
+    expect(items.created, hasLength(1));
   });
 }
 

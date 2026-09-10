@@ -37,8 +37,9 @@ tags:
       PAN.
   - name: tagging
     description: >
-      Image-only VLM tagging on a ready analysisRef (S6 / R9). Photo items in
-      v1; never accepts media bytes (R1). Escalates only on evidence.
+      Image-only VLM tagging on a ready analysisRef (S6 / R9). Photos use the
+      item analysisRef; videos use per-key-period image refs (never a native
+      video model). Never accepts media bytes (R1). Escalates only on evidence.
   - name: persons
     description: >
       Cross-item person identity (S7). pgvector likeness search proposes
@@ -536,9 +537,9 @@ paths:
       tags: [tagging]
       operationId: analyzeItem
       summary: >
-        Run the image-only TaggingProvider on a photo item's ready analysisRef.
-        Reserves spend first (R9); never accepts or proxies media bytes (R1).
-        Video tagging is not supported in v1.
+        Run the image-only TaggingProvider on a ready analysisRef (photo) or
+        per-key-period image refs (video). Reserves spend first (R9); never
+        accepts or proxies media bytes (R1). Never invokes a native-video model.
       responses:
         "200":
           description: Tagging completed; normalized tags persisted
@@ -2096,14 +2097,42 @@ components:
           description: MIME type of the file the client will upload (image/* or video/*).
           example: image/jpeg
 
+    KeyPeriodAnalysisRef:
+      type: object
+      required: [keyPeriodId, analysisRef]
+      description: >
+        One representative JPEG on the model host for a video key period
+        (image-only — never the source clip).
+      properties:
+        keyPeriodId:
+          type: string
+          format: uuid
+        analysisRef:
+          type: string
+          description: Opaque model-host file URI/reference (not bytes, R4).
+          minLength: 1
+        sampleTimestampMs:
+          type: integer
+          minimum: 0
+          description: Timestamp of the uploaded sample frame inside the clip.
+
     RecordAnalysisRef:
       type: object
       required: [analysisRef]
       properties:
         analysisRef:
           type: string
-          description: Opaque model-host file URI/reference (not bytes, R4).
+          description: >
+            Opaque model-host file URI/reference (not bytes, R4). For videos
+            this is the first key-period JPEG; per-period refs go in
+            keyPeriodRefs.
           minLength: 1
+        keyPeriodRefs:
+          type: array
+          description: >
+            Video only: one image analysisRef per key period. Omitted for photos.
+          items:
+            $ref: "#/components/schemas/KeyPeriodAnalysisRef"
 
     PrePassWhere:
       type: object
@@ -2620,6 +2649,11 @@ components:
         endMs:
           type: integer
           minimum: 0
+        sampleTimestampMs:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: Representative sample-frame timestamp used for analyze / face crop.
 
     TagRegion:
       type: object
@@ -2792,6 +2826,11 @@ components:
         endMs:
           type: integer
           minimum: 0
+        sampleTimestampMs:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: Representative sample-frame timestamp used for analyze / face crop.
         tags:
           type: array
           items:

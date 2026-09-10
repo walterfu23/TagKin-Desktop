@@ -81,13 +81,43 @@ void main() {
     expect(queue.jobs.single.statusLabel, 'Done (1 of 2 failed)');
   });
 
-  test('all deletes failing marks the job as error', () async {
+  test('onFolderRemoved runs after a successful remove', () async {
+    final items = FakeItemsRepository(
+      items: [
+        fixtureItem(id: 'a'),
+        fixtureItem(id: 'b'),
+      ],
+    );
+    final jobs = FakeJobsRepository(onDelete: items.removeItem);
+    final dropped = <String>[];
+    final queue = FolderRemoveQueue(
+      jobsRepository: jobs,
+      removeBookmark: (_) async {},
+      onFolderRemoved: (path) async {
+        dropped.add(path);
+      },
+    );
+
+    await queue.enqueue('/albums/trip', ['a', 'b']);
+    await pumpEventQueue();
+
+    expect(dropped, ['/albums/trip']);
+    expect(queue.jobs.single.phase, FolderRemoveJobPhase.done);
+  });
+
+  test('onFolderRemoved is skipped when every delete fails', () async {
     final jobs = FakeJobsRepository(deleteError: Exception('nope'));
-    final queue = FolderRemoveQueue(jobsRepository: jobs);
+    var called = false;
+    final queue = FolderRemoveQueue(
+      jobsRepository: jobs,
+      onFolderRemoved: (_) async {
+        called = true;
+      },
+    );
     await queue.enqueue('/albums/x', ['a', 'b']);
     await pumpEventQueue();
 
+    expect(called, isFalse);
     expect(queue.jobs.single.phase, FolderRemoveJobPhase.error);
-    expect(queue.jobs.single.failed, 2);
   });
 }

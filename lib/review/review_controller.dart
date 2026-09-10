@@ -307,6 +307,7 @@ class ReviewController extends ChangeNotifier {
               itemId: kp.itemId,
               startMs: startMs,
               endMs: endMs,
+              sampleTimestampMs: kp.sampleTimestampMs,
               tags: kp.tags,
             )
           else
@@ -661,6 +662,7 @@ class ReviewController extends ChangeNotifier {
               itemId: kp.itemId,
               startMs: kp.startMs,
               endMs: kp.endMs,
+              sampleTimestampMs: kp.sampleTimestampMs,
               tags: [...kp.tags, tag],
             )
           else
@@ -704,6 +706,7 @@ class ReviewController extends ChangeNotifier {
             itemId: kp.itemId,
             startMs: kp.startMs,
             endMs: kp.endMs,
+            sampleTimestampMs: kp.sampleTimestampMs,
             tags: kp.tags.map(mapTag).toList(),
           ),
       ],
@@ -724,6 +727,7 @@ class ReviewController extends ChangeNotifier {
             itemId: kp.itemId,
             startMs: kp.startMs,
             endMs: kp.endMs,
+            sampleTimestampMs: kp.sampleTimestampMs,
             tags: kp.tags.where((t) => t.id != tagId).toList(),
           ),
       ],

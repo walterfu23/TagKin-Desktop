@@ -6,6 +6,7 @@ import 'package:tagkin_desktop/ingest/model_host_uploader.dart';
 import 'package:tagkin_desktop/ingest/post_ingest_pipeline_controller.dart';
 import 'package:tagkin_desktop/ingest/upload_controller.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
+import 'package:tagkin_desktop/prepass/frame_sampler.dart';
 import 'package:tagkin_desktop/prepass/prepass_controller.dart';
 import 'package:tagkin_desktop/prepass/prepass_payload_builder.dart';
 
@@ -67,7 +68,8 @@ UploadController _stubUpload(FakeItemsRepository items) {
 
 void main() {
   group('PostIngestPipelineController', () {
-    test('chains pre-pass → upload → photo-only analyze', () async {
+    test('chains pre-pass → upload → photo analyze; skips video with no samples',
+        () async {
       final photo = fixtureItem(id: 'item_1', type: ItemType.photo);
       final video = fixtureItem(id: 'item_2', type: ItemType.video);
       final items = FakeItemsRepository(items: [photo, video]);
@@ -99,6 +101,65 @@ void main() {
       expect(pipeline.analyzeOutcomes, hasLength(1));
       expect(pipeline.analyzeOutcomes.single.succeeded, isTrue);
       expect(pipeline.canRetry, isFalse);
+    });
+
+    test('analyzes a video after sample-frame upload', () async {
+      final video = fixtureItem(id: 'item_v', type: ItemType.video);
+      final items = FakeItemsRepository(items: [video]);
+      final jobs = FakeJobsRepository(itemId: 'item_v', item: video);
+      final prePass = PrePassController(
+        itemsRepository: items,
+        buildPayload: ({
+          required path,
+          required type,
+          faceEmbedder,
+          skipFaces = false,
+          maxFrames = 20,
+          minIntervalMs = 1000,
+          maxIntervalMs = 15000,
+          sceneCutThreshold = 0.3,
+        }) async {
+          return const PrePassBuildResult(
+            payload: PrePassResult(
+              contentHash: 'hash',
+              durationMs: 4000,
+              keyPeriods: [
+                PrePassKeyPeriodInput(startMs: 0, endMs: 2000),
+                PrePassKeyPeriodInput(startMs: 2000, endMs: 4000),
+              ],
+            ),
+            frameSamples: [
+              FrameSample(
+                path: '/tmp/frames/f0.jpg',
+                timestampMs: 500,
+                keyPeriodIndex: 0,
+              ),
+              FrameSample(
+                path: '/tmp/frames/f1.jpg',
+                timestampMs: 3000,
+                keyPeriodIndex: 1,
+              ),
+            ],
+          );
+        },
+      );
+      final upload = _stubUpload(items);
+      final pipeline = PostIngestPipelineController(
+        prePass: prePass,
+        upload: upload,
+        jobsRepository: jobs,
+        whoFaceLinker: WhoFaceLinker(items: items),
+      );
+
+      await pipeline.start(
+        ingestOutcomes: [_ingest(item: video, path: '/b.mp4')],
+        usageBlocked: false,
+      );
+
+      expect(pipeline.phase, PostIngestPipelinePhase.done);
+      expect(upload.outcomes.single.succeeded, isTrue);
+      expect(jobs.analyzedItemIds, ['item_v']);
+      expect(pipeline.analyzeOutcomes.single.succeeded, isTrue);
     });
 
     test('finishes one item before the next pre-pass', () async {

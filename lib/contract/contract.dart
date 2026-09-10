@@ -1094,18 +1094,21 @@ class KeyPeriod {
     required this.itemId,
     required this.startMs,
     required this.endMs,
+    this.sampleTimestampMs,
   });
 
   final String id;
   final String itemId;
   final int startMs;
   final int endMs;
+  final int? sampleTimestampMs;
 
   factory KeyPeriod.fromJson(Map<String, dynamic> json) => KeyPeriod(
         id: json['id'] as String,
         itemId: json['itemId'] as String,
         startMs: (json['startMs'] as num).toInt(),
         endMs: (json['endMs'] as num).toInt(),
+        sampleTimestampMs: json['sampleTimestampMs'] == null ? null : (json['sampleTimestampMs'] as num).toInt(),
       );
 
   Map<String, dynamic> toJson() {
@@ -1114,6 +1117,33 @@ class KeyPeriod {
     json['itemId'] = itemId;
     json['startMs'] = startMs;
     json['endMs'] = endMs;
+    if (sampleTimestampMs != null) json['sampleTimestampMs'] = sampleTimestampMs;
+    return json;
+  }
+}
+
+class KeyPeriodAnalysisRef {
+  const KeyPeriodAnalysisRef({
+    required this.keyPeriodId,
+    required this.analysisRef,
+    this.sampleTimestampMs,
+  });
+
+  final String keyPeriodId;
+  final String analysisRef;
+  final int? sampleTimestampMs;
+
+  factory KeyPeriodAnalysisRef.fromJson(Map<String, dynamic> json) => KeyPeriodAnalysisRef(
+        keyPeriodId: json['keyPeriodId'] as String,
+        analysisRef: json['analysisRef'] as String,
+        sampleTimestampMs: json['sampleTimestampMs'] == null ? null : (json['sampleTimestampMs'] as num).toInt(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['keyPeriodId'] = keyPeriodId;
+    json['analysisRef'] = analysisRef;
+    if (sampleTimestampMs != null) json['sampleTimestampMs'] = sampleTimestampMs;
     return json;
   }
 }
@@ -1124,6 +1154,7 @@ class KeyPeriodKnowledge {
     required this.itemId,
     required this.startMs,
     required this.endMs,
+    this.sampleTimestampMs,
     required this.tags,
   });
 
@@ -1131,6 +1162,7 @@ class KeyPeriodKnowledge {
   final String itemId;
   final int startMs;
   final int endMs;
+  final int? sampleTimestampMs;
   final List<Tag> tags;
 
   factory KeyPeriodKnowledge.fromJson(Map<String, dynamic> json) => KeyPeriodKnowledge(
@@ -1138,6 +1170,7 @@ class KeyPeriodKnowledge {
         itemId: json['itemId'] as String,
         startMs: (json['startMs'] as num).toInt(),
         endMs: (json['endMs'] as num).toInt(),
+        sampleTimestampMs: json['sampleTimestampMs'] == null ? null : (json['sampleTimestampMs'] as num).toInt(),
         tags: (json['tags'] as List<dynamic>).map((e) => Tag.fromJson(e as Map<String, dynamic>)).toList(),
       );
 
@@ -1147,6 +1180,7 @@ class KeyPeriodKnowledge {
     json['itemId'] = itemId;
     json['startMs'] = startMs;
     json['endMs'] = endMs;
+    if (sampleTimestampMs != null) json['sampleTimestampMs'] = sampleTimestampMs;
     json['tags'] = tags.map((e) => e.toJson()).toList();
     return json;
   }
@@ -1578,17 +1612,21 @@ class ReassignAppearanceResponse {
 class RecordAnalysisRef {
   const RecordAnalysisRef({
     required this.analysisRef,
+    this.keyPeriodRefs,
   });
 
   final String analysisRef;
+  final List<KeyPeriodAnalysisRef>? keyPeriodRefs;
 
   factory RecordAnalysisRef.fromJson(Map<String, dynamic> json) => RecordAnalysisRef(
         analysisRef: json['analysisRef'] as String,
+        keyPeriodRefs: json['keyPeriodRefs'] == null ? null : (json['keyPeriodRefs'] as List<dynamic>).map((e) => KeyPeriodAnalysisRef.fromJson(e as Map<String, dynamic>)).toList(),
       );
 
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{};
     json['analysisRef'] = analysisRef;
+    if (keyPeriodRefs != null) json['keyPeriodRefs'] = keyPeriodRefs?.map((e) => e.toJson()).toList();
     return json;
   }
 }

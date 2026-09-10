@@ -80,6 +80,9 @@ class FakeItemsRepository implements ItemsRepository {
   /// When set, [linkPeopleForItem] throws this.
   Object? linkPeopleError;
 
+  /// When set, [createItem] throws this after recording the attempt.
+  Object? createError;
+
   /// Removes an item from the in-memory library (D7 delete tests).
   void removeItem(String id) {
     _items.removeWhere((i) => i.id == id);
@@ -167,6 +170,7 @@ class FakeItemsRepository implements ItemsRepository {
   @override
   Future<Item> createItem(CreateItem input) async {
     created.add(input);
+    if (createError != null) throw createError!;
     final item = Item(
       id: 'item_${_items.length + 1}',
       type: input.type,
@@ -193,7 +197,10 @@ class FakeItemsRepository implements ItemsRepository {
     final item = await getItem(itemId);
     return PrePassResultResponse(
       item: item,
-      keyPeriodIds: const [],
+      keyPeriodIds: [
+        for (var i = 0; i < (input.keyPeriods?.length ?? 0); i++)
+          'kp-$itemId-$i',
+      ],
       appearanceIds: const [],
       tagIds: const [],
     );

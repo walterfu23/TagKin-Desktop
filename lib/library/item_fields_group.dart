@@ -45,7 +45,7 @@ class ItemFieldsGroup extends ConsumerWidget {
     final format = ref.watch(desktopPrefsProvider).dateTimeFormatOrLocal;
     final grouped = knowledge == null
         ? null
-        : groupItemLevelTagsByDimension(knowledge!.tags);
+        : groupDisplayTagsByDimension(knowledge!);
     final personNames = sortedAlphaBy(
       whoPersonNames ??
           (knowledge == null

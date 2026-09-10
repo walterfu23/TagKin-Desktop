@@ -114,12 +114,21 @@ class FolderBookmarkStore {
   }
 
   /// Drop the bookmark for [folderPath] if present (exact path only).
+  ///
+  /// Stops security-scoped access when no other saved path uses the same
+  /// bookmark bytes (picker path and sandbox-resolved path can share one).
   Future<void> remove(String folderPath) async {
     await _ensureLoaded();
     final normalized = _canonicalPath(folderPath);
-    if (!_cache.containsKey(normalized)) return;
-    _cache.remove(normalized);
+    final bookmark = _cache.remove(normalized);
+    if (bookmark == null) return;
     await _persist();
+    if (_cache.values.contains(bookmark)) return;
+    try {
+      await SecurityScopedBookmarks.stopAccess(bookmark);
+    } catch (_) {
+      // Tests / Windows have no plugin; access stop is best-effort.
+    }
   }
 
   /// Bookmarked folder paths (normalized).

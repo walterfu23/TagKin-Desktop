@@ -38,13 +38,13 @@ class AnalyzeOutcome {
   bool get succeeded => item != null && error == null;
 }
 
-/// Chains client pre-pass → upload → photo analyze after batch `POST /items`.
+/// Chains client pre-pass → upload → analyze after batch `POST /items`.
 ///
 /// One item at a time (pre-pass → upload → analyze) so peak memory stays
 /// near a single file and the first tagged row can appear before later
 /// items start. Upload + analyze are skipped when [usageBlocked] is true
-/// (D6). Analyze is photo-only (R9). Continues past per-item failures
-/// within each stage.
+/// (D6). Videos analyze image-only sample frames (R9). Continues past
+/// per-item failures within each stage.
 class PostIngestPipelineController extends ChangeNotifier {
   PostIngestPipelineController({
     required this.prePass,
@@ -204,7 +204,8 @@ class PostIngestPipelineController extends ChangeNotifier {
           (o) =>
               o.succeeded &&
               currentIds.contains(o.itemId) &&
-              typeById[o.itemId] == ItemType.photo,
+              (typeById[o.itemId] == ItemType.photo ||
+                  typeById[o.itemId] == ItemType.video),
         )
         .toList();
 

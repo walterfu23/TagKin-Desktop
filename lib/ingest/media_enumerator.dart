@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:tagkin_desktop/contract/contract.dart';
 
@@ -86,19 +87,22 @@ class MediaEnumerator {
     }
     final results = <MediaCandidate>[];
     final visitedDirs = <String>{};
-    await _walk(root, results, visitedDirs);
+    await _walk(root, results, visitedDirs, isRoot: true);
     return results;
   }
 
   Future<void> _walk(
     Directory dir,
     List<MediaCandidate> results,
-    Set<String> visitedDirs,
-  ) async {
+    Set<String> visitedDirs, {
+    required bool isRoot,
+  }) async {
     String resolvedPath;
     try {
       resolvedPath = await dir.resolveSymbolicLinks();
-    } on FileSystemException {
+    } on FileSystemException catch (e) {
+      if (isRoot) rethrow;
+      debugPrint('MediaEnumerator: skip unreadable dir ${dir.path}: $e');
       return;
     }
     if (!visitedDirs.add(resolvedPath)) return;
@@ -106,7 +110,9 @@ class MediaEnumerator {
     List<FileSystemEntity> entries;
     try {
       entries = await dir.list(followLinks: false).toList();
-    } on FileSystemException {
+    } on FileSystemException catch (e) {
+      if (isRoot) rethrow;
+      debugPrint('MediaEnumerator: skip unreadable dir ${dir.path}: $e');
       return;
     }
 
@@ -115,7 +121,7 @@ class MediaEnumerator {
       if (isIgnoredName(basename)) continue;
 
       if (entity is Directory) {
-        await _walk(entity, results, visitedDirs);
+        await _walk(entity, results, visitedDirs, isRoot: false);
         continue;
       }
       if (entity is File) {

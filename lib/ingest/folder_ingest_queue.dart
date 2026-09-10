@@ -59,6 +59,9 @@ class FolderIngestJob {
 
   final String folderPath;
 
+  /// Sandbox-resolved path from [ensureFolderAccess], when it differs.
+  String? resolvedFolderPath;
+
   /// Collection that started this job (banner + membership claim).
   /// Null when no collection session was open at enqueue.
   final String? collectionId;
@@ -67,6 +70,9 @@ class FolderIngestJob {
   final bool continueExistingOnly;
   FolderIngestJobPhase phase = FolderIngestJobPhase.scanning;
   Object? error;
+
+  /// Scan listed the folder but found no supported photo/video files.
+  bool noSupportedMedia = false;
 
   int registerDone = 0;
   int registerTotal = 0;
@@ -116,6 +122,9 @@ class FolderIngestJob {
         }
         if (alreadyInLibraryCount > 0) {
           return 'Done ($alreadyInLibraryCount already in library)';
+        }
+        if (noSupportedMedia) {
+          return 'Done (no supported photos or videos)';
         }
         return 'Done (nothing new)';
       case FolderIngestJobPhase.error:
@@ -193,8 +202,9 @@ class FolderIngestQueue extends ChangeNotifier {
   /// When set, persist in-progress folder paths across process death.
   final ActiveFolderIngestStore? checkpointStore;
 
-  /// Restore sandbox / existence before enumerate. Null skips (unit tests).
-  final Future<void> Function(String folderPath)? ensureFolderAccess;
+  /// Restore sandbox / existence before enumerate. Returns the path to
+  /// scan (sandbox-resolved on macOS). Null skips (unit tests).
+  final Future<String?> Function(String folderPath)? ensureFolderAccess;
 
   /// macOS security-scoped ingest roots (empty on Windows / in most tests).
   final Future<List<String>> Function()? bookmarkedFolders;
@@ -259,10 +269,25 @@ class FolderIngestQueue extends ChangeNotifier {
     final normalized = normalizePath(path);
     return _jobs.any(
       (j) =>
-          hidesFacesFolder(j.phase) &&
-          pathIsUnderFolder(normalized, j.folderPath),
+          hidesFacesFolder(j.phase) && _jobCoversPath(j, normalized),
     );
   }
+
+  /// Drop the 5s `GET /items` cache (folder remove, or start of a new job).
+  void invalidateItemsCache() {
+    _itemsCache = null;
+    _itemsCacheAt = null;
+  }
+
+  static bool _jobCoversPath(FolderIngestJob job, String filePath) {
+    if (pathIsUnderFolder(filePath, job.folderPath)) return true;
+    final resolved = job.resolvedFolderPath;
+    if (resolved == null || resolved.isEmpty) return false;
+    return pathIsUnderFolder(filePath, resolved);
+  }
+
+  String _claimPath(FolderIngestJob job) =>
+      job.resolvedFolderPath ?? job.folderPath;
 
   void _safeNotify() {
     if (_disposed) return;
@@ -301,7 +326,7 @@ class FolderIngestQueue extends ChangeNotifier {
   ) async {
     _libraryRefreshTick++;
     await _publishMembership(
-      job.folderPath,
+      _claimPath(job),
       collectionId: job.collectionId,
     );
     _safeNotify();
@@ -388,8 +413,10 @@ class FolderIngestQueue extends ChangeNotifier {
     return _jobs.any((j) {
       if (!j.isActive) return false;
       return j.folderPath == normalized ||
-          pathIsUnderFolder(normalized, j.folderPath) ||
-          pathIsUnderFolder(j.folderPath, normalized);
+          _jobCoversPath(j, normalized) ||
+          pathIsUnderFolder(j.folderPath, normalized) ||
+          (j.resolvedFolderPath != null &&
+              pathIsUnderFolder(j.resolvedFolderPath!, normalized));
     });
   }
 
@@ -513,11 +540,19 @@ class FolderIngestQueue extends ChangeNotifier {
     try {
       job.phase = FolderIngestJobPhase.scanning;
       job.error = null;
+      job.noSupportedMedia = false;
+      invalidateItemsCache();
       _safeNotify();
 
+      var scanRoot = job.folderPath;
       final ensure = ensureFolderAccess;
       if (ensure != null) {
-        await ensure(job.folderPath);
+        final resolved = await ensure(job.folderPath);
+        if (resolved != null && resolved.isNotEmpty) {
+          final normalized = normalizePath(resolved);
+          job.resolvedFolderPath = normalized;
+          scanRoot = normalized;
+        }
       }
 
       if (job.continueExistingOnly) {
@@ -527,8 +562,15 @@ class FolderIngestQueue extends ChangeNotifier {
         return;
       }
 
-      final candidates = await enumerateFolder(job.folderPath);
+      final candidates = await enumerateFolder(scanRoot);
       if (_disposed) return;
+      if (candidates.isEmpty) {
+        job.noSupportedMedia = true;
+        job.phase = FolderIngestJobPhase.done;
+        await _checkpointRemove(job.folderPath);
+        await _bumpLibraryAndPublish(job);
+        return;
+      }
       final hashed = <HashedCandidate>[];
       for (final candidate in candidates) {
         final contentHash = await contentHasher(candidate.path);
@@ -604,7 +646,7 @@ class FolderIngestQueue extends ChangeNotifier {
       for (final item in existingItems) {
         if (!_pipelineIncomplete(item)) continue;
         final path = localPathFromSourceRef(item.sourceRef);
-        if (path == null || !pathIsUnderFolder(path, job.folderPath)) {
+        if (path == null || !_jobCoversPath(job, path)) {
           continue;
         }
         final normalized = normalizePath(path);
@@ -629,7 +671,7 @@ class FolderIngestQueue extends ChangeNotifier {
     for (final item in existingItems) {
       if (!_pipelineIncomplete(item)) continue;
       final path = localPathFromSourceRef(item.sourceRef);
-      if (path == null || !pathIsUnderFolder(path, job.folderPath)) {
+      if (path == null || !_jobCoversPath(job, path)) {
         continue;
       }
       outcomes.add(IngestOutcome(path: normalizePath(path), item: item));
@@ -643,6 +685,17 @@ class FolderIngestQueue extends ChangeNotifier {
     List<IngestOutcome> outcomes,
   ) async {
     final succeeded = outcomes.where((o) => o.succeeded).length;
+    final failedCreates = [
+      for (final o in outcomes)
+        if (!o.succeeded && o.error != null) o,
+    ];
+    if (succeeded == 0 && failedCreates.isNotEmpty && job.continuedCount == 0) {
+      job.phase = FolderIngestJobPhase.error;
+      job.error = failedCreates.first.error;
+      await _checkpointRemove(job.folderPath);
+      await _bumpLibraryAndPublish(job);
+      return;
+    }
     if (succeeded == 0) {
       job.phase = FolderIngestJobPhase.done;
       await _checkpointRemove(job.folderPath);

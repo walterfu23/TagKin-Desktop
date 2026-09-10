@@ -691,7 +691,7 @@ class LibraryTableController extends ChangeNotifier {
         try {
           final knowledge = await itemsRepository.getKnowledge(id);
           if (_loadGeneration != gen) return;
-          final grouped = groupItemLevelTagsByDimension(knowledge.tags);
+          final grouped = groupDisplayTagsByDimension(knowledge);
           final whereRaw = grouped['where']!.map((t) => t.value).toList();
           final whereEntries = collapseWhereDisplays(
             await _whereLabels.resolveAllDisplays(whereRaw),

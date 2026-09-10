@@ -94,4 +94,37 @@ void main() {
       expect(plan.length, greaterThan(120)); // better than 1/min
     });
   });
+
+  group('pickRepresentativeFramesPerKeyPeriod', () {
+    test('picks the mid sample of each key period', () {
+      final picked = pickRepresentativeFramesPerKeyPeriod(
+        samples: const [
+          FrameSample(path: 'a0', timestampMs: 0, keyPeriodIndex: 0),
+          FrameSample(path: 'a1', timestampMs: 500, keyPeriodIndex: 0),
+          FrameSample(path: 'a2', timestampMs: 1000, keyPeriodIndex: 0),
+          FrameSample(path: 'b0', timestampMs: 4000, keyPeriodIndex: 1),
+        ],
+        keyPeriodCount: 2,
+      );
+      expect(picked.map((s) => s.path).toList(), ['a1', 'b0']);
+    });
+
+    test('thins to maxFrames across periods', () {
+      final samples = [
+        for (var i = 0; i < 6; i++)
+          FrameSample(
+            path: 'p$i',
+            timestampMs: i * 1000,
+            keyPeriodIndex: i,
+          ),
+      ];
+      final picked = pickRepresentativeFramesPerKeyPeriod(
+        samples: samples,
+        keyPeriodCount: 6,
+        maxFrames: 3,
+      );
+      expect(picked, hasLength(3));
+      expect(picked.map((s) => s.keyPeriodIndex).toList(), [0, 3, 5]);
+    });
+  });
 }

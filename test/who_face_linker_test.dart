@@ -393,4 +393,87 @@ void main() {
     expect(result, isNotNull);
     expect(embedder.seen, hasLength(1));
   });
+
+  test('WhoFaceLinker posts video key-period who tags from extracted frames',
+      () async {
+    final jpeg = _solidJpeg();
+    final dir = await Directory.systemTemp.createTemp('who_vid_');
+    addTearDown(() => deleteTempDir(dir));
+    final file = File(p.join(dir.path, 'clip.mp4'));
+    await file.writeAsBytes([0, 1, 2, 3]);
+
+    final item = fixtureItem(
+      id: 'item_v',
+      type: ItemType.video,
+      sourceRef: Uri.file(file.path).toString(),
+      processingStatus: ProcessingStatus.tagged,
+      contentHash: null,
+    );
+    const region = TagRegion(yMin: 0.2, xMin: 0.2, yMax: 0.6, xMax: 0.6);
+    final items = FakeItemsRepository(items: [item]);
+    items.setKnowledge(
+      item.id,
+      fixtureKnowledge(
+        item: item,
+        tags: const [],
+        keyPeriods: [
+          KeyPeriodKnowledge(
+            id: 'kp_a',
+            itemId: item.id,
+            startMs: 0,
+            endMs: 2000,
+            sampleTimestampMs: 500,
+            tags: [
+              fixtureTag(
+                id: 'tag_a',
+                itemId: item.id,
+                keyPeriodId: 'kp_a',
+                dimension: 'who',
+                value: 'Sam',
+                region: region,
+              ),
+            ],
+          ),
+          KeyPeriodKnowledge(
+            id: 'kp_b',
+            itemId: item.id,
+            startMs: 2000,
+            endMs: 4000,
+            sampleTimestampMs: 3000,
+            tags: [
+              fixtureTag(
+                id: 'tag_b',
+                itemId: item.id,
+                keyPeriodId: 'kp_b',
+                dimension: 'who',
+                value: 'Sam',
+                region: region,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    final timestamps = <int>[];
+    final embedder = _FixedModelEmbedder('onnx-arcface-w600k-r50-v5');
+    final linker = WhoFaceLinker(
+      items: items,
+      embedder: embedder,
+      extractVideoFrame: ({required videoPath, required timestampMs}) async {
+        timestamps.add(timestampMs);
+        expect(videoPath, file.path);
+        return jpeg;
+      },
+    );
+    final result = await linker.linkWhoFacesForItem(item);
+
+    expect(result, isNotNull);
+    expect(timestamps, [500, 3000]);
+    expect(
+      items.whoAppearancesRecorded.single.appearances.map((a) => a.tagId),
+      ['tag_a', 'tag_b'],
+    );
+    expect(embedder.seen, hasLength(2));
+  });
 }

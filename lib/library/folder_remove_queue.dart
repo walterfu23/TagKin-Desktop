@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:tagkin_desktop/api/jobs_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart' show jobsRepositoryProvider;
 import 'package:tagkin_desktop/ingest/folder_bookmark_store.dart';
+import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 
@@ -74,6 +75,7 @@ class FolderRemoveQueue extends ChangeNotifier {
     required this.jobsRepository,
     this.removeBookmark,
     this.currentCollectionId,
+    this.onFolderRemoved,
   });
 
   final JobsRepository jobsRepository;
@@ -83,6 +85,9 @@ class FolderRemoveQueue extends ChangeNotifier {
 
   /// Open collection at enqueue time.
   final String? Function()? currentCollectionId;
+
+  /// Drop collection membership and ingest caches after items are gone.
+  final Future<void> Function(String folderPath)? onFolderRemoved;
 
   List<FolderRemoveJob> _jobs = const [];
   int _libraryRefreshTick = 0;
@@ -180,6 +185,14 @@ class FolderRemoveQueue extends ChangeNotifier {
         // Bookmark cleanup is best-effort for sandbox reopen.
       }
 
+      if (job.failed < job.total) {
+        try {
+          await onFolderRemoved?.call(job.folderPath);
+        } catch (_) {
+          // Membership / ingest-cache drop is best-effort.
+        }
+      }
+
       job.phase = job.failed == job.total && job.total > 0
           ? FolderRemoveJobPhase.error
           : FolderRemoveJobPhase.done;
@@ -200,9 +213,21 @@ final folderRemoveQueueProvider = ChangeNotifierProvider<FolderRemoveQueue>(
         final cols = ref.read(collectionsControllerProvider);
         return cols.sessionReady ? cols.current.id : null;
       },
+      onFolderRemoved: (path) async {
+        try {
+          ref.read(collectionsControllerProvider).removeFolders([path]);
+        } catch (_) {}
+        try {
+          ref.read(folderIngestQueueProvider).invalidateItemsCache();
+        } catch (_) {}
+      },
     );
   },
   // Required when the signed-in shell overrides jobsRepositoryProvider
   // (same pattern as folderIngestQueueProvider).
-  dependencies: [jobsRepositoryProvider, collectionsControllerProvider],
+  dependencies: [
+    jobsRepositoryProvider,
+    collectionsControllerProvider,
+    folderIngestQueueProvider,
+  ],
 );

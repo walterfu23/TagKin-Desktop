@@ -48,11 +48,11 @@ typedef PrepareModelUpload = Future<ModelUploadPayload> Function({
 });
 
 /// Orchestrates D5: for each succeeded D4 [PrePassOutcome], mint a grant,
-/// PUT primary-frame bytes to the model host, and record `analysisRef`.
+/// PUT bytes to the model host, and record `analysisRef`.
 ///
 /// - Photo: uploads the whole original local file (HEIC/HEIF → JPEG first).
-/// - Video: uploads one D4-sampled representative frame (first sample);
-///   skips when no samples exist.
+/// - Video: uploads one D4 representative JPEG per key period (never the
+///   source clip); skips when no samples exist.
 ///
 /// Bytes never enter tagkin-api (R1/R5); grant is URL-only (R8); owner is
 /// never sent (R10).
@@ -236,19 +236,13 @@ class UploadController extends ChangeNotifier {
     List<FrameSample> frameSamples,
   ) async {
     final item = prePass.response!.item;
-    final primaryPath = _primaryUploadPath(
-      item: item,
-      sourcePath: prePass.path,
-      frameSamples: frameSamples,
-    );
-    if (primaryPath == null) {
-      // Video with no sampled frames — skip rather than invent bytes.
-      return null;
+    if (item.type == ItemType.video) {
+      return _uploadVideoFrames(item, prePass.response!, frameSamples);
     }
 
-    final rawBytes = await _read(primaryPath);
+    final rawBytes = await _read(prePass.path);
     final prepared = await prepareUpload(
-      path: primaryPath,
+      path: prePass.path,
       type: item.type,
       rawBytes: rawBytes,
     );
@@ -279,6 +273,74 @@ class UploadController extends ChangeNotifier {
     return UploadOutcome(
       itemId: item.id,
       analysisRef: recorded.analysisRef ?? analysisRef,
+    );
+  }
+
+  Future<UploadOutcome?> _uploadVideoFrames(
+    Item item,
+    PrePassResultResponse response,
+    List<FrameSample> frameSamples,
+  ) async {
+    final periodIds = response.keyPeriodIds;
+    final picked = pickRepresentativeFramesPerKeyPeriod(
+      samples: frameSamples,
+      keyPeriodCount: periodIds.length,
+    );
+    if (picked.isEmpty) return null;
+
+    final refs = <KeyPeriodAnalysisRef>[];
+    String? firstRef;
+    for (final sample in picked) {
+      if (sample.keyPeriodIndex < 0 ||
+          sample.keyPeriodIndex >= periodIds.length) {
+        continue;
+      }
+      final rawBytes = await _read(sample.path);
+      final prepared = await prepareUpload(
+        path: sample.path,
+        type: ItemType.video,
+        rawBytes: rawBytes,
+      );
+      final grant = await itemsRepository.createUploadGrant(
+        item.id,
+        CreateUploadGrant(mimeType: prepared.mimeType),
+      );
+      String? analysisRef;
+      try {
+        analysisRef = await _putWithExpiryRetry(
+          itemId: item.id,
+          grant: grant,
+          bytes: prepared.bytes,
+          mimeType: prepared.mimeType,
+        );
+      } catch (e) {
+        return UploadOutcome(itemId: item.id, error: e);
+      }
+      analysisRef ??= _synthesizeAnalysisRef(
+        '${item.id}-${sample.keyPeriodIndex}',
+        grant.uploadUrl,
+      );
+      firstRef ??= analysisRef;
+      refs.add(
+        KeyPeriodAnalysisRef(
+          keyPeriodId: periodIds[sample.keyPeriodIndex],
+          analysisRef: analysisRef,
+          sampleTimestampMs: sample.timestampMs,
+        ),
+      );
+    }
+    if (refs.isEmpty || firstRef == null) return null;
+
+    final recorded = await itemsRepository.recordAnalysisRef(
+      item.id,
+      RecordAnalysisRef(
+        analysisRef: firstRef,
+        keyPeriodRefs: refs,
+      ),
+    );
+    return UploadOutcome(
+      itemId: item.id,
+      analysisRef: recorded.analysisRef ?? firstRef,
     );
   }
 
@@ -326,17 +388,6 @@ class UploadController extends ChangeNotifier {
     } on FormatException {
       return false;
     }
-  }
-
-  /// Photo → whole original file; video → first D4 sample (or null to skip).
-  static String? _primaryUploadPath({
-    required Item item,
-    required String sourcePath,
-    required List<FrameSample> frameSamples,
-  }) {
-    if (item.type == ItemType.photo) return sourcePath;
-    if (frameSamples.isEmpty) return null;
-    return frameSamples.first.path;
   }
 
   /// Stub / unparseable host response — synthesize a deterministic ref

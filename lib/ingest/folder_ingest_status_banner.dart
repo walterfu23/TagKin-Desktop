@@ -47,13 +47,21 @@ class _FolderIngestStatusBannerState
                   j.continuedCount == 0 &&
                   j.alreadyInLibraryCount > 0,
             );
+        final ingestNoMedia = ingestJobs.isNotEmpty &&
+            ingestJobs.every(
+              (j) =>
+                  !j.isActive &&
+                  j.phase == FolderIngestJobPhase.done &&
+                  j.noSupportedMedia,
+            );
         final ingestNothingNew = ingestJobs.isNotEmpty &&
             ingestJobs.every(
               (j) =>
                   !j.isActive &&
                   j.phase == FolderIngestJobPhase.done &&
                   j.createdCount == 0 &&
-                  j.alreadyInLibraryCount == 0,
+                  j.alreadyInLibraryCount == 0 &&
+                  !j.noSupportedMedia,
             );
         final summary = _summary(
           loadingActive: loadingActive,
@@ -62,6 +70,7 @@ class _FolderIngestStatusBannerState
           removeFinished: removeJobs.isNotEmpty && removingActive == 0,
           ingestNothingNew: ingestNothingNew,
           ingestAlreadyInLibrary: ingestAlreadyInLibrary,
+          ingestNoMedia: ingestNoMedia,
         );
 
         return SelectionContainer.disabled(
@@ -172,6 +181,7 @@ class _FolderIngestStatusBannerState
     required bool removeFinished,
     required bool ingestNothingNew,
     required bool ingestAlreadyInLibrary,
+    required bool ingestNoMedia,
   }) {
     final parts = <String>[];
     if (loadingActive > 0) {
@@ -190,6 +200,9 @@ class _FolderIngestStatusBannerState
       if (ingestAlreadyInLibrary) {
         return 'Folder activity finished (already in library)';
       }
+      if (ingestNoMedia) {
+        return 'Folder activity finished (no supported photos or videos)';
+      }
       return ingestNothingNew
           ? 'Folder activity finished (nothing new)'
           : 'Folder activity finished';
@@ -198,6 +211,9 @@ class _FolderIngestStatusBannerState
     if (ingestFinished) {
       if (ingestAlreadyInLibrary) {
         return 'Folder ingest finished (already in library)';
+      }
+      if (ingestNoMedia) {
+        return 'Folder ingest finished (no supported photos or videos)';
       }
       return ingestNothingNew
           ? 'Folder ingest finished (nothing new)'

@@ -15,6 +15,7 @@ import 'package:tagkin_desktop/ingest/media_enumerator.dart';
 import 'package:tagkin_desktop/ingest/model_host_uploader.dart';
 import 'package:tagkin_desktop/ingest/upload_controller.dart';
 import 'package:tagkin_desktop/main.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
 import 'package:tagkin_desktop/prepass/prepass_controller.dart';
 import 'package:tagkin_desktop/prepass/prepass_payload_builder.dart';
@@ -61,6 +62,10 @@ void main() {
               itemsRepository: repo,
               jobsRepository: jobs,
               isUsageBlocked: () => false,
+              currentCollectionId: () {
+                final cols = ref.read(collectionsControllerProvider);
+                return cols.sessionReady ? cols.current.id : null;
+              },
               enumerateFolder: (path) async => [
                 MediaCandidate(
                   path: photoPath,

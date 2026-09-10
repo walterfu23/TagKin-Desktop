@@ -321,6 +321,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     String? exceptTagId,
     String? exceptAppearanceId,
     String? exceptExclusionId,
+    String? sameKeyPeriodId,
   }) {
     final knowledge =
         ref.read(reviewControllerProvider(widget.itemId)).knowledge;
@@ -335,6 +336,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
       exceptTagId: exceptTagId,
       exceptAppearanceId: exceptAppearanceId,
       exceptExclusionId: exceptExclusionId,
+      sameKeyPeriodId: sameKeyPeriodId,
     );
     if (!personOccupiedOnItem(
       occupied: occupied,
@@ -357,10 +359,22 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     String? personId,
     String? name,
   }) async {
+    final knowledge =
+        ref.read(reviewControllerProvider(widget.itemId)).knowledge;
+    String? periodId;
+    if (knowledge != null) {
+      for (final tag in whoFaceCropTags(knowledge)) {
+        if (tag.id == tagId) {
+          periodId = tag.keyPeriodId;
+          break;
+        }
+      }
+    }
     if (_refuseIfPersonOccupied(
       personId: personId,
       name: name,
       exceptTagId: tagId,
+      sameKeyPeriodId: periodId,
     )) {
       return;
     }

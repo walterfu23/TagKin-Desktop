@@ -16,6 +16,10 @@ const int kDefaultMaxSampleIntervalMs = 15000;
 /// Busy scene-cut videos naturally get more frames via short periods.
 const int kDefaultSoftMaxFramesPerItem = 500;
 
+/// Cap on JPEGs sent to the image VLM (one representative frame per key
+/// period, then thinned). Matches API `TAGGING_MAX_FRAMES_PER_ITEM` default.
+const int kDefaultMaxVlmFramesPerItem = 24;
+
 /// @Deprecated('Use soft max + adaptive intervals; kept for call-site compat')
 const int kDefaultMaxFramesPerItem = kDefaultSoftMaxFramesPerItem;
 
@@ -138,6 +142,76 @@ List<({int keyPeriodIndex, int timestampMs})> planSampleTimestamps({
     final key = '${e.keyPeriodIndex}:${e.timestampMs}';
     return seen.add(key);
   }).toList();
+}
+
+/// One JPEG per key period (mid sample), then even-thin to [maxFrames].
+List<FrameSample> pickRepresentativeFramesPerKeyPeriod({
+  required List<FrameSample> samples,
+  required int keyPeriodCount,
+  int maxFrames = kDefaultMaxVlmFramesPerItem,
+}) {
+  if (samples.isEmpty || keyPeriodCount <= 0 || maxFrames <= 0) {
+    return const [];
+  }
+  final byIndex = <int, List<FrameSample>>{};
+  for (final sample in samples) {
+    if (sample.keyPeriodIndex < 0 || sample.keyPeriodIndex >= keyPeriodCount) {
+      continue;
+    }
+    byIndex.putIfAbsent(sample.keyPeriodIndex, () => []).add(sample);
+  }
+  final picked = <FrameSample>[];
+  for (var i = 0; i < keyPeriodCount; i++) {
+    final list = byIndex[i];
+    if (list == null || list.isEmpty) continue;
+    list.sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
+    picked.add(list[list.length ~/ 2]);
+  }
+  if (picked.length <= maxFrames) return picked;
+  if (maxFrames == 1) return [picked.first];
+  final out = <FrameSample>[];
+  final seen = <int>{};
+  for (var i = 0; i < maxFrames; i++) {
+    final idx = (i * (picked.length - 1) / (maxFrames - 1)).round();
+    if (seen.add(idx)) out.add(picked[idx]);
+  }
+  return out;
+}
+
+/// Extract a single JPEG frame at [timestampMs] from [videoPath].
+///
+/// Returns bytes or null when ffmpeg is missing / the extract fails.
+Future<List<int>?> extractVideoFrameJpeg({
+  required String videoPath,
+  required int timestampMs,
+  Directory? tempRoot,
+}) async {
+  final tools = resolveFfmpegTools();
+  if (tools == null) return null;
+  final root =
+      tempRoot ?? await Directory.systemTemp.createTemp('tagkin_frame_');
+  final outPath = p.join(root.path, 'frame.jpg');
+  final seconds = (timestampMs < 0 ? 0 : timestampMs) / 1000.0;
+  try {
+    final result = await Process.run(
+      tools.ffmpeg,
+      [
+        '-y',
+        '-ss',
+        seconds.toStringAsFixed(3),
+        '-i',
+        videoPath,
+        '-frames:v',
+        '1',
+        outPath,
+      ],
+      runInShell: false,
+    );
+    if (result.exitCode != 0 || !File(outPath).existsSync()) return null;
+    return File(outPath).readAsBytes();
+  } catch (_) {
+    return null;
+  }
 }
 
 /// Extract planned frames from [videoPath] via app-bundled (or PATH) `ffmpeg`.

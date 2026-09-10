@@ -12,13 +12,14 @@ import 'fake_items_repository.dart';
 PrePassOutcome _prePassOutcome({
   required Item item,
   required String path,
+  List<String> keyPeriodIds = const [],
 }) {
   return PrePassOutcome(
     itemId: item.id,
     path: path,
     response: PrePassResultResponse(
       item: item,
-      keyPeriodIds: const [],
+      keyPeriodIds: keyPeriodIds,
       appearanceIds: const [],
       tagIds: const [],
     ),
@@ -83,7 +84,7 @@ void main() {
       );
     });
 
-    test('video uploads first D4 frame sample, not the source video path',
+    test('video uploads one D4 JPEG per key period, not the source clip',
         () async {
       final item = fixtureItem(id: 'vid_1', type: ItemType.video);
       final repo = FakeItemsRepository(items: [item]);
@@ -102,15 +103,21 @@ void main() {
           httpClient,
         }) async {
           expect(mimeType, 'image/jpeg');
-          return const ModelHostUploadResult(
-            analysisRef: 'files/frame-1',
+          return ModelHostUploadResult(
+            analysisRef: 'files/${putPaths.length}',
             rawBody: '{}',
           );
         },
       );
 
       await controller.run(
-        [_prePassOutcome(item: item, path: '/library/clip.mp4')],
+        [
+          _prePassOutcome(
+            item: item,
+            path: '/library/clip.mp4',
+            keyPeriodIds: const ['kp_a', 'kp_b'],
+          ),
+        ],
         {
           'vid_1': [
             const FrameSample(
@@ -118,17 +125,31 @@ void main() {
               timestampMs: 500,
               keyPeriodIndex: 0,
             ),
+            const FrameSample(
+              path: '/tmp/frames/frame_0001.jpg',
+              timestampMs: 4500,
+              keyPeriodIndex: 1,
+            ),
           ],
         },
       );
 
       expect(controller.outcomes.single.succeeded, isTrue);
-      expect(putPaths, ['/tmp/frames/frame_0000.jpg']);
+      expect(putPaths, [
+        '/tmp/frames/frame_0000.jpg',
+        '/tmp/frames/frame_0001.jpg',
+      ]);
       expect(putPaths, isNot(contains('/library/clip.mp4')));
-      expect(
-        repo.analysisRefRecorded.single.input.analysisRef,
-        'files/frame-1',
-      );
+      expect(repo.grantsMinted, hasLength(2));
+      final recorded = repo.analysisRefRecorded.single.input;
+      expect(recorded.analysisRef, 'files/1');
+      expect(recorded.keyPeriodRefs, isNotNull);
+      expect(recorded.keyPeriodRefs, hasLength(2));
+      expect(recorded.keyPeriodRefs!.map((r) => r.keyPeriodId).toList(), [
+        'kp_a',
+        'kp_b',
+      ]);
+      expect(recorded.toJson().containsKey('bytes'), isFalse);
     });
 
     test('video with no frame samples is skipped (no grant call)', () async {

@@ -31,18 +31,21 @@ void main() {
       controller.dispose();
     });
 
-    test('analyze refuses video items (R9)', () async {
-      final repo = FakeJobsRepository(itemId: 'item_v');
+    test('analyze accepts video items (image-only sample frames, R9)', () async {
+      final repo = FakeJobsRepository(
+        itemId: 'item_v',
+        item: fixtureItem(id: 'item_v', type: ItemType.video),
+      );
       final controller = JobsController(
         itemId: 'item_v',
         jobsRepository: repo,
+        pollInterval: const Duration(milliseconds: 1),
       );
 
       await controller.analyze(itemType: ItemType.video);
 
-      expect(repo.analyzeCallCount, 0);
-      expect(controller.phase, JobsPhase.error);
-      expect(controller.error, isA<StateError>());
+      expect(repo.analyzeCallCount, 1);
+      expect(controller.phase, JobsPhase.terminal);
       controller.dispose();
     });
 

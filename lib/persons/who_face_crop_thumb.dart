@@ -7,6 +7,7 @@ import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/face_crop_cache.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
+import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 
 /// LRU of `personId →` representative appearance for [PersonListFaceThumb].
@@ -128,39 +129,47 @@ class _WhoFaceCropThumbState extends ConsumerState<WhoFaceCropThumb> {
   Future<_CropLoad> _load() async {
     try {
       final items = ref.read(itemsRepositoryProvider);
+      final cachedItem = widget.item;
+      final item = cachedItem ?? await items.getItem(widget.itemId);
+
+      ItemKnowledge? knowledge = widget.knowledge;
       TagRegion? region = widget.region;
       String? whoLabel;
+      int? sampleTimestampMs;
+
+      if (item.type == ItemType.video && knowledge == null) {
+        knowledge = await items.getKnowledge(widget.itemId);
+      }
       if (region == null) {
-        final knowledge =
-            widget.knowledge ?? await items.getKnowledge(widget.itemId);
-        Tag? tag;
-        for (final t in knowledge.tags) {
-          if (t.id == widget.tagId) {
-            tag = t;
-            break;
-          }
-        }
-        if (tag == null || tag.region == null) {
+        knowledge ??= await items.getKnowledge(widget.itemId);
+        final found = findWhoFaceTag(knowledge, widget.tagId);
+        if (found == null || found.tag.region == null) {
           return const _CropLoad(bytes: null, whoLabel: null);
         }
-        region = tag.region;
-        whoLabel = tag.value.trim().isEmpty ? null : tag.value.trim();
+        region = found.tag.region;
+        whoLabel = found.tag.value.trim().isEmpty
+            ? null
+            : found.tag.value.trim();
+        sampleTimestampMs = found.sampleTimestampMs;
+      } else if (item.type == ItemType.video) {
+        knowledge ??= await items.getKnowledge(widget.itemId);
+        sampleTimestampMs = sampleTimestampMsForTagId(knowledge, widget.tagId);
       }
       final resolvedRegion = region!;
 
-      final cachedItem = widget.item;
       final cached = FaceCropCache.instance.peek(
         itemId: widget.itemId,
-        contentHash: cachedItem?.contentHash,
+        contentHash: cachedItem?.contentHash ?? item.contentHash,
         region: resolvedRegion,
+        sampleTimestampMs: sampleTimestampMs,
       );
       if (cached != null) return _CropLoad(bytes: cached, whoLabel: whoLabel);
 
-      final item = cachedItem ?? await items.getItem(widget.itemId);
       final crop = await FaceCropCache.instance.getOrCropFace(
         itemId: widget.itemId,
         contentHash: item.contentHash,
         region: resolvedRegion,
+        sampleTimestampMs: sampleTimestampMs,
         loadFileBytes: () async {
           final media = await resolveLocalMedia(item, verifyHash: false);
           if (!canCropLocalMediaForDisplay(media)) {
@@ -170,7 +179,11 @@ class _WhoFaceCropThumbState extends ConsumerState<WhoFaceCropThumb> {
             );
             throw StateError('media unavailable: ${media.status.name}');
           }
-          return media.file!.readAsBytes();
+          return loadStillBytesForFaceCrop(
+            item: item,
+            media: media,
+            sampleTimestampMs: sampleTimestampMs,
+          );
         },
       );
       if (crop == null) {

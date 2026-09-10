@@ -20,8 +20,9 @@ class FolderAccessException implements Exception {
 /// Restore read access before scan/hash/upload (crash resume).
 ///
 /// macOS: start the persisted security-scoped bookmark. Windows: folder
-/// must still exist.
-Future<void> ensureIngestFolderAccess(String folderPath) async {
+/// must still exist. Returns the sandbox-resolved path to enumerate (may
+/// differ from [folderPath] on macOS).
+Future<String?> ensureIngestFolderAccess(String folderPath) async {
   if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
     final bookmark = await folderBookmarkStore.bookmarkForFile(folderPath);
     if (bookmark == null) {
@@ -29,14 +30,18 @@ Future<void> ensureIngestFolderAccess(String folderPath) async {
         'Add this folder again to continue ingest.',
       );
     }
-    await SecurityScopedBookmarks.startAccess(bookmark);
-    return;
+    final resolved = await SecurityScopedBookmarks.startAccess(bookmark);
+    if (resolved.isNotEmpty && resolved != folderPath) {
+      await folderBookmarkStore.save(resolved, bookmark);
+    }
+    return resolved.isNotEmpty ? resolved : folderPath;
   }
   if (!Directory(folderPath).existsSync()) {
     throw FolderAccessException(
       'Add this folder again to continue ingest.',
     );
   }
+  return folderPath;
 }
 
 /// macOS: NSOpenPanel + security-scoped bookmark persistence.
@@ -45,10 +50,14 @@ Future<String?> pickFolderNative() async {
   if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
     final picked = await SecurityScopedBookmarks.pickFolder();
     if (picked == null) return null;
+    final resolved = await SecurityScopedBookmarks.startAccess(
+      picked.bookmarkBase64,
+    );
     await folderBookmarkStore.save(picked.path, picked.bookmarkBase64);
-    // Keep access alive for the rest of this process (ingest/pre-pass).
-    await SecurityScopedBookmarks.startAccess(picked.bookmarkBase64);
-    return picked.path;
+    if (resolved.isNotEmpty && resolved != picked.path) {
+      await folderBookmarkStore.save(resolved, picked.bookmarkBase64);
+    }
+    return resolved.isNotEmpty ? resolved : picked.path;
   }
   return FilePicker.platform.getDirectoryPath();
 }

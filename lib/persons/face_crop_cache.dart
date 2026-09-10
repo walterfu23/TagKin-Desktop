@@ -42,8 +42,12 @@ class FaceCropCache {
   final Queue<_FileBatch> _queuedBatches = Queue();
   int _runningBatches = 0;
 
-  static String _fileKey(String itemId, String? contentHash) =>
-      '$itemId:${contentHash ?? ''}';
+  static String _fileKey(
+    String itemId,
+    String? contentHash, [
+    int? sampleTimestampMs,
+  ]) =>
+      '$itemId:${contentHash ?? ''}:${sampleTimestampMs ?? ''}';
 
   static String _regionKey(TagRegion r) =>
       '${r.yMin.toStringAsFixed(5)},${r.xMin.toStringAsFixed(5)},'
@@ -57,10 +61,13 @@ class FaceCropCache {
     required String itemId,
     required String? contentHash,
     required TagRegion region,
-  }) => _cache[_cropKey(_fileKey(itemId, contentHash), region)];
+    int? sampleTimestampMs,
+  }) =>
+      _cache[_cropKey(_fileKey(itemId, contentHash, sampleTimestampMs), region)];
 
   /// Resolves a face crop, coalescing concurrent requests for the same photo
-  /// (by `itemId` + `contentHash`) into one file read + one decode.
+  /// (by `itemId` + `contentHash` [+ video sample timestamp]) into one file
+  /// read + one decode.
   ///
   /// [loadFileBytes] is only invoked for the first request that starts a new
   /// batch for that file — later joiners reuse its result.
@@ -69,8 +76,9 @@ class FaceCropCache {
     required String? contentHash,
     required TagRegion region,
     required Future<Uint8List> Function() loadFileBytes,
+    int? sampleTimestampMs,
   }) {
-    final fileKey = _fileKey(itemId, contentHash);
+    final fileKey = _fileKey(itemId, contentHash, sampleTimestampMs);
     final cropKey = _cropKey(fileKey, region);
     final cached = _cache.remove(cropKey);
     if (cached != null) {

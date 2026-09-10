@@ -7,8 +7,45 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/model_upload_image.dart';
 import 'package:tagkin_desktop/ingest/upload_mime.dart';
 import 'package:tagkin_desktop/prepass/face_embedder.dart';
+import 'package:tagkin_desktop/prepass/frame_sampler.dart';
 import 'package:tagkin_desktop/prepass/onnx_face_embedder.dart';
+import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
+
+/// ffmpeg JPEG extract at a video timestamp (injectable in tests).
+typedef ExtractVideoFrameJpeg = Future<List<int>?> Function({
+  required String videoPath,
+  required int timestampMs,
+});
+
+/// Local still bytes for a face crop: the photo file, or one video JPEG at
+/// [sampleTimestampMs] (R1 — bytes stay on device).
+Future<Uint8List> loadStillBytesForFaceCrop({
+  required Item item,
+  required LocalMediaResolution media,
+  int? sampleTimestampMs,
+  ExtractVideoFrameJpeg? extractVideoFrame,
+}) async {
+  final extract = extractVideoFrame ??
+      ({required String videoPath, required int timestampMs}) =>
+          extractVideoFrameJpeg(
+            videoPath: videoPath,
+            timestampMs: timestampMs,
+          );
+  if (item.type == ItemType.video) {
+    final ts = sampleTimestampMs;
+    if (ts == null) {
+      throw StateError('video face crop needs sampleTimestampMs');
+    }
+    final path = media.path ?? media.file!.path;
+    final jpeg = await extract(videoPath: path, timestampMs: ts);
+    if (jpeg == null) {
+      throw StateError('could not extract video frame at ${ts}ms');
+    }
+    return Uint8List.fromList(jpeg);
+  }
+  return media.file!.readAsBytes();
+}
 
 /// Insets a who box toward its center when the VLM region is still large
 /// (clothing / multi-person risk) before cropping for likeness.
@@ -184,12 +221,20 @@ class WhoFaceLinker {
     FaceEmbedder? embedder,
     this.autoConfirmMinConfidencePercent,
     Future<Uint8List?> Function(Uint8List bytes)? heicToJpeg,
+    ExtractVideoFrameJpeg? extractVideoFrame,
   }) : _embedder = embedder ?? getFaceEmbedder(),
-       _heicToJpeg = heicToJpeg ?? convertHeicLikeToJpeg;
+       _heicToJpeg = heicToJpeg ?? convertHeicLikeToJpeg,
+       _extractVideoFrame = extractVideoFrame ??
+           (({required videoPath, required timestampMs}) =>
+               extractVideoFrameJpeg(
+                 videoPath: videoPath,
+                 timestampMs: timestampMs,
+               ));
 
   final ItemsRepository _items;
   final FaceEmbedder _embedder;
   final Future<Uint8List?> Function(Uint8List bytes) _heicToJpeg;
+  final ExtractVideoFrameJpeg _extractVideoFrame;
 
   /// When non-null, sent on who-appearances so high-confidence named matches
   /// may auto-confirm. Omit (null) to never auto-confirm.
@@ -197,7 +242,9 @@ class WhoFaceLinker {
 
   /// Returns linked appearances, or null if nothing to post / stub skipped.
   Future<WhoAppearancesResponse?> linkWhoFacesForItem(Item item) async {
-    if (item.type != ItemType.photo) return null;
+    if (item.type != ItemType.photo && item.type != ItemType.video) {
+      return null;
+    }
 
     // Start security-scoped bookmark when present (macOS App Sandbox).
     final media = await resolveLocalMedia(item);
@@ -213,25 +260,38 @@ class WhoFaceLinker {
     }
 
     final knowledge = await _items.getKnowledge(item.id);
-    final whoWithRegion = knowledge.tags
-        .where(
-          (t) =>
-              t.dimension == 'who' &&
-              t.status == TagStatus.active &&
-              t.region != null,
-        )
-        .toList();
+    final whoWithRegion = whoFaceCropTags(knowledge);
     if (whoWithRegion.isEmpty) return null;
 
-    final raw = await media.file!.readAsBytes();
     final path = media.path ?? media.file!.path;
-    final bytes = await _jpegBytesForEmbed(path, raw);
-    if (bytes == null) {
-      debugPrint(
-        'WhoFaceLinker: could not decode HEIC/HEIF ($path) — '
-        'likeness linking skipped',
+    Uint8List? photoBytes;
+    final videoJpegByTs = <int, Uint8List>{};
+
+    Future<Uint8List?> stillBytesFor(Tag tag) async {
+      if (item.type == ItemType.photo) {
+        if (photoBytes != null) return photoBytes;
+        final raw = await media.file!.readAsBytes();
+        photoBytes = await _jpegBytesForEmbed(path, raw);
+        if (photoBytes == null) {
+          debugPrint(
+            'WhoFaceLinker: could not decode HEIC/HEIF ($path) — '
+            'likeness linking skipped',
+          );
+        }
+        return photoBytes;
+      }
+      final ts = sampleTimestampMsForWhoTag(knowledge, tag);
+      if (ts == null) return null;
+      final hit = videoJpegByTs[ts];
+      if (hit != null) return hit;
+      final jpeg = await _extractVideoFrame(
+        videoPath: path,
+        timestampMs: ts,
       );
-      return null;
+      if (jpeg == null) return null;
+      final bytes = Uint8List.fromList(jpeg);
+      videoJpegByTs[ts] = bytes;
+      return bytes;
     }
 
     final inputs = <WhoAppearanceInput>[];
@@ -241,6 +301,8 @@ class WhoFaceLinker {
     }
     final onnx = embedder is OnnxFaceEmbedder ? embedder : null;
     for (final tag in whoWithRegion) {
+      final bytes = await stillBytesFor(tag);
+      if (bytes == null) continue;
       final region = refineWhoRegionForEmbed(tag.region!);
       final List<FaceAppearance> faces;
       if (onnx != null) {

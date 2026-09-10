@@ -1,7 +1,7 @@
 Status vs current code (2026-08-13). [not yet implemented] = not in the tree. [done] = in the tree (product still under development).
 
 1. [done] no square box associating person with the box. (review overlays when Tag.region is present; Settings default on)
-2. [done] when add from folder is used to add items, should automatically run client pre-pass, upload for analysis, done, and analyze for all items. the user should not have to explicitly initiate these tasks (photos; videos still skip analyze)
+2. [done] when add from folder is used to add items, should automatically run client pre-pass, upload for analysis, done, and analyze for all items. the user should not have to explicitly initiate these tasks (photos and videos; videos use one sample JPEG per key period)
 3. [done] The number of lines per-page: needs to be a setting
 4. [done] add settings about sample duration.
 5. [done] faces vs face crops
@@ -23,7 +23,7 @@ might want to consider path hiearchy.
 17. [not yet implemented] does not seem to work. what about manual linking
 18. [not yet implemented] where: restaurant. should also show city, state.
 19. [not yet implemented] include user first name, last name from clerk
-20. [not yet implemented] add tagging of videos.
+20. [done] add tagging of videos (image-only sample frames per key period; no native video model).
 21. [not yet implemented] after removing an item, everything collapses
 22. [not yet implemented] faces from the same folder, they are more likely to be assigned to persons from the same folder as well.
 23. [not yet implemented] use google as an auth provider. add other providers as well (Google via Clerk is in tree; additional IdPs are not)
@@ -51,7 +51,7 @@ From Specs.md (remaining spec gaps):
 40. [not yet implemented] OpenAI GPT-4o mini, Mistral Small, Claude / GPT-4o-class escalate (Gemini + stub only) (Specs §7 Candidate models)
 41. [not yet implemented] combination-of-models routing — cheapest fit per task (beyond Gemini + stub) (Specs §7 Cost)
 42. [not yet implemented] distinguish GPS-derived vs inferred where in the UI (Specs §5 Where) — see also 13–14, 18
-43. [not yet implemented] video sample-frame analyze onto key periods; person embed from within each period (`POST /analyze` is photo-only; sampling + frame upload exist) (Specs §5 / §6.2A / §7 / §8 / §11.2) — see also 20
+43. [done] video sample-frame analyze onto key periods; person embed from within each period (Specs §5 / §6.2A / §7 / §8 / §11.2) — see also 20
 44. [not yet implemented] family sharing / multi-account (Specs §4 Non-goals: later)
 45. [not yet implemented] additional auth IdPs beyond username/password and Google (Specs §13 settled TBD)
 46. [not yet implemented] thumbnail hosting without storing media (Specs §13 open)

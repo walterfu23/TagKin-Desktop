@@ -820,6 +820,46 @@ void main() {
     );
   });
 
+  testWidgets('folder Retry re-analyzes a failed video in that folder',
+      (tester) async {
+    const shared = '/albums/retry_video';
+    final tagged = fixtureItem(
+      id: 'leaf_vid_ok',
+      type: ItemType.video,
+      sourceRef: 'file://$shared/ok.mp4',
+      analysisRef: 'ref_ok',
+      analysisRefState: AnalysisRefState.ready,
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final failed = fixtureItem(
+      id: 'leaf_vid_fail',
+      type: ItemType.video,
+      sourceRef: 'file://$shared/clip.mp4',
+      analysisRef: 'ref_vid',
+      analysisRefState: AnalysisRefState.ready,
+      processingStatus: ProcessingStatus.failed,
+    );
+    final items = FakeItemsRepository(items: [tagged, failed]);
+    final jobs = FakeJobsRepository(
+      libraryItems: items,
+      onAnalyzed: items.replaceItem,
+    );
+    await _pumpLibrary(tester, items: items, jobs: jobs);
+
+    expect(
+      find.byKey(const Key('source-group-retry-$shared')),
+      findsOneWidget,
+    );
+    await tester.ensureVisible(
+      find.byKey(const Key('source-group-retry-$shared')),
+    );
+    await tester.tap(find.byKey(const Key('source-group-retry-$shared')));
+    await tester.pumpAndSettle();
+
+    expect(jobs.analyzedItemIds, ['leaf_vid_fail']);
+    expect(find.byKey(const Key('processing-status-failed')), findsNothing);
+  });
+
   testWidgets(
       'parent folder Retry re-analyzes all nested failed photos',
       (tester) async {

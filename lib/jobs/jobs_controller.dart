@@ -102,20 +102,13 @@ class JobsController extends ChangeNotifier {
     }
   }
 
-  /// Triggers analysis for a **photo** item only (R9 — never video).
+  /// Triggers analysis for a photo or video item (R9 — image-only sample
+  /// frames; never a native video model).
   ///
   /// On success, adopts the returned [Item] and starts job polling. A server
   /// `409` BudgetExceeded surfaces via [error] with no auto-retry.
   Future<void> analyze({required ItemType itemType}) async {
     if (deleted || isBusy) return;
-    if (itemType != ItemType.photo) {
-      error = StateError(
-        'Analyze is photo-only (R9); video items cannot trigger tagging',
-      );
-      phase = JobsPhase.error;
-      notifyListeners();
-      return;
-    }
 
     phase = JobsPhase.analyzing;
     error = null;

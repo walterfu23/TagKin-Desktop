@@ -158,4 +158,46 @@ void main() {
     expect(crop, isNotNull);
     expect(crop!.length, greaterThan(32));
   });
+
+  test('sampleTimestampMs is part of the cache key', () async {
+    var loadCount = 0;
+    Future<Uint8List> load() async {
+      loadCount++;
+      return _jpeg(10, 20, 30);
+    }
+
+    await FaceCropCache.instance.getOrCropFace(
+      itemId: 'vid',
+      contentHash: 'h',
+      region: _regionA,
+      sampleTimestampMs: 500,
+      loadFileBytes: load,
+    );
+    await FaceCropCache.instance.getOrCropFace(
+      itemId: 'vid',
+      contentHash: 'h',
+      region: _regionA,
+      sampleTimestampMs: 4500,
+      loadFileBytes: load,
+    );
+
+    expect(loadCount, 2);
+    expect(
+      FaceCropCache.instance.peek(
+        itemId: 'vid',
+        contentHash: 'h',
+        region: _regionA,
+        sampleTimestampMs: 500,
+      ),
+      isNotNull,
+    );
+    expect(
+      FaceCropCache.instance.peek(
+        itemId: 'vid',
+        contentHash: 'h',
+        region: _regionA,
+      ),
+      isNull,
+    );
+  });
 }

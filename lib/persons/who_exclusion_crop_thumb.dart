@@ -6,6 +6,7 @@ import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/face_crop_cache.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
+import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 
 /// Face crop thumb from a known [TagRegion] (excluded crops, or region on wire).
@@ -68,20 +69,41 @@ class _WhoExclusionCropThumbState extends ConsumerState<WhoExclusionCropThumb> {
   Future<Uint8List?> _load() async {
     try {
       final known = widget.item;
-      final cached = FaceCropCache.instance.peek(
-        itemId: widget.itemId,
-        contentHash: known?.contentHash,
-        region: widget.region,
-      );
-      if (cached != null) return cached;
-
       final item =
           known ??
           await ref.read(itemsRepositoryProvider).getItem(widget.itemId);
+
+      int? sampleTimestampMs;
+      if (item.type == ItemType.video) {
+        final knowledge = await ref
+            .read(itemsRepositoryProvider)
+            .getKnowledge(widget.itemId);
+        for (final tag in whoFaceCropTags(knowledge)) {
+          final region = tag.region;
+          if (region == null) continue;
+          if (region.yMin == widget.region.yMin &&
+              region.xMin == widget.region.xMin &&
+              region.yMax == widget.region.yMax &&
+              region.xMax == widget.region.xMax) {
+            sampleTimestampMs = sampleTimestampMsForWhoTag(knowledge, tag);
+            break;
+          }
+        }
+      }
+
+      final cached = FaceCropCache.instance.peek(
+        itemId: widget.itemId,
+        contentHash: known?.contentHash ?? item.contentHash,
+        region: widget.region,
+        sampleTimestampMs: sampleTimestampMs,
+      );
+      if (cached != null) return cached;
+
       final crop = await FaceCropCache.instance.getOrCropFace(
         itemId: widget.itemId,
         contentHash: item.contentHash,
         region: widget.region,
+        sampleTimestampMs: sampleTimestampMs,
         loadFileBytes: () async {
           final media = await resolveLocalMedia(item, verifyHash: false);
           if (!canCropLocalMediaForDisplay(media)) {
@@ -91,7 +113,11 @@ class _WhoExclusionCropThumbState extends ConsumerState<WhoExclusionCropThumb> {
             );
             throw StateError('media unavailable: ${media.status.name}');
           }
-          return media.file!.readAsBytes();
+          return loadStillBytesForFaceCrop(
+            item: item,
+            media: media,
+            sampleTimestampMs: sampleTimestampMs,
+          );
         },
       );
       if (crop == null) {
