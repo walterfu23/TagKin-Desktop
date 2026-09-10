@@ -10,6 +10,7 @@ import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/library/library_items_table.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/source_reveal.dart';
+import 'package:tagkin_desktop/persons/collection_dialogs.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
@@ -163,8 +164,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     final ids = itemIdsUnderFolder(
       table.allRows.map((r) => r.item),
       dir,
-    ).toList()
-      ..sort();
+    ).toList()..sort();
     if (ids.isEmpty) return;
 
     final result = await queue.enqueue(dir, ids);
@@ -237,8 +237,8 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
       items: ref.read(itemsRepositoryProvider),
       autoConfirmMinConfidencePercent:
           prefs.autoConfirmHighConfidencePersonMatches
-              ? prefs.autoConfirmMinConfidencePercent
-              : null,
+          ? prefs.autoConfirmMinConfidencePercent
+          : null,
     );
     var succeeded = 0;
     var stillFailed = 0;
@@ -272,15 +272,12 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
       final copy = creditReject.code == 'outOfCredits'
           ? 'Out of credits'
           : creditReject.code == 'paidPaused'
-              ? (creditReject.message.isEmpty
-                  ? 'Ingest paused.'
-                  : creditReject.message)
-              : 'Not enough credits for this analysis';
+          ? (creditReject.message.isEmpty
+                ? 'Ingest paused.'
+                : creditReject.message)
+          : 'Not enough credits for this analysis';
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          key: const Key('folder-retry-credits'),
-          content: Text(copy),
-        ),
+        SnackBar(key: const Key('folder-retry-credits'), content: Text(copy)),
       );
       return;
     }
@@ -326,9 +323,35 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     }
     if (path == null || !mounted) return;
 
+    var stealFolders = const <String>{};
+    final cols = ref.read(collectionsControllerProvider);
+    if (cols.sessionReady) {
+      final conflicts = cols.folderConflictsUnder(
+        path,
+        exceptId: cols.current.id,
+      );
+      if (conflicts.isNotEmpty) {
+        final move = await showFolderClaimConflictDialog(
+          context,
+          currentCollectionName: cols.current.name,
+          conflicts: conflicts,
+        );
+        if (!mounted) return;
+        if (move) {
+          stealFolders = {
+            for (final group in conflicts)
+              for (final folder in group.folders) folder,
+          };
+        }
+      }
+    }
+
     ref.read(usageControllerProvider).clearAnalyzeReject();
     final queue = ref.read(folderIngestQueueProvider);
-    final result = await queue.enqueue(path);
+    final result = await queue.enqueue(
+      path,
+      claimFromOtherCollections: stealFolders,
+    );
     if (!mounted) return;
     if (result == FolderIngestEnqueueResult.started) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -383,8 +406,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
                         decoration: const InputDecoration(
                           isDense: true,
                           prefixIcon: Icon(Icons.search, size: 20),
-                          hintText:
-                              'Filter who, what, where, source, comment…',
+                          hintText: 'Filter who, what, where, source, comment…',
                           border: OutlineInputBorder(),
                         ),
                         onChanged: table.setFilterQuery,

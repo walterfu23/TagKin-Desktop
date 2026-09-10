@@ -65,7 +65,10 @@ class ItemFieldsGroup extends ConsumerWidget {
             children: [
               _FieldRow(
                 label: 'Status',
-                child: ProcessingStatusBadge(status: item.processingStatus),
+                child: ProcessingStatusBadge(
+                  status: item.processingStatus,
+                  processingError: item.processingError,
+                ),
               ),
               _FieldRow(
                 label: 'Type',

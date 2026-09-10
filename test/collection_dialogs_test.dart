@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/persons/collection_dialogs.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
 
 void main() {
-  testWidgets(
-      'open collection dialog lists names A–Z case-insensitively',
-      (tester) async {
+  testWidgets('open collection dialog lists names A–Z case-insensitively', (
+    tester,
+  ) async {
     String? picked;
     await tester.pumpWidget(
       MaterialApp(
@@ -48,5 +49,88 @@ void main() {
     await tester.tap(find.byKey(const Key('collection-open-option-c_v')));
     await tester.pumpAndSettle();
     expect(picked, 'c_v');
+  });
+
+  testWidgets('folder claim conflict dialog Move here returns true', (
+    tester,
+  ) async {
+    bool? result;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              key: const Key('open-claim'),
+              onPressed: () async {
+                result = await showFolderClaimConflictDialog(
+                  context,
+                  currentCollectionName: 'Trip',
+                  conflicts: const [
+                    FolderClaimConflict(
+                      collectionId: 'c_other',
+                      collectionName: 'Vacation',
+                      folders: ['/albums/Owned'],
+                    ),
+                  ],
+                );
+              },
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('open-claim')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('collection-folder-claim-dialog')),
+      findsOneWidget,
+    );
+    expect(find.text('Vacation'), findsOneWidget);
+    expect(find.text('/albums/Owned'), findsOneWidget);
+    expect(find.textContaining('Trip'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('collection-folder-claim-move')));
+    await tester.pumpAndSettle();
+    expect(result, isTrue);
+  });
+
+  testWidgets('folder claim conflict dialog Cancel returns false', (
+    tester,
+  ) async {
+    bool? result;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              key: const Key('open-claim'),
+              onPressed: () async {
+                result = await showFolderClaimConflictDialog(
+                  context,
+                  currentCollectionName: 'Trip',
+                  conflicts: const [
+                    FolderClaimConflict(
+                      collectionId: 'c_other',
+                      collectionName: 'Vacation',
+                      folders: ['/albums/Owned'],
+                    ),
+                  ],
+                );
+              },
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('open-claim')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('collection-folder-claim-cancel')));
+    await tester.pumpAndSettle();
+    expect(result, isFalse);
   });
 }

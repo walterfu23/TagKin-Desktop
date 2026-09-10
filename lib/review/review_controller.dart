@@ -258,6 +258,7 @@ class ReviewController extends ChangeNotifier {
         dedupOfItemId: item.dedupOfItemId,
         capturedAt: capturedAt,
         processingStatus: item.processingStatus,
+        processingError: item.processingError,
         schemaVersion: item.schemaVersion,
         createdAt: item.createdAt,
       ),

@@ -45,6 +45,7 @@ class FakeUploadController extends UploadController {
       contentHash: item.contentHash,
       capturedAt: item.capturedAt,
       processingStatus: item.processingStatus,
+      processingError: item.processingError,
       schemaVersion: item.schemaVersion,
       createdAt: item.createdAt,
     );

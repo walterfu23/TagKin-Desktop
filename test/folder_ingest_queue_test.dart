@@ -429,9 +429,10 @@ void main() {
       enumerateFolder: (path) async => [_photo('/albums/Paris/a.jpg')],
       contentHasher: (path) async => 'hash-$path',
       perceptualHasher: (path) async => null,
-      onLibraryMembershipPublish: (_, {collectionId}) async {
-        publishCount++;
-      },
+      onLibraryMembershipPublish:
+          (_, {collectionId, claimFromOtherCollections = const {}}) async {
+            publishCount++;
+          },
       prePassFactory: () => PrePassController(
         itemsRepository: items,
         buildPayload:
@@ -475,6 +476,34 @@ void main() {
     }
     expect(publishCount, greaterThanOrEqualTo(1));
     expect(items.created, hasLength(1));
+  });
+
+  test('membership publish forwards claimFromOtherCollections', () async {
+    final items = FakeItemsRepository();
+    final jobs = FakeJobsRepository();
+    Set<String>? seen;
+    final hooked = FolderIngestQueue(
+      itemsRepository: items,
+      jobsRepository: jobs,
+      isUsageBlocked: () => false,
+      enumerateFolder: (path) async => const [],
+      contentHasher: (path) async => 'hash-$path',
+      perceptualHasher: (path) async => null,
+      onLibraryMembershipPublish:
+          (_, {collectionId, claimFromOtherCollections = const {}}) async {
+            seen = claimFromOtherCollections;
+          },
+    );
+
+    await hooked.enqueue(
+      '/albums/Paris',
+      claimFromOtherCollections: {'/albums/Owned'},
+    );
+    expect(hooked.jobs.single.claimFromOtherCollections, {'/albums/Owned'});
+    for (var i = 0; i < 80 && hooked.hasActiveJobs; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(seen, {'/albums/Owned'});
   });
 
   test(
@@ -1077,37 +1106,39 @@ void main() {
     expect(queue.jobs.single.statusLabel, contains('Add this folder again'));
   });
 
-  test('enqueue stamps currentCollectionId; jobsForCollection filters',
-      () async {
-    final items = FakeItemsRepository();
-    final jobs = FakeJobsRepository();
-    var currentId = 'c1';
-    final hold = Completer<List<MediaCandidate>>();
-    final queue = FolderIngestQueue(
-      itemsRepository: items,
-      jobsRepository: jobs,
-      isUsageBlocked: () => false,
-      currentCollectionId: () => currentId,
-      enumerateFolder: (_) => hold.future,
-      contentHasher: (path) async => 'hash-$path',
-      perceptualHasher: (path) async => null,
-      physicalMemoryBytes: () async => 16 * 1024 * 1024 * 1024,
-    );
-    addTearDown(queue.dispose);
+  test(
+    'enqueue stamps currentCollectionId; jobsForCollection filters',
+    () async {
+      final items = FakeItemsRepository();
+      final jobs = FakeJobsRepository();
+      var currentId = 'c1';
+      final hold = Completer<List<MediaCandidate>>();
+      final queue = FolderIngestQueue(
+        itemsRepository: items,
+        jobsRepository: jobs,
+        isUsageBlocked: () => false,
+        currentCollectionId: () => currentId,
+        enumerateFolder: (_) => hold.future,
+        contentHasher: (path) async => 'hash-$path',
+        perceptualHasher: (path) async => null,
+        physicalMemoryBytes: () async => 16 * 1024 * 1024 * 1024,
+      );
+      addTearDown(queue.dispose);
 
-    expect(
-      await queue.enqueue('/albums/Old'),
-      FolderIngestEnqueueResult.started,
-    );
-    expect(queue.jobs.single.collectionId, 'c1');
-    expect(queue.jobsForCollection('c1'), hasLength(1));
-    expect(queue.jobsForCollection('c2'), isEmpty);
-    expect(queue.activeJobCountForCollection('c2'), 0);
-    expect(queue.activeJobCountForCollection('c1'), 1);
+      expect(
+        await queue.enqueue('/albums/Old'),
+        FolderIngestEnqueueResult.started,
+      );
+      expect(queue.jobs.single.collectionId, 'c1');
+      expect(queue.jobsForCollection('c1'), hasLength(1));
+      expect(queue.jobsForCollection('c2'), isEmpty);
+      expect(queue.activeJobCountForCollection('c2'), 0);
+      expect(queue.activeJobCountForCollection('c1'), 1);
 
-    hold.complete(const []);
-    await _waitIdle(queue);
-  });
+      hold.complete(const []);
+      await _waitIdle(queue);
+    },
+  );
 
   test('re-ingest after library delete creates items again', () async {
     final items = FakeItemsRepository();
@@ -1120,7 +1151,10 @@ void main() {
       },
     );
 
-    expect(await queue.enqueue('/albums/Paris'), FolderIngestEnqueueResult.started);
+    expect(
+      await queue.enqueue('/albums/Paris'),
+      FolderIngestEnqueueResult.started,
+    );
     await _waitIdle(queue);
     expect(items.created, hasLength(1));
     expect(queue.jobs.single.createdCount, 1);
@@ -1162,7 +1196,8 @@ void main() {
   });
 
   test('all createItem failures mark the job failed', () async {
-    final items = FakeItemsRepository()..createError = Exception('register failed');
+    final items = FakeItemsRepository()
+      ..createError = Exception('register failed');
     final jobs = FakeJobsRepository();
     final queue = _queue(
       items: items,
@@ -1194,7 +1229,10 @@ void main() {
 
     expect(queue.jobs.single.phase, FolderIngestJobPhase.done);
     expect(queue.jobs.single.noSupportedMedia, isTrue);
-    expect(queue.jobs.single.statusLabel, 'Done (no supported photos or videos)');
+    expect(
+      queue.jobs.single.statusLabel,
+      'Done (no supported photos or videos)',
+    );
   });
 
   test('enumerates the path returned by ensureFolderAccess', () async {

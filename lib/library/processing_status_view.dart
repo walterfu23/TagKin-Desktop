@@ -58,14 +58,19 @@ class ProcessingStatusView {
 
 /// Compact badge showing [item]'s [ProcessingStatus].
 class ProcessingStatusBadge extends StatelessWidget {
-  const ProcessingStatusBadge({super.key, required this.status});
+  const ProcessingStatusBadge({
+    super.key,
+    required this.status,
+    this.processingError,
+  });
 
   final ProcessingStatus status;
+  final String? processingError;
 
   @override
   Widget build(BuildContext context) {
     final view = ProcessingStatusView.of(status);
-    return Row(
+    final badge = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(view.icon, size: 16, color: view.color),
@@ -77,5 +82,15 @@ class ProcessingStatusBadge extends StatelessWidget {
         ),
       ],
     );
+    final err = processingError?.trim();
+    if (status == ProcessingStatus.failed && err != null && err.isNotEmpty) {
+      return Tooltip(
+        key: const Key('processing-status-error-tooltip'),
+        message: err,
+        waitDuration: Duration.zero,
+        child: badge,
+      );
+    }
+    return badge;
   }
 }

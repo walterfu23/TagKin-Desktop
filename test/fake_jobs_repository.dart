@@ -90,6 +90,7 @@ class FakeJobsRepository implements JobsRepository {
       dedupOfItemId: base.dedupOfItemId,
       capturedAt: base.capturedAt,
       processingStatus: ProcessingStatus.tagged,
+      processingError: null,
       schemaVersion: base.schemaVersion,
       createdAt: base.createdAt,
     );
@@ -147,6 +148,7 @@ class FakeJobsRepository implements JobsRepository {
       dedupOfItemId: item.dedupOfItemId,
       capturedAt: item.capturedAt,
       processingStatus: ProcessingStatus.cancelled,
+      processingError: null,
       schemaVersion: item.schemaVersion,
       createdAt: item.createdAt,
     );

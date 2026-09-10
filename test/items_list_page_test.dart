@@ -5,13 +5,16 @@ import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
+import 'package:tagkin_desktop/ingest/folder_picker.dart';
 import 'package:tagkin_desktop/ingest/model_host_uploader.dart';
 import 'package:tagkin_desktop/ingest/upload_controller.dart';
 import 'package:tagkin_desktop/library/folder_remove_queue.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/library/items_list_page.dart';
+import 'package:tagkin_desktop/library/library_membership_sync.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/main.dart';
+import 'package:tagkin_desktop/persons/collection.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/collections_store.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
@@ -26,10 +29,10 @@ import 'fake_persons_repository.dart';
 import 'fake_usage_repository.dart';
 
 Account _account(String id) => Account(
-      id: id,
-      email: '$id@example.com',
-      createdAt: '2026-07-18T00:00:00.000Z',
-    );
+  id: id,
+  email: '$id@example.com',
+  createdAt: '2026-07-18T00:00:00.000Z',
+);
 
 List<Override> _sessionOverrides({
   required FakeItemsRepository items,
@@ -47,12 +50,8 @@ List<Override> _sessionOverrides({
       FakeCorrectionsRepository(items: items),
     ),
     commentsRepositoryProvider.overrideWithValue(FakeCommentsRepository()),
-    usageRepositoryProvider.overrideWithValue(
-      usage ?? FakeUsageRepository(),
-    ),
-    jobsRepositoryProvider.overrideWithValue(
-      jobs ?? FakeJobsRepository(),
-    ),
+    usageRepositoryProvider.overrideWithValue(usage ?? FakeUsageRepository()),
+    jobsRepositoryProvider.overrideWithValue(jobs ?? FakeJobsRepository()),
     folderRemoveQueueProvider.overrideWith((ref) {
       return FolderRemoveQueue(
         jobsRepository: ref.watch(jobsRepositoryProvider),
@@ -111,43 +110,46 @@ FolderIngestQueue _continueQueue({
     onItemUpdated: onItemUpdated,
     prePassFactory: () => PrePassController(
       itemsRepository: items,
-      buildPayload: ({
-        required path,
-        required type,
-        faceEmbedder,
-        skipFaces = false,
-        maxFrames = 20,
-        minIntervalMs = 1000,
-        maxIntervalMs = 15000,
-        sceneCutThreshold = 0.3,
-      }) async {
-        return PrePassBuildResult(
-          payload: PrePassResult(contentHash: 'hash'),
-        );
-      },
+      buildPayload:
+          ({
+            required path,
+            required type,
+            faceEmbedder,
+            skipFaces = false,
+            maxFrames = 20,
+            minIntervalMs = 1000,
+            maxIntervalMs = 15000,
+            sceneCutThreshold = 0.3,
+          }) async {
+            return PrePassBuildResult(
+              payload: PrePassResult(contentHash: 'hash'),
+            );
+          },
     ),
     uploadFactory: () => UploadController(
       itemsRepository: items,
       readBytes: (path) async => [0xFF, 0xD8, 0xFF],
-      putBytes: ({
-        required uploadUrl,
-        required bytes,
-        required mimeType,
-        httpClient,
-      }) async {
-        return const ModelHostUploadResult(
-          analysisRef: 'files/test-ref',
-          rawBody: '{}',
-        );
-      },
+      putBytes:
+          ({
+            required uploadUrl,
+            required bytes,
+            required mimeType,
+            httpClient,
+          }) async {
+            return const ModelHostUploadResult(
+              analysisRef: 'files/test-ref',
+              rawBody: '{}',
+            );
+          },
     ),
     whoFaceLinkerFactory: () => WhoFaceLinker(items: items),
   );
 }
 
 void main() {
-  testWidgets('library table renders fixture items with processingStatus',
-      (tester) async {
+  testWidgets('library table renders fixture items with processingStatus', (
+    tester,
+  ) async {
     final item1 = fixtureItem(
       id: 'item_1',
       processingStatus: ProcessingStatus.pending,
@@ -161,9 +163,7 @@ void main() {
       tester,
       items: FakeItemsRepository(
         items: [item1, item2],
-        knowledgeByItemId: {
-          'item_2': fixtureKnowledge(item: item2),
-        },
+        knowledgeByItemId: {'item_2': fixtureKnowledge(item: item2)},
       ),
     );
 
@@ -183,10 +183,7 @@ void main() {
 
   testWidgets('tap row opens item detail', (tester) async {
     final item = fixtureItem(id: 'item_nav');
-    await _pumpLibrary(
-      tester,
-      items: FakeItemsRepository(items: [item]),
-    );
+    await _pumpLibrary(tester, items: FakeItemsRepository(items: [item]));
     // Prefer the what-cell control — toolbar may sit above a single row.
     await tester.ensureVisible(find.byKey(const Key('item-what-item_nav')));
     await tester.tap(find.byKey(const Key('item-what-item_nav')));
@@ -199,10 +196,7 @@ void main() {
 
   testWidgets('tap thumb opens item detail', (tester) async {
     final item = fixtureItem(id: 'item_thumb_nav');
-    await _pumpLibrary(
-      tester,
-      items: FakeItemsRepository(items: [item]),
-    );
+    await _pumpLibrary(tester, items: FakeItemsRepository(items: [item]));
     await tester.ensureVisible(
       find.byKey(const Key('item-thumb-placeholder-item_thumb_nav')),
     );
@@ -215,10 +209,7 @@ void main() {
 
   testWidgets('source control does not open detail', (tester) async {
     final item = fixtureItem(id: 'item_src');
-    await _pumpLibrary(
-      tester,
-      items: FakeItemsRepository(items: [item]),
-    );
+    await _pumpLibrary(tester, items: FakeItemsRepository(items: [item]));
     await tester.tap(find.byKey(const Key('item-source-item_src')));
     await tester.pumpAndSettle();
 
@@ -283,9 +274,8 @@ void main() {
       'Christopher Bartholomew',
       'Anastasia Montgomery',
     ];
-    final sortedNames = [...names]..sort(
-        (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
-      );
+    final sortedNames = [...names]
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     await _pumpLibrary(
       tester,
       items: FakeItemsRepository(
@@ -366,10 +356,7 @@ void main() {
       sourceRef: 'file://$shared/b.jpg',
       processingStatus: ProcessingStatus.tagged,
     );
-    await _pumpLibrary(
-      tester,
-      items: FakeItemsRepository(items: [a, b]),
-    );
+    await _pumpLibrary(tester, items: FakeItemsRepository(items: [a, b]));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('source-group-$shared')), findsOneWidget);
@@ -387,47 +374,46 @@ void main() {
     expect(find.text('b.jpg'), findsNothing);
   });
 
-  testWidgets('nested date folders show sibling folders under expanded parent',
-      (tester) async {
-    const root = '/users/w/test';
-    final a = fixtureItem(
-      id: 'a',
-      sourceRef: 'file://$root/20260508/a.jpg',
-      processingStatus: ProcessingStatus.tagged,
-    );
-    final b = fixtureItem(
-      id: 'b',
-      sourceRef: 'file://$root/20260508/b.jpg',
-      processingStatus: ProcessingStatus.tagged,
-    );
-    final c = fixtureItem(
-      id: 'c',
-      sourceRef: 'file://$root/20260506/c.jpg',
-      processingStatus: ProcessingStatus.tagged,
-    );
-    await _pumpLibrary(
-      tester,
-      items: FakeItemsRepository(items: [a, b, c]),
-    );
-    await tester.pumpAndSettle();
+  testWidgets(
+    'nested date folders show sibling folders under expanded parent',
+    (tester) async {
+      const root = '/users/w/test';
+      final a = fixtureItem(
+        id: 'a',
+        sourceRef: 'file://$root/20260508/a.jpg',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final b = fixtureItem(
+        id: 'b',
+        sourceRef: 'file://$root/20260508/b.jpg',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final c = fixtureItem(
+        id: 'c',
+        sourceRef: 'file://$root/20260506/c.jpg',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      await _pumpLibrary(tester, items: FakeItemsRepository(items: [a, b, c]));
+      await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('source-group-$root')), findsOneWidget);
-    // Sibling folder headers/rows visible under auto-expanded parent.
-    expect(
-      find.byKey(const Key('source-group-$root/20260508')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const Key('item-source-c')), findsOneWidget);
-    expect(find.byKey(const Key('item-row-a')), findsNothing);
+      expect(find.byKey(const Key('source-group-$root')), findsOneWidget);
+      // Sibling folder headers/rows visible under auto-expanded parent.
+      expect(
+        find.byKey(const Key('source-group-$root/20260508')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('item-source-c')), findsOneWidget);
+      expect(find.byKey(const Key('item-row-a')), findsNothing);
 
-    await tester.tap(
-      find.byKey(const Key('source-group-toggle-$root/20260508')),
-    );
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('item-row-a')), findsOneWidget);
-    expect(find.byKey(const Key('item-row-b')), findsOneWidget);
-    expect(find.byKey(const Key('item-source-a')), findsOneWidget);
-  });
+      await tester.tap(
+        find.byKey(const Key('source-group-toggle-$root/20260508')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('item-row-a')), findsOneWidget);
+      expect(find.byKey(const Key('item-row-b')), findsOneWidget);
+      expect(find.byKey(const Key('item-source-a')), findsOneWidget);
+    },
+  );
 
   testWidgets('File column header is shown', (tester) async {
     await _pumpLibrary(
@@ -481,7 +467,8 @@ void main() {
     await tester.pumpAndSettle();
 
     final rows = find.byWidgetPredicate(
-      (w) => w.key is ValueKey<String> &&
+      (w) =>
+          w.key is ValueKey<String> &&
           (w.key! as ValueKey<String>).value.startsWith('item-row-'),
     );
     expect(rows, findsNWidgets(2));
@@ -568,8 +555,9 @@ void main() {
     expect(find.text('beach trip'), findsOneWidget);
   });
 
-  testWidgets('foreign item id surfaces not-found without leaking data (R10)',
-      (tester) async {
+  testWidgets('foreign item id surfaces not-found without leaking data (R10)', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -583,9 +571,7 @@ void main() {
           ),
           usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
         ],
-        child: const MaterialApp(
-          home: ItemDetailPage(itemId: 'foreign-id'),
-        ),
+        child: const MaterialApp(home: ItemDetailPage(itemId: 'foreign-id')),
       ),
     );
     await tester.pumpAndSettle();
@@ -595,8 +581,9 @@ void main() {
     expect(find.byKey(const Key('item-detail')), findsNothing);
   });
 
-  testWidgets('account A fixture is not shown under account B session (R10)',
-      (tester) async {
+  testWidgets('account A fixture is not shown under account B session (R10)', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1440, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -641,7 +628,9 @@ void main() {
     expect(find.byKey(const Key('items-retry')), findsOneWidget);
   });
 
-  testWidgets('list remove uses Sure? then removes row via API', (tester) async {
+  testWidgets('list remove uses Sure? then removes row via API', (
+    tester,
+  ) async {
     final item = fixtureItem(id: 'item_list_del');
     final items = FakeItemsRepository(items: [item]);
     final jobs = FakeJobsRepository(
@@ -670,8 +659,9 @@ void main() {
     expect(find.byKey(const Key('items-empty')), findsOneWidget);
   });
 
-  testWidgets('remove folder confirms and soft-deletes subtree items',
-      (tester) async {
+  testWidgets('remove folder confirms and soft-deletes subtree items', (
+    tester,
+  ) async {
     const shared = '/albums/remove_me';
     final a = fixtureItem(
       id: 'a',
@@ -713,8 +703,9 @@ void main() {
     expect(find.byKey(const Key('item-row-keep')), findsOneWidget);
   });
 
-  testWidgets('remove folder shows in-progress banner until deletes finish',
-      (tester) async {
+  testWidgets('remove folder shows in-progress banner until deletes finish', (
+    tester,
+  ) async {
     const shared = '/albums/slow_remove';
     final a = fixtureItem(
       id: 'a',
@@ -743,13 +734,13 @@ void main() {
     await tester.pump();
 
     expect(find.text('Removing 1 folder…'), findsOneWidget);
-    expect(find.byKey(const Key('folder-ingest-status-banner')), findsOneWidget);
+    expect(
+      find.byKey(const Key('folder-ingest-status-banner')),
+      findsOneWidget,
+    );
 
     // Idle remove control replaced by spinner while active.
-    expect(
-      find.byKey(const Key('source-group-remove-$shared')),
-      findsNothing,
-    );
+    expect(find.byKey(const Key('source-group-remove-$shared')), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsWidgets);
 
     await tester.pumpAndSettle();
@@ -757,7 +748,9 @@ void main() {
     expect(find.text('Folder remove finished'), findsOneWidget);
   });
 
-  testWidgets('folder Retry is hidden when no items are failed', (tester) async {
+  testWidgets('folder Retry is hidden when no items are failed', (
+    tester,
+  ) async {
     const shared = '/albums/all_ok';
     final a = fixtureItem(
       id: 'ok_a',
@@ -769,16 +762,14 @@ void main() {
       sourceRef: 'file://$shared/b.jpg',
       processingStatus: ProcessingStatus.tagged,
     );
-    await _pumpLibrary(
-      tester,
-      items: FakeItemsRepository(items: [a, b]),
-    );
+    await _pumpLibrary(tester, items: FakeItemsRepository(items: [a, b]));
     expect(find.byKey(const Key('source-group-$shared')), findsOneWidget);
     expect(find.byKey(const Key('source-group-retry-$shared')), findsNothing);
   });
 
-  testWidgets('folder Retry re-analyzes failed photos in that folder',
-      (tester) async {
+  testWidgets('folder Retry re-analyzes failed photos in that folder', (
+    tester,
+  ) async {
     const shared = '/albums/retry_leaf';
     final tagged = fixtureItem(
       id: 'leaf_ok',
@@ -793,6 +784,7 @@ void main() {
       analysisRef: 'ref_fail',
       analysisRefState: AnalysisRefState.ready,
       processingStatus: ProcessingStatus.failed,
+      processingError: 'provider boom',
     );
     final items = FakeItemsRepository(items: [tagged, failed]);
     final jobs = FakeJobsRepository(
@@ -801,10 +793,14 @@ void main() {
     );
     await _pumpLibrary(tester, items: items, jobs: jobs);
 
-    expect(
-      find.byKey(const Key('source-group-retry-$shared')),
-      findsOneWidget,
+    expect(find.byKey(const Key('source-group-retry-$shared')), findsOneWidget);
+    final retryTooltip = tester.widget<Tooltip>(
+      find.ancestor(
+        of: find.byKey(const Key('source-group-retry-$shared')),
+        matching: find.byType(Tooltip),
+      ),
     );
+    expect(retryTooltip.message, 'provider boom');
     await tester.ensureVisible(
       find.byKey(const Key('source-group-retry-$shared')),
     );
@@ -814,14 +810,12 @@ void main() {
     expect(jobs.analyzedItemIds, ['leaf_fail']);
     expect(find.byKey(const Key('folder-retry-done')), findsOneWidget);
     expect(find.byKey(const Key('processing-status-failed')), findsNothing);
-    expect(
-      find.byKey(const Key('source-group-retry-$shared')),
-      findsNothing,
-    );
+    expect(find.byKey(const Key('source-group-retry-$shared')), findsNothing);
   });
 
-  testWidgets('folder Retry re-analyzes a failed video in that folder',
-      (tester) async {
+  testWidgets('folder Retry re-analyzes a failed video in that folder', (
+    tester,
+  ) async {
     const shared = '/albums/retry_video';
     final tagged = fixtureItem(
       id: 'leaf_vid_ok',
@@ -846,10 +840,7 @@ void main() {
     );
     await _pumpLibrary(tester, items: items, jobs: jobs);
 
-    expect(
-      find.byKey(const Key('source-group-retry-$shared')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('source-group-retry-$shared')), findsOneWidget);
     await tester.ensureVisible(
       find.byKey(const Key('source-group-retry-$shared')),
     );
@@ -860,9 +851,9 @@ void main() {
     expect(find.byKey(const Key('processing-status-failed')), findsNothing);
   });
 
-  testWidgets(
-      'parent folder Retry re-analyzes all nested failed photos',
-      (tester) async {
+  testWidgets('parent folder Retry re-analyzes all nested failed photos', (
+    tester,
+  ) async {
     const parent = '/albums/Trip';
     final a = fixtureItem(
       id: 'trip_a',
@@ -885,10 +876,7 @@ void main() {
     );
     await _pumpLibrary(tester, items: items, jobs: jobs);
 
-    expect(
-      find.byKey(const Key('source-group-retry-$parent')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('source-group-retry-$parent')), findsOneWidget);
     await tester.ensureVisible(
       find.byKey(const Key('source-group-retry-$parent')),
     );
@@ -900,134 +888,313 @@ void main() {
   });
 
   testWidgets(
-      'folder Retry flips each failed row to tagged as that analyze finishes',
-      (tester) async {
-    const shared = '/albums/retry_live';
-    final a = fixtureItem(
-      id: 'live_a',
-      sourceRef: 'file://$shared/a.jpg',
-      analysisRef: 'ref_a',
-      analysisRefState: AnalysisRefState.ready,
-      processingStatus: ProcessingStatus.failed,
-    );
-    final b = fixtureItem(
-      id: 'live_b',
-      sourceRef: 'file://$shared/b.jpg',
-      analysisRef: 'ref_b',
-      analysisRefState: AnalysisRefState.ready,
-      processingStatus: ProcessingStatus.failed,
-    );
-    final items = FakeItemsRepository(items: [a, b]);
-    final jobs = FakeJobsRepository(
-      libraryItems: items,
-      onAnalyzed: items.replaceItem,
-      analyzeDelay: const Duration(milliseconds: 40),
-    );
-    await _pumpLibrary(tester, items: items, jobs: jobs);
+    'folder Retry flips each failed row to tagged as that analyze finishes',
+    (tester) async {
+      const shared = '/albums/retry_live';
+      final a = fixtureItem(
+        id: 'live_a',
+        sourceRef: 'file://$shared/a.jpg',
+        analysisRef: 'ref_a',
+        analysisRefState: AnalysisRefState.ready,
+        processingStatus: ProcessingStatus.failed,
+      );
+      final b = fixtureItem(
+        id: 'live_b',
+        sourceRef: 'file://$shared/b.jpg',
+        analysisRef: 'ref_b',
+        analysisRefState: AnalysisRefState.ready,
+        processingStatus: ProcessingStatus.failed,
+      );
+      final items = FakeItemsRepository(items: [a, b]);
+      final jobs = FakeJobsRepository(
+        libraryItems: items,
+        onAnalyzed: items.replaceItem,
+        analyzeDelay: const Duration(milliseconds: 40),
+      );
+      await _pumpLibrary(tester, items: items, jobs: jobs);
 
-    await tester.tap(find.byKey(const Key('source-group-toggle-$shared')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('item-row-live_a')), findsOneWidget);
-    expect(find.byKey(const Key('item-row-live_b')), findsOneWidget);
-    expect(find.byKey(const Key('processing-status-failed')), findsNWidgets(2));
+      await tester.tap(find.byKey(const Key('source-group-toggle-$shared')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('item-row-live_a')), findsOneWidget);
+      expect(find.byKey(const Key('item-row-live_b')), findsOneWidget);
+      expect(
+        find.byKey(const Key('processing-status-failed')),
+        findsNWidgets(2),
+      );
 
-    await tester.ensureVisible(
-      find.byKey(const Key('source-group-retry-$shared')),
-    );
-    await tester.tap(find.byKey(const Key('source-group-retry-$shared')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
+      await tester.ensureVisible(
+        find.byKey(const Key('source-group-retry-$shared')),
+      );
+      await tester.tap(find.byKey(const Key('source-group-retry-$shared')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
 
-    expect(find.byKey(const Key('processing-status-tagged')), findsOneWidget);
-    expect(find.byKey(const Key('processing-status-failed')), findsOneWidget);
+      expect(find.byKey(const Key('processing-status-tagged')), findsOneWidget);
+      expect(find.byKey(const Key('processing-status-failed')), findsOneWidget);
 
-    await tester.pumpAndSettle();
-    expect(jobs.analyzedItemIds, ['live_a', 'live_b']);
-    expect(find.byKey(const Key('processing-status-failed')), findsNothing);
-    expect(find.byKey(const Key('processing-status-tagged')), findsNWidgets(2));
-  });
+      await tester.pumpAndSettle();
+      expect(jobs.analyzedItemIds, ['live_a', 'live_b']);
+      expect(find.byKey(const Key('processing-status-failed')), findsNothing);
+      expect(
+        find.byKey(const Key('processing-status-tagged')),
+        findsNWidgets(2),
+      );
+    },
+  );
 
   testWidgets(
-      'folder Retry credit reject shows banner and snackbar without retrying',
-      (tester) async {
-    const shared = '/albums/retry_credits';
-    final tagged = fixtureItem(
-      id: 'credit_ok',
-      sourceRef: 'file://$shared/ok.jpg',
-      analysisRef: 'ref_ok',
-      analysisRefState: AnalysisRefState.ready,
+    'folder Retry credit reject shows banner and snackbar without retrying',
+    (tester) async {
+      const shared = '/albums/retry_credits';
+      final tagged = fixtureItem(
+        id: 'credit_ok',
+        sourceRef: 'file://$shared/ok.jpg',
+        analysisRef: 'ref_ok',
+        analysisRefState: AnalysisRefState.ready,
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final failed = fixtureItem(
+        id: 'credit_fail',
+        sourceRef: 'file://$shared/fail.jpg',
+        analysisRef: 'ref_fail',
+        analysisRefState: AnalysisRefState.ready,
+        processingStatus: ProcessingStatus.failed,
+      );
+      final items = FakeItemsRepository(items: [tagged, failed]);
+      final jobs = FakeJobsRepository(
+        libraryItems: items,
+        analyzeError: ApiException(
+          statusCode: 409,
+          code: 'insufficientCredits',
+          message: 'Not enough credits for this analysis',
+        ),
+      );
+      await _pumpLibrary(
+        tester,
+        items: items,
+        jobs: jobs,
+        usage: FakeUsageRepository(
+          summary: fixtureUsageSummary(
+            creditAdmission: true,
+            remainingCredits: 40,
+            lowCreditWarning: true,
+          ),
+        ),
+      );
+
+      await tester.ensureVisible(
+        find.byKey(const Key('source-group-retry-$shared')),
+      );
+      await tester.tap(find.byKey(const Key('source-group-retry-$shared')));
+      await tester.pumpAndSettle();
+
+      expect(jobs.analyzeCallCount, 1);
+      expect(find.byKey(const Key('folder-retry-credits')), findsOneWidget);
+      expect(find.text('Not enough credits for this analysis'), findsWidgets);
+      expect(
+        find.byKey(const Key('usage-banner-insufficient-credits')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('folder-retry-done')), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'folder ingest continue flips each pending row to tagged as analyze finishes',
+    (tester) async {
+      const shared = '/albums/live_ingest';
+      final a = fixtureItem(
+        id: 'ing_a',
+        sourceRef: 'file://$shared/a.jpg',
+        processingStatus: ProcessingStatus.pending,
+      );
+      final b = fixtureItem(
+        id: 'ing_b',
+        sourceRef: 'file://$shared/b.jpg',
+        processingStatus: ProcessingStatus.pending,
+      );
+      final items = FakeItemsRepository(items: [a, b]);
+      final jobs = FakeJobsRepository(
+        libraryItems: items,
+        onAnalyzed: items.replaceItem,
+        analyzeDelay: const Duration(milliseconds: 40),
+      );
+
+      final table = LibraryTableController(
+        itemsRepository: items,
+        commentsRepository: FakeCommentsRepository(),
+        knowledgeConcurrency: 1,
+      );
+
+      await _pumpLibrary(
+        tester,
+        items: items,
+        jobs: jobs,
+        extraOverrides: [
+          libraryTableControllerProvider.overrideWith((ref) => table),
+          folderIngestQueueProvider.overrideWith((ref) {
+            return _continueQueue(
+              items: items,
+              jobs: jobs,
+              onItemUpdated: table.adoptItem,
+            );
+          }),
+        ],
+      );
+
+      await tester.tap(find.byKey(const Key('source-group-toggle-$shared')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('item-row-ing_a')), findsOneWidget);
+      expect(find.byKey(const Key('item-row-ing_b')), findsOneWidget);
+      expect(
+        find.byKey(const Key('processing-status-pending')),
+        findsNWidgets(2),
+      );
+
+      final ctx = tester.element(find.byType(ItemsListPage));
+      final queue = ProviderScope.containerOf(
+        ctx,
+      ).read(folderIngestQueueProvider);
+      await queue.restoreIncompleteFromLibrary();
+      expect(queue.jobs, isNotEmpty);
+      expect(queue.jobs.single.continueExistingOnly, isTrue);
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(
+        table.allRows
+            .where((r) => r.item.processingStatus == ProcessingStatus.tagged)
+            .length,
+        1,
+      );
+      expect(queue.hasActiveJobs, isTrue);
+      expect(find.byKey(const Key('processing-status-tagged')), findsOneWidget);
+      expect(
+        find.byKey(const Key('processing-status-pending')),
+        findsOneWidget,
+      );
+
+      await tester.pumpAndSettle();
+      expect(jobs.analyzedItemIds, ['ing_a', 'ing_b']);
+      expect(find.byKey(const Key('processing-status-pending')), findsNothing);
+      expect(
+        find.byKey(const Key('processing-status-tagged')),
+        findsNWidgets(2),
+      );
+    },
+  );
+
+  testWidgets(
+    'Add from folder prompts when leaf is owned; Cancel leaves ownership',
+    (tester) async {
+      final owned = fixtureItem(
+        id: 'owned_1',
+        sourceRef: 'file:///albums/Owned/1.jpg',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final items = FakeItemsRepository(items: [owned]);
+      final jobs = FakeJobsRepository();
+      final store = MemoryCollectionsStore(
+        const CollectionsFile(
+          collections: [
+            Collection(
+              id: 'c-other',
+              name: 'Vacation',
+              leafFolders: ['/albums/Owned'],
+            ),
+            Collection(id: 'c-open', name: 'Trip', leafFolders: []),
+          ],
+          currentCollectionId: 'c-open',
+        ),
+      );
+
+      await _pumpLibrary(
+        tester,
+        items: items,
+        jobs: jobs,
+        extraOverrides: [
+          collectionsStoreProvider.overrideWithValue(store),
+          folderPickerProvider.overrideWithValue(() async => '/albums/Owned'),
+          folderIngestQueueProvider.overrideWith((ref) {
+            return FolderIngestQueue(
+              itemsRepository: items,
+              jobsRepository: jobs,
+              isUsageBlocked: () => false,
+              enumerateFolder: (_) async => const [],
+              contentHasher: (path) async => 'hash-$path',
+              perceptualHasher: (path) async => null,
+              physicalMemoryBytes: () async => 16 * 1024 * 1024 * 1024,
+              currentCollectionId: () {
+                final cols = ref.read(collectionsControllerProvider);
+                return cols.sessionReady ? cols.current.id : null;
+              },
+              onLibraryMembershipPublish:
+                  (
+                    folderPath, {
+                    collectionId,
+                    claimFromOtherCollections = const {},
+                  }) async {
+                    await publishCollectionMembershipFromLibrary(
+                      items: items,
+                      cols: ref.read(collectionsControllerProvider),
+                      table: ref.read(libraryTableControllerProvider),
+                      claimUnderFolder: folderPath,
+                      claimForCollectionId: collectionId,
+                      stealFolders: claimFromOtherCollections,
+                    );
+                  },
+            );
+          }),
+        ],
+      );
+
+      await tester.tap(find.byKey(const Key('add-from-folder')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('collection-folder-claim-dialog')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const Key('collection-folder-claim-cancel')));
+      await tester.pumpAndSettle();
+
+      final ctx = tester.element(find.byType(ItemsListPage));
+      final cols = ProviderScope.containerOf(
+        ctx,
+      ).read(collectionsControllerProvider);
+      expect(cols.ownerCollectionId('/albums/Owned'), 'c-other');
+      expect(cols.current.leafFolders, isNot(contains('/albums/Owned')));
+      final queue = ProviderScope.containerOf(
+        ctx,
+      ).read(folderIngestQueueProvider);
+      expect(queue.jobs, isNotEmpty);
+      expect(queue.jobs.last.claimFromOtherCollections, isEmpty);
+    },
+  );
+
+  testWidgets('Add from folder Move here steals the owned leaf', (
+    tester,
+  ) async {
+    final owned = fixtureItem(
+      id: 'owned_1',
+      sourceRef: 'file:///albums/Owned/1.jpg',
       processingStatus: ProcessingStatus.tagged,
     );
-    final failed = fixtureItem(
-      id: 'credit_fail',
-      sourceRef: 'file://$shared/fail.jpg',
-      analysisRef: 'ref_fail',
-      analysisRefState: AnalysisRefState.ready,
-      processingStatus: ProcessingStatus.failed,
-    );
-    final items = FakeItemsRepository(items: [tagged, failed]);
-    final jobs = FakeJobsRepository(
-      libraryItems: items,
-      analyzeError: ApiException(
-        statusCode: 409,
-        code: 'insufficientCredits',
-        message: 'Not enough credits for this analysis',
+    final items = FakeItemsRepository(items: [owned]);
+    final jobs = FakeJobsRepository();
+    final store = MemoryCollectionsStore(
+      const CollectionsFile(
+        collections: [
+          Collection(
+            id: 'c-other',
+            name: 'Vacation',
+            leafFolders: ['/albums/Owned'],
+          ),
+          Collection(id: 'c-open', name: 'Trip', leafFolders: []),
+        ],
+        currentCollectionId: 'c-open',
       ),
-    );
-    await _pumpLibrary(
-      tester,
-      items: items,
-      jobs: jobs,
-      usage: FakeUsageRepository(
-        summary: fixtureUsageSummary(
-          creditAdmission: true,
-          remainingCredits: 40,
-          lowCreditWarning: true,
-        ),
-      ),
-    );
-
-    await tester.ensureVisible(
-      find.byKey(const Key('source-group-retry-$shared')),
-    );
-    await tester.tap(find.byKey(const Key('source-group-retry-$shared')));
-    await tester.pumpAndSettle();
-
-    expect(jobs.analyzeCallCount, 1);
-    expect(find.byKey(const Key('folder-retry-credits')), findsOneWidget);
-    expect(find.text('Not enough credits for this analysis'), findsWidgets);
-    expect(
-      find.byKey(const Key('usage-banner-insufficient-credits')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const Key('folder-retry-done')), findsNothing);
-  });
-
-  testWidgets(
-      'folder ingest continue flips each pending row to tagged as analyze finishes',
-      (tester) async {
-    const shared = '/albums/live_ingest';
-    final a = fixtureItem(
-      id: 'ing_a',
-      sourceRef: 'file://$shared/a.jpg',
-      processingStatus: ProcessingStatus.pending,
-    );
-    final b = fixtureItem(
-      id: 'ing_b',
-      sourceRef: 'file://$shared/b.jpg',
-      processingStatus: ProcessingStatus.pending,
-    );
-    final items = FakeItemsRepository(items: [a, b]);
-    final jobs = FakeJobsRepository(
-      libraryItems: items,
-      onAnalyzed: items.replaceItem,
-      analyzeDelay: const Duration(milliseconds: 40),
-    );
-
-    final table = LibraryTableController(
-      itemsRepository: items,
-      commentsRepository: FakeCommentsRepository(),
-      knowledgeConcurrency: 1,
     );
 
     await _pumpLibrary(
@@ -1035,45 +1202,54 @@ void main() {
       items: items,
       jobs: jobs,
       extraOverrides: [
-        libraryTableControllerProvider.overrideWith((ref) => table),
+        collectionsStoreProvider.overrideWithValue(store),
+        folderPickerProvider.overrideWithValue(() async => '/albums/Owned'),
         folderIngestQueueProvider.overrideWith((ref) {
-          return _continueQueue(
-            items: items,
-            jobs: jobs,
-            onItemUpdated: table.adoptItem,
+          return FolderIngestQueue(
+            itemsRepository: items,
+            jobsRepository: jobs,
+            isUsageBlocked: () => false,
+            enumerateFolder: (_) async => const [],
+            contentHasher: (path) async => 'hash-$path',
+            perceptualHasher: (path) async => null,
+            physicalMemoryBytes: () async => 16 * 1024 * 1024 * 1024,
+            currentCollectionId: () {
+              final cols = ref.read(collectionsControllerProvider);
+              return cols.sessionReady ? cols.current.id : null;
+            },
+            onLibraryMembershipPublish:
+                (
+                  folderPath, {
+                  collectionId,
+                  claimFromOtherCollections = const {},
+                }) async {
+                  await publishCollectionMembershipFromLibrary(
+                    items: items,
+                    cols: ref.read(collectionsControllerProvider),
+                    table: ref.read(libraryTableControllerProvider),
+                    claimUnderFolder: folderPath,
+                    claimForCollectionId: collectionId,
+                    stealFolders: claimFromOtherCollections,
+                  );
+                },
           );
         }),
       ],
     );
 
-    await tester.tap(find.byKey(const Key('source-group-toggle-$shared')));
+    await tester.tap(find.byKey(const Key('add-from-folder')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('item-row-ing_a')), findsOneWidget);
-    expect(find.byKey(const Key('item-row-ing_b')), findsOneWidget);
-    expect(find.byKey(const Key('processing-status-pending')), findsNWidgets(2));
+    await tester.tap(find.byKey(const Key('collection-folder-claim-move')));
+    await tester.pumpAndSettle();
 
     final ctx = tester.element(find.byType(ItemsListPage));
-    final queue = ProviderScope.containerOf(ctx).read(folderIngestQueueProvider);
-    await queue.restoreIncompleteFromLibrary();
-    expect(queue.jobs, isNotEmpty);
-    expect(queue.jobs.single.continueExistingOnly, isTrue);
-
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
-
+    final cols = ProviderScope.containerOf(
+      ctx,
+    ).read(collectionsControllerProvider);
+    expect(cols.ownerCollectionId('/albums/Owned'), 'c-open');
     expect(
-      table.allRows
-          .where((r) => r.item.processingStatus == ProcessingStatus.tagged)
-          .length,
-      1,
+      cols.catalog.collections.firstWhere((c) => c.id == 'c-other').leafFolders,
+      isEmpty,
     );
-    expect(queue.hasActiveJobs, isTrue);
-    expect(find.byKey(const Key('processing-status-tagged')), findsOneWidget);
-    expect(find.byKey(const Key('processing-status-pending')), findsOneWidget);
-
-    await tester.pumpAndSettle();
-    expect(jobs.analyzedItemIds, ['ing_a', 'ing_b']);
-    expect(find.byKey(const Key('processing-status-pending')), findsNothing);
-    expect(find.byKey(const Key('processing-status-tagged')), findsNWidgets(2));
   });
 }

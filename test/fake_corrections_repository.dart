@@ -240,6 +240,7 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
       dedupOfItemId: prev.dedupOfItemId,
       capturedAt: input.capturedAt,
       processingStatus: prev.processingStatus,
+      processingError: prev.processingError,
       schemaVersion: prev.schemaVersion,
       createdAt: prev.createdAt,
     );
@@ -347,6 +348,7 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
           dedupOfItemId: knowledge.item.dedupOfItemId,
           capturedAt: prev,
           processingStatus: knowledge.item.processingStatus,
+          processingError: knowledge.item.processingError,
           schemaVersion: knowledge.item.schemaVersion,
           createdAt: knowledge.item.createdAt,
         );

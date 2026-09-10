@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/processing_status_view.dart';
@@ -48,5 +49,37 @@ void main() {
       ProcessingStatusView.of(ProcessingStatus.cancelled).label,
       'cancelled',
     );
+  });
+
+  testWidgets('failed badge tooltip shows processingError', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: ProcessingStatusBadge(
+            status: ProcessingStatus.failed,
+            processingError: 'provider boom',
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const Key('processing-status-error-tooltip')), findsOneWidget);
+    final tooltip = tester.widget<Tooltip>(
+      find.byKey(const Key('processing-status-error-tooltip')),
+    );
+    expect(tooltip.message, 'provider boom');
+  });
+
+  testWidgets('non-failed badge has no error tooltip', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: ProcessingStatusBadge(
+            status: ProcessingStatus.tagged,
+            processingError: 'stale',
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const Key('processing-status-error-tooltip')), findsNothing);
   });
 }

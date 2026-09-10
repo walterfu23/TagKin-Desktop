@@ -252,6 +252,7 @@ class FakeItemsRepository implements ItemsRepository {
       dedupOfItemId: prev.dedupOfItemId,
       capturedAt: prev.capturedAt,
       processingStatus: ProcessingStatus.awaitingModelAccess,
+      processingError: null,
       schemaVersion: prev.schemaVersion,
       createdAt: prev.createdAt,
     );
@@ -537,6 +538,7 @@ Item fixtureItem({
   String? analysisRef,
   String? sourceRef,
   String? contentHash = '__default__',
+  String? processingError,
 }) {
   return Item(
     id: id,
@@ -548,6 +550,7 @@ Item fixtureItem({
     contentHash: contentHash == '__default__' ? 'hash_$id' : contentHash,
     capturedAt: capturedAt,
     processingStatus: processingStatus,
+    processingError: processingError,
     schemaVersion: 1,
     createdAt: '2026-07-19T00:00:00.000Z',
   );

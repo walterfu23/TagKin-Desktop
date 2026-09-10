@@ -59,11 +59,25 @@ class WhereDisplay {
 
   /// Non-GPS / failed geocode passthrough.
   factory WhereDisplay.plain(String value) => WhereDisplay(label: value);
+
+  WhereDisplay copyWith({
+    String? label,
+    String? locality,
+    String? region,
+    String? regionName,
+    String? country,
+  }) {
+    return WhereDisplay(
+      label: label ?? this.label,
+      locality: locality ?? this.locality,
+      region: region ?? this.region,
+      regionName: regionName ?? this.regionName,
+      country: country ?? this.country,
+    );
+  }
 }
 
-final _latLngTag = RegExp(
-  r'^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$',
-);
+final _latLngTag = RegExp(r'^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$');
 
 /// Returns coords when [value] is a pre-pass GPS tag; otherwise null.
 LatLng? parseLatLngTag(String value) {
@@ -95,9 +109,7 @@ String? deviceCountryCode() {
     final fromLocaleName = _countryFromLocaleName(Platform.localeName);
     if (fromLocaleName != null) return fromLocaleName;
   } catch (_) {}
-  return _normalizeCountryCode(
-    PlatformDispatcher.instance.locale.countryCode,
-  );
+  return _normalizeCountryCode(PlatformDispatcher.instance.locale.countryCode);
 }
 
 String? _countryFromLocaleName(String localeName) {
@@ -175,8 +187,9 @@ String normalizeFamiliarRegionsCsv(String csv) {
 }
 
 bool isFamiliarRegion(String region, String familiarRegionsCsv) {
-  return parseFamiliarRegions(familiarRegionsCsv)
-      .any((r) => sameRegionName(r, region));
+  return parseFamiliarRegions(
+    familiarRegionsCsv,
+  ).any((r) => sameRegionName(r, region));
 }
 
 /// Formats city / state[/province][, country] using display prefs.
@@ -196,14 +209,14 @@ WhereDisplay formatWhereDisplay(
   final placeCountry = _normalizeCountryCode(place.isoCountryCode);
   final device = _normalizeCountryCode(deviceCountryCode);
 
-  final sameCountry = device != null &&
-      placeCountry != null &&
-      device == placeCountry;
-  final includeCountry = country != null &&
-      (!sameCountry || showCountryWhenSameCountry);
+  final sameCountry =
+      device != null && placeCountry != null && device == placeCountry;
+  final includeCountry =
+      country != null && (!sameCountry || showCountryWhenSameCountry);
 
   final familiar = isFamiliarRegion(regionName ?? '', familiarRegions);
-  final includeRegion = regionName != null &&
+  final includeRegion =
+      regionName != null &&
       regionName != city &&
       (!familiar || showStateWhenSameState);
 
@@ -242,9 +255,10 @@ bool isWholeWordPrefix(String prefix, String full) {
   return !_unicodeLetter.hasMatch(f[p.length]);
 }
 
-/// Drops empty labels, case-insensitive exact duplicates, and labels that
-/// are a whole-word prefix of a more specific remaining label (including a
-/// GPS [WhereDisplay.locality] subsumed by a scene that starts with that city).
+/// Drops empty labels and case-insensitive exact duplicates. GPS city
+/// ([WhereDisplay.locality]) is never omitted; a scene that starts with that
+/// city loses the repeated city prefix instead. Other labels that are a
+/// whole-word prefix of a more specific remaining label are still omitted.
 List<WhereDisplay> collapseWhereDisplays(Iterable<WhereDisplay> entries) {
   final unique = <WhereDisplay>[];
   final seen = <String>{};
@@ -254,18 +268,58 @@ List<WhereDisplay> collapseWhereDisplays(Iterable<WhereDisplay> entries) {
     if (!seen.add(label.toLowerCase())) continue;
     unique.add(e);
   }
-  return [
+  final cities = <String>{
+    for (final e in unique)
+      if (e.locality?.trim() case final String loc when loc.isNotEmpty) loc,
+  };
+  final kept = [
     for (final a in unique)
-      if (!_whereDisplaySubsumed(a, unique)) a,
+      if (_isCityDisplay(a, cities) || !_whereDisplaySubsumed(a, unique)) a,
   ];
+  final stripped = <WhereDisplay>[];
+  final strippedSeen = <String>{};
+  for (final e in kept) {
+    final next = _isCityDisplay(e, cities)
+        ? e
+        : e.copyWith(label: _stripLeadingCity(e.label, cities));
+    final label = next.label.trim();
+    if (label.isEmpty) continue;
+    if (!strippedSeen.add(label.toLowerCase())) continue;
+    stripped.add(label == next.label ? next : next.copyWith(label: label));
+  }
+  return stripped;
+}
+
+bool _isCityDisplay(WhereDisplay e, Set<String> cities) {
+  if ((e.locality?.trim() ?? '').isNotEmpty) return true;
+  final label = e.label.trim().toLowerCase();
+  if (label.isEmpty) return false;
+  for (final city in cities) {
+    if (city.toLowerCase() == label) return true;
+  }
+  return false;
+}
+
+/// Longest city that is a whole-word prefix of [label], else [label] unchanged.
+String _stripLeadingCity(String label, Iterable<String> cities) {
+  final trimmed = label.trim();
+  String? best;
+  for (final city in cities) {
+    if (!isWholeWordPrefix(city, trimmed)) continue;
+    if (best == null || city.trim().length > best.trim().length) {
+      best = city;
+    }
+  }
+  if (best == null) return trimmed;
+  var rest = trimmed.substring(best.trim().length).trim();
+  rest = rest.replaceFirst(RegExp(r'^[,;:\-]+\s*'), '');
+  return rest;
 }
 
 bool _whereDisplaySubsumed(WhereDisplay a, List<WhereDisplay> all) {
   for (final b in all) {
     if (identical(a, b)) continue;
     if (isWholeWordPrefix(a.label, b.label)) return true;
-    final loc = a.locality?.trim() ?? '';
-    if (loc.isNotEmpty && isWholeWordPrefix(loc, b.label)) return true;
   }
   return false;
 }
@@ -279,8 +333,7 @@ String? formatWherePlaceLabel(
   bool showCountryWhenSameCountry = false,
   bool showStateWhenSameState = false,
 }) {
-  final csv =
-      familiarRegions.isNotEmpty ? familiarRegions : homeState;
+  final csv = familiarRegions.isNotEmpty ? familiarRegions : homeState;
   final display = formatWhereDisplay(
     place,
     deviceCountryCode: deviceCountryCode,

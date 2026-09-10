@@ -55,6 +55,7 @@ class FolderIngestJob {
     required this.folderPath,
     this.continueExistingOnly = false,
     this.collectionId,
+    this.claimFromOtherCollections = const {},
   });
 
   final String folderPath;
@@ -65,6 +66,10 @@ class FolderIngestJob {
   /// Collection that started this job (banner + membership claim).
   /// Null when no collection session was open at enqueue.
   final String? collectionId;
+
+  /// Leaves the user approved moving off another collection (pick-time).
+  /// Empty on crash-resume so membership never silently steals.
+  final Set<String> claimFromOtherCollections;
 
   /// Skip enumerate / create; pipeline incomplete library items under this root.
   final bool continueExistingOnly;
@@ -182,10 +187,13 @@ class FolderIngestQueue extends ChangeNotifier {
 
   /// Adopt / claim leaves after register (or done).
   /// [collectionId] is the collection that started the job, when known.
+  /// [claimFromOtherCollections] is the pick-time Move-here set (empty on resume).
   final Future<void> Function(
     String folderPath, {
     String? collectionId,
-  })? onLibraryMembershipPublish;
+    Set<String> claimFromOtherCollections,
+  })?
+  onLibraryMembershipPublish;
 
   /// Open collection at enqueue time (Add from folder).
   final String? Function()? currentCollectionId;
@@ -268,8 +276,7 @@ class FolderIngestQueue extends ChangeNotifier {
   bool isLoadingPath(String path) {
     final normalized = normalizePath(path);
     return _jobs.any(
-      (j) =>
-          hidesFacesFolder(j.phase) && _jobCoversPath(j, normalized),
+      (j) => hidesFacesFolder(j.phase) && _jobCoversPath(j, normalized),
     );
   }
 
@@ -297,11 +304,16 @@ class FolderIngestQueue extends ChangeNotifier {
   Future<void> _publishMembership(
     String folderPath, {
     String? collectionId,
+    Set<String> claimFromOtherCollections = const {},
   }) async {
     final hook = onLibraryMembershipPublish;
     if (hook == null || _disposed) return;
     try {
-      await hook(folderPath, collectionId: collectionId);
+      await hook(
+        folderPath,
+        collectionId: collectionId,
+        claimFromOtherCollections: claimFromOtherCollections,
+      );
     } catch (e, st) {
       debugPrint('FolderIngestQueue membership publish failed: $e\n$st');
     }
@@ -321,13 +333,12 @@ class FolderIngestQueue extends ChangeNotifier {
   }
 
   /// Bump library refresh and adopt membership from an unfiltered item list.
-  Future<void> _bumpLibraryAndPublish(
-    FolderIngestJob job,
-  ) async {
+  Future<void> _bumpLibraryAndPublish(FolderIngestJob job) async {
     _libraryRefreshTick++;
     await _publishMembership(
       _claimPath(job),
       collectionId: job.collectionId,
+      claimFromOtherCollections: job.claimFromOtherCollections,
     );
     _safeNotify();
   }
@@ -448,15 +459,21 @@ class FolderIngestQueue extends ChangeNotifier {
     String folderPath, {
     bool continueExistingOnly = false,
     String? collectionId,
+    Set<String> claimFromOtherCollections = const {},
   }) async {
     final normalized = normalizePath(folderPath);
     if (_jobs.any((j) => j.folderPath == normalized && j.isActive)) {
       return FolderIngestEnqueueResult.alreadyActive;
     }
+    final steal = <String>{
+      for (final f in claimFromOtherCollections)
+        if (normalizeLeafFolder(f) case final key when key.isNotEmpty) key,
+    };
     final job = FolderIngestJob(
       folderPath: normalized,
       continueExistingOnly: continueExistingOnly,
       collectionId: collectionId ?? currentCollectionId?.call(),
+      claimFromOtherCollections: steal,
     );
     _jobs = [..._jobs, job];
     _safeNotify();
@@ -833,17 +850,23 @@ final folderIngestQueueProvider = ChangeNotifierProvider<FolderIngestQueue>(
       collectionIdForFolder: (path) {
         return ref.read(collectionsControllerProvider).ownerCollectionId(path);
       },
-      onLibraryMembershipPublish: (folderPath, {collectionId}) async {
-        final cols = ref.read(collectionsControllerProvider);
-        final table = ref.read(libraryTableControllerProvider);
-        await publishCollectionMembershipFromLibrary(
-          items: ref.read(itemsRepositoryProvider),
-          cols: cols,
-          table: table,
-          claimUnderFolder: folderPath,
-          claimForCollectionId: collectionId,
-        );
-      },
+      onLibraryMembershipPublish:
+          (
+            folderPath, {
+            collectionId,
+            claimFromOtherCollections = const {},
+          }) async {
+            final cols = ref.read(collectionsControllerProvider);
+            final table = ref.read(libraryTableControllerProvider);
+            await publishCollectionMembershipFromLibrary(
+              items: ref.read(itemsRepositoryProvider),
+              cols: cols,
+              table: table,
+              claimUnderFolder: folderPath,
+              claimForCollectionId: collectionId,
+              stealFolders: claimFromOtherCollections,
+            );
+          },
       onItemUpdated: (item) {
         ref.read(libraryTableControllerProvider).adoptItem(item);
       },

@@ -1961,6 +1961,13 @@ components:
         pipelineVersion:
           type: integer
           minimum: 1
+        errorMessage:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: >
+            Why this job failed (when state is failed). Null otherwise.
+            Never media bytes (R1).
         createdAt:
           type: string
           format: date-time
@@ -2047,6 +2054,13 @@ components:
           description: Prefer EXIF/metadata capture time over model-inferred (when).
         processingStatus:
           $ref: "#/components/schemas/ProcessingStatus"
+        processingError:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: >
+            Why the last analyze attempt failed (when processingStatus is
+            failed). Null otherwise. Never media bytes (R1).
         schemaVersion:
           type: integer
           minimum: 1

@@ -120,8 +120,10 @@ void main() {
       expect(controller.current.name, 'Europe');
       expect(controller.current.leafFolders, isEmpty);
       expect(controller.dirty, isFalse);
-      expect(controller.collections.map((c) => c.name),
-          containsAll(['Collection1', 'Europe']));
+      expect(
+        controller.collections.map((c) => c.name),
+        containsAll(['Collection1', 'Europe']),
+      );
       // Source collection still owns /a.
       expect(controller.ownerCollectionId('/a'), isNot(controller.current.id));
     });
@@ -151,47 +153,53 @@ void main() {
       );
     });
 
-    test('create without seed starts empty; cannot steal owned folders',
-        () async {
-      await controller.create(name: 'Trip', seedFolders: ['/a']);
-      expect(await controller.create(name: 'Other'), isTrue);
-      expect(controller.current.leafFolders, isEmpty);
-      expect(controller.addFolder('/a'), isFalse);
-      expect(controller.current.leafFolders, isEmpty);
-      expect(controller.addFolder('/b'), isTrue);
-      expect(controller.current.leafFolders, ['/b']);
-    });
+    test(
+      'create without seed starts empty; cannot steal owned folders',
+      () async {
+        await controller.create(name: 'Trip', seedFolders: ['/a']);
+        expect(await controller.create(name: 'Other'), isTrue);
+        expect(controller.current.leafFolders, isEmpty);
+        expect(controller.addFolder('/a'), isFalse);
+        expect(controller.current.leafFolders, isEmpty);
+        expect(controller.addFolder('/b'), isTrue);
+        expect(controller.current.leafFolders, ['/b']);
+      },
+    );
 
-    test('claimFoldersFor writes origin collection while another is open',
-        () async {
-      await controller.create(name: 'First', seedFolders: ['/old']);
-      final firstId = controller.current.id;
-      expect(await controller.create(name: 'Second'), isTrue);
-      expect(controller.current.leafFolders, isEmpty);
-      expect(
-        await controller.claimFoldersFor(firstId, ['/old', '/also']),
-        isTrue,
-      );
-      expect(controller.current.name, 'Second');
-      expect(controller.current.leafFolders, isEmpty);
-      expect(
-        controller.catalog.collections
-            .firstWhere((c) => c.id == firstId)
-            .leafFolders
-            .toSet(),
-        {'/old', '/also'},
-      );
-    });
+    test(
+      'claimFoldersFor writes origin collection while another is open',
+      () async {
+        await controller.create(name: 'First', seedFolders: ['/old']);
+        final firstId = controller.current.id;
+        expect(await controller.create(name: 'Second'), isTrue);
+        expect(controller.current.leafFolders, isEmpty);
+        expect(
+          await controller.claimFoldersFor(firstId, ['/old', '/also']),
+          isTrue,
+        );
+        expect(controller.current.name, 'Second');
+        expect(controller.current.leafFolders, isEmpty);
+        expect(
+          controller.catalog.collections
+              .firstWhere((c) => c.id == firstId)
+              .leafFolders
+              .toSet(),
+          {'/old', '/also'},
+        );
+      },
+    );
 
-    test('create seedFolders skips paths owned by another collection',
-        () async {
-      await controller.create(name: 'Trip', seedFolders: ['/a']);
-      expect(
-        await controller.create(name: 'Other', seedFolders: ['/a', '/b']),
-        isTrue,
-      );
-      expect(controller.current.leafFolders, ['/b']);
-    });
+    test(
+      'create seedFolders skips paths owned by another collection',
+      () async {
+        await controller.create(name: 'Trip', seedFolders: ['/a']);
+        expect(
+          await controller.create(name: 'Other', seedFolders: ['/a', '/b']),
+          isTrue,
+        );
+        expect(controller.current.leafFolders, ['/b']);
+      },
+    );
 
     test('create → open restores folders; touches recents', () async {
       await controller.create(name: 'Trip', seedFolders: ['/albums/Paris']);
@@ -200,10 +208,7 @@ void main() {
       final id = controller.current.id;
       await controller.create(name: 'Other');
       expect(await controller.open(id), isTrue);
-      expect(controller.current.leafFolders, [
-        '/albums/Paris',
-        '/albums/Rome',
-      ]);
+      expect(controller.current.leafFolders, ['/albums/Paris', '/albums/Rome']);
       expect(controller.recentCollections.first.id, id);
     });
 
@@ -228,18 +233,21 @@ void main() {
       expect(controller.chromeLabel, 'Collection1');
     });
 
-    test('Faces folder look dirties; reverting to saved clears dirty', () async {
-      await controller.bootstrapSession(['/a', '/b']);
-      controller.updateFacesLook(leafFolder: '/a');
-      await controller.save();
-      expect(controller.dirty, isFalse);
-      controller.updateFacesLook(leafFolder: '/b');
-      expect(controller.dirty, isTrue);
-      expect(controller.current.ui.faces.leafFolder, '/b');
-      controller.updateFacesLook(leafFolder: '/a');
-      expect(controller.dirty, isFalse);
-      expect(controller.chromeLabel, 'Collection1');
-    });
+    test(
+      'Faces folder look dirties; reverting to saved clears dirty',
+      () async {
+        await controller.bootstrapSession(['/a', '/b']);
+        controller.updateFacesLook(leafFolder: '/a');
+        await controller.save();
+        expect(controller.dirty, isFalse);
+        controller.updateFacesLook(leafFolder: '/b');
+        expect(controller.dirty, isTrue);
+        expect(controller.current.ui.faces.leafFolder, '/b');
+        controller.updateFacesLook(leafFolder: '/a');
+        expect(controller.dirty, isFalse);
+        expect(controller.chromeLabel, 'Collection1');
+      },
+    );
 
     test('library look round-trips on save/open', () async {
       await controller.bootstrapSession(['/a']);
@@ -274,87 +282,161 @@ void main() {
       expect(controller.dirty, isTrue);
     });
 
-    test('addFolder on new library path dirties; removeFolder stays off membership',
-        () async {
-      await controller.create(name: 'Trip', seedFolders: ['/a']);
-      expect(controller.dirty, isFalse);
-      expect(controller.addFolder('/b'), isTrue);
-      expect(controller.dirty, isTrue);
-      expect(controller.current.leafFolders, ['/a', '/b']);
-      await controller.save();
-      expect(controller.removeFolder('/b'), isTrue);
-      expect(controller.dirty, isTrue);
-      expect(controller.current.leafFolders, ['/a']);
-      // Intentional remove: folder still in library does not get re-added by
-      // addFolder when already considered (caller must only add *new* paths).
-      expect(controller.addFolder('/a'), isTrue);
-      expect(controller.current.leafFolders, ['/a']);
-    });
+    test(
+      'addFolder on new library path dirties; removeFolder stays off membership',
+      () async {
+        await controller.create(name: 'Trip', seedFolders: ['/a']);
+        expect(controller.dirty, isFalse);
+        expect(controller.addFolder('/b'), isTrue);
+        expect(controller.dirty, isTrue);
+        expect(controller.current.leafFolders, ['/a', '/b']);
+        await controller.save();
+        expect(controller.removeFolder('/b'), isTrue);
+        expect(controller.dirty, isTrue);
+        expect(controller.current.leafFolders, ['/a']);
+        // Intentional remove: folder still in library does not get re-added by
+        // addFolder when already considered (caller must only add *new* paths).
+        expect(controller.addFolder('/a'), isTrue);
+        expect(controller.current.leafFolders, ['/a']);
+      },
+    );
 
-    test('adoptUnownedFolders batches new leaves; skips other-owned; one dirty',
-        () async {
-      await controller.create(name: 'Trip', seedFolders: ['/a']);
+    test(
+      'adoptUnownedFolders batches new leaves; skips other-owned; one dirty',
+      () async {
+        await controller.create(name: 'Trip', seedFolders: ['/a']);
+        final tripId = controller.current.id;
+        expect(
+          await controller.create(name: 'Other', seedFolders: ['/owned']),
+          isTrue,
+        );
+        expect(await controller.open(tripId), isTrue);
+        expect(controller.dirty, isFalse);
+        var notifies = 0;
+        controller.addListener(() => notifies++);
+        expect(
+          controller.adoptUnownedFolders(['/a', '/b', '/c', '/owned', '']),
+          isTrue,
+        );
+        expect(controller.current.leafFolders, ['/a', '/b', '/c']);
+        expect(controller.dirty, isTrue);
+        expect(notifies, 1);
+        expect(controller.adoptUnownedFolders(['/b', '/c']), isFalse);
+        expect(notifies, 1);
+      },
+    );
+
+    test(
+      'adoptUnownedFolders treats slash and backslash as the same leaf',
+      () async {
+        await controller.create(
+          name: 'Trip',
+          seedFolders: ['/albums/Trip/Alpha'],
+        );
+        expect(
+          controller.adoptUnownedFolders([
+            r'\albums\Trip\Alpha',
+            r'\albums\Trip\Beta',
+          ]),
+          isTrue,
+        );
+        expect(controller.current.leafFolders.toSet(), {
+          '/albums/Trip/Alpha',
+          '/albums/Trip/Beta',
+        });
+      },
+    );
+
+    test(
+      'claimFoldersForCurrent does not steal without stealFolders',
+      () async {
+        await controller.create(name: 'Trip', seedFolders: ['/a']);
+        final tripId = controller.current.id;
+        expect(
+          await controller.create(name: 'Other', seedFolders: ['/owned']),
+          isTrue,
+        );
+        expect(await controller.open(tripId), isTrue);
+        expect(
+          await controller.claimFoldersForCurrent(['/owned', '/b']),
+          isTrue,
+        );
+        expect(controller.current.leafFolders, ['/a', '/b']);
+        expect(controller.ownerCollectionId('/owned'), isNot(tripId));
+        expect(
+          controller.catalog.collections
+              .firstWhere((c) => c.name == 'Other')
+              .leafFolders,
+          ['/owned'],
+        );
+      },
+    );
+
+    test(
+      'claimFoldersForCurrent steals from other collection and persists',
+      () async {
+        final store = CollectionsStore(supportDir: tempDir);
+        final controller = CollectionsController(store: store);
+        await controller.load();
+        await controller.create(name: 'Trip', seedFolders: ['/a']);
+        final tripId = controller.current.id;
+        expect(
+          await controller.create(name: 'Other', seedFolders: ['/owned']),
+          isTrue,
+        );
+        expect(await controller.open(tripId), isTrue);
+        expect(controller.ownerCollectionId('/owned'), isNot(tripId));
+        expect(
+          await controller.claimFoldersForCurrent(
+            ['/owned', '/b'],
+            stealFolders: {'/owned'},
+          ),
+          isTrue,
+        );
+        expect(controller.current.leafFolders, ['/a', '/owned', '/b']);
+        expect(controller.ownerCollectionId('/owned'), tripId);
+        expect(controller.dirty, isFalse);
+        final other = controller.catalog.collections.firstWhere(
+          (c) => c.name == 'Other',
+        );
+        expect(other.leafFolders, isEmpty);
+        // Survives reload.
+        final reloaded = CollectionsController(store: store);
+        await reloaded.load();
+        expect(await reloaded.open(tripId), isTrue);
+        expect(
+          reloaded.current.leafFolders,
+          containsAll(['/a', '/owned', '/b']),
+        );
+        expect(
+          reloaded.catalog.collections
+              .firstWhere((c) => c.name == 'Other')
+              .leafFolders,
+          isEmpty,
+        );
+      },
+    );
+
+    test('folderConflictsUnder lists nested leaves owned elsewhere', () async {
+      await controller.create(name: 'Trip', seedFolders: ['/albums/Mine']);
       final tripId = controller.current.id;
-      expect(await controller.create(name: 'Other', seedFolders: ['/owned']),
-          isTrue);
-      expect(await controller.open(tripId), isTrue);
-      expect(controller.dirty, isFalse);
-      var notifies = 0;
-      controller.addListener(() => notifies++);
       expect(
-        controller.adoptUnownedFolders(['/a', '/b', '/c', '/owned', '']),
+        await controller.create(
+          name: 'Other',
+          seedFolders: ['/albums/Trip/Day1', '/elsewhere'],
+        ),
         isTrue,
       );
-      expect(controller.current.leafFolders, ['/a', '/b', '/c']);
-      expect(controller.dirty, isTrue);
-      expect(notifies, 1);
-      expect(controller.adoptUnownedFolders(['/b', '/c']), isFalse);
-      expect(notifies, 1);
-    });
-
-    test('adoptUnownedFolders treats slash and backslash as the same leaf',
-        () async {
-      await controller.create(name: 'Trip', seedFolders: ['/albums/Trip/Alpha']);
-      expect(
-        controller.adoptUnownedFolders([
-          r'\albums\Trip\Alpha',
-          r'\albums\Trip\Beta',
-        ]),
-        isTrue,
-      );
-      expect(
-        controller.current.leafFolders.toSet(),
-        {'/albums/Trip/Alpha', '/albums/Trip/Beta'},
-      );
-    });
-
-    test('claimFoldersForCurrent steals from other collection and persists',
-        () async {
-      final store = CollectionsStore(supportDir: tempDir);
-      final controller = CollectionsController(store: store);
-      await controller.load();
-      await controller.create(name: 'Trip', seedFolders: ['/a']);
-      final tripId = controller.current.id;
-      expect(await controller.create(name: 'Other', seedFolders: ['/owned']),
-          isTrue);
       expect(await controller.open(tripId), isTrue);
-      expect(controller.ownerCollectionId('/owned'), isNot(tripId));
-      expect(await controller.claimFoldersForCurrent(['/owned', '/b']), isTrue);
-      expect(controller.current.leafFolders, ['/a', '/owned', '/b']);
-      expect(controller.ownerCollectionId('/owned'), tripId);
-      expect(controller.dirty, isFalse);
-      final other = controller.catalog.collections
-          .firstWhere((c) => c.name == 'Other');
-      expect(other.leafFolders, isEmpty);
-      // Survives reload.
-      final reloaded = CollectionsController(store: store);
-      await reloaded.load();
-      expect(await reloaded.open(tripId), isTrue);
-      expect(reloaded.current.leafFolders, containsAll(['/a', '/owned', '/b']));
+      final conflicts = controller.folderConflictsUnder(
+        '/albums/Trip',
+        exceptId: tripId,
+      );
+      expect(conflicts, hasLength(1));
+      expect(conflicts.single.collectionName, 'Other');
+      expect(conflicts.single.folders, ['/albums/Trip/Day1']);
       expect(
-        reloaded.catalog.collections
-            .firstWhere((c) => c.name == 'Other')
-            .leafFolders,
+        controller.folderConflictsUnder('/albums/Mine', exceptId: tripId),
         isEmpty,
       );
     });

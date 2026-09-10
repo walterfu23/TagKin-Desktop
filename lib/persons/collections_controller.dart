@@ -9,6 +9,19 @@ import 'package:uuid/uuid.dart';
 /// Result of a dirty-prompt: save first, discard changes, or cancel the action.
 enum DirtyPromptChoice { save, discard, cancel }
 
+/// Leaves under a picked ingest root that another collection already lists.
+class FolderClaimConflict {
+  const FolderClaimConflict({
+    required this.collectionId,
+    required this.collectionName,
+    required this.folders,
+  });
+
+  final String collectionId;
+  final String collectionName;
+  final List<String> folders;
+}
+
 const _uuid = Uuid();
 
 /// Mints a new collection GUID (UUID v4).
@@ -26,10 +39,8 @@ String newCollectionId() => _uuid.v4();
 /// Dirty = structural diff vs last-saved baseline (name / folders / page look)
 /// OR sticky [markDirty] activity (Faces moves, deletes, etc.).
 class CollectionsController extends ChangeNotifier {
-  CollectionsController({
-    CollectionsStore? store,
-    this._maxRecents,
-  }) : _store = store ?? CollectionsStore();
+  CollectionsController({CollectionsStore? store, this._maxRecents})
+    : _store = store ?? CollectionsStore();
 
   final CollectionsStore _store;
   final int Function()? _maxRecents;
@@ -52,8 +63,7 @@ class CollectionsController extends ChangeNotifier {
   List<Collection> get collections => _catalog.collections;
   Collection? get currentOrNull => _current;
   Collection get current =>
-      _current ??
-      const Collection(id: '', name: '', leafFolders: []);
+      _current ?? const Collection(id: '', name: '', leafFolders: []);
   bool get hasCurrent => _current != null;
   bool get dirty => _dirty;
   bool get loaded => _loaded;
@@ -80,6 +90,43 @@ class CollectionsController extends ChangeNotifier {
     return folders.any((f) => normalizeLeafFolder(f) == key);
   }
 
+  /// Leaves at or under [root] owned by a collection other than [exceptId].
+  /// Prefers the dirty in-memory current over a stale catalog row.
+  List<FolderClaimConflict> folderConflictsUnder(
+    String root, {
+    required String exceptId,
+  }) {
+    final key = normalizeLeafFolder(root);
+    if (key.isEmpty) return const [];
+
+    final out = <FolderClaimConflict>[];
+    void consider(Collection c) {
+      if (c.id == exceptId) return;
+      final folders = [
+        for (final f in c.leafFolders)
+          if (normalizeLeafFolder(f) case final leaf
+              when leaf.isNotEmpty && pathIsUnderFolder(leaf, key))
+            leaf,
+      ];
+      if (folders.isEmpty) return;
+      out.add(
+        FolderClaimConflict(
+          collectionId: c.id,
+          collectionName: c.name,
+          folders: folders,
+        ),
+      );
+    }
+
+    final cur = _current;
+    if (cur != null) consider(cur);
+    for (final c in _catalog.collections) {
+      if (cur != null && c.id == cur.id) continue;
+      consider(c);
+    }
+    return out;
+  }
+
   /// Library folders claimed by any collection other than [exceptId].
   Set<String> foldersClaimedByOthers({required String exceptId}) {
     final claimed = <String>{};
@@ -87,22 +134,20 @@ class CollectionsController extends ChangeNotifier {
     for (final c in _catalog.collections) {
       if (c.id == exceptId) continue;
       if (cur != null && c.id == cur.id) continue;
-      claimed.addAll([
-        for (final f in c.leafFolders) normalizeLeafFolder(f),
-      ]);
+      claimed.addAll([for (final f in c.leafFolders) normalizeLeafFolder(f)]);
     }
     if (cur != null && cur.id != exceptId) {
-      claimed.addAll([
-        for (final f in cur.leafFolders) normalizeLeafFolder(f),
-      ]);
+      claimed.addAll([for (final f in cur.leafFolders) normalizeLeafFolder(f)]);
     }
     return claimed;
   }
 
   List<Collection> get recentCollections {
     final byId = {for (final c in _catalog.collections) c.id: c};
-    final limit =
-        (_maxRecents?.call() ?? CollectionsFile.maxRecents).clamp(1, 100);
+    final limit = (_maxRecents?.call() ?? CollectionsFile.maxRecents).clamp(
+      1,
+      100,
+    );
     final out = <Collection>[];
     for (final id in _catalog.recentCollectionIds) {
       final c = byId[id];
@@ -224,24 +269,21 @@ class CollectionsController extends ChangeNotifier {
   }
 
   Collection _cloneCollection(Collection c) => Collection(
-        id: c.id,
-        name: c.name,
-        leafFolders: List<String>.of(c.leafFolders),
-        ui: c.ui,
-      );
+    id: c.id,
+    name: c.name,
+    leafFolders: List<String>.of(c.leafFolders),
+    ui: c.ui,
+  );
 
   /// Structural fields only (id ignored for dirty — same collection).
   bool _structurallyEqual(Collection a, Collection b) =>
-      a.name == b.name &&
-      _listEq(a.leafFolders, b.leafFolders) &&
-      a.ui == b.ui;
+      a.name == b.name && _listEq(a.leafFolders, b.leafFolders) && a.ui == b.ui;
 
   void _recomputeDirty({bool notify = true}) {
     final baseline = _baseline;
     final cur = _current;
-    final structural = cur != null &&
-        baseline != null &&
-        !_structurallyEqual(cur, baseline);
+    final structural =
+        cur != null && baseline != null && !_structurallyEqual(cur, baseline);
     final next = _activityDirty || structural;
     if (next == _dirty) {
       if (notify) notifyListeners();
@@ -320,11 +362,7 @@ class CollectionsController extends ChangeNotifier {
             when key.isNotEmpty && !claimed.contains(key))
           key,
     ];
-    _current = Collection(
-      id: id,
-      name: trimmed,
-      leafFolders: folders,
-    );
+    _current = Collection(id: id, name: trimmed, leafFolders: folders);
     _sessionReady = true;
     await _writeCurrentToCatalog(_current!);
     await _touchRecent(_current!.id);
@@ -464,29 +502,38 @@ class CollectionsController extends ChangeNotifier {
     return true;
   }
 
-  /// Move [folders] onto [collectionId], stripping them from any other
-  /// collection (one-folder-one-collection). Persists immediately without *
-  /// — used when Add-from-folder claims leaves for the collection that
-  /// started ingest (even if another collection is open).
+  /// Move [folders] onto [collectionId]. Leaves owned elsewhere stay put
+  /// unless their path is in [stealFolders] (user confirmed Move here).
+  /// Persists immediately without * — used when Add-from-folder claims
+  /// leaves for the collection that started ingest (even if another
+  /// collection is open).
   ///
   /// Returns true when membership or another collection changed.
-  Future<bool> claimFoldersForCurrent(Iterable<String> folders) async {
+  Future<bool> claimFoldersForCurrent(
+    Iterable<String> folders, {
+    Set<String> stealFolders = const {},
+  }) async {
     final cur = _current;
     if (cur == null || !sessionReady) return false;
-    return claimFoldersFor(cur.id, folders);
+    return claimFoldersFor(cur.id, folders, stealFolders: stealFolders);
   }
 
   /// Like [claimFoldersForCurrent] for any catalog (or current) collection.
   Future<bool> claimFoldersFor(
     String collectionId,
-    Iterable<String> folders,
-  ) async {
+    Iterable<String> folders, {
+    Set<String> stealFolders = const {},
+  }) async {
     if (collectionId.isEmpty) return false;
     final claim = <String>{
       for (final f in folders)
         if (normalizeLeafFolder(f) case final key when key.isNotEmpty) key,
     };
     if (claim.isEmpty) return false;
+    final steal = <String>{
+      for (final f in stealFolders)
+        if (normalizeLeafFolder(f) case final key when key.isNotEmpty) key,
+    };
 
     Collection? target;
     if (_current?.id == collectionId) {
@@ -512,7 +559,9 @@ class CollectionsController extends ChangeNotifier {
       }
       final nextLeaves = [
         for (final f in c.leafFolders)
-          if (!claim.contains(normalizeLeafFolder(f))) f,
+          if (normalizeLeafFolder(f) case final leaf
+              when !claim.contains(leaf) || !steal.contains(leaf))
+            f,
       ];
       if (nextLeaves.length != c.leafFolders.length) {
         changed = true;
@@ -541,6 +590,10 @@ class CollectionsController extends ChangeNotifier {
     final nextTargetLeaves = List<String>.of(priorTarget.leafFolders);
     for (final f in claim) {
       if (_folderIn(nextTargetLeaves, f)) continue;
+      final owner = ownerCollectionId(f);
+      if (owner != null && owner != collectionId && !steal.contains(f)) {
+        continue;
+      }
       nextTargetLeaves.add(f);
       changed = true;
     }
@@ -644,9 +697,7 @@ class CollectionsController extends ChangeNotifier {
     return true;
   }
 
-  Future<bool> delete({
-    Future<bool> Function()? confirm,
-  }) async {
+  Future<bool> delete({Future<bool> Function()? confirm}) async {
     final cur = _current;
     if (cur == null) return false;
     if (confirm != null) {
@@ -723,7 +774,10 @@ class CollectionsController extends ChangeNotifier {
   }
 
   Future<void> _touchRecent(String id) async {
-    final limit = (_maxRecents?.call() ?? CollectionsFile.maxRecents).clamp(1, 100);
+    final limit = (_maxRecents?.call() ?? CollectionsFile.maxRecents).clamp(
+      1,
+      100,
+    );
     final next = <String>[id];
     for (final existing in _catalog.recentCollectionIds) {
       if (existing != id) next.add(existing);
@@ -749,10 +803,10 @@ final collectionsStoreProvider = Provider<CollectionsStore>((ref) {
 
 final collectionsControllerProvider =
     ChangeNotifierProvider<CollectionsController>((ref) {
-  final controller = CollectionsController(
-    store: ref.read(collectionsStoreProvider),
-    maxRecents: () => ref.read(desktopPrefsProvider).recentCollectionsLimit,
-  );
-  controller.load();
-  return controller;
-});
+      final controller = CollectionsController(
+        store: ref.read(collectionsStoreProvider),
+        maxRecents: () => ref.read(desktopPrefsProvider).recentCollectionsLimit,
+      );
+      controller.load();
+      return controller;
+    });

@@ -136,7 +136,7 @@ void main() {
     expect(row.where, ['San Francisco, CA', 'restaurant']);
   });
 
-  test('GPS city is omitted when a scene already includes the city', () async {
+  test('GPS city stays and scene loses the repeated city prefix', () async {
     final item = fixtureItem(
       id: 'g',
       processingStatus: ProcessingStatus.tagged,
@@ -183,7 +183,7 @@ void main() {
     await _awaitKnowledge(controller);
 
     final row = controller.allRows.single;
-    expect(row.where, ['Los Altos parking lot']);
+    expect(row.where, ['Los Altos, CA', 'parking lot']);
   });
 
   test(

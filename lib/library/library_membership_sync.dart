@@ -14,13 +14,16 @@ import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 /// When [claimUnderFolder] is set (folder ingest finish), leaves under that
 /// root are **claimed** for [claimForCollectionId] (the collection that
 /// started ingest) or the open collection when that id is omitted.
-/// Add-from-folder on the open collection still means "show this folder here".
+/// Leaves owned elsewhere stay put unless listed in [stealFolders]
+/// (user confirmed Move here). Add-from-folder on the open collection
+/// still means "show this folder here".
 Future<void> publishCollectionMembershipFromLibrary({
   required ItemsRepository items,
   required CollectionsController cols,
   required LibraryTableController table,
   String? claimUnderFolder,
   String? claimForCollectionId,
+  Set<String> stealFolders = const {},
 }) async {
   if (!cols.hasCurrent) return;
   final all = await items.listItems();
@@ -34,12 +37,12 @@ Future<void> publishCollectionMembershipFromLibrary({
       for (final f in folders)
         if (f == root || pathIsUnderFolder(f, root)) f,
     ];
-    final targetId = (claimForCollectionId != null &&
-            claimForCollectionId.isNotEmpty)
+    final targetId =
+        (claimForCollectionId != null && claimForCollectionId.isNotEmpty)
         ? claimForCollectionId
         : cols.current.id;
     if (under.isNotEmpty) {
-      await cols.claimFoldersFor(targetId, under);
+      await cols.claimFoldersFor(targetId, under, stealFolders: stealFolders);
       if (targetId == cols.current.id) {
         // Ensure newly claimed sibling leaves are visible in the Folders tree.
         for (final leaf in under) {

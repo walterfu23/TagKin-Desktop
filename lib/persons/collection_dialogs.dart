@@ -38,8 +38,9 @@ class _CollectionNameDialog extends StatefulWidget {
 }
 
 class _CollectionNameDialogState extends State<_CollectionNameDialog> {
-  late final TextEditingController _controller =
-      TextEditingController(text: widget.initialName);
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialName,
+  );
 
   @override
   void dispose() {
@@ -210,9 +211,86 @@ class _DeleteCollectionDialogState extends State<_DeleteCollectionDialog> {
           ),
           FilledButton(
             key: const Key('collection-delete-confirm'),
-            onPressed:
-                _nameMatches ? () => Navigator.of(context).pop(true) : null,
+            onPressed: _nameMatches
+                ? () => Navigator.of(context).pop(true)
+                : null,
             child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Move here / Cancel when Add from folder hits leaves owned elsewhere.
+///
+/// Returns true only on Move here. Cancel / dismiss leaves ownership as-is.
+Future<bool> showFolderClaimConflictDialog(
+  BuildContext context, {
+  required String currentCollectionName,
+  required List<FolderClaimConflict> conflicts,
+}) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => _FolderClaimConflictDialog(
+      currentCollectionName: currentCollectionName,
+      conflicts: conflicts,
+    ),
+  );
+  return ok ?? false;
+}
+
+class _FolderClaimConflictDialog extends StatelessWidget {
+  const _FolderClaimConflictDialog({
+    required this.currentCollectionName,
+    required this.conflicts,
+  });
+
+  final String currentCollectionName;
+  final List<FolderClaimConflict> conflicts;
+
+  @override
+  Widget build(BuildContext context) {
+    final groups = sortedAlphaBy(conflicts, (c) => c.collectionName);
+    return SelectableScope(
+      child: AlertDialog(
+        key: const Key('collection-folder-claim-dialog'),
+        title: const Text('Folder already in another collection'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'These folders already belong to another collection. '
+                'Move them to “$currentCollectionName”?',
+              ),
+              const SizedBox(height: 12),
+              for (final group in groups) ...[
+                Text(
+                  group.collectionName,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                for (final folder in sortedAlphaBy(group.folders, (f) => f))
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8, top: 4),
+                    child: Text(folder),
+                  ),
+                const SizedBox(height: 8),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            key: const Key('collection-folder-claim-cancel'),
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('collection-folder-claim-move'),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Move here'),
           ),
         ],
       ),

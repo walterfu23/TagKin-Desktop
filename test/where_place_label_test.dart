@@ -34,7 +34,11 @@ void main() {
 
     test('same country omits country by default', () {
       expect(
-        formatWherePlaceLabel(sf, deviceCountryCode: 'US', familiarRegions: 'CA'),
+        formatWherePlaceLabel(
+          sf,
+          deviceCountryCode: 'US',
+          familiarRegions: 'CA',
+        ),
         'San Francisco',
       );
     });
@@ -116,13 +120,13 @@ void main() {
       expect(DesktopPrefs.defaults.sceneCutThreshold, 0.3);
       expect(DesktopPrefs.defaults.facesDetectScoreThreshold, 0.2);
       expect(DesktopPrefs.defaults.facesTrayPageLimit, 500);
-      expect(DesktopPrefs.defaults.autoConfirmHighConfidencePersonMatches, isTrue);
+      expect(
+        DesktopPrefs.defaults.autoConfirmHighConfidencePersonMatches,
+        isTrue,
+      );
       expect(DesktopPrefs.defaults.autoConfirmMinConfidencePercent, 95);
       expect(DesktopPrefs.defaults.jobsPollIntervalSeconds, 2);
-      expect(
-        DesktopPrefs.defaults.dateTimeFormat,
-        DateTimeDisplayFormat.local,
-      );
+      expect(DesktopPrefs.defaults.dateTimeFormat, DateTimeDisplayFormat.local);
     });
 
     test('round-trips through JSON including new prefs', () async {
@@ -166,9 +170,7 @@ void main() {
     });
 
     test('fromJson migrates where.homeState to familiarRegions', () {
-      final prefs = DesktopPrefs.fromJson({
-        'where.homeState': 'California',
-      });
+      final prefs = DesktopPrefs.fromJson({'where.homeState': 'California'});
       expect(prefs.familiarRegions, 'California');
     });
 
@@ -197,10 +199,7 @@ void main() {
     });
 
     test('normalizeFamiliarRegionsCsv drops invalid tokens', () {
-      expect(
-        normalizeFamiliarRegionsCsv('CA, -, NV, wa'),
-        'CA, NV, wa',
-      );
+      expect(normalizeFamiliarRegionsCsv('CA, -, NV, wa'), 'CA, NV, wa');
       expect(normalizeFamiliarRegionsCsv('zzz'), 'zzz');
       expect(normalizeFamiliarRegionsCsv('-'), '');
     });
@@ -242,7 +241,9 @@ void main() {
     });
 
     test('restoreDefaults writes factory prefs', () async {
-      final dir = await Directory.systemTemp.createTemp('tagkin_prefs_restore_');
+      final dir = await Directory.systemTemp.createTemp(
+        'tagkin_prefs_restore_',
+      );
       addTearDown(() => dir.delete(recursive: true));
       final controller = DesktopPrefsController(
         store: DesktopPrefsStore(supportDir: dir),
@@ -252,7 +253,10 @@ void main() {
       );
       await controller.restoreDefaults();
       expect(controller.prefs, DesktopPrefs.defaults);
-      expect(await DesktopPrefsStore(supportDir: dir).load(), DesktopPrefs.defaults);
+      expect(
+        await DesktopPrefsStore(supportDir: dir).load(),
+        DesktopPrefs.defaults,
+      );
     });
   });
 
@@ -272,10 +276,7 @@ void main() {
       );
 
       expect(await resolver.resolve('restaurant'), 'restaurant');
-      expect(
-        await resolver.resolve('37.77,-122.42'),
-        'San Francisco, CA',
-      );
+      expect(await resolver.resolve('37.77,-122.42'), 'San Francisco, CA');
     });
 
     test('keeps raw coords when geocode returns nothing', () async {
@@ -288,20 +289,20 @@ void main() {
   });
 
   group('collapseWhereDisplays', () {
-    test('drops city when a scene already includes the city', () {
+    test('keeps city and strips that prefix from the scene', () {
       expect(
         [
           for (final e in collapseWhereDisplays([
-            WhereDisplay.plain('Los Altos'),
+            const WhereDisplay(label: 'Los Altos', locality: 'Los Altos'),
             WhereDisplay.plain('Los Altos parking lot'),
           ]))
             e.label,
         ],
-        ['Los Altos parking lot'],
+        ['Los Altos', 'parking lot'],
       );
     });
 
-    test('drops GPS city/state when locality prefixes a scene', () {
+    test('keeps GPS city/state and strips locality from the scene', () {
       expect(
         [
           for (final e in collapseWhereDisplays([
@@ -315,7 +316,7 @@ void main() {
           ]))
             e.label,
         ],
-        ['Los Altos parking lot'],
+        ['Los Altos, CA', 'parking lot'],
       );
     });
 
@@ -347,6 +348,19 @@ void main() {
             e.label,
         ],
         ['park', 'parking lot'],
+      );
+    });
+
+    test('non-city prefix is still omitted', () {
+      expect(
+        [
+          for (final e in collapseWhereDisplays([
+            WhereDisplay.plain('beach'),
+            WhereDisplay.plain('beach house'),
+          ]))
+            e.label,
+        ],
+        ['beach house'],
       );
     });
 

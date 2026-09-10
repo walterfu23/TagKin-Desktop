@@ -122,6 +122,10 @@ class LibraryItemsTable extends ConsumerWidget {
                                               controller,
                                               dir,
                                             ),
+                                            retryTooltip: _retryTooltipUnder(
+                                              controller,
+                                              dir,
+                                            ),
                                             onToggle: () => controller
                                                 .toggleCollapseSourceDir(dir),
                                             onRemoveFolder: () =>
@@ -179,6 +183,21 @@ int _failedCountUnder(LibraryTableController controller, String dir) {
     }
   }
   return n;
+}
+
+String _retryTooltipUnder(LibraryTableController controller, String dir) {
+  final items = [for (final row in controller.allRows) row.item];
+  final ids = itemIdsUnderFolder(items, dir);
+  final messages = <String>{};
+  for (final item in items) {
+    if (ids.contains(item.id) &&
+        item.processingStatus == ProcessingStatus.failed) {
+      final err = item.processingError?.trim();
+      if (err != null && err.isNotEmpty) messages.add(err);
+    }
+  }
+  if (messages.isEmpty) return 'Retry failed items';
+  return messages.join('\n');
 }
 
 class _HeaderRow extends StatelessWidget {
@@ -354,6 +373,7 @@ class _PathGroupHeader extends StatelessWidget {
     required this.collapsed,
     required this.depth,
     required this.failedCount,
+    this.retryTooltip = 'Retry failed items',
     required this.onToggle,
     required this.onRemoveFolder,
     this.onRetryFolder,
@@ -369,6 +389,7 @@ class _PathGroupHeader extends StatelessWidget {
   final bool collapsed;
   final int depth;
   final int failedCount;
+  final String retryTooltip;
   final VoidCallback onToggle;
   final VoidCallback onRemoveFolder;
   final VoidCallback? onRetryFolder;
@@ -483,12 +504,16 @@ class _PathGroupHeader extends StatelessWidget {
                               ),
                             )
                           else if (failedCount > 0)
-                            TextButton(
-                              key: Key('source-group-retry-$dir'),
-                              onPressed: retryEnabled
-                                  ? onRetryFolder
-                                  : null,
-                              child: const Text('Retry'),
+                            Tooltip(
+                              message: retryTooltip,
+                              waitDuration: Duration.zero,
+                              child: TextButton(
+                                key: Key('source-group-retry-$dir'),
+                                onPressed: retryEnabled
+                                    ? onRetryFolder
+                                    : null,
+                                child: const Text('Retry'),
+                              ),
                             ),
                           SureActionButton(
                             idleKey: Key('source-group-remove-$dir'),
@@ -657,6 +682,7 @@ class _DataRow extends ConsumerWidget {
                               alignment: Alignment.centerLeft,
                               child: ProcessingStatusBadge(
                                 status: item.processingStatus,
+                                processingError: item.processingError,
                               ),
                             ),
                           ),

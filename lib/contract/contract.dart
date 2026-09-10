@@ -889,6 +889,7 @@ class Item {
     this.dedupOfItemId,
     this.capturedAt,
     required this.processingStatus,
+    this.processingError,
     required this.schemaVersion,
     required this.createdAt,
   });
@@ -904,6 +905,7 @@ class Item {
   final String? dedupOfItemId;
   final String? capturedAt;
   final ProcessingStatus processingStatus;
+  final String? processingError;
   final int schemaVersion;
   final String createdAt;
 
@@ -919,6 +921,7 @@ class Item {
         dedupOfItemId: json['dedupOfItemId'] == null ? null : json['dedupOfItemId'] as String,
         capturedAt: json['capturedAt'] == null ? null : json['capturedAt'] as String,
         processingStatus: ProcessingStatus.fromWire(json['processingStatus'] as String),
+        processingError: json['processingError'] == null ? null : json['processingError'] as String,
         schemaVersion: (json['schemaVersion'] as num).toInt(),
         createdAt: json['createdAt'] as String,
       );
@@ -936,6 +939,7 @@ class Item {
     if (dedupOfItemId != null) json['dedupOfItemId'] = dedupOfItemId;
     if (capturedAt != null) json['capturedAt'] = capturedAt;
     json['processingStatus'] = processingStatus.wire;
+    if (processingError != null) json['processingError'] = processingError;
     json['schemaVersion'] = schemaVersion;
     json['createdAt'] = createdAt;
     return json;
@@ -1007,6 +1011,7 @@ class Job {
     required this.state,
     required this.attempts,
     required this.pipelineVersion,
+    this.errorMessage,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -1017,6 +1022,7 @@ class Job {
   final JobState state;
   final int attempts;
   final int pipelineVersion;
+  final String? errorMessage;
   final String createdAt;
   final String updatedAt;
 
@@ -1027,6 +1033,7 @@ class Job {
         state: JobState.fromWire(json['state'] as String),
         attempts: (json['attempts'] as num).toInt(),
         pipelineVersion: (json['pipelineVersion'] as num).toInt(),
+        errorMessage: json['errorMessage'] == null ? null : json['errorMessage'] as String,
         createdAt: json['createdAt'] as String,
         updatedAt: json['updatedAt'] as String,
       );
@@ -1039,6 +1046,7 @@ class Job {
     json['state'] = state.wire;
     json['attempts'] = attempts;
     json['pipelineVersion'] = pipelineVersion;
+    if (errorMessage != null) json['errorMessage'] = errorMessage;
     json['createdAt'] = createdAt;
     json['updatedAt'] = updatedAt;
     return json;
