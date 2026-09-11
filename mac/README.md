@@ -21,7 +21,7 @@ Do **not** run `_env.sh` — it is sourced by the numbered scripts.
 
 ## Naming: subsystem test scripts
 
-Subsystem regression entry points use **`NNN_test_dN.sh`** (`d0`, `d1`, … `d12`) in the **101+** band, matching the desktop subsystems in [`../../TagKin/Docs/Desktop_Subsystems_v1.md`](../../TagKin/Docs/Desktop_Subsystems_v1.md). Keep the `mac/*.sh` and `win/*.ps1` sets at identical numbers. Examples: `106_test_d0.sh`, `107_test_d1.sh`, `117_test_d12.sh`, `121_test_d11.sh`.
+Subsystem regression entry points use **`NNN_test_dN.sh`** (`d0`, `d1`, … `d13`) in the **101+** band, matching the desktop subsystems in [`../../TagKin/Docs/Desktop_Subsystems_v1.md`](../../TagKin/Docs/Desktop_Subsystems_v1.md). Keep the `mac/*.sh` and `win/*.ps1` sets at identical numbers. Examples: `106_test_d0.sh`, `107_test_d1.sh`, `117_test_d12.sh`, `121_test_d11.sh`, `123_test_d13.sh`.
 
 Do **not** reuse the API `sN` ids (those are the `tagkin` repo's `TagKin/mac/`); desktop bars are `dN`.
 
@@ -54,6 +54,7 @@ Do **not** reuse the API `sN` ids (those are the `tagkin` repo's `TagKin/mac/`);
 | [`116_test_d10.sh`](./116_test_d10.sh) | D10 Knowledge Corrections & Comments UI regression bar alone. |
 | [`117_test_d12.sh`](./117_test_d12.sh) | D12 Per-screen Undo/Redo regression bar alone. |
 | [`121_test_d11.sh`](./121_test_d11.sh) | D11 Packaging / client version / Update required regression bar alone. |
+| [`123_test_d13.sh`](./123_test_d13.sh) | D13 Item List Export regression bar alone. |
 
 ## Pick up a code change
 

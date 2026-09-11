@@ -65,6 +65,12 @@ tags:
       Job status/progress and lifecycle (S11 / R10). Cancel unfinished work
       and delete items with remote analysis-object cleanup. Metadata/refs
       only — never media bytes (R1/R5).
+  - name: item-lists
+    description: >
+      Filter the library into an item list of photos and video key periods
+      (S12). AND across who/what/where/when; OR within a dimension. Deduped
+      (one photo / one key period) and sorted ascending by when. Metadata
+      only — never media bytes (R1). Owner is derived from the token (R10).
 
 paths:
   /health:
@@ -161,6 +167,62 @@ paths:
                 $ref: "#/components/schemas/Item"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /item-lists:
+    post:
+      tags: [item-lists]
+      operationId: createItemList
+      summary: >
+        Filter the caller's library into a deduped item list of photos and
+        video key periods (S12 / R10)
+      description: >
+        Stateless query — nothing is persisted. Photos appear as whole items;
+        videos appear only as matching key periods (never as a whole-item row).
+        Dimensions combine with AND; values within a dimension combine with OR.
+        Who matches assigned Person.name only (not who-tag labels). What/where
+        match a small keyword allowlist of active tag values (not GPS cities
+        or other free-text tags). When is an inclusive capturedAt range (video
+        key periods use the parent item's capturedAt). Default order is
+        capturedAt ascending (nulls last), then key-period startMs. The same
+        photo and the same key period appear at most once. Owner is derived
+        from the bearer token — never from the body (R10). Metadata only
+        (R1). Limit default 5000, max 5000.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItemListFilter"
+      responses:
+        "200":
+          description: Deduped, when-sorted item list entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /item-lists/facets:
+    get:
+      tags: [item-lists]
+      operationId: listItemListFacets
+      summary: Distinct who/what/where values for the item-list filter pickers
+      description: >
+        Owner-scoped unique values from the approved projection used by
+        POST /item-lists (assigned Person.name; allowlisted what/where
+        keywords). Sorted A–Z, case-insensitive. Metadata only (R1).
+      responses:
+        "200":
+          description: Facet values for the authenticated account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemListFacets"
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -3473,6 +3535,130 @@ components:
         escalated:
           type: boolean
           description: True when a costlier model was used after evidence (R9).
+
+    ItemListEntryKind:
+      type: string
+      description: >
+        A row in an item list is either a photo item or a video key period (R2).
+      enum: [photo, keyPeriod]
+
+    ItemListEntry:
+      type: object
+      description: >
+        One photo or one video key period in an item list. Metadata/ids only —
+        never media bytes (R1).
+      required:
+        - kind
+        - itemId
+        - who
+        - what
+        - where
+      properties:
+        kind:
+          $ref: "#/components/schemas/ItemListEntryKind"
+        itemId:
+          type: string
+          format: uuid
+        keyPeriodId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Set when kind is keyPeriod; null for photos.
+        startMs:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: Key-period start; null for photos.
+        endMs:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: Key-period end; null for photos.
+        when:
+          type: string
+          format: date-time
+          nullable: true
+          description: Item capturedAt (UTC ISO). Parent item's capturedAt for key periods.
+        who:
+          type: array
+          items:
+            type: string
+          description: Assigned Person.name values (A–Z). Not who-tag labels.
+        what:
+          type: array
+          items:
+            type: string
+          description: All active what tags on the row (including off-allowlist values).
+        where:
+          type: array
+          items:
+            type: string
+          description: All active where tags on the row (including cities).
+
+    ItemListFilter:
+      type: object
+      description: >
+        Filter for POST /item-lists. Empty/omitted dimensions are unconstrained.
+        Client-supplied owner/accountId/bytes are ignored or rejected (R10/R1).
+      properties:
+        who:
+          type: array
+          items:
+            type: string
+          description: OR of Person.name values; AND with other dimensions.
+        what:
+          type: array
+          items:
+            type: string
+          description: OR of allowlisted activity keywords.
+        where:
+          type: array
+          items:
+            type: string
+          description: OR of allowlisted place-type keywords (not GPS cities).
+        whenFrom:
+          type: string
+          format: date-time
+          nullable: true
+          description: Inclusive capturedAt lower bound (UTC ISO).
+        whenTo:
+          type: string
+          format: date-time
+          nullable: true
+          description: Inclusive capturedAt upper bound (UTC ISO).
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 5000
+          description: Max entries to return (default 5000).
+
+    ItemList:
+      type: object
+      description: Stateless filter result — not a persisted named list.
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/ItemListEntry"
+
+    ItemListFacets:
+      type: object
+      description: Distinct picker values (Person.name; allowlisted what/where).
+      required: [who, what, where]
+      properties:
+        who:
+          type: array
+          items:
+            type: string
+        what:
+          type: array
+          items:
+            type: string
+        where:
+          type: array
+          items:
+            type: string
 
 security:
   - bearerAuth: []

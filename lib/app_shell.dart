@@ -14,6 +14,7 @@ import 'package:tagkin_desktop/api/comments_repository.dart';
 import 'package:tagkin_desktop/api/corrections_repository.dart';
 import 'package:tagkin_desktop/api/items_repository.dart';
 import 'package:tagkin_desktop/api/jobs_repository.dart';
+import 'package:tagkin_desktop/api/item_lists_repository.dart';
 import 'package:tagkin_desktop/api/me_repository.dart';
 import 'package:tagkin_desktop/api/persons_repository.dart';
 import 'package:tagkin_desktop/api/usage_repository.dart';
@@ -36,6 +37,7 @@ import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/prefs/settings_navigation.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_status_banner.dart';
+import 'package:tagkin_desktop/item_lists/item_list_navigation.dart';
 import 'package:tagkin_desktop/shell/app_nav_tab_buttons.dart';
 import 'package:tagkin_desktop/shell/quit_navigation.dart';
 import 'package:tagkin_desktop/update/client_support_providers.dart';
@@ -97,6 +99,12 @@ final checkoutUrlLauncherProvider = Provider<CheckoutUrlLauncher>(
 /// otherwise built from [apiClientProvider].
 final jobsRepositoryProvider = Provider<JobsRepository>(
   (ref) => JobsRepository(ref.watch(apiClientProvider)),
+  dependencies: [apiClientProvider],
+);
+
+/// Item-list filter API (D13 / S12). Override in tests with a fake.
+final itemListsRepositoryProvider = Provider<ItemListsRepository>(
+  (ref) => ItemListsRepository(ref.watch(apiClientProvider)),
   dependencies: [apiClientProvider],
 );
 
@@ -775,6 +783,7 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
   bool get _showSettingsGear => !kIsWeb && Platform.isWindows;
 
   bool _settingsOpen = false;
+  bool _itemListExportOpen = false;
 
   /// Lazily mount Faces/Persons the first time the user visits them so their
   /// [State] survives subsequent tab switches (scroll, filters, selections).
@@ -1092,12 +1101,28 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
     }
   }
 
+  Future<void> _openItemListExport() async {
+    if (_itemListExportOpen) return;
+    _itemListExportOpen = true;
+    try {
+      await pushItemListExportPage(context);
+    } finally {
+      _itemListExportOpen = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen<int>(openSettingsTickProvider, (previous, next) {
       if (previous == null || previous == next) return;
       if (!mounted) return;
       _openSettings();
+    });
+
+    ref.listen<int>(openItemListExportTickProvider, (previous, next) {
+      if (previous == null || previous == next) return;
+      if (!mounted) return;
+      unawaited(_openItemListExport());
     });
 
     ref.listen<int>(quitAppTickProvider, (previous, next) {
@@ -1242,6 +1267,12 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
                     onPressed: _openSettings,
                     icon: const Icon(Icons.settings_outlined),
                   ),
+                IconButton(
+                  key: const Key('nav-item-list-export'),
+                  tooltip: 'Export list',
+                  onPressed: () => unawaited(_openItemListExport()),
+                  icon: const Icon(Icons.ios_share_outlined),
+                ),
                 if (showWindowsFileMenu)
                   PopupMenuButton<CollectionMenuCommand>(
                     key: const Key('windows-file-menu'),
@@ -1299,6 +1330,15 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
                         const PopupMenuItem(
                           value: CollectionMenuCommand.removeFolder,
                           child: Text('Remove Folder from Collection…'),
+                        ),
+                        const PopupMenuDivider(),
+                        PopupMenuItem<CollectionMenuCommand>(
+                          onTap: () {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              requestOpenItemListExport(ref);
+                            });
+                          },
+                          child: const Text('Export list…'),
                         ),
                       ];
                     },

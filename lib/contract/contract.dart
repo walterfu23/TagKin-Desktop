@@ -1038,6 +1038,157 @@ class ItemKnowledge {
   }
 }
 
+class ItemList {
+  const ItemList({
+    required this.entries,
+  });
+
+  final List<ItemListEntry> entries;
+
+  factory ItemList.fromJson(Map<String, dynamic> json) => ItemList(
+        entries: (json['entries'] as List<dynamic>).map((e) => ItemListEntry.fromJson(e as Map<String, dynamic>)).toList(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['entries'] = entries.map((e) => e.toJson()).toList();
+    return json;
+  }
+}
+
+class ItemListEntry {
+  const ItemListEntry({
+    required this.kind,
+    required this.itemId,
+    this.keyPeriodId,
+    this.startMs,
+    this.endMs,
+    this.when,
+    required this.who,
+    required this.what,
+    required this.where,
+  });
+
+  final ItemListEntryKind kind;
+  final String itemId;
+  final String? keyPeriodId;
+  final int? startMs;
+  final int? endMs;
+  final String? when;
+  final List<String> who;
+  final List<String> what;
+  final List<String> where;
+
+  factory ItemListEntry.fromJson(Map<String, dynamic> json) => ItemListEntry(
+        kind: ItemListEntryKind.fromWire(json['kind'] as String),
+        itemId: json['itemId'] as String,
+        keyPeriodId: json['keyPeriodId'] == null ? null : json['keyPeriodId'] as String,
+        startMs: json['startMs'] == null ? null : (json['startMs'] as num).toInt(),
+        endMs: json['endMs'] == null ? null : (json['endMs'] as num).toInt(),
+        when: json['when'] == null ? null : json['when'] as String,
+        who: (json['who'] as List<dynamic>).map((e) => e as String).toList(),
+        what: (json['what'] as List<dynamic>).map((e) => e as String).toList(),
+        where: (json['where'] as List<dynamic>).map((e) => e as String).toList(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['kind'] = kind.wire;
+    json['itemId'] = itemId;
+    if (keyPeriodId != null) json['keyPeriodId'] = keyPeriodId;
+    if (startMs != null) json['startMs'] = startMs;
+    if (endMs != null) json['endMs'] = endMs;
+    if (when != null) json['when'] = when;
+    json['who'] = who.map((e) => e).toList();
+    json['what'] = what.map((e) => e).toList();
+    json['where'] = where.map((e) => e).toList();
+    return json;
+  }
+}
+
+enum ItemListEntryKind {
+  photo('photo'),
+  keyperiod('keyPeriod');
+
+  const ItemListEntryKind(this.wire);
+
+  final String wire;
+
+  static ItemListEntryKind fromWire(String value) {
+    for (final e in values) {
+      if (e.wire == value) return e;
+    }
+    throw FormatException('Unknown ItemListEntryKind: $value');
+  }
+
+  @override
+  String toString() => wire;
+}
+
+class ItemListFacets {
+  const ItemListFacets({
+    required this.who,
+    required this.what,
+    required this.where,
+  });
+
+  final List<String> who;
+  final List<String> what;
+  final List<String> where;
+
+  factory ItemListFacets.fromJson(Map<String, dynamic> json) => ItemListFacets(
+        who: (json['who'] as List<dynamic>).map((e) => e as String).toList(),
+        what: (json['what'] as List<dynamic>).map((e) => e as String).toList(),
+        where: (json['where'] as List<dynamic>).map((e) => e as String).toList(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['who'] = who.map((e) => e).toList();
+    json['what'] = what.map((e) => e).toList();
+    json['where'] = where.map((e) => e).toList();
+    return json;
+  }
+}
+
+class ItemListFilter {
+  const ItemListFilter({
+    this.who,
+    this.what,
+    this.where,
+    this.whenFrom,
+    this.whenTo,
+    this.limit,
+  });
+
+  final List<String>? who;
+  final List<String>? what;
+  final List<String>? where;
+  final String? whenFrom;
+  final String? whenTo;
+  final int? limit;
+
+  factory ItemListFilter.fromJson(Map<String, dynamic> json) => ItemListFilter(
+        who: json['who'] == null ? null : (json['who'] as List<dynamic>).map((e) => e as String).toList(),
+        what: json['what'] == null ? null : (json['what'] as List<dynamic>).map((e) => e as String).toList(),
+        where: json['where'] == null ? null : (json['where'] as List<dynamic>).map((e) => e as String).toList(),
+        whenFrom: json['whenFrom'] == null ? null : json['whenFrom'] as String,
+        whenTo: json['whenTo'] == null ? null : json['whenTo'] as String,
+        limit: json['limit'] == null ? null : (json['limit'] as num).toInt(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    if (who != null) json['who'] = who?.map((e) => e).toList();
+    if (what != null) json['what'] = what?.map((e) => e).toList();
+    if (where != null) json['where'] = where?.map((e) => e).toList();
+    if (whenFrom != null) json['whenFrom'] = whenFrom;
+    if (whenTo != null) json['whenTo'] = whenTo;
+    if (limit != null) json['limit'] = limit;
+    return json;
+  }
+}
+
 enum ItemType {
   photo('photo'),
   video('video');

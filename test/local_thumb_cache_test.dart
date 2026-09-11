@@ -90,4 +90,48 @@ void main() {
     expect(ran, isFalse, reason: 'memory cache should hit');
     expect(second.path, first.path);
   });
+
+  test('key-period still seeks to startMs and uses a distinct cache file',
+      () async {
+    final video = File('${tmp.path}/clip.mp4');
+    await video.writeAsBytes(List<int>.filled(8, 2));
+    final cacheDir = Directory('${tmp.path}/cache');
+    await cacheDir.create();
+    final item = fixtureItem(
+      id: 'v1',
+      type: ItemType.video,
+      contentHash: 'abc',
+      sourceRef: Uri.file(video.path).toString(),
+    );
+
+    List<String>? seenArgs;
+    final cache = LocalThumbCache(
+      cacheRoot: cacheDir,
+      runFfmpeg: (ffmpeg, args) async {
+        seenArgs = args;
+        final out = args.last;
+        await File(out).writeAsBytes(_tinyJpeg());
+        return const [];
+      },
+    );
+
+    final result = await cache.resolveKeyPeriod(
+      item,
+      keyPeriodId: 'kp-1',
+      timestampMs: 1500,
+    );
+    expect(result.hasImage, isTrue);
+    expect(seenArgs, isNotNull);
+    expect(seenArgs, containsAllInOrder(['-ss', '1.500']));
+    expect(result.path, contains('_kp_kp-1.jpg'));
+
+    seenArgs = null;
+    final again = await cache.resolveKeyPeriod(
+      item,
+      keyPeriodId: 'kp-1',
+      timestampMs: 1500,
+    );
+    expect(seenArgs, isNull, reason: 'memory cache should hit');
+    expect(again.path, result.path);
+  });
 }

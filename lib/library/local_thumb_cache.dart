@@ -25,7 +25,7 @@ class LocalThumbResult {
       status == LocalMediaStatus.available && path != null && path!.isNotEmpty;
 }
 
-/// Caches downscaled photo JPEGs and video poster frames for the library table.
+/// Caches downscaled photo JPEGs, video poster frames, and key-period stills.
 ///
 /// Uses security-scoped bookmarks on macOS (same as D8) so sandboxed paths
 /// are readable. Never uploads bytes.
@@ -53,55 +53,114 @@ class LocalThumbCache {
   String _key(Item item) =>
       '${item.id}:${item.contentHash ?? ''}:${item.type.wire}';
 
+  String _periodKey(Item item, String keyPeriodId) =>
+      '${_key(item)}:kp:$keyPeriodId';
+
   /// Clears in-memory entries (e.g. after library reload).
   void clear() => _memory.clear();
 
   /// Resolves a displayable local thumb path for [item].
   Future<LocalThumbResult> resolve(Item item) async {
-    final cached = _memory[_key(item)];
+    final memKey = _key(item);
+    final cached = _memory[memKey];
     if (cached != null) return cached;
 
+    final opened = await _openSource(item);
+    if (opened.result != null) return _storeKey(memKey, opened.result!);
+    final sourcePath = opened.path!;
+
+    if (item.type == ItemType.photo) {
+      return _storeKey(memKey, await _downscaledPhoto(item, sourcePath));
+    }
+
+    final hash = item.contentHash ?? 'nohash';
+    final root = await _ensureCacheRoot();
+    final outPath = p.join(root.path, '${item.id}_$hash.jpg');
+    return _storeKey(
+      memKey,
+      await _extractVideoJpeg(
+        videoPath: sourcePath,
+        outPath: outPath,
+        ssSeconds: 0,
+      ),
+    );
+  }
+
+  /// Still at [timestampMs] for a video key period (local ffmpeg only — R1).
+  Future<LocalThumbResult> resolveKeyPeriod(
+    Item item, {
+    required String keyPeriodId,
+    required int timestampMs,
+  }) async {
+    final memKey = _periodKey(item, keyPeriodId);
+    final cached = _memory[memKey];
+    if (cached != null) return cached;
+
+    if (item.type != ItemType.video) {
+      return _storeKey(
+        memKey,
+        const LocalThumbResult(status: LocalMediaStatus.unsupported),
+      );
+    }
+
+    final opened = await _openSource(item);
+    if (opened.result != null) return _storeKey(memKey, opened.result!);
+    final sourcePath = opened.path!;
+
+    final hash = item.contentHash ?? 'nohash';
+    final root = await _ensureCacheRoot();
+    final safeKp = keyPeriodId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    final outPath = p.join(root.path, '${item.id}_${hash}_kp_$safeKp.jpg');
+    final ss = (timestampMs < 0 ? 0 : timestampMs) / 1000.0;
+    return _storeKey(
+      memKey,
+      await _extractVideoJpeg(
+        videoPath: sourcePath,
+        outPath: outPath,
+        ssSeconds: ss,
+      ),
+    );
+  }
+
+  Future<({String? path, LocalThumbResult? result})> _openSource(
+    Item item,
+  ) async {
     final sourcePath = localPathFromSourceRef(item.sourceRef);
     if (sourcePath == null) {
-      return _store(
-        item,
-        const LocalThumbResult(status: LocalMediaStatus.unsupported),
+      return (
+        path: null,
+        result: const LocalThumbResult(status: LocalMediaStatus.unsupported),
       );
     }
 
     await _ensureBookmarkAccess(sourcePath);
 
     try {
-      final file = File(sourcePath);
-      if (!await file.exists()) {
-        return _store(
-          item,
-          const LocalThumbResult(status: LocalMediaStatus.missing),
+      if (!await File(sourcePath).exists()) {
+        return (
+          path: null,
+          result: const LocalThumbResult(status: LocalMediaStatus.missing),
         );
       }
     } on PathAccessException {
-      return _store(
-        item,
-        const LocalThumbResult(status: LocalMediaStatus.accessDenied),
+      return (
+        path: null,
+        result: const LocalThumbResult(status: LocalMediaStatus.accessDenied),
       );
     } on FileSystemException catch (e) {
       if (e.osError?.errorCode == 1) {
-        return _store(
-          item,
-          const LocalThumbResult(status: LocalMediaStatus.accessDenied),
+        return (
+          path: null,
+          result: const LocalThumbResult(status: LocalMediaStatus.accessDenied),
         );
       }
-      return _store(
-        item,
-        const LocalThumbResult(status: LocalMediaStatus.missing),
+      return (
+        path: null,
+        result: const LocalThumbResult(status: LocalMediaStatus.missing),
       );
     }
 
-    if (item.type == ItemType.photo) {
-      return _store(item, await _downscaledPhoto(item, sourcePath));
-    }
-
-    return _store(item, await _posterForVideo(item, sourcePath));
+    return (path: sourcePath, result: null);
   }
 
   Future<void> _ensureBookmarkAccess(String sourcePath) async {
@@ -177,10 +236,11 @@ class LocalThumbCache {
     );
   }
 
-  Future<LocalThumbResult> _posterForVideo(Item item, String videoPath) async {
-    final root = await _ensureCacheRoot();
-    final hash = item.contentHash ?? 'nohash';
-    final outPath = p.join(root.path, '${item.id}_$hash.jpg');
+  Future<LocalThumbResult> _extractVideoJpeg({
+    required String videoPath,
+    required String outPath,
+    required double ssSeconds,
+  }) async {
     final outFile = File(outPath);
     if (await outFile.exists()) {
       return LocalThumbResult(
@@ -198,7 +258,7 @@ class LocalThumbCache {
       final args = <String>[
         '-y',
         '-ss',
-        '0',
+        ssSeconds.toStringAsFixed(3),
         '-i',
         videoPath,
         '-frames:v',
@@ -242,8 +302,8 @@ class LocalThumbCache {
     return dir;
   }
 
-  LocalThumbResult _store(Item item, LocalThumbResult result) {
-    _memory[_key(item)] = result;
+  LocalThumbResult _storeKey(String key, LocalThumbResult result) {
+    _memory[key] = result;
     return result;
   }
 }

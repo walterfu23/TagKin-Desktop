@@ -27,7 +27,7 @@ Do **not** run `_env.ps1` — it is dot-sourced by the numbered scripts.
 
 ## Naming: subsystem test scripts
 
-Subsystem regression entry points use **`NNN_test_dN.ps1`** (`d0`, `d1`, … `d12`) in the **101+** band, matching the desktop subsystems in [`../../TagKin/Docs/Desktop_Subsystems_v1.md`](../../TagKin/Docs/Desktop_Subsystems_v1.md). Keep the `win/*.ps1` and `mac/*.sh` sets at identical numbers. Examples: `106_test_d0.ps1`, `107_test_d1.ps1`, `117_test_d12.ps1`, `121_test_d11.ps1`.
+Subsystem regression entry points use **`NNN_test_dN.ps1`** (`d0`, `d1`, … `d13`) in the **101+** band, matching the desktop subsystems in [`../../TagKin/Docs/Desktop_Subsystems_v1.md`](../../TagKin/Docs/Desktop_Subsystems_v1.md). Keep the `win/*.ps1` and `mac/*.sh` sets at identical numbers. Examples: `106_test_d0.ps1`, `107_test_d1.ps1`, `117_test_d12.ps1`, `121_test_d11.ps1`, `123_test_d13.ps1`.
 
 ## Scripts
 
@@ -58,3 +58,4 @@ Subsystem regression entry points use **`NNN_test_dN.ps1`** (`d0`, `d1`, … `d1
 | [`116_test_d10.ps1`](./116_test_d10.ps1) | D10 Knowledge Corrections & Comments UI regression bar alone. |
 | [`117_test_d12.ps1`](./117_test_d12.ps1) | D12 Per-screen Undo/Redo regression bar alone. |
 | [`121_test_d11.ps1`](./121_test_d11.ps1) | D11 Packaging / client version / Update required regression bar alone. |
+| [`123_test_d13.ps1`](./123_test_d13.ps1) | D13 Item List Export regression bar alone. |

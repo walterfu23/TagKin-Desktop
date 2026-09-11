@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/branding.g.dart';
+import 'package:tagkin_desktop/item_lists/item_list_navigation.dart';
 import 'package:tagkin_desktop/persons/collection_navigation.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/prefs/settings_navigation.dart';
@@ -177,6 +178,16 @@ class TagKinPlatformMenu extends ConsumerWidget {
                     ref,
                     CollectionMenuCommand.removeFolder,
                   )
+                : null,
+          ),
+        ],
+      ),
+      PlatformMenuItemGroup(
+        members: [
+          PlatformMenuItem(
+            label: 'Export list…',
+            onSelected: sessionReady
+                ? () => requestOpenItemListExport(ref)
                 : null,
           ),
         ],
