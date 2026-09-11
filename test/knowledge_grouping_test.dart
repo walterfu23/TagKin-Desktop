@@ -525,4 +525,129 @@ void main() {
     );
     expect(occupiedSame.personIds, {'person_maya'});
   });
+
+  test('regionIou is 1 for identical boxes and 0 for disjoint', () {
+    const a = TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4);
+    const b = TagRegion(yMin: 0.5, xMin: 0.5, yMax: 0.8, xMax: 0.8);
+    expect(regionIou(a, a), 1.0);
+    expect(regionIou(a, b), 0.0);
+  });
+
+  test('collapseOverlappingWhoFaces keeps first; identical box drops later', () {
+    const left = TagRegion(yMin: 0.0, xMin: 0.0, yMax: 1.0, xMax: 0.5);
+    const rightShift = TagRegion(yMin: 0.0, xMin: 0.5, yMax: 1.0, xMax: 1.0);
+    expect(regionIou(left, rightShift), 0.0);
+
+    final item = fixtureItem(id: 'item_v', type: ItemType.video);
+    final tags = [
+      fixtureTag(
+        id: 't_first',
+        itemId: item.id,
+        keyPeriodId: 'kp_1',
+        dimension: 'who',
+        value: 'A',
+        region: left,
+      ),
+      fixtureTag(
+        id: 't_overlap',
+        itemId: item.id,
+        keyPeriodId: 'kp_1',
+        dimension: 'who',
+        value: 'B',
+        region: left,
+      ),
+      fixtureTag(
+        id: 't_other',
+        itemId: item.id,
+        keyPeriodId: 'kp_1',
+        dimension: 'who',
+        value: 'C',
+        region: rightShift,
+      ),
+    ];
+    final collapsed = collapseOverlappingWhoFaces(tags);
+    expect(collapsed.kept.map((t) => t.id), ['t_first', 't_other']);
+    expect(collapsed.excludeIds, ['t_overlap']);
+  });
+
+  test('collapseOverlappingWhoFaces drops at IoU exactly 0.5', () {
+    const a = TagRegion(yMin: 0.0, xMin: 0.0, yMax: 1.0, xMax: 1.0);
+    const b = TagRegion(yMin: 0.0, xMin: 1 / 3, yMax: 1.0, xMax: 1 + 1 / 3);
+    expect(regionIou(a, b), closeTo(0.5, 0.001));
+    final collapsed = collapseOverlappingWhoFaces([
+      fixtureTag(
+        id: 'keep',
+        dimension: 'who',
+        value: 'A',
+        region: a,
+      ),
+      fixtureTag(
+        id: 'drop',
+        dimension: 'who',
+        value: 'B',
+        region: b,
+      ),
+    ]);
+    expect(collapsed.kept.single.id, 'keep');
+    expect(collapsed.excludeIds, ['drop']);
+  });
+
+  test('overlappingWhoFaceExcludeIds is per period; same region on two periods kept',
+      () {
+    final item = fixtureItem(id: 'item_v', type: ItemType.video);
+    const region = TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4);
+    const overlap = TagRegion(yMin: 0.12, xMin: 0.12, yMax: 0.42, xMax: 0.42);
+    final knowledge = fixtureKnowledge(
+      item: item,
+      tags: const [],
+      keyPeriods: [
+        KeyPeriodKnowledge(
+          id: 'kp_a',
+          itemId: item.id,
+          startMs: 0,
+          endMs: 2000,
+          sampleTimestampMs: 500,
+          tags: [
+            fixtureTag(
+              id: 'a1',
+              itemId: item.id,
+              keyPeriodId: 'kp_a',
+              dimension: 'who',
+              value: 'first',
+              region: region,
+            ),
+            fixtureTag(
+              id: 'a2',
+              itemId: item.id,
+              keyPeriodId: 'kp_a',
+              dimension: 'who',
+              value: 'dup',
+              region: overlap,
+            ),
+          ],
+        ),
+        KeyPeriodKnowledge(
+          id: 'kp_b',
+          itemId: item.id,
+          startMs: 2000,
+          endMs: 4000,
+          sampleTimestampMs: 3000,
+          tags: [
+            fixtureTag(
+              id: 'b1',
+              itemId: item.id,
+              keyPeriodId: 'kp_b',
+              dimension: 'who',
+              value: 'other-frame',
+              region: region,
+            ),
+          ],
+        ),
+      ],
+    );
+    expect(whoFaceCropTagsForPeriod(knowledge, 'kp_a').map((t) => t.id),
+        ['a1', 'a2']);
+    expect(overlappingWhoFaceExcludeIds(knowledge), ['a2']);
+    expect(itemLevelWhoFaceCropTags(knowledge), isEmpty);
+  });
 }

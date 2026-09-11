@@ -21,6 +21,7 @@ class KeyPeriodScrubber extends StatelessWidget {
     this.onEditComment,
     this.onDeleteComment,
     this.correctionsEnabled = true,
+    this.periodFaces,
   });
 
   final List<KeyPeriodKnowledge> keyPeriods;
@@ -44,6 +45,9 @@ class KeyPeriodScrubber extends StatelessWidget {
   final Future<void> Function(String commentId, String body)? onEditComment;
   final Future<void> Function(String commentId)? onDeleteComment;
   final bool correctionsEnabled;
+
+  /// Face-assign grid for this period (D8 video layout).
+  final Widget Function(KeyPeriodKnowledge period)? periodFaces;
 
   void _seekTo(int startMs) {
     var seek = keyPeriodMsToSeek(startMs);
@@ -84,6 +88,7 @@ class KeyPeriodScrubber extends StatelessWidget {
               onEditComment: onEditComment,
               onDeleteComment: onDeleteComment,
               enabled: correctionsEnabled,
+              faces: periodFaces?.call(period),
             ),
       ],
     );
@@ -100,6 +105,7 @@ class _KeyPeriodTile extends StatefulWidget {
     this.onEditComment,
     this.onDeleteComment,
     this.enabled = true,
+    this.faces,
   });
 
   final KeyPeriodKnowledge period;
@@ -110,6 +116,7 @@ class _KeyPeriodTile extends StatefulWidget {
   final Future<void> Function(String commentId, String body)? onEditComment;
   final Future<void> Function(String commentId)? onDeleteComment;
   final bool enabled;
+  final Widget? faces;
 
   @override
   State<_KeyPeriodTile> createState() => _KeyPeriodTileState();
@@ -155,14 +162,19 @@ class _KeyPeriodTileState extends State<_KeyPeriodTile> {
                 ],
               ),
             ),
-            if (period.tags.isNotEmpty) ...[
+            if (widget.faces != null) ...[
+              const SizedBox(height: 8),
+              widget.faces!,
+            ],
+            if (period.tags.any(tagShowsAsKeyPeriodText)) ...[
               const SizedBox(height: 6),
               for (final tag in period.tags)
-                Text(
-                  '${tag.dimension}: ${tag.value} (${provenanceLabel(tag)})',
-                  key: Key('key-period-tag-${tag.id}'),
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
+                if (tagShowsAsKeyPeriodText(tag))
+                  Text(
+                    '${tag.dimension}: ${tag.value} (${provenanceLabel(tag)})',
+                    key: Key('key-period-tag-${tag.id}'),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
             ],
             if (widget.onAddComment != null || widget.comments.isNotEmpty) ...[
               const SizedBox(height: 4),

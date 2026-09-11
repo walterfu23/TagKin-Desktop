@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/item_detail_edits.dart';
 import 'package:tagkin_desktop/persons/person_name.dart';
@@ -132,6 +134,88 @@ List<Tag> whoFaceCropTags(ItemKnowledge knowledge) {
     }
   }
   return out;
+}
+
+/// Who-face crops with no key period (item-level; photos, or rare video tags).
+List<Tag> itemLevelWhoFaceCropTags(ItemKnowledge knowledge) {
+  return [
+    for (final tag in whoFaceCropTags(knowledge))
+      if (tag.keyPeriodId == null) tag,
+  ];
+}
+
+/// Who-face crops on one key period, in `period.tags` order.
+List<Tag> whoFaceCropTagsForPeriod(
+  ItemKnowledge knowledge,
+  String keyPeriodId,
+) {
+  for (final period in knowledge.keyPeriods) {
+    if (period.id != keyPeriodId) continue;
+    return [
+      for (final tag in period.tags)
+        if (tagIsWhoFaceCrop(tag)) tag,
+    ];
+  }
+  return const [];
+}
+
+/// Intersection-over-union of two normalized face boxes. Empty boxes → 0.
+double regionIou(TagRegion a, TagRegion b) {
+  final xA = math.max(a.xMin, b.xMin);
+  final yA = math.max(a.yMin, b.yMin);
+  final xB = math.min(a.xMax, b.xMax);
+  final yB = math.min(a.yMax, b.yMax);
+  final interW = math.max(0.0, xB - xA);
+  final interH = math.max(0.0, yB - yA);
+  final inter = interW * interH;
+  final areaA = math.max(0.0, a.xMax - a.xMin) * math.max(0.0, a.yMax - a.yMin);
+  final areaB = math.max(0.0, b.xMax - b.xMin) * math.max(0.0, b.yMax - b.yMin);
+  final union = areaA + areaB - inter;
+  if (union <= 0) return 0;
+  return inter / union;
+}
+
+/// Same-still duplicate boxes on one key period (IoU ≥ 0.5). Keep first in
+/// [tags] order; later overlaps are exclude candidates. Never call this across
+/// periods — identical coordinates on two periods are two people.
+const double kWhoFaceOverlapIouThreshold = 0.5;
+
+({List<Tag> kept, List<String> excludeIds}) collapseOverlappingWhoFaces(
+  List<Tag> tags,
+) {
+  final kept = <Tag>[];
+  final excludeIds = <String>[];
+  for (final tag in tags) {
+    if (!tagIsWhoFaceCrop(tag)) continue;
+    final region = tag.region!;
+    final overlapsKept = kept.any(
+      (k) => regionIou(k.region!, region) >= kWhoFaceOverlapIouThreshold,
+    );
+    if (overlapsKept) {
+      excludeIds.add(tag.id);
+    } else {
+      kept.add(tag);
+    }
+  }
+  return (kept: kept, excludeIds: excludeIds);
+}
+
+/// NMS exclude ids for every key period independently.
+List<String> overlappingWhoFaceExcludeIds(ItemKnowledge knowledge) {
+  final ids = <String>[];
+  for (final period in knowledge.keyPeriods) {
+    final collapsed = collapseOverlappingWhoFaces(
+      whoFaceCropTagsForPeriod(knowledge, period.id),
+    );
+    ids.addAll(collapsed.excludeIds);
+  }
+  return ids;
+}
+
+/// Period text lines: skip who-with-region (those render as face thumbs).
+bool tagShowsAsKeyPeriodText(Tag tag) {
+  if (tag.status != TagStatus.active) return false;
+  return !tagIsWhoFaceCrop(tag);
 }
 
 /// Sample-frame timestamp for a who tag on a video key period, if any.

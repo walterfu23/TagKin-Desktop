@@ -206,6 +206,220 @@ void main() {
   });
 
   testWidgets(
+      'Video faces sit on each key period; no combined top grid',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    const regionA = TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4);
+    const regionB = TagRegion(yMin: 0.5, xMin: 0.5, yMax: 0.8, xMax: 0.8);
+    final item = fixtureItem(
+      id: 'item_v',
+      type: ItemType.video,
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final knowledge = fixtureKnowledge(
+      item: item,
+      tags: const [],
+      keyPeriods: [
+        KeyPeriodKnowledge(
+          id: 'kp_a',
+          itemId: item.id,
+          startMs: 0,
+          endMs: 2000,
+          sampleTimestampMs: 500,
+          tags: [
+            fixtureTag(
+              id: 'face_a',
+              itemId: item.id,
+              keyPeriodId: 'kp_a',
+              dimension: 'who',
+              value: 'Ada',
+              region: regionA,
+            ),
+            fixtureTag(
+              id: 'what_a',
+              itemId: item.id,
+              keyPeriodId: 'kp_a',
+              dimension: 'what',
+              value: 'waving',
+            ),
+          ],
+        ),
+        KeyPeriodKnowledge(
+          id: 'kp_b',
+          itemId: item.id,
+          startMs: 2000,
+          endMs: 4000,
+          sampleTimestampMs: 3000,
+          tags: [
+            fixtureTag(
+              id: 'face_b',
+              itemId: item.id,
+              keyPeriodId: 'kp_b',
+              dimension: 'who',
+              value: 'Bea',
+              region: regionB,
+            ),
+          ],
+        ),
+      ],
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {'item_v': knowledge},
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          itemsRepositoryProvider.overrideWithValue(items),
+          personsRepositoryProvider.overrideWithValue(
+            FakePersonsRepository(persons: const []),
+          ),
+          correctionsRepositoryProvider.overrideWithValue(
+            FakeCorrectionsRepository(items: items),
+          ),
+          commentsRepositoryProvider.overrideWithValue(
+            FakeCommentsRepository(),
+          ),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          jobsRepositoryProvider.overrideWithValue(
+            FakeJobsRepository(itemId: 'item_v', item: item),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: ItemReviewSection(itemId: 'item_v', openVideo: false),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('item-face-assign-grid')), findsNothing);
+    expect(find.byKey(const Key('key-period-face-grid-kp_a')), findsOneWidget);
+    expect(find.byKey(const Key('key-period-face-grid-kp_b')), findsOneWidget);
+    expect(find.byKey(const Key('item-face-tile-face_a')), findsOneWidget);
+    expect(find.byKey(const Key('item-face-tile-face_b')), findsOneWidget);
+    expect(find.byKey(const Key('key-period-tag-face_a')), findsNothing);
+    expect(find.byKey(const Key('key-period-tag-what_a')), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.byKey(const Key('key-period-kp_a'))).dy,
+      lessThan(tester.getTopLeft(find.byKey(const Key('key-period-kp_b'))).dy),
+    );
+  });
+
+  testWidgets(
+      'Same-still overlap in one period excludes the later face; same box on two periods stays',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    const region = TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4);
+    final item = fixtureItem(
+      id: 'item_v',
+      type: ItemType.video,
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final knowledge = fixtureKnowledge(
+      item: item,
+      tags: const [],
+      keyPeriods: [
+        KeyPeriodKnowledge(
+          id: 'kp_a',
+          itemId: item.id,
+          startMs: 0,
+          endMs: 2000,
+          sampleTimestampMs: 500,
+          tags: [
+            fixtureTag(
+              id: 'keep',
+              itemId: item.id,
+              keyPeriodId: 'kp_a',
+              dimension: 'who',
+              value: 'First',
+              region: region,
+            ),
+            fixtureTag(
+              id: 'drop',
+              itemId: item.id,
+              keyPeriodId: 'kp_a',
+              dimension: 'who',
+              value: 'Dup',
+              region: region,
+            ),
+          ],
+        ),
+        KeyPeriodKnowledge(
+          id: 'kp_b',
+          itemId: item.id,
+          startMs: 2000,
+          endMs: 4000,
+          sampleTimestampMs: 3000,
+          tags: [
+            fixtureTag(
+              id: 'other_frame',
+              itemId: item.id,
+              keyPeriodId: 'kp_b',
+              dimension: 'who',
+              value: 'Later',
+              region: region,
+            ),
+          ],
+        ),
+      ],
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {'item_v': knowledge},
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          itemsRepositoryProvider.overrideWithValue(items),
+          personsRepositoryProvider.overrideWithValue(
+            FakePersonsRepository(persons: const []),
+          ),
+          correctionsRepositoryProvider.overrideWithValue(
+            FakeCorrectionsRepository(items: items),
+          ),
+          commentsRepositoryProvider.overrideWithValue(
+            FakeCommentsRepository(),
+          ),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          jobsRepositoryProvider.overrideWithValue(
+            FakeJobsRepository(itemId: 'item_v', item: item),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: ItemReviewSection(itemId: 'item_v', openVideo: false),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('item-face-tile-keep')), findsOneWidget);
+    expect(find.byKey(const Key('item-face-tile-drop')), findsNothing);
+    expect(find.byKey(const Key('who-exclusion-draft-drop')), findsOneWidget);
+    expect(find.byKey(const Key('item-face-tile-other_frame')), findsOneWidget);
+    expect(find.byKey(const Key('item-detail-save')), findsOneWidget);
+    expect(
+      tester.widget<FilledButton>(find.byKey(const Key('item-detail-save'))).onPressed,
+      isNotNull,
+    );
+  });
+
+  testWidgets(
       'Assign face crop to a new person; no whole-item assign when crops exist',
       (tester) async {
     tester.view.physicalSize = const Size(1200, 2000);

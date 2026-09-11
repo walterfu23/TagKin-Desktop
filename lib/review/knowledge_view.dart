@@ -35,6 +35,11 @@ class KnowledgeView extends StatefulWidget {
     this.onAssignIncludedExclusion,
     this.onExcludeIncludedExclusion,
     this.onRemovePendingItemAssign,
+    this.cropTags,
+    this.includeIncludedExclusions = true,
+    this.allowItemAssign = true,
+    this.faceGridKey = const Key('item-face-assign-grid'),
+    this.faceHintKey = const Key('item-face-hint'),
   });
 
   final ItemKnowledge knowledge;
@@ -70,6 +75,18 @@ class KnowledgeView extends StatefulWidget {
   })? onAssignIncludedExclusion;
   final Future<void> Function(String exclusionId)? onExcludeIncludedExclusion;
   final void Function(int index)? onRemovePendingItemAssign;
+
+  /// When set, only these who-crops (item-level or one key period).
+  final List<Tag>? cropTags;
+
+  /// Included exclusions belong on the item-level grid, not a period tile.
+  final bool includeIncludedExclusions;
+
+  /// Whole-item assign when there are no face crops.
+  final bool allowItemAssign;
+
+  final Key faceGridKey;
+  final Key faceHintKey;
 
   @override
   State<KnowledgeView> createState() => _KnowledgeViewState();
@@ -149,11 +166,12 @@ class _KnowledgeViewState extends State<KnowledgeView> {
   @override
   Widget build(BuildContext context) {
     final knowledge = widget.knowledge;
-    final crops = whoFaceCropTags(knowledge);
+    final crops = widget.cropTags ?? whoFaceCropTags(knowledge);
     final itemAssignments = itemLevelPersonAssignments(knowledge);
     final included = [
-      for (final exclusion in knowledge.whoExclusions)
-        if (widget.exclusionIntents[exclusion.id]?.include == true) exclusion,
+      if (widget.includeIncludedExclusions)
+        for (final exclusion in knowledge.whoExclusions)
+          if (widget.exclusionIntents[exclusion.id]?.include == true) exclusion,
     ];
     final draftPersonNames = uniqueDraftPersonNames(
       persons: widget.persons,
@@ -203,7 +221,7 @@ class _KnowledgeViewState extends State<KnowledgeView> {
         ),
       );
     }
-    if (widget.onAssignItem != null) {
+    if (widget.allowItemAssign && widget.onAssignItem != null) {
       cells.add(
         PersonAssignControl(
           key: const Key('item-assign-person'),
@@ -302,7 +320,7 @@ class _KnowledgeViewState extends State<KnowledgeView> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Wrap(
-          key: const Key('item-face-assign-grid'),
+          key: widget.faceGridKey,
           spacing: 8,
           runSpacing: 8,
           children: [for (final e in ordered) e.tile],
@@ -311,7 +329,7 @@ class _KnowledgeViewState extends State<KnowledgeView> {
         if (!selectedVisible)
           Text(
             'Tap a face to see its actions.',
-            key: const Key('item-face-hint'),
+            key: widget.faceHintKey,
             style: Theme.of(context).textTheme.bodySmall,
           )
         else if (selectedTag != null)

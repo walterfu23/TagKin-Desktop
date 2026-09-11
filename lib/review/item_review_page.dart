@@ -210,6 +210,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
 
   void _adoptBaseline(ReviewController review) {
     if (_baselineReady) return;
+    if (review.knowledge == null) return;
     if (_isDirty) {
       _baselineReady = true;
       return;
@@ -221,9 +222,20 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
       _appearanceIntents.clear();
       _exclusionIntents.clear();
       _pendingItemAssigns.clear();
+      _seedOverlappingExcludes(review.knowledge);
       _baselineReady = true;
     });
     _publishDirty();
+  }
+
+  void _seedOverlappingExcludes(ItemKnowledge? knowledge) {
+    if (knowledge == null || knowledge.item.type != ItemType.video) return;
+    for (final id in overlappingWhoFaceExcludeIds(knowledge)) {
+      _cropIntents.putIfAbsent(
+        id,
+        () => const PersonAssignIntent(exclude: true),
+      );
+    }
   }
 
   void _mutateDraft(VoidCallback change, {required String label}) {
@@ -659,6 +671,9 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
               _appearanceIntents.clear();
               _exclusionIntents.clear();
               _pendingItemAssigns.clear();
+              _seedOverlappingExcludes(
+                ref.read(reviewControllerProvider(widget.itemId)).knowledge,
+              );
             });
             _publishDirty();
           },
@@ -841,12 +856,15 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
   }
 
   void _discard() {
+    final knowledge =
+        ref.read(reviewControllerProvider(widget.itemId)).knowledge;
     setState(() {
       _comment = _commentBaseline;
       _cropIntents.clear();
       _appearanceIntents.clear();
       _exclusionIntents.clear();
       _pendingItemAssigns.clear();
+      _seedOverlappingExcludes(knowledge);
     });
     _undoStack.clear();
     _publishDirty();
@@ -996,6 +1014,48 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     );
   }
 
+  KnowledgeView _faceAssignView({
+    Key? key,
+    required ItemKnowledge knowledge,
+    List<Tag>? cropTags,
+    bool includeIncludedExclusions = true,
+    bool allowItemAssign = true,
+    Key faceGridKey = const Key('item-face-assign-grid'),
+    Key faceHintKey = const Key('item-face-hint'),
+  }) {
+    return KnowledgeView(
+      key: key,
+      knowledge: knowledge,
+      itemId: knowledge.item.id,
+      personNamesById: _personNamesById,
+      persons: _persons,
+      assignEnabled: !_saving,
+      cropIntents: _cropIntents,
+      appearanceIntents: _appearanceIntents,
+      exclusionIntents: _exclusionIntents,
+      pendingItemAssigns: _pendingItemAssigns,
+      cropTags: cropTags,
+      includeIncludedExclusions: includeIncludedExclusions,
+      allowItemAssign: allowItemAssign,
+      faceGridKey: faceGridKey,
+      faceHintKey: faceHintKey,
+      onPersonTap: _openPerson,
+      onAssignCrop: _assignCrop,
+      onAssignItem: _assignItem,
+      onReassignAppearance: _reassignAppearance,
+      onUnassign: _unassignAppearance,
+      onExcludeCrop: _excludeCrop,
+      onAssignIncludedExclusion: _assignIncludedExclusion,
+      onExcludeIncludedExclusion: _excludeIncludedExclusion,
+      onRemovePendingItemAssign: (index) {
+        _mutateDraft(
+          () => _pendingItemAssigns.removeAt(index),
+          label: 'Unassign',
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     _edits.save = _save;
@@ -1084,30 +1144,12 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
               const SizedBox(height: 12),
             ],
             if (knowledge != null) ...[
-              KnowledgeView(
+              _faceAssignView(
                 knowledge: knowledge,
-                itemId: knowledge.item.id,
-                personNamesById: _personNamesById,
-                persons: _persons,
-                assignEnabled: !_saving,
-                cropIntents: _cropIntents,
-                appearanceIntents: _appearanceIntents,
-                exclusionIntents: _exclusionIntents,
-                pendingItemAssigns: _pendingItemAssigns,
-                onPersonTap: _openPerson,
-                onAssignCrop: _assignCrop,
-                onAssignItem: _assignItem,
-                onReassignAppearance: _reassignAppearance,
-                onUnassign: _unassignAppearance,
-                onExcludeCrop: _excludeCrop,
-                onAssignIncludedExclusion: _assignIncludedExclusion,
-                onExcludeIncludedExclusion: _excludeIncludedExclusion,
-                onRemovePendingItemAssign: (index) {
-                  _mutateDraft(
-                    () => _pendingItemAssigns.removeAt(index),
-                    label: 'Unassign',
-                  );
-                },
+                cropTags: knowledge.item.type == ItemType.video
+                    ? itemLevelWhoFaceCropTags(knowledge)
+                    : null,
+                allowItemAssign: !itemHasWhoFaceCrops(knowledge),
               ),
               Builder(
                 builder: (context) {
@@ -1220,6 +1262,15 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
                   onEditComment: review.editComment,
                   onDeleteComment: review.deleteComment,
                   correctionsEnabled: !review.isBusy,
+                  periodFaces: (period) => _faceAssignView(
+                    key: Key('period-faces-${period.id}'),
+                    knowledge: knowledge,
+                    cropTags: whoFaceCropTagsForPeriod(knowledge, period.id),
+                    includeIncludedExclusions: false,
+                    allowItemAssign: false,
+                    faceGridKey: Key('key-period-face-grid-${period.id}'),
+                    faceHintKey: Key('key-period-face-hint-${period.id}'),
+                  ),
                 ),
               ],
             ],
