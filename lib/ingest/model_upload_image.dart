@@ -7,9 +7,9 @@ import 'package:tagkin_desktop/ingest/upload_mime.dart';
 
 /// Bytes + MIME for the model-host upload (D5).
 ///
-/// HEIC/HEIF are decoded (Flutter codec on macOS) and re-encoded as JPEG so
-/// Gemini analyze always sees `image/jpeg` bytes — matching [runTagging]'s
-/// JPEG assumption and avoiding HEIC mime mismatches.
+/// HEIC/HEIF are decoded and re-encoded as JPEG so analyze always sees
+/// `image/jpeg`. JPEGs with EXIF Orientation 2–8 are baked upright so who-face
+/// boxes match Flutter's oriented still. The original file is never overwritten.
 typedef ModelUploadPayload = ({List<int> bytes, String mimeType});
 
 /// Prepares local file bytes for model-host PUT.
@@ -19,20 +19,45 @@ Future<ModelUploadPayload> prepareModelUploadBytes({
   required List<int> rawBytes,
 }) async {
   final mime = mimeTypeForPath(path, type);
-  if (mime != 'image/heic' && mime != 'image/heif') {
-    return (bytes: rawBytes, mimeType: mime);
+  if (mime == 'image/heic' || mime == 'image/heif') {
+    final jpeg = await convertHeicLikeToJpeg(Uint8List.fromList(rawBytes));
+    if (jpeg == null) {
+      throw StateError(
+        'Could not decode HEIC/HEIF for model upload ($path).',
+      );
+    }
+    return (bytes: jpeg, mimeType: 'image/jpeg');
   }
 
-  final jpeg = await convertHeicLikeToJpeg(Uint8List.fromList(rawBytes));
-  if (jpeg == null) {
-    throw StateError(
-      'Could not decode HEIC/HEIF for model upload ($path).',
-    );
+  if (mime == 'image/jpeg') {
+    final bytes = rawBytes is Uint8List
+        ? rawBytes
+        : Uint8List.fromList(rawBytes);
+    final orientation = jpegExifOrientation(bytes);
+    if (orientation != null && orientation >= 2 && orientation <= 8) {
+      final jpeg = await convertHeicLikeToJpeg(bytes);
+      if (jpeg == null) {
+        throw StateError(
+          'Could not bake JPEG orientation for model upload ($path).',
+        );
+      }
+      return (bytes: jpeg, mimeType: 'image/jpeg');
+    }
   }
-  return (bytes: jpeg, mimeType: 'image/jpeg');
+
+  return (bytes: rawBytes, mimeType: mime);
 }
 
-/// Decode HEIC/HEIF (or any Flutter-supported still) to JPEG bytes.
+/// IFD0 EXIF Orientation (1–8), or null when the JPEG has no tag.
+int? jpegExifOrientation(Uint8List jpeg) {
+  final exif = img.decodeJpgExif(jpeg);
+  if (exif == null) return null;
+  return exif.imageIfd.orientation ?? exif.exifIfd.orientation;
+}
+
+/// Decode HEIC/HEIF (or a JPEG with EXIF orientation) to upright JPEG bytes.
+///
+/// [img.decodeImage] bakes JPEG Orientation into pixels and clears the tag.
 Future<Uint8List?> convertHeicLikeToJpeg(Uint8List imageBytes) async {
   final viaPackage = img.decodeImage(imageBytes);
   if (viaPackage != null) {

@@ -14,10 +14,13 @@ class FaceAppearance {
   const FaceAppearance({
     required this.embedding,
     required this.embeddingModelId,
+    this.sharpness,
   });
 
   final List<double> embedding;
   final String embeddingModelId;
+  /// Variance-of-Laplacian of the face crop, if scored. Null = unknown.
+  final double? sharpness;
 }
 
 /// Pluggable face detect + embed. Real adapters (ONNX ArcFace) swap in via

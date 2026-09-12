@@ -7,6 +7,8 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/item_detail_edits.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/persons/person_assign_control.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/review/item_review_page.dart';
 import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 import 'package:tagkin_desktop/review/media_viewer.dart';
@@ -122,6 +124,11 @@ void main() {
       tester.widget<Text>(find.byKey(const Key('item-created-at'))).data,
       formatLocalDateTime(item.createdAt),
     );
+    expect(find.byKey(const Key('item-detail-sharpness')), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('item-detail-sharpness'))).data,
+      '—',
+    );
     expect(find.text('2026-07-01T12:00:00.000Z'), findsNothing);
     expect(find.text('2026-07-19T00:00:00.000Z'), findsNothing);
     expect(find.byKey(const Key('tag-provenance-tag_who')), findsNothing);
@@ -144,6 +151,87 @@ void main() {
     expect(find.byKey(const Key('key-period-scrubber')), findsNothing);
     expect(find.textContaining('Search'), findsNothing);
     expect(find.textContaining('Filter'), findsNothing);
+  });
+
+  testWidgets('item detail shows stored sharpness when the pref is on',
+      (tester) async {
+    final item = fixtureItem(
+      id: 'item_1',
+      processingStatus: ProcessingStatus.tagged,
+      sharpness: 8583,
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {'item_1': fixtureKnowledge(item: item)},
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          itemsRepositoryProvider.overrideWithValue(items),
+          correctionsRepositoryProvider.overrideWithValue(
+            FakeCorrectionsRepository(items: items),
+          ),
+          commentsRepositoryProvider.overrideWithValue(
+            FakeCommentsRepository(),
+          ),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          jobsRepositoryProvider.overrideWithValue(
+            FakeJobsRepository(itemId: 'item_1', item: item),
+          ),
+        ],
+        child: const MaterialApp(
+          home: ItemDetailPage(itemId: 'item_1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('item-detail-sharpness')), findsOneWidget);
+    expect(find.text('8583'), findsOneWidget);
+    expect(find.text('Sharpness'), findsOneWidget);
+  });
+
+  testWidgets('item detail omits sharpness when the pref is off',
+      (tester) async {
+    final item = fixtureItem(
+      id: 'item_1',
+      processingStatus: ProcessingStatus.tagged,
+      sharpness: 8583,
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {'item_1': fixtureKnowledge(item: item)},
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          itemsRepositoryProvider.overrideWithValue(items),
+          correctionsRepositoryProvider.overrideWithValue(
+            FakeCorrectionsRepository(items: items),
+          ),
+          commentsRepositoryProvider.overrideWithValue(
+            FakeCommentsRepository(),
+          ),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          jobsRepositoryProvider.overrideWithValue(
+            FakeJobsRepository(itemId: 'item_1', item: item),
+          ),
+          desktopPrefsProvider.overrideWithValue(
+            const DesktopPrefs(showSharpnessScores: false),
+          ),
+        ],
+        child: const MaterialApp(
+          home: ItemDetailPage(itemId: 'item_1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('item-detail-sharpness')), findsNothing);
+    expect(find.text('8583'), findsNothing);
+    expect(find.text('Sharpness'), findsNothing);
   });
 
   testWidgets('Video item shows key-period scrubber with start/end',
@@ -203,6 +291,7 @@ void main() {
     expect(find.textContaining('00:02.50'), findsOneWidget);
     expect(find.textContaining('00:08.00'), findsOneWidget);
     expect(find.text('party'), findsOneWidget);
+    expect(find.byKey(const Key('item-detail-sharpness')), findsNothing);
   });
 
   testWidgets(

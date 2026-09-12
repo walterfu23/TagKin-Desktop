@@ -50,7 +50,9 @@ typedef PrepareModelUpload = Future<ModelUploadPayload> Function({
 /// Orchestrates D5: for each succeeded D4 [PrePassOutcome], mint a grant,
 /// PUT bytes to the model host, and record `analysisRef`.
 ///
-/// - Photo: uploads the whole original local file (HEIC/HEIF → JPEG first).
+/// - Photo: uploads the local still (sharpened JPEG when auto-fix ran;
+///   HEIC/HEIF → JPEG first; JPEG EXIF Orientation 2–8 baked upright).
+///   The original file is never overwritten.
 /// - Video: uploads one D4 representative JPEG per key period (never the
 ///   source clip); skips when no samples exist.
 ///
@@ -240,9 +242,9 @@ class UploadController extends ChangeNotifier {
       return _uploadVideoFrames(item, prePass.response!, frameSamples);
     }
 
-    final rawBytes = await _read(prePass.path);
+    final rawBytes = await _read(prePass.uploadPath);
     final prepared = await prepareUpload(
-      path: prePass.path,
+      path: prePass.uploadPath,
       type: item.type,
       rawBytes: rawBytes,
     );

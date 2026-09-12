@@ -1,47 +1,5 @@
 import 'package:tagkin_desktop/contract/contract.dart';
 
-/// RFC 4180 CSV for an item list (D13). Metadata only — never media bytes.
-String itemListToCsv(List<ItemListEntry> entries) {
-  final rows = <List<String>>[
-    [
-      'kind',
-      'itemId',
-      'keyPeriodId',
-      'startMs',
-      'endMs',
-      'when',
-      'who',
-      'what',
-      'where',
-    ],
-    for (final e in entries)
-      [
-        e.kind.wire,
-        e.itemId,
-        e.keyPeriodId ?? '',
-        e.startMs?.toString() ?? '',
-        e.endMs?.toString() ?? '',
-        e.when ?? '',
-        e.who.join('; '),
-        e.what.join('; '),
-        e.where.join('; '),
-      ],
-  ];
-  return rows.map(_csvRow).join('\r\n') + (rows.isEmpty ? '' : '\r\n');
-}
-
-String _csvRow(List<String> fields) => fields.map(_csvField).join(',');
-
-String _csvField(String value) {
-  if (value.contains(',') ||
-      value.contains('"') ||
-      value.contains('\n') ||
-      value.contains('\r')) {
-    return '"${value.replaceAll('"', '""')}"';
-  }
-  return value;
-}
-
 /// Inclusive local-day start as UTC ISO for [ItemListFilter.whenFrom].
 String itemListWhenFromIso(DateTime localDay) {
   final start = DateTime(localDay.year, localDay.month, localDay.day);

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
@@ -5,6 +7,7 @@ import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/jobs/jobs_controller.dart';
 import 'package:tagkin_desktop/library/item_detail_edits.dart';
+import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/review/item_review_page.dart';
 import 'package:tagkin_desktop/ui/async_state_view.dart';
@@ -25,6 +28,7 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
   late Future<Item> _future;
   final ItemDetailEdits _edits = ItemDetailEdits();
   final GlobalKey _reviewKey = GlobalKey();
+  LibraryTableController? _libraryTable;
 
   @override
   void initState() {
@@ -36,9 +40,37 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _cacheLibraryTable();
+  }
+
+  @override
   void dispose() {
+    _refreshFoldersRow();
     _edits.dispose();
     super.dispose();
+  }
+
+  void _cacheLibraryTable() {
+    final container = ProviderScope.containerOf(context, listen: false);
+    if (!container.exists(libraryTableControllerProvider)) return;
+    _libraryTable = container.read(libraryTableControllerProvider);
+  }
+
+  void _refreshFoldersRow() {
+    final table = _libraryTable;
+    if (table == null) return;
+    unawaited(table.refreshRowSummaries(widget.itemId));
+  }
+
+  Future<void> _saveAndRefreshFolders() async {
+    final save = _edits.save;
+    if (save == null) return;
+    await save();
+    if (!mounted) return;
+    _cacheLibraryTable();
+    _refreshFoldersRow();
   }
 
   Future<Item> _load() {
@@ -169,7 +201,7 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
                       onPressed: _edits.isDirty &&
                               !_edits.saving &&
                               _edits.save != null
-                          ? () => _edits.save!()
+                          ? _saveAndRefreshFolders
                           : null,
                       child: const Text('Save'),
                     ),

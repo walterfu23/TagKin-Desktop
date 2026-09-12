@@ -33,6 +33,7 @@ void main() {
 
       expect(payload.contentHash, matches(RegExp(r'^[0-9a-f]{64}$')));
       expect(payload.perceptualHash, matches(RegExp(r'^[0-9a-f]{16}$')));
+      expect(payload.sharpness, isNotNull);
       expect(payload.appearances, isNotNull);
       expect(payload.appearances!.single.embedding, hasLength(kFaceEmbeddingDim));
       expect(json.toLowerCase(), isNot(contains('base64')));

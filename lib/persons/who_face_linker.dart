@@ -9,6 +9,7 @@ import 'package:tagkin_desktop/ingest/upload_mime.dart';
 import 'package:tagkin_desktop/prepass/face_embedder.dart';
 import 'package:tagkin_desktop/prepass/frame_sampler.dart';
 import 'package:tagkin_desktop/prepass/onnx_face_embedder.dart';
+import 'package:tagkin_desktop/prepass/sharpness.dart';
 import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 
@@ -304,11 +305,12 @@ class WhoFaceLinker {
       final bytes = await stillBytesFor(tag);
       if (bytes == null) continue;
       final region = refineWhoRegionForEmbed(tag.region!);
+      final crop = cropWhoFaceJpeg(bytes, tag.region!);
+      final sharpness = crop == null ? null : sharpnessFromJpeg(crop);
       final List<FaceAppearance> faces;
       if (onnx != null) {
         faces = await onnx.embedWhoRegion(bytes, region);
       } else {
-        final crop = cropWhoFaceJpeg(bytes, tag.region!);
         if (crop == null) continue;
         faces = await embedder.embed(crop);
       }
@@ -323,6 +325,7 @@ class WhoFaceLinker {
           tagId: tag.id,
           embedding: face.embedding,
           embeddingModelId: face.embeddingModelId,
+          sharpness: sharpness ?? face.sharpness,
         ),
       );
     }

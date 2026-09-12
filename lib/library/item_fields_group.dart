@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/processing_status_view.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
+import 'package:tagkin_desktop/prepass/sharpness_score_chip.dart';
 import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/ui/alpha_order.dart';
@@ -10,7 +11,8 @@ import 'package:tagkin_desktop/ui/format_local_datetime.dart';
 import 'package:tagkin_desktop/where/where_value_text.dart';
 
 /// Item-detail field group: two columns.
-/// Left: Status, Type, Captured, Added, File.
+/// Left: Status, Type, Sharpness (photos when Show sharpness scores is on),
+/// Captured, Added, File.
 /// Right: Who/What/When/Where, then Comment.
 class ItemFieldsGroup extends ConsumerWidget {
   const ItemFieldsGroup({
@@ -42,7 +44,8 @@ class ItemFieldsGroup extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final format = ref.watch(desktopPrefsProvider).dateTimeFormatOrLocal;
+    final prefs = ref.watch(desktopPrefsProvider);
+    final format = prefs.dateTimeFormatOrLocal;
     final grouped = knowledge == null
         ? null
         : groupDisplayTagsByDimension(knowledge!);
@@ -77,6 +80,14 @@ class ItemFieldsGroup extends ConsumerWidget {
                   key: const Key('item-type'),
                 ),
               ),
+              if (prefs.showSharpnessScores && item.type == ItemType.photo)
+                _FieldRow(
+                  label: 'Sharpness',
+                  child: Text(
+                    SharpnessScoreChip.format(item.sharpness),
+                    key: const Key('item-detail-sharpness'),
+                  ),
+                ),
               _FieldRow(
                 label: 'Captured',
                 child: Text(

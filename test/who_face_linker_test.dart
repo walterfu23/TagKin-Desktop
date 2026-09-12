@@ -275,10 +275,14 @@ void main() {
     final result = await linker.linkWhoFacesForItem(item);
     expect(result, isNotNull);
     expect(items.whoAppearancesRecorded, hasLength(1));
-    expect(
-      items.whoAppearancesRecorded.single.appearances.single.embeddingModelId,
-      'onnx-arcface-w600k-r50-v5',
-    );
+      expect(
+        items.whoAppearancesRecorded.single.appearances.single.embeddingModelId,
+        'onnx-arcface-w600k-r50-v5',
+      );
+      expect(
+        items.whoAppearancesRecorded.single.appearances.single.sharpness,
+        isNotNull,
+      );
     expect(
       items.whoAppearancesRecorded.single.autoConfirmMinConfidencePercent,
       90,

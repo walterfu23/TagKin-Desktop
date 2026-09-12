@@ -10,6 +10,7 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/prepass/face_align.dart';
 import 'package:tagkin_desktop/prepass/face_embedder.dart';
 import 'package:tagkin_desktop/prepass/scrfd.dart';
+import 'package:tagkin_desktop/prepass/sharpness.dart';
 
 /// Stable id for the bundled ArcFace-class recognizer (never reuse stub id).
 /// Bumped when preprocess changes (letterbox / align / normalize) so old vectors don't mix.
@@ -411,7 +412,11 @@ class OnnxFaceEmbedder implements FaceEmbedder {
     final embedding = flat.sublist(0, kFaceEmbeddingDim);
     _l2Normalize(embedding);
     return [
-      FaceAppearance(embedding: embedding, embeddingModelId: modelId),
+      FaceAppearance(
+        embedding: embedding,
+        embeddingModelId: modelId,
+        sharpness: sharpnessFromImage(face112),
+      ),
     ];
   }
 

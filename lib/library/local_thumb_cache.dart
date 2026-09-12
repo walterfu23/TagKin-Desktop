@@ -5,6 +5,7 @@ import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/folder_bookmark_store.dart';
+import 'package:tagkin_desktop/prepass/auto_fix_blurry.dart';
 import 'package:tagkin_desktop/prepass/ffmpeg_resolve.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 
@@ -53,8 +54,8 @@ class LocalThumbCache {
   String _key(Item item) =>
       '${item.id}:${item.contentHash ?? ''}:${item.type.wire}';
 
-  String _periodKey(Item item, String keyPeriodId) =>
-      '${_key(item)}:kp:$keyPeriodId';
+  String _periodKey(Item item, String keyPeriodId, int timestampMs) =>
+      '${_key(item)}:kp:$keyPeriodId:$timestampMs';
 
   /// Clears in-memory entries (e.g. after library reload).
   void clear() => _memory.clear();
@@ -92,7 +93,7 @@ class LocalThumbCache {
     required String keyPeriodId,
     required int timestampMs,
   }) async {
-    final memKey = _periodKey(item, keyPeriodId);
+    final memKey = _periodKey(item, keyPeriodId, timestampMs);
     final cached = _memory[memKey];
     if (cached != null) return cached;
 
@@ -110,7 +111,10 @@ class LocalThumbCache {
     final hash = item.contentHash ?? 'nohash';
     final root = await _ensureCacheRoot();
     final safeKp = keyPeriodId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
-    final outPath = p.join(root.path, '${item.id}_${hash}_kp_$safeKp.jpg');
+    final outPath = p.join(
+      root.path,
+      '${item.id}_${hash}_kp_${safeKp}_$timestampMs.jpg',
+    );
     final ss = (timestampMs < 0 ? 0 : timestampMs) / 1000.0;
     return _storeKey(
       memKey,
@@ -125,7 +129,7 @@ class LocalThumbCache {
   Future<({String? path, LocalThumbResult? result})> _openSource(
     Item item,
   ) async {
-    final sourcePath = localPathFromSourceRef(item.sourceRef);
+    var sourcePath = localPathFromSourceRef(item.sourceRef);
     if (sourcePath == null) {
       return (
         path: null,
@@ -158,6 +162,14 @@ class LocalThumbCache {
         path: null,
         result: const LocalThumbResult(status: LocalMediaStatus.missing),
       );
+    }
+
+    if (item.type == ItemType.photo) {
+      sourcePath = await preferSharpenedStillPath(
+        sourcePath: sourcePath,
+        contentHash: item.contentHash,
+      );
+      await _ensureBookmarkAccess(sourcePath);
     }
 
     return (path: sourcePath, result: null);

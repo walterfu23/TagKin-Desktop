@@ -123,7 +123,7 @@ void main() {
     expect(result.hasImage, isTrue);
     expect(seenArgs, isNotNull);
     expect(seenArgs, containsAllInOrder(['-ss', '1.500']));
-    expect(result.path, contains('_kp_kp-1.jpg'));
+    expect(result.path, contains('_kp_kp-1_1500.jpg'));
 
     seenArgs = null;
     final again = await cache.resolveKeyPeriod(

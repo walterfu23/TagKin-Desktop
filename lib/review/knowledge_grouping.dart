@@ -233,6 +233,21 @@ int? sampleTimestampMsForTagId(
       if (period.id == keyPeriodId) return period.sampleTimestampMs;
     }
   }
+  return _sampleTimestampMsMatchingTag(knowledge, tagId);
+}
+
+int? sampleTimestampMsForKeyPeriodId(
+  ItemKnowledge knowledge,
+  String? keyPeriodId,
+) {
+  if (keyPeriodId == null) return null;
+  for (final period in knowledge.keyPeriods) {
+    if (period.id == keyPeriodId) return period.sampleTimestampMs;
+  }
+  return null;
+}
+
+int? _sampleTimestampMsMatchingTag(ItemKnowledge knowledge, String tagId) {
   for (final period in knowledge.keyPeriods) {
     if (period.tags.any((t) => t.id == tagId)) return period.sampleTimestampMs;
   }

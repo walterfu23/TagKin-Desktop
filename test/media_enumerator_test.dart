@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/media_enumerator.dart';
+import 'package:tagkin_desktop/ingest/tagkin_fixed_sidecar.dart';
 
 void main() {
   group('MediaEnumerator (real fixture folder — synthetic bytes only)', () {
@@ -110,6 +111,54 @@ void main() {
       expect(isIgnoredName('desktop.ini'), isTrue);
       expect(isIgnoredName('.hidden.jpg'), isTrue);
       expect(isIgnoredName('photo.jpg'), isFalse);
+    });
+  });
+
+  group('preferTagkinFixedSidecars', () {
+    test('drops the original when Stem.tagkin-fixed.jpg is in the batch', () {
+      final original = MediaCandidate(
+        path: '/albums/Holiday.jpg',
+        type: ItemType.photo,
+        size: 10,
+        modifiedAt: DateTime(2026, 1, 1),
+      );
+      final sidecar = MediaCandidate(
+        path: '/albums/Holiday.tagkin-fixed.jpg',
+        type: ItemType.photo,
+        size: 12,
+        modifiedAt: DateTime(2026, 1, 2),
+      );
+      final clip = MediaCandidate(
+        path: '/albums/clip.mp4',
+        type: ItemType.video,
+        size: 20,
+        modifiedAt: DateTime(2026, 1, 1),
+      );
+      final kept = preferTagkinFixedSidecars([original, sidecar, clip]);
+      expect(kept.map((c) => p.basename(c.path)).toSet(), {
+        'Holiday.tagkin-fixed.jpg',
+        'clip.mp4',
+      });
+    });
+
+    test('keeps an orphan sidecar and an original with no sibling sidecar', () {
+      final original = MediaCandidate(
+        path: '/albums/Keep.jpg',
+        type: ItemType.photo,
+        size: 10,
+        modifiedAt: DateTime(2026, 1, 1),
+      );
+      final orphan = MediaCandidate(
+        path: '/albums/Alone.tagkin-fixed.jpg',
+        type: ItemType.photo,
+        size: 12,
+        modifiedAt: DateTime(2026, 1, 1),
+      );
+      final kept = preferTagkinFixedSidecars([original, orphan]);
+      expect(kept.map((c) => p.basename(c.path)).toSet(), {
+        'Keep.jpg',
+        'Alone.tagkin-fixed.jpg',
+      });
     });
   });
 }

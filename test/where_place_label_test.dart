@@ -129,6 +129,13 @@ void main() {
       expect(DesktopPrefs.defaults.autoConfirmMinConfidencePercent, 95);
       expect(DesktopPrefs.defaults.jobsPollIntervalSeconds, 2);
       expect(DesktopPrefs.defaults.dateTimeFormat, DateTimeDisplayFormat.local);
+      expect(DesktopPrefs.defaults.itemListBlurrySharpnessThreshold, 80);
+      expect(DesktopPrefs.defaults.autoFixBlurryPhotos, isTrue);
+      expect(DesktopPrefs.defaults.saveFixedPhotoInFolder, isTrue);
+      expect(DesktopPrefs.defaults.hideBlurryPhotos, isFalse);
+      expect(DesktopPrefs.defaults.showSharpnessScores, isTrue);
+      expect(DesktopPrefs.itemListBlurrySharpnessThresholdMax, 50000);
+      expect(DesktopPrefs.itemListBlurrySharpnessThresholdStep, 10);
     });
 
     test('round-trips through JSON including new prefs', () async {
@@ -154,6 +161,11 @@ void main() {
         autoConfirmMinConfidencePercent: 75,
         jobsPollIntervalSeconds: 5,
         dateTimeFormat: DateTimeDisplayFormat.iso24,
+        itemListBlurrySharpnessThreshold: 120,
+        autoFixBlurryPhotos: true,
+        saveFixedPhotoInFolder: true,
+        hideBlurryPhotos: true,
+        showSharpnessScores: false,
       );
       await store.save(prefs);
       expect(await store.load(), prefs);
@@ -178,6 +190,50 @@ void main() {
       expect(prefs.libraryPageSize, 50);
       expect(prefs.dateTimeFormat, DateTimeDisplayFormat.local);
       expect(prefs.dateTimeFormatOrLocal, DateTimeDisplayFormat.local);
+      expect(prefs.autoFixBlurryPhotos, isTrue);
+      expect(prefs.saveFixedPhotoInFolder, isTrue);
+      expect(prefs.showSharpnessScores, isTrue);
+    });
+
+    test('fromJson keeps saved-off auto-fix flags', () {
+      final prefs = DesktopPrefs.fromJson({
+        'export.autoFixBlurryPhotos': false,
+        'export.saveFixedPhotoInFolder': false,
+      });
+      expect(prefs.autoFixBlurryPhotos, isFalse);
+      expect(prefs.saveFixedPhotoInFolder, isFalse);
+    });
+
+    test('fromJson keeps saved-on hideBlurryPhotos', () {
+      final prefs = DesktopPrefs.fromJson({'export.hideBlurryPhotos': true});
+      expect(prefs.hideBlurryPhotos, isTrue);
+    });
+
+    test('fromJson keeps saved-off showSharpnessScores', () {
+      final prefs = DesktopPrefs.fromJson({
+        'export.showSharpnessScores': false,
+      });
+      expect(prefs.showSharpnessScores, isFalse);
+    });
+
+    test('setHideBlurryPhotos persists immediately (not gated behind Save)',
+        () async {
+      final dir = await Directory.systemTemp.createTemp(
+        'tagkin_prefs_hide_blurry_',
+      );
+      addTearDown(() => dir.delete(recursive: true));
+      final store = DesktopPrefsStore(supportDir: dir);
+      final controller = DesktopPrefsController(store: store);
+      await controller.load();
+      expect(controller.prefs.hideBlurryPhotos, isFalse);
+
+      await controller.setHideBlurryPhotos(true);
+      expect(controller.prefs.hideBlurryPhotos, isTrue);
+      expect((await store.load()).hideBlurryPhotos, isTrue);
+
+      await controller.setHideBlurryPhotos(false);
+      expect(controller.prefs.hideBlurryPhotos, isFalse);
+      expect((await store.load()).hideBlurryPhotos, isFalse);
     });
 
     test('fromJson migrates where.homeState to familiarRegions', () {

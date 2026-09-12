@@ -1282,6 +1282,43 @@ void main() {
     expect(enumerated, '/resolved/Paris');
     expect(items.created, hasLength(1));
   });
+
+  test('later ingest prefers sidecar and retargets the original item', () async {
+    final originalPath = '/albums/Paris/a.jpg';
+    final sidecarPath = '/albums/Paris/a.tagkin-fixed.jpg';
+    final items = FakeItemsRepository(
+      items: [
+        fixtureItem(
+          id: 'orig',
+          sourceRef: Uri.file(originalPath).toString(),
+          processingStatus: ProcessingStatus.tagged,
+        ),
+      ],
+    );
+    final jobs = FakeJobsRepository();
+    final queue = _queue(
+      items: items,
+      jobs: jobs,
+      byFolder: {
+        '/albums/Paris': [
+          _photo(originalPath),
+          _photo(sidecarPath),
+        ],
+      },
+    );
+
+    await queue.enqueue('/albums/Paris');
+    await _waitIdle(queue);
+
+    expect(items.created, isEmpty);
+    expect(items.retargetSourceRefCalls, hasLength(1));
+    expect(items.retargetSourceRefCalls.single.itemId, 'orig');
+    expect(
+      items.retargetSourceRefCalls.single.sourceRef,
+      Uri.file(sidecarPath).toString(),
+    );
+    expect(items.peekItem('orig')!.sourceRef, Uri.file(sidecarPath).toString());
+  });
 }
 
 Future<void> _waitIdle(FolderIngestQueue queue) async {

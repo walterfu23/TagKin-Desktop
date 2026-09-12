@@ -51,6 +51,13 @@ class DesktopPrefsController extends ChangeNotifier {
     await update(_prefs.copyWith(familiarRegions: next));
     return true;
   }
+
+  /// Immediate toggle (not gated behind Settings Save/Discard). Shared
+  /// across Folders and Export list — see [DesktopPrefs.hideBlurryPhotos].
+  Future<void> setHideBlurryPhotos(bool value) async {
+    if (value == _prefs.hideBlurryPhotos) return;
+    await update(_prefs.copyWith(hideBlurryPhotos: value));
+  }
 }
 
 /// Syncs prefs that non-Riverpod code reads (ONNX detect threshold).

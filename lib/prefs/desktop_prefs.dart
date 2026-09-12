@@ -26,6 +26,11 @@ class DesktopPrefs {
     this.autoConfirmMinConfidencePercent = 95,
     this.jobsPollIntervalSeconds = 2,
     this.dateTimeFormat = DateTimeDisplayFormat.local,
+    this.itemListBlurrySharpnessThreshold = 80,
+    this.autoFixBlurryPhotos = true,
+    this.saveFixedPhotoInFolder = true,
+    this.hideBlurryPhotos = false,
+    this.showSharpnessScores = true,
   });
 
   /// When true, include country even if place country matches device locale.
@@ -88,6 +93,29 @@ class DesktopPrefs {
   /// How Captured / Added / When / comment timestamps are shown.
   final DateTimeDisplayFormat dateTimeFormat;
 
+  /// Variance-of-Laplacian bar for Hide blurry / ingest auto-fix (0–50000).
+  /// Default matches [kBlurrySharpnessThreshold] (80). Real photo stills
+  /// often score in the thousands; raise the bar after reading on-thumb scores.
+  final int itemListBlurrySharpnessThreshold;
+
+  /// When true, ingest locally unsharps photos below the bar (0 credits).
+  final bool autoFixBlurryPhotos;
+
+  /// When true and [autoFixBlurryPhotos] is on, write `*.tagkin-fixed.jpg`
+  /// next to the original. Never overwrites the original.
+  final bool saveFixedPhotoInFolder;
+
+  /// Hide blurry toggle (shared across Folders and Export list). When true,
+  /// photos whose stored pre-pass sharpness is below
+  /// [itemListBlurrySharpnessThreshold] are hidden from view and excluded
+  /// from Export list's JSON. Persisted; not gated behind Settings Save.
+  final bool hideBlurryPhotos;
+
+  /// When true (default), show stored pre-pass sharpness on photo thumbs
+  /// (Folders, Export list, and item detail) so the blurry bar can be
+  /// chosen from real scores.
+  final bool showSharpnessScores;
+
   /// [dateTimeFormat] with a hot-reload fallback (new non-null fields read
   /// as null on instances created before the field existed).
   DateTimeDisplayFormat get dateTimeFormatOrLocal {
@@ -149,6 +177,12 @@ class DesktopPrefs {
   static const jobsPollIntervalSecondsMax = 30;
   static const jobsPollIntervalSecondsStep = 1;
 
+  static const itemListBlurrySharpnessThresholdMin = 0;
+  static const itemListBlurrySharpnessThresholdMax = 50000;
+  /// Step 10 keeps the default 80 on the slider grid (step 100 would snap
+  /// it to 100). Typical stills are in the thousands.
+  static const itemListBlurrySharpnessThresholdStep = 10;
+
   DesktopPrefs copyWith({
     bool? showCountryWhenSameCountry,
     bool? showStateWhenSameState,
@@ -169,6 +203,11 @@ class DesktopPrefs {
     int? autoConfirmMinConfidencePercent,
     int? jobsPollIntervalSeconds,
     DateTimeDisplayFormat? dateTimeFormat,
+    int? itemListBlurrySharpnessThreshold,
+    bool? autoFixBlurryPhotos,
+    bool? saveFixedPhotoInFolder,
+    bool? hideBlurryPhotos,
+    bool? showSharpnessScores,
   }) {
     return DesktopPrefs(
       showCountryWhenSameCountry:
@@ -199,6 +238,13 @@ class DesktopPrefs {
       jobsPollIntervalSeconds:
           jobsPollIntervalSeconds ?? this.jobsPollIntervalSeconds,
       dateTimeFormat: dateTimeFormat ?? dateTimeFormatOrLocal,
+      itemListBlurrySharpnessThreshold: itemListBlurrySharpnessThreshold ??
+          this.itemListBlurrySharpnessThreshold,
+      autoFixBlurryPhotos: autoFixBlurryPhotos ?? this.autoFixBlurryPhotos,
+      saveFixedPhotoInFolder:
+          saveFixedPhotoInFolder ?? this.saveFixedPhotoInFolder,
+      hideBlurryPhotos: hideBlurryPhotos ?? this.hideBlurryPhotos,
+      showSharpnessScores: showSharpnessScores ?? this.showSharpnessScores,
     );
   }
 
@@ -224,6 +270,11 @@ class DesktopPrefs {
             autoConfirmMinConfidencePercent,
         'jobs.pollIntervalSeconds': jobsPollIntervalSeconds,
         'ui.dateTimeFormat': dateTimeFormatOrLocal.wire,
+        'export.blurrySharpnessThreshold': itemListBlurrySharpnessThreshold,
+        'export.autoFixBlurryPhotos': autoFixBlurryPhotos,
+        'export.saveFixedPhotoInFolder': saveFixedPhotoInFolder,
+        'export.hideBlurryPhotos': hideBlurryPhotos,
+        'export.showSharpnessScores': showSharpnessScores,
       };
 
   factory DesktopPrefs.fromJson(Map<String, dynamic> json) {
@@ -354,6 +405,28 @@ class DesktopPrefs {
         max: jobsPollIntervalSecondsMax,
       ),
       dateTimeFormat: DateTimeDisplayFormat.parse(json['ui.dateTimeFormat']),
+      itemListBlurrySharpnessThreshold: intVal(
+        'export.blurrySharpnessThreshold',
+        80,
+        min: itemListBlurrySharpnessThresholdMin,
+        max: itemListBlurrySharpnessThresholdMax,
+      ),
+      autoFixBlurryPhotos: flag(
+        'export.autoFixBlurryPhotos',
+        fallback: true,
+      ),
+      saveFixedPhotoInFolder: flag(
+        'export.saveFixedPhotoInFolder',
+        fallback: true,
+      ),
+      hideBlurryPhotos: flag(
+        'export.hideBlurryPhotos',
+        fallback: false,
+      ),
+      showSharpnessScores: flag(
+        'export.showSharpnessScores',
+        fallback: true,
+      ),
     );
   }
 
@@ -380,10 +453,16 @@ class DesktopPrefs {
       other.autoConfirmMinConfidencePercent ==
           autoConfirmMinConfidencePercent &&
       other.jobsPollIntervalSeconds == jobsPollIntervalSeconds &&
-      other.dateTimeFormatOrLocal == dateTimeFormatOrLocal;
+      other.dateTimeFormatOrLocal == dateTimeFormatOrLocal &&
+      other.itemListBlurrySharpnessThreshold ==
+          itemListBlurrySharpnessThreshold &&
+      other.autoFixBlurryPhotos == autoFixBlurryPhotos &&
+      other.saveFixedPhotoInFolder == saveFixedPhotoInFolder &&
+      other.hideBlurryPhotos == hideBlurryPhotos &&
+      other.showSharpnessScores == showSharpnessScores;
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
         showCountryWhenSameCountry,
         showStateWhenSameState,
         multiColumnSort,
@@ -403,5 +482,10 @@ class DesktopPrefs {
         autoConfirmMinConfidencePercent,
         jobsPollIntervalSeconds,
         dateTimeFormatOrLocal,
-      );
+        itemListBlurrySharpnessThreshold,
+        autoFixBlurryPhotos,
+        saveFixedPhotoInFolder,
+        hideBlurryPhotos,
+        showSharpnessScores,
+      ]);
 }

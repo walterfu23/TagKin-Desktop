@@ -7,6 +7,7 @@ import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/processing_status_view.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
+import 'package:tagkin_desktop/prepass/sharpness_score_chip.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/where/where_label_resolver.dart';
 import 'package:tagkin_desktop/where/where_place_label.dart';
@@ -597,7 +598,7 @@ class _DataRow extends ConsumerWidget {
                     width: _kColThumb,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: _Thumb(row: row),
+                      child: _Thumb(row: row, showScore: ref.watch(desktopPrefsProvider).showSharpnessScores),
                     ),
                   ),
                   SizedBox(
@@ -681,7 +682,7 @@ class _DataRow extends ConsumerWidget {
                               fit: BoxFit.scaleDown,
                               alignment: Alignment.centerLeft,
                               child: ProcessingStatusBadge(
-                                status: item.processingStatus,
+                                status: row.foldersBadgeStatus,
                                 processingError: item.processingError,
                               ),
                             ),
@@ -710,9 +711,10 @@ class _DataRow extends ConsumerWidget {
 }
 
 class _Thumb extends StatelessWidget {
-  const _Thumb({required this.row});
+  const _Thumb({required this.row, required this.showScore});
 
   final LibraryTableRow row;
+  final bool showScore;
 
   @override
   Widget build(BuildContext context) {
@@ -738,7 +740,21 @@ class _Thumb extends StatelessWidget {
       child: SizedBox(
         width: _kThumbSize,
         height: _kThumbSize,
-        child: child,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            child,
+            if (showScore && row.item.type == ItemType.photo)
+              Positioned(
+                left: 2,
+                bottom: 2,
+                child: SharpnessScoreChip(
+                  key: Key('item-sharpness-${row.item.id}'),
+                  item: row.item,
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

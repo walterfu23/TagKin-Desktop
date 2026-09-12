@@ -16,6 +16,7 @@ class FakeItemsRepository implements ItemsRepository {
     this.grantError,
     this.analysisRefError,
     this.onListItems,
+    this.onGetKnowledge,
     this.linkedPersons,
   })  : _items = List<Item>.from(items ?? const []),
         _knowledgeByItemId = Map<String, ItemKnowledge>.from(
@@ -30,6 +31,9 @@ class FakeItemsRepository implements ItemsRepository {
 
   /// Optional hook before returning the list (e.g. inject one-shot failures).
   final Future<void> Function()? onListItems;
+
+  /// Optional hook before returning knowledge (e.g. delay Folders apply).
+  final Future<void> Function(String itemId)? onGetKnowledge;
 
   /// When set, [createWhoExclusion] / [undoWhoExclusion] also mutate the
   /// linked persons fake (copy faceGroupId, move appearances ↔ exclusions).
@@ -152,6 +156,7 @@ class FakeItemsRepository implements ItemsRepository {
 
   @override
   Future<ItemKnowledge> getKnowledge(String itemId) async {
+    if (onGetKnowledge != null) await onGetKnowledge!(itemId);
     if (getKnowledgeError != null) throw getKnowledgeError!;
     final knowledge = _knowledgeByItemId[itemId];
     if (knowledge != null) return knowledge;
@@ -526,6 +531,46 @@ class FakeItemsRepository implements ItemsRepository {
     }
     return found;
   }
+
+  final List<({String itemId, String sourceRef, String? contentHash})>
+      retargetSourceRefCalls =
+      <({String itemId, String sourceRef, String? contentHash})>[];
+
+  @override
+  Future<Item> retargetSourceRef(
+    String itemId, {
+    required String sourceRef,
+    String? contentHash,
+    String? perceptualHash,
+  }) async {
+    retargetSourceRefCalls.add(
+      (itemId: itemId, sourceRef: sourceRef, contentHash: contentHash),
+    );
+    final index = _items.indexWhere((i) => i.id == itemId);
+    if (index < 0) {
+      throw ApiException(statusCode: 404, message: 'Not found');
+    }
+    final prev = _items[index];
+    final updated = Item(
+      id: prev.id,
+      type: prev.type,
+      sourceType: prev.sourceType,
+      sourceRef: sourceRef,
+      analysisRef: prev.analysisRef,
+      analysisRefState: prev.analysisRefState,
+      contentHash: contentHash ?? prev.contentHash,
+      perceptualHash: perceptualHash ?? prev.perceptualHash,
+      dedupOfItemId: prev.dedupOfItemId,
+      capturedAt: prev.capturedAt,
+      processingStatus: prev.processingStatus,
+      processingError: prev.processingError,
+      sharpness: prev.sharpness,
+      schemaVersion: prev.schemaVersion,
+      createdAt: prev.createdAt,
+    );
+    _items[index] = updated;
+    return updated;
+  }
 }
 
 /// Fixture [Item] for tests.
@@ -539,6 +584,7 @@ Item fixtureItem({
   String? sourceRef,
   String? contentHash = '__default__',
   String? processingError,
+  double? sharpness,
 }) {
   return Item(
     id: id,
@@ -551,6 +597,7 @@ Item fixtureItem({
     capturedAt: capturedAt,
     processingStatus: processingStatus,
     processingError: processingError,
+    sharpness: sharpness,
     schemaVersion: 1,
     createdAt: '2026-07-19T00:00:00.000Z',
   );

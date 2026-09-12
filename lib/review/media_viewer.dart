@@ -267,6 +267,29 @@ Rect containMappedRegion({
   );
 }
 
+/// Maps a normalized [TagRegion] into a [BoxFit.cover] image rect.
+Rect coverMappedRegion({
+  required TagRegion region,
+  required Size viewport,
+  required Size imageSize,
+}) {
+  if (viewport.isEmpty || imageSize.isEmpty) return Rect.zero;
+  final scale = math.max(
+    viewport.width / imageSize.width,
+    viewport.height / imageSize.height,
+  );
+  final drawnW = imageSize.width * scale;
+  final drawnH = imageSize.height * scale;
+  final left = (viewport.width - drawnW) / 2;
+  final top = (viewport.height - drawnH) / 2;
+  return Rect.fromLTRB(
+    left + region.xMin * drawnW,
+    top + region.yMin * drawnH,
+    left + region.xMax * drawnW,
+    top + region.yMax * drawnH,
+  );
+}
+
 class _WhoFaceOverlay extends StatelessWidget {
   const _WhoFaceOverlay({
     super.key,

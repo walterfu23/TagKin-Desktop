@@ -17,6 +17,19 @@ void main() {
     expect(rect.height, 50);
   });
 
+  test('coverMappedRegion maps normalized box through BoxFit.cover', () {
+    final rect = coverMappedRegion(
+      region: const TagRegion(yMin: 0.25, xMin: 0.25, yMax: 0.75, xMax: 0.75),
+      viewport: const Size(180, 180),
+      imageSize: const Size(200, 100),
+    );
+    // scale = max(180/200, 180/100) = 1.8 → drawn 360×180, offset (-90, 0).
+    expect(rect.left, 0);
+    expect(rect.top, 45);
+    expect(rect.width, 180);
+    expect(rect.height, 90);
+  });
+
   testWidgets('WhoFaceOverlayLayer draws one overlay per who-tag with region',
       (tester) async {
     final who = Tag(

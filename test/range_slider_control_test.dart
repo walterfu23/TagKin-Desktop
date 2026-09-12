@@ -9,6 +9,8 @@ void main() {
     expect(RangeSliderControl.snap(505, 10, 2000, 10), 510);
     expect(RangeSliderControl.snap(4, 0, 64, 1), 4);
     expect(RangeSliderControl.snap(150, 100, 60000, 100), 200);
+    expect(RangeSliderControl.snap(80, 0, 50000, 10), 80);
+    expect(RangeSliderControl.snap(8583, 0, 50000, 10), 8580);
   });
 
   test('DoubleRangeSliderControl.snap stays on step grid', () {

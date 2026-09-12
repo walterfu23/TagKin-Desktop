@@ -185,4 +185,22 @@ class ItemsRepository {
     }
     return WhoExclusion.fromJson(exclusion);
   }
+
+  /// `PATCH /items/{id}/source-ref` — sidecar retarget (metadata only, R1).
+  Future<Item> retargetSourceRef(
+    String itemId, {
+    required String sourceRef,
+    String? contentHash,
+    String? perceptualHash,
+  }) async {
+    final response = await _client.patch(
+      '/items/$itemId/source-ref',
+      body: RetargetItemSourceRef(
+        sourceRef: sourceRef,
+        contentHash: contentHash,
+        perceptualHash: perceptualHash,
+      ).toJson(),
+    );
+    return Item.fromJson(_client.decodeMap(response, 'source-ref'));
+  }
 }

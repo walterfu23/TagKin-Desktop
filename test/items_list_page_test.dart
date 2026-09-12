@@ -18,6 +18,8 @@ import 'package:tagkin_desktop/persons/collection.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/collections_store.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prepass/prepass_controller.dart';
 import 'package:tagkin_desktop/prepass/prepass_payload_builder.dart';
 
@@ -110,6 +112,11 @@ FolderIngestQueue _continueQueue({
     onItemUpdated: onItemUpdated,
     prePassFactory: () => PrePassController(
       itemsRepository: items,
+      // Auto-fix does real File I/O (dart:io, not the fake-timer clock);
+      // this fixture's paths don't exist on disk, and the extra real-time
+      // read/catch was racing the fake-clock tester.pump() below. Auto-fix
+      // is not what this test exercises.
+      samplingPrefs: const DesktopPrefs(autoFixBlurryPhotos: false),
       buildPayload:
           ({
             required path,
@@ -174,6 +181,33 @@ void main() {
     expect(find.byKey(const Key('processing-status-tagged')), findsOneWidget);
     expect(find.byKey(const Key('sort-header-who')), findsOneWidget);
     expect(find.byKey(const Key('library-filter')), findsOneWidget);
+  });
+
+  testWidgets('Folders thumbs show stored sharpness when the pref is on',
+      (tester) async {
+    final item = fixtureItem(id: 'item_1', sharpness: 8583);
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(items: [item]),
+    );
+    expect(find.byKey(const Key('item-sharpness-item_1')), findsOneWidget);
+    expect(find.text('8583'), findsOneWidget);
+  });
+
+  testWidgets('Folders thumbs omit sharpness when the pref is off',
+      (tester) async {
+    final item = fixtureItem(id: 'item_1', sharpness: 8583);
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(items: [item]),
+      extraOverrides: [
+        desktopPrefsProvider.overrideWithValue(
+          const DesktopPrefs(showSharpnessScores: false),
+        ),
+      ],
+    );
+    expect(find.byKey(const Key('item-sharpness-item_1')), findsNothing);
+    expect(find.text('8583'), findsNothing);
   });
 
   testWidgets('empty library shows empty state', (tester) async {

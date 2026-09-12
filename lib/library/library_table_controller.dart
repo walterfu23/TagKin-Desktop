@@ -15,6 +15,8 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/local_thumb_cache.dart';
 import 'package:tagkin_desktop/persons/collection.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
+import 'package:tagkin_desktop/prepass/photo_blur_score_cache.dart';
+import 'package:tagkin_desktop/prepass/sharpness.dart';
 import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/where/where_label_resolver.dart';
@@ -89,6 +91,7 @@ class LibraryTableRow {
     this.comments = const [],
     this.knowledgeLoaded = false,
     this.commentsLoaded = false,
+    this.heldBadgeStatus,
     this.thumb,
   });
 
@@ -107,7 +110,19 @@ class LibraryTableRow {
   final List<String> comments;
   final bool knowledgeLoaded;
   final bool commentsLoaded;
+
+  /// Status shown on Folders while [item] is `tagged` but knowledge has not
+  /// been applied yet (ingest/Retry). Null → `processing`.
+  final ProcessingStatus? heldBadgeStatus;
   final LocalThumbResult? thumb;
+
+  /// Folders Status cell: hold `tagged` until who/what/where are applied.
+  ProcessingStatus get foldersBadgeStatus {
+    if (item.processingStatus == ProcessingStatus.tagged && !knowledgeLoaded) {
+      return heldBadgeStatus ?? ProcessingStatus.processing;
+    }
+    return item.processingStatus;
+  }
 
   String get sourceLabel {
     final ref = item.sourceRef;
@@ -142,6 +157,7 @@ class LibraryTableRow {
     List<String>? comments,
     bool? knowledgeLoaded,
     bool? commentsLoaded,
+    ProcessingStatus? heldBadgeStatus,
     LocalThumbResult? thumb,
   }) {
     return LibraryTableRow(
@@ -153,6 +169,7 @@ class LibraryTableRow {
       comments: comments ?? this.comments,
       knowledgeLoaded: knowledgeLoaded ?? this.knowledgeLoaded,
       commentsLoaded: commentsLoaded ?? this.commentsLoaded,
+      heldBadgeStatus: heldBadgeStatus ?? this.heldBadgeStatus,
       thumb: thumb ?? this.thumb,
     );
   }
@@ -166,10 +183,17 @@ class LibraryTableController extends ChangeNotifier {
     this.personsRepository,
     LocalThumbCache? thumbCache,
     WhereLabelResolver? whereLabelResolver,
-    this._pageSize = 50,
+    int pageSize = 50,
     this.knowledgeConcurrency = 6,
+    bool hideBlurryPhotos = false,
+    this.blurThreshold = kBlurrySharpnessThreshold,
   }) : _thumbCache = thumbCache ?? LocalThumbCache(),
-       _whereLabels = whereLabelResolver ?? WhereLabelResolver();
+       _whereLabels = whereLabelResolver ?? WhereLabelResolver(),
+       // Public names pageSize / hideBlurryPhotos are the constructor API.
+       // ignore: prefer_initializing_formals
+       _pageSize = pageSize,
+       // ignore: prefer_initializing_formals
+       _hideBlurryPhotos = hideBlurryPhotos;
 
   final ItemsRepository itemsRepository;
   final CommentsRepository commentsRepository;
@@ -233,6 +257,15 @@ class LibraryTableController extends ChangeNotifier {
   List<LibrarySortKey> sortKeys = const [];
   int pageIndex = 0;
 
+  bool _hideBlurryPhotos;
+
+  /// Shared Hide blurry toggle ([DesktopPrefs.hideBlurryPhotos]).
+  bool get hideBlurryPhotos => _hideBlurryPhotos;
+
+  /// Bar used with [hideBlurryPhotos]
+  /// ([DesktopPrefs.itemListBlurrySharpnessThreshold]).
+  double blurThreshold;
+
   /// When non-null, only rows whose leaf folder is in this set are shown.
   Set<String>? collectionLeafFolders;
 
@@ -254,6 +287,10 @@ class LibraryTableController extends ChangeNotifier {
   /// Live ingest/retry patches. [load] must not revert these to a stale
   /// `GET /items` snapshot (pending overlapping an in-flight analyze).
   final Map<String, Item> _adoptedById = {};
+
+  /// Per-id fetch generation so a slower warm cannot overwrite a newer apply.
+  final Map<String, int> _knowledgeSeq = {};
+  final Map<String, int> _commentsSeq = {};
 
   List<LibraryTableRow> get allRows => _rows;
 
@@ -280,6 +317,14 @@ class LibraryTableController extends ChangeNotifier {
           r.item.capturedAt ?? '',
         ].join(' ').toLowerCase();
         return hay.contains(q);
+      }).toList();
+    }
+    if (_hideBlurryPhotos) {
+      list = list.where((r) {
+        return !isHiddenBlurryPhoto(
+          item: r.item,
+          threshold: blurThreshold,
+        );
       }).toList();
     }
     if (sortKeys.isNotEmpty) {
@@ -323,15 +368,81 @@ class LibraryTableController extends ChangeNotifier {
   /// Replace a loaded row's [Item] (folder Retry, ingest upload/analyze).
   /// Preserves thumbs / who / what / where already on the row.
   /// Inserts a row when the id is not loaded yet (first fetch still in flight).
+  ///
+  /// When status becomes `tagged`, Folders keeps the previous badge until
+  /// who/what/where are fetched for this id.
   void adoptItem(Item item) {
     _adoptedById[item.id] = item;
+    final goingTagged = item.processingStatus == ProcessingStatus.tagged;
     final idx = _rows.indexWhere((r) => r.item.id == item.id);
     if (idx < 0) {
-      _rows = [..._rows, LibraryTableRow(item: item)];
+      _rows = [
+        ..._rows,
+        LibraryTableRow(
+          item: item,
+          heldBadgeStatus:
+              goingTagged ? ProcessingStatus.processing : null,
+        ),
+      ];
       _notify();
+      if (goingTagged) unawaited(_fetchAndApplyKnowledge(item.id));
       return;
     }
-    _replaceRow(item.id, (r) => r.copyWith(item: item));
+    if (!goingTagged) {
+      _replaceRow(item.id, (r) => r.copyWith(item: item));
+      return;
+    }
+    _replaceRow(item.id, (r) {
+      final held = r.item.processingStatus == ProcessingStatus.tagged
+          ? (r.heldBadgeStatus ?? ProcessingStatus.processing)
+          : r.item.processingStatus;
+      return r.copyWith(
+        item: item,
+        knowledgeLoaded: false,
+        heldBadgeStatus: held,
+      );
+    });
+    unawaited(_fetchAndApplyKnowledge(item.id));
+  }
+
+  /// Re-fetch Item + who/what/where + comments for one Folders row (item
+  /// detail Save / leave, including when detail was opened from Faces).
+  Future<void> refreshRowSummaries(String itemId) async {
+    if (_disposed) return;
+    if (!_rows.any((r) => r.item.id == itemId)) return;
+    _replaceRow(
+      itemId,
+      (r) => r.copyWith(
+        who: const [],
+        what: const [],
+        whereEntries: const [],
+        whereRaw: const [],
+        comments: const [],
+        knowledgeLoaded: false,
+        commentsLoaded: false,
+        heldBadgeStatus: r.item.processingStatus == ProcessingStatus.tagged
+            ? ProcessingStatus.tagged
+            : r.heldBadgeStatus,
+      ),
+    );
+    try {
+      await _refreshPersonNames();
+      if (_disposed || !_rows.any((r) => r.item.id == itemId)) return;
+      final fetched = await itemsRepository.getItem(itemId);
+      if (_disposed || !_rows.any((r) => r.item.id == itemId)) return;
+      final live = _resolveLiveItem(fetched);
+      _adoptedById[itemId] = live;
+      _replaceRow(itemId, (r) => r.copyWith(item: live));
+      await _fetchAndApplyKnowledge(itemId);
+      if (_disposed || !_rows.any((r) => r.item.id == itemId)) return;
+      await _fetchAndApplyComments(itemId);
+    } catch (_) {
+      if (_disposed) return;
+      _replaceRow(
+        itemId,
+        (r) => r.copyWith(knowledgeLoaded: true, commentsLoaded: true),
+      );
+    }
   }
 
   static int _processingRank(ProcessingStatus status) {
@@ -424,6 +535,17 @@ class LibraryTableController extends ChangeNotifier {
 
   void setFilterQuery(String value) {
     filterQuery = value;
+    pageIndex = 0;
+    _notify();
+  }
+
+  /// Synced from the shared [DesktopPrefs.hideBlurryPhotos] pref (Folders
+  /// and Export list share one toggle). No-ops if unchanged.
+  void setHideBlurryPhotos(bool value, {double? threshold}) {
+    final thresholdChanged = threshold != null && threshold != blurThreshold;
+    if (value == _hideBlurryPhotos && !thresholdChanged) return;
+    _hideBlurryPhotos = value;
+    if (threshold != null) blurThreshold = threshold;
     pageIndex = 0;
     _notify();
   }
@@ -676,6 +798,66 @@ class LibraryTableController extends ChangeNotifier {
     }
   }
 
+  int _bumpSeq(Map<String, int> seqs, String id) =>
+      seqs[id] = (seqs[id] ?? 0) + 1;
+
+  bool _seqCurrent(
+    Map<String, int> seqs,
+    String id,
+    int seq, {
+    int? loadGen,
+  }) {
+    if (_disposed) return false;
+    if (loadGen != null && _loadGeneration != loadGen) return false;
+    return seqs[id] == seq;
+  }
+
+  Future<void> _fetchAndApplyKnowledge(String id, {int? loadGen}) async {
+    final seq = _bumpSeq(_knowledgeSeq, id);
+    try {
+      final knowledge = await itemsRepository.getKnowledge(id);
+      if (!_seqCurrent(_knowledgeSeq, id, seq, loadGen: loadGen)) return;
+      final grouped = groupDisplayTagsByDimension(knowledge);
+      final whereRaw = grouped['where']!.map((t) => t.value).toList();
+      final whereEntries = collapseWhereDisplays(
+        await _whereLabels.resolveAllDisplays(whereRaw),
+      );
+      if (!_seqCurrent(_knowledgeSeq, id, seq, loadGen: loadGen)) return;
+      _replaceRow(
+        id,
+        (r) => r.copyWith(
+          who: whoColumnValues(knowledge, _personNamesById),
+          what: grouped['what']!.map((t) => t.value).toList(),
+          whereEntries: whereEntries,
+          whereRaw: whereRaw,
+          knowledgeLoaded: true,
+        ),
+      );
+    } catch (_) {
+      if (!_seqCurrent(_knowledgeSeq, id, seq, loadGen: loadGen)) return;
+      _replaceRow(id, (r) => r.copyWith(knowledgeLoaded: true));
+    }
+  }
+
+  Future<void> _fetchAndApplyComments(String id, {int? loadGen}) async {
+    final seq = _bumpSeq(_commentsSeq, id);
+    try {
+      final list = await commentsRepository.listItemComments(id);
+      if (!_seqCurrent(_commentsSeq, id, seq, loadGen: loadGen)) return;
+      final bodies = list
+          .where((c) => c.keyPeriodId == null && c.deletedAt == null)
+          .map((c) => c.body)
+          .toList();
+      _replaceRow(
+        id,
+        (r) => r.copyWith(comments: bodies, commentsLoaded: true),
+      );
+    } catch (_) {
+      if (!_seqCurrent(_commentsSeq, id, seq, loadGen: loadGen)) return;
+      _replaceRow(id, (r) => r.copyWith(commentsLoaded: true));
+    }
+  }
+
   Future<void> _warmKnowledge(int gen) async {
     if (_disposed || _loadGeneration != gen) return;
     knowledgeWarming = true;
@@ -687,30 +869,7 @@ class LibraryTableController extends ChangeNotifier {
         if (_loadGeneration != gen) return;
         final i = cursor++;
         if (i >= ids.length) return;
-        final id = ids[i];
-        try {
-          final knowledge = await itemsRepository.getKnowledge(id);
-          if (_loadGeneration != gen) return;
-          final grouped = groupDisplayTagsByDimension(knowledge);
-          final whereRaw = grouped['where']!.map((t) => t.value).toList();
-          final whereEntries = collapseWhereDisplays(
-            await _whereLabels.resolveAllDisplays(whereRaw),
-          );
-          if (_loadGeneration != gen) return;
-          _replaceRow(
-            id,
-            (r) => r.copyWith(
-              who: whoColumnValues(knowledge, _personNamesById),
-              what: grouped['what']!.map((t) => t.value).toList(),
-              whereEntries: whereEntries,
-              whereRaw: whereRaw,
-              knowledgeLoaded: true,
-            ),
-          );
-        } catch (_) {
-          if (_loadGeneration != gen) return;
-          _replaceRow(id, (r) => r.copyWith(knowledgeLoaded: true));
-        }
+        await _fetchAndApplyKnowledge(ids[i], loadGen: gen);
       }
     }
 
@@ -733,22 +892,7 @@ class LibraryTableController extends ChangeNotifier {
         if (_loadGeneration != gen) return;
         final i = cursor++;
         if (i >= ids.length) return;
-        final id = ids[i];
-        try {
-          final list = await commentsRepository.listItemComments(id);
-          if (_loadGeneration != gen) return;
-          final bodies = list
-              .where((c) => c.keyPeriodId == null && c.deletedAt == null)
-              .map((c) => c.body)
-              .toList();
-          _replaceRow(
-            id,
-            (r) => r.copyWith(comments: bodies, commentsLoaded: true),
-          );
-        } catch (_) {
-          if (_loadGeneration != gen) return;
-          _replaceRow(id, (r) => r.copyWith(commentsLoaded: true));
-        }
+        await _fetchAndApplyComments(ids[i], loadGen: gen);
       }
     }
 
@@ -802,12 +946,15 @@ class LibraryTableController extends ChangeNotifier {
 final libraryTableControllerProvider =
     ChangeNotifierProvider.autoDispose<LibraryTableController>(
       (ref) {
+        final prefs = ref.read(desktopPrefsProvider);
         return LibraryTableController(
           itemsRepository: ref.watch(itemsRepositoryProvider),
           commentsRepository: ref.watch(commentsRepositoryProvider),
           personsRepository: ref.watch(personsRepositoryProvider),
           whereLabelResolver: ref.watch(whereLabelResolverProvider),
-          pageSize: ref.read(desktopPrefsProvider).libraryPageSize,
+          pageSize: prefs.libraryPageSize,
+          hideBlurryPhotos: prefs.hideBlurryPhotos,
+          blurThreshold: prefs.itemListBlurrySharpnessThreshold.toDouble(),
         );
       },
       dependencies: [

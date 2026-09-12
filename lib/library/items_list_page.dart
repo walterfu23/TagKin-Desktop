@@ -16,6 +16,7 @@ import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
 import 'package:tagkin_desktop/credits/credits_navigation.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
+import 'package:tagkin_desktop/prepass/hide_blurry_switch.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 import 'package:tagkin_desktop/ui/async_state_view.dart';
 import 'package:tagkin_desktop/usage/credits_remaining.dart';
@@ -380,6 +381,19 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     ref.listen<FolderRemoveQueue>(folderRemoveQueueProvider, (previous, next) {
       _bindRemoveQueue(next);
     });
+    // Shared Hide blurry toggle — reaches an already-mounted Folders page
+    // even when flipped from Export list or restored on app start.
+    ref.listen(desktopPrefsProvider, (previous, next) {
+      if (previous?.hideBlurryPhotos == next.hideBlurryPhotos &&
+          previous?.itemListBlurrySharpnessThreshold ==
+              next.itemListBlurrySharpnessThreshold) {
+        return;
+      }
+      ref.read(libraryTableControllerProvider).setHideBlurryPhotos(
+            next.hideBlurryPhotos,
+            threshold: next.itemListBlurrySharpnessThreshold.toDouble(),
+          );
+    });
     final usage = ref.watch(usageControllerProvider);
     final table = ref.watch(libraryTableControllerProvider);
     return ListenableBuilder(
@@ -412,6 +426,8 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
                         onChanged: table.setFilterQuery,
                       ),
                     ),
+                    const SizedBox(width: 12),
+                    const HideBlurrySwitch(),
                     if (table.knowledgeWarming) ...[
                       const SizedBox(width: 12),
                       const SizedBox(

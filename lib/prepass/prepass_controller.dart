@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/api/items_repository.dart';
@@ -6,9 +8,11 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/ingest_outcome.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
+import 'package:tagkin_desktop/prepass/auto_fix_blurry.dart';
 import 'package:tagkin_desktop/prepass/face_embedder.dart';
 import 'package:tagkin_desktop/prepass/frame_sampler.dart';
 import 'package:tagkin_desktop/prepass/prepass_payload_builder.dart';
+import 'package:tagkin_desktop/prepass/unsharp.dart';
 
 /// Lifecycle phase of a client pre-pass run (D4).
 enum PrePassPhase { idle, running, done, error }
@@ -18,18 +22,24 @@ class PrePassOutcome {
   const PrePassOutcome({
     required this.itemId,
     required this.path,
+    this.stillPath,
     this.response,
     this.frameSamples = const [],
     this.error,
   });
 
   final String itemId;
+  /// Original local source path (who-face crops stay on this until retarget).
   final String path;
+  /// Sharpened JPEG for thumbs/upload when auto-fix ran; else [path].
+  final String? stillPath;
   final PrePassResultResponse? response;
   final List<FrameSample> frameSamples;
   final Object? error;
 
   bool get succeeded => response != null && error == null;
+
+  String get uploadPath => stillPath ?? path;
 }
 
 typedef PrePassPayloadBuilder = Future<PrePassBuildResult> Function({
@@ -54,12 +64,15 @@ class PrePassController extends ChangeNotifier {
     this.faceEmbedder,
     this.buildPayload = buildPrePassPayload,
     DesktopPrefs? samplingPrefs,
+    this.deblurCacheDir,
   }) : _samplingPrefs = samplingPrefs ?? DesktopPrefs.defaults;
 
   final ItemsRepository itemsRepository;
   final FaceEmbedder? faceEmbedder;
   final PrePassPayloadBuilder buildPayload;
   DesktopPrefs _samplingPrefs;
+  /// Override app-support deblur cache (tests).
+  final Directory? deblurCacheDir;
 
   /// Refresh video/face sampling knobs from Settings without recreating.
   void applySamplingPrefs(DesktopPrefs prefs) {
@@ -121,15 +134,41 @@ class PrePassController extends ChangeNotifier {
           maxIntervalMs: prefs.sampleMaxIntervalMs,
           sceneCutThreshold: prefs.sceneCutThreshold,
         );
+        var payload = built.payload;
+        String? stillPath;
+        if (item.type == ItemType.photo) {
+          stillPath = await _maybeAutoFix(
+            originalPath: ingest.path,
+            payload: payload,
+            prefs: prefs,
+          );
+          if (stillPath != null) {
+            payload = PrePassResult(
+              contentHash: payload.contentHash,
+              perceptualHash: payload.perceptualHash,
+              sharpness: payload.sharpness,
+              capturedAt: payload.capturedAt,
+              where: payload.where,
+              durationMs: payload.durationMs,
+              keyPeriods: payload.keyPeriods,
+              appearances: payload.appearances,
+              deblur: const PrePassDeblur(
+                applied: true,
+                methodId: kLocalUnsharpMethodId,
+              ),
+            );
+          }
+        }
         final response = await itemsRepository.recordPrePassResult(
           item.id,
-          built.payload,
+          payload,
         );
         frameSamplesByItemId[item.id] = built.frameSamples;
         newOutcomes.add(
           PrePassOutcome(
             itemId: item.id,
             path: ingest.path,
+            stillPath: stillPath,
             response: response,
             frameSamples: built.frameSamples,
           ),
@@ -149,6 +188,37 @@ class PrePassController extends ChangeNotifier {
 
     phase = PrePassPhase.done;
     notifyListeners();
+  }
+
+  Future<String?> _maybeAutoFix({
+    required String originalPath,
+    required PrePassResult payload,
+    required DesktopPrefs prefs,
+  }) async {
+    if (!prefs.autoFixBlurryPhotos) return null;
+    final hash = payload.contentHash;
+    if (hash == null || hash.isEmpty) return null;
+    try {
+      final bytes = await File(originalPath).readAsBytes();
+      Directory cacheDir;
+      try {
+        cacheDir = deblurCacheDir ?? await defaultDeblurCacheDir();
+      } catch (_) {
+        return null;
+      }
+      final fixed = await autoFixBlurryPhoto(
+        originalPath: originalPath,
+        originalBytes: Uint8List.fromList(bytes),
+        sharpness: payload.sharpness,
+        contentHash: hash,
+        prefs: prefs,
+        cacheDir: cacheDir,
+      );
+      return fixed?.cachePath;
+    } catch (e) {
+      debugPrint('PrePassController: auto-fix skipped for $originalPath: $e');
+      return null;
+    }
   }
 
   void reset() {

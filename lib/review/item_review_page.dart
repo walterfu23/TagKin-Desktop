@@ -14,6 +14,7 @@ import 'package:tagkin_desktop/library/item_fields_group.dart';
 import 'package:tagkin_desktop/persons/person_detail_page.dart';
 import 'package:tagkin_desktop/persons/person_name.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
+import 'package:tagkin_desktop/prepass/sharpness_score_chip.dart';
 import 'package:tagkin_desktop/review/key_period_scrubber.dart';
 import 'package:tagkin_desktop/review/knowledge_view.dart';
 import 'package:tagkin_desktop/review/knowledge_grouping.dart';
@@ -1062,8 +1063,9 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     _edits.discard = _discard;
     _edits.confirmLeave = _confirmLeave;
     final review = ref.watch(reviewControllerProvider(widget.itemId));
-    final showFaceOverlays =
-        ref.watch(desktopPrefsProvider).showFaceOverlays;
+    final prefs = ref.watch(desktopPrefsProvider);
+    final showFaceOverlays = prefs.showFaceOverlays;
+    final showSharpnessScores = prefs.showSharpnessScores;
 
     return ListenableBuilder(
       listenable: review,
@@ -1217,22 +1219,39 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
                 ),
                 const SizedBox(height: 12),
               ],
-              MediaViewer(
-                itemType: knowledge.item.type,
-                resolution: media,
-                player: _player,
-                videoController: _videoController,
-                whoOverlays: showFaceOverlays
-                    ? knowledge.tags
-                        .where(
-                          (t) =>
-                              t.dimension == 'who' &&
-                              t.status == TagStatus.active &&
-                              t.region != null,
-                        )
-                        .toList()
-                    : const [],
-                personNameByWhoTagId: _whoOverlayNames(knowledge),
+              Stack(
+                children: [
+                  MediaViewer(
+                    itemType: knowledge.item.type,
+                    resolution: media,
+                    player: _player,
+                    videoController: _videoController,
+                    whoOverlays: showFaceOverlays
+                        ? knowledge.tags
+                            .where(
+                              (t) =>
+                                  t.dimension == 'who' &&
+                                  t.status == TagStatus.active &&
+                                  t.region != null,
+                            )
+                            .toList()
+                        : const [],
+                    personNameByWhoTagId: _whoOverlayNames(knowledge),
+                  ),
+                  if (showSharpnessScores &&
+                      knowledge.item.type == ItemType.photo &&
+                      media.status == LocalMediaStatus.available)
+                    Positioned(
+                      left: 8,
+                      bottom: 8,
+                      child: SharpnessScoreChip(
+                        key: Key(
+                          'item-detail-sharpness-chip-${knowledge.item.id}',
+                        ),
+                        item: knowledge.item,
+                      ),
+                    ),
+                ],
               ),
               if (_assignError != null) ...[
                 const SizedBox(height: 8),
