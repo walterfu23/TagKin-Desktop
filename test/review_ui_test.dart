@@ -6,6 +6,8 @@ import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/item_detail_edits.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
+import 'package:tagkin_desktop/library/library_table_controller.dart';
+import 'package:tagkin_desktop/library/local_thumb_cache.dart';
 import 'package:tagkin_desktop/persons/person_assign_control.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
@@ -46,6 +48,30 @@ Future<void> _selectIncludedFace(
   await tester.ensureVisible(tile);
   await tester.tap(tile);
   await tester.pumpAndSettle();
+}
+
+void _syncKnowledgeAppearancesFromPersons(
+  FakeItemsRepository items,
+  FakePersonsRepository persons,
+  String itemId,
+) {
+  final existing = items.peekKnowledge(itemId);
+  if (existing == null) return;
+  items.setKnowledge(
+    itemId,
+    ItemKnowledge(
+      item: existing.item,
+      tags: existing.tags,
+      keyPeriods: existing.keyPeriods,
+      appearances: [
+        for (final p in persons.personDetails)
+          for (final a in p.appearances)
+            if (a.itemId == itemId) a,
+      ],
+      corrections: existing.corrections,
+      whoExclusions: existing.whoExclusions,
+    ),
+  );
 }
 
 void main() {
@@ -672,6 +698,10 @@ void main() {
     expect(find.byKey(const Key('item-exclude-face-tag_who')), findsNothing);
     await _selectItemFace(tester, 'tag_who');
     expect(find.byKey(const Key('item-exclude-face-tag_who')), findsOneWidget);
+    expect(
+      find.byKey(const Key('item-exclude-others-face-tag_who')),
+      findsNothing,
+    );
     await tester.ensureVisible(
       find.byKey(const Key('item-exclude-face-tag_who')),
     );
@@ -691,6 +721,244 @@ void main() {
     expect(find.byKey(const Key('item-assign-face-tag_who')), findsNothing);
     expect(find.byKey(const Key('who-exclusion-draft-tag_who')), findsNothing);
     expect(find.byKey(const Key('who-exclusion-excl_tag_who_1')), findsOneWidget);
+  });
+
+  testWidgets('Exclude others from photo is draft until Save', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final item = fixtureItem(
+      id: 'item_1',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    TagRegion box(double x) => TagRegion(
+          yMin: 0.1,
+          xMin: x,
+          yMax: 0.4,
+          xMax: x + 0.2,
+        );
+    final knowledge = fixtureKnowledge(
+      item: item,
+      tags: [
+        fixtureTag(
+          id: 'keep',
+          dimension: 'who',
+          value: 'Keep',
+          region: box(0.05),
+        ),
+        fixtureTag(
+          id: 'other_a',
+          dimension: 'who',
+          value: 'A',
+          region: box(0.35),
+        ),
+        fixtureTag(
+          id: 'other_b',
+          dimension: 'who',
+          value: 'B',
+          region: box(0.65),
+        ),
+      ],
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {'item_1': knowledge},
+    );
+    final persons = FakePersonsRepository(persons: const []);
+    items.linkedPersons = persons;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          itemsRepositoryProvider.overrideWithValue(items),
+          personsRepositoryProvider.overrideWithValue(persons),
+          correctionsRepositoryProvider.overrideWithValue(
+            FakeCorrectionsRepository(items: items),
+          ),
+          commentsRepositoryProvider.overrideWithValue(
+            FakeCommentsRepository(),
+          ),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          jobsRepositoryProvider.overrideWithValue(
+            FakeJobsRepository(itemId: 'item_1', item: item),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: ItemReviewSection(itemId: 'item_1', openVideo: false),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _selectItemFace(tester, 'keep');
+    expect(find.text('Exclude others from photo'), findsOneWidget);
+    await tester.ensureVisible(
+      find.byKey(const Key('item-exclude-others-face-keep')),
+    );
+    await tester.tap(find.byKey(const Key('item-exclude-others-face-keep')));
+    await tester.pumpAndSettle();
+
+    expect(items.createWhoExclusionCalls, isEmpty);
+    expect(find.byKey(const Key('item-face-tile-keep')), findsOneWidget);
+    expect(find.byKey(const Key('item-face-tile-other_a')), findsNothing);
+    expect(find.byKey(const Key('item-face-tile-other_b')), findsNothing);
+    expect(find.byKey(const Key('who-exclusion-draft-other_a')), findsOneWidget);
+    expect(find.byKey(const Key('who-exclusion-draft-other_b')), findsOneWidget);
+
+    await tester.ensureVisible(find.byKey(const Key('item-detail-save')));
+    await tester.tap(find.byKey(const Key('item-detail-save')));
+    await tester.pumpAndSettle();
+
+    expect(
+      items.createWhoExclusionCalls.map((c) => c.tagId).toSet(),
+      {'other_a', 'other_b'},
+    );
+    expect(find.byKey(const Key('item-face-tile-keep')), findsOneWidget);
+  });
+
+  testWidgets(
+      'Exclude others from video drafts faces on every key period',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final item = fixtureItem(
+      id: 'item_v',
+      type: ItemType.video,
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final knowledge = fixtureKnowledge(
+      item: item,
+      tags: const [],
+      keyPeriods: [
+        KeyPeriodKnowledge(
+          id: 'kp_a',
+          itemId: item.id,
+          startMs: 0,
+          endMs: 2000,
+          sampleTimestampMs: 500,
+          tags: [
+            fixtureTag(
+              id: 'keep',
+              itemId: item.id,
+              keyPeriodId: 'kp_a',
+              dimension: 'who',
+              value: 'Keep',
+              region: const TagRegion(
+                yMin: 0.1,
+                xMin: 0.1,
+                yMax: 0.4,
+                xMax: 0.4,
+              ),
+            ),
+            fixtureTag(
+              id: 'same_period',
+              itemId: item.id,
+              keyPeriodId: 'kp_a',
+              dimension: 'who',
+              value: 'Sibling',
+              region: const TagRegion(
+                yMin: 0.5,
+                xMin: 0.5,
+                yMax: 0.8,
+                xMax: 0.8,
+              ),
+            ),
+          ],
+        ),
+        KeyPeriodKnowledge(
+          id: 'kp_b',
+          itemId: item.id,
+          startMs: 2000,
+          endMs: 4000,
+          sampleTimestampMs: 3000,
+          tags: [
+            fixtureTag(
+              id: 'other_period',
+              itemId: item.id,
+              keyPeriodId: 'kp_b',
+              dimension: 'who',
+              value: 'Later',
+              region: const TagRegion(
+                yMin: 0.1,
+                xMin: 0.1,
+                yMax: 0.4,
+                xMax: 0.4,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {'item_v': knowledge},
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          itemsRepositoryProvider.overrideWithValue(items),
+          personsRepositoryProvider.overrideWithValue(
+            FakePersonsRepository(persons: const []),
+          ),
+          correctionsRepositoryProvider.overrideWithValue(
+            FakeCorrectionsRepository(items: items),
+          ),
+          commentsRepositoryProvider.overrideWithValue(
+            FakeCommentsRepository(),
+          ),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          jobsRepositoryProvider.overrideWithValue(
+            FakeJobsRepository(itemId: 'item_v', item: item),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: ItemReviewSection(itemId: 'item_v', openVideo: false),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _selectItemFace(tester, 'keep');
+    expect(find.text('Exclude others from video'), findsOneWidget);
+    await tester.ensureVisible(
+      find.byKey(const Key('item-exclude-others-face-keep')),
+    );
+    await tester.tap(find.byKey(const Key('item-exclude-others-face-keep')));
+    await tester.pumpAndSettle();
+
+    expect(items.createWhoExclusionCalls, isEmpty);
+    expect(find.byKey(const Key('item-face-tile-keep')), findsOneWidget);
+    expect(find.byKey(const Key('item-face-tile-same_period')), findsNothing);
+    expect(find.byKey(const Key('item-face-tile-other_period')), findsNothing);
+    expect(
+      find.byKey(const Key('who-exclusion-draft-same_period')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('who-exclusion-draft-other_period')),
+      findsOneWidget,
+    );
+
+    await tester.ensureVisible(find.byKey(const Key('item-detail-save')));
+    await tester.tap(find.byKey(const Key('item-detail-save')));
+    await tester.pumpAndSettle();
+
+    expect(
+      items.createWhoExclusionCalls.map((c) => c.tagId).toSet(),
+      {'same_period', 'other_period'},
+    );
   });
 
   testWidgets(
@@ -1643,6 +1911,12 @@ void main() {
 
     final item = fixtureItem(
       id: 'item_1',
+      sourceRef: 'file:///albums/x/item_1.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final item2 = fixtureItem(
+      id: 'item_2',
+      sourceRef: 'file:///albums/x/item_2.jpg',
       processingStatus: ProcessingStatus.tagged,
     );
     final knowledge = fixtureKnowledge(
@@ -1669,9 +1943,38 @@ void main() {
         ),
       ],
     );
+    final knowledge2 = fixtureKnowledge(
+      item: item2,
+      tags: [
+        fixtureTag(
+          id: 'tag_who_2',
+          itemId: 'item_2',
+          dimension: 'who',
+          value: 'toddler',
+          region: const TagRegion(
+            yMin: 0.1,
+            xMin: 0.1,
+            yMax: 0.4,
+            xMax: 0.4,
+          ),
+        ),
+      ],
+      appearances: [
+        fixtureAppearance(
+          id: 'ap_2',
+          personId: 'person_2',
+          itemId: 'item_2',
+          tagId: 'tag_who_2',
+        ),
+      ],
+    );
+    final comments = FakeCommentsRepository();
     final items = FakeItemsRepository(
-      items: [item],
-      knowledgeByItemId: {'item_1': knowledge},
+      items: [item, item2],
+      knowledgeByItemId: {
+        'item_1': knowledge,
+        'item_2': knowledge2,
+      },
     );
     final persons = FakePersonsRepository(
       persons: [
@@ -1701,6 +2004,16 @@ void main() {
       ],
     )..sweepSiblingsOnReassign = true;
     items.linkedPersons = persons;
+    items.onGetKnowledge = (id) async {
+      _syncKnowledgeAppearancesFromPersons(items, persons, id);
+    };
+    final table = LibraryTableController(
+      itemsRepository: items,
+      commentsRepository: comments,
+      personsRepository: persons,
+      thumbCache: LocalThumbCache(),
+      knowledgeConcurrency: 1,
+    );
 
     await tester.pumpWidget(
       ProviderScope(
@@ -1710,29 +2023,40 @@ void main() {
           correctionsRepositoryProvider.overrideWithValue(
             FakeCorrectionsRepository(items: items),
           ),
-          commentsRepositoryProvider.overrideWithValue(
-            FakeCommentsRepository(),
-          ),
+          commentsRepositoryProvider.overrideWithValue(comments),
           usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
           jobsRepositoryProvider.overrideWithValue(
             FakeJobsRepository(itemId: 'item_1', item: item),
           ),
+          libraryTableControllerProvider.overrideWith((ref) => table),
         ],
-        child: MaterialApp(
-          builder: (context, child) {
-            return ActiveUndoShortcuts(
-              child: child ?? const SizedBox.shrink(),
-            );
+        child: Consumer(
+          builder: (context, ref, child) {
+            ref.watch(libraryTableControllerProvider);
+            return child!;
           },
-          home: const Scaffold(
-            body: SingleChildScrollView(
-              child: ItemReviewSection(itemId: 'item_1', openVideo: false),
+          child: MaterialApp(
+            builder: (context, child) {
+              return ActiveUndoShortcuts(
+                child: child ?? const SizedBox.shrink(),
+              );
+            },
+            home: const Scaffold(
+              body: SingleChildScrollView(
+                child: ItemReviewSection(itemId: 'item_1', openVideo: false),
+              ),
             ),
           ),
         ),
       ),
     );
     await tester.pumpAndSettle();
+    await table.load();
+    await tester.pumpAndSettle();
+    expect(
+      table.allRows.firstWhere((r) => r.item.id == 'item_2').who,
+      ['Sam'],
+    );
 
     await _selectItemFace(tester, 'tag_who');
     await tester.ensureVisible(
@@ -1761,6 +2085,10 @@ void main() {
     );
     expect(find.byKey(const Key('item-also-moved')), findsOneWidget);
     expect(find.textContaining('Pat'), findsWidgets);
+    expect(
+      table.allRows.firstWhere((r) => r.item.id == 'item_2').who,
+      ['Pat'],
+    );
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.meta);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
@@ -1785,6 +2113,10 @@ void main() {
           .firstWhere((p) => p.id == 'person_3')
           .appearances,
       isEmpty,
+    );
+    expect(
+      table.allRows.firstWhere((r) => r.item.id == 'item_2').who,
+      ['Sam'],
     );
   });
 

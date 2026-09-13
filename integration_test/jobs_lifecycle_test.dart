@@ -1,5 +1,6 @@
 // D7 Tagging & Jobs Lifecycle integration: photo-detail Status matches
-// Folders; delete against fake JobsRepository (mocked API per §5).
+// Folders (mocked API per §5). Item-detail Hide is a D2 concern (Library &
+// Item Registry) but shares this page, so its round trip is covered here too.
 //   flutter test integration_test/jobs_lifecycle_test.dart -d macos
 //   flutter test integration_test/jobs_lifecycle_test.dart -d windows
 
@@ -23,7 +24,8 @@ import '../test/fake_usage_repository.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('photo detail shows Folders status; delete removes from list',
+  testWidgets(
+      'photo detail shows Folders status; hide removes it from Folders',
       (WidgetTester tester) async {
     final item = fixtureItem(
       id: 'item_int',
@@ -32,11 +34,7 @@ void main() {
       processingStatus: ProcessingStatus.failed,
     );
     final items = FakeItemsRepository(items: [item]);
-    final jobs = FakeJobsRepository(
-      itemId: 'item_int',
-      item: item,
-      onDelete: items.removeItem,
-    );
+    final jobs = FakeJobsRepository(itemId: 'item_int', item: item);
 
     await tester.pumpWidget(
       ProviderScope(
@@ -79,11 +77,23 @@ void main() {
     expect(find.byKey(const Key('item-cancel-job')), findsNothing);
     expect(find.text('Tagging & jobs'), findsNothing);
 
-    await tester.tap(find.byKey(const Key('item-delete')));
+    // Non-destructive: single tap, no two-step Sure? confirm.
+    await tester.tap(find.byKey(const Key('item-hide-toggle')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('item-remove-confirm')));
+    expect(find.text('Sure?'), findsNothing);
+    expect(items.setItemHiddenCalls, [(itemId: 'item_int', isHidden: true)]);
+
+    // Toggling back sends isHidden: false and flips the tooltip again.
+    // (Folders excluding hidden items by default is covered at the widget
+    // level in items_list_page_test.dart — no page pop needed there.)
+    await tester.tap(find.byKey(const Key('item-hide-toggle')));
     await tester.pumpAndSettle();
-    expect(jobs.deleteCallCount, 1);
-    expect(find.byKey(const Key('item-row-item_int')), findsNothing);
+    expect(
+      items.setItemHiddenCalls,
+      [
+        (itemId: 'item_int', isHidden: true),
+        (itemId: 'item_int', isHidden: false),
+      ],
+    );
   });
 }

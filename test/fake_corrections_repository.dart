@@ -243,6 +243,7 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
       processingError: prev.processingError,
       schemaVersion: prev.schemaVersion,
       createdAt: prev.createdAt,
+      isHidden: prev.isHidden,
     );
     final correction = _correction(
       targetType: 'item_captured_at',
@@ -351,6 +352,7 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
           processingError: knowledge.item.processingError,
           schemaVersion: knowledge.item.schemaVersion,
           createdAt: knowledge.item.createdAt,
+          isHidden: knowledge.item.isHidden,
         );
       } else if (correction.targetType == 'key_period_bounds') {
         kind = 'key_period_bounds';

@@ -106,6 +106,7 @@ class FakeJobsRepository implements JobsRepository {
       processingError: null,
       schemaVersion: base.schemaVersion,
       createdAt: base.createdAt,
+      isHidden: base.isHidden,
     );
     if (id == itemId) {
       item = tagged;
@@ -164,6 +165,7 @@ class FakeJobsRepository implements JobsRepository {
       processingError: null,
       schemaVersion: item.schemaVersion,
       createdAt: item.createdAt,
+      isHidden: item.isHidden,
     );
     item = cancelledItem;
     final job = fixtureJob(

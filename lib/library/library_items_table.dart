@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/library/item_hover_preview.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/processing_status_view.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
@@ -20,12 +21,15 @@ const double _kColWho = 280;
 const double _kColWhat = 180;
 const double _kColWhere = 160;
 const double _kColComment = 200;
+
 /// Narrow first column: reveal icon; wide enough for "File" + sort arrow.
 const double _kColFile = 72;
-const double _kColActions = 200;
+const double _kColActions = 280;
+
 /// Per-depth indent for path-group chevrons and file icons.
 const double _kPathIndent = 8;
-const double _kTableMinWidth = _kColFile +
+const double _kTableMinWidth =
+    _kColFile +
     _kColThumb +
     _kColWho +
     _kColWhat +
@@ -42,7 +46,7 @@ class LibraryItemsTable extends ConsumerWidget {
     super.key,
     required this.controller,
     required this.onOpenDetail,
-    required this.onDelete,
+    required this.onHideToggle,
     required this.onRemoveFolder,
     required this.onRevealSource,
     this.onRetryFolder,
@@ -53,7 +57,7 @@ class LibraryItemsTable extends ConsumerWidget {
 
   final LibraryTableController controller;
   final void Function(Item item) onOpenDetail;
-  final void Function(Item item) onDelete;
+  final void Function(Item item) onHideToggle;
   final void Function(String dir, int count) onRemoveFolder;
   final void Function(Item item) onRevealSource;
   final void Function(String dir)? onRetryFolder;
@@ -68,105 +72,105 @@ class LibraryItemsTable extends ConsumerWidget {
       listenable: controller,
       builder: (context, _) {
         final entries = controller.visiblePageEntries;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final width = constraints.maxWidth < _kTableMinWidth
-                      ? _kTableMinWidth
-                      : constraints.maxWidth;
-                  return SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: SizedBox(
-                      width: width,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _HeaderRow(
-                            controller: controller,
-                            multiColumnSort: multiColumnSort,
-                          ),
-                          const Divider(height: 1),
-                          Expanded(
-                            child: entries.isEmpty
-                                ? const Center(
-                                    child: Text(
-                                      'No matching items',
-                                      key: Key('items-filtered-empty'),
+        return ItemHoverPreviewScope(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final width = constraints.maxWidth < _kTableMinWidth
+                        ? _kTableMinWidth
+                        : constraints.maxWidth;
+                    return SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: SizedBox(
+                        width: width,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _HeaderRow(
+                              controller: controller,
+                              multiColumnSort: multiColumnSort,
+                            ),
+                            const Divider(height: 1),
+                            Expanded(
+                              child: entries.isEmpty
+                                  ? const Center(
+                                      child: Text(
+                                        'No matching items',
+                                        key: Key('items-filtered-empty'),
+                                      ),
+                                    )
+                                  : ListView.separated(
+                                      key: const Key('items-list'),
+                                      itemCount: entries.length,
+                                      separatorBuilder: (_, _) =>
+                                          const Divider(height: 1),
+                                      itemBuilder: (context, index) {
+                                        final entry = entries[index];
+                                        return switch (entry) {
+                                          LibraryPathGroupHeader(
+                                            :final dir,
+                                            :final label,
+                                            :final count,
+                                            :final collapsed,
+                                            :final depth,
+                                          ) =>
+                                            _PathGroupHeader(
+                                              index: index,
+                                              dir: dir,
+                                              label: label,
+                                              count: count,
+                                              collapsed: collapsed,
+                                              depth: depth,
+                                              failedCount: _failedCountUnder(
+                                                controller,
+                                                dir,
+                                              ),
+                                              retryTooltip: _retryTooltipUnder(
+                                                controller,
+                                                dir,
+                                              ),
+                                              onToggle: () => controller
+                                                  .toggleCollapseSourceDir(dir),
+                                              onRemoveFolder: () =>
+                                                  onRemoveFolder(dir, count),
+                                              onRetryFolder:
+                                                  onRetryFolder == null
+                                                  ? null
+                                                  : () => onRetryFolder!(dir),
+                                              removing:
+                                                  isFolderRemoving?.call(dir) ??
+                                                  false,
+                                              retrying:
+                                                  isFolderRetrying?.call(dir) ??
+                                                  false,
+                                              retryEnabled: retryEnabled,
+                                            ),
+                                          LibraryItemEntry(:final row) =>
+                                            _DataRow(
+                                              index: index,
+                                              row: row,
+                                              controller: controller,
+                                              onOpenDetail: onOpenDetail,
+                                              onHideToggle: onHideToggle,
+                                              onRevealSource: onRevealSource,
+                                            ),
+                                        };
+                                      },
                                     ),
-                                  )
-                                : ListView.separated(
-                                    key: const Key('items-list'),
-                                    itemCount: entries.length,
-                                    separatorBuilder: (_, _) =>
-                                        const Divider(height: 1),
-                                    itemBuilder: (context, index) {
-                                      final entry = entries[index];
-                                      return switch (entry) {
-                                        LibraryPathGroupHeader(
-                                          :final dir,
-                                          :final label,
-                                          :final count,
-                                          :final collapsed,
-                                          :final depth,
-                                        ) =>
-                                          _PathGroupHeader(
-                                            index: index,
-                                            dir: dir,
-                                            label: label,
-                                            count: count,
-                                            collapsed: collapsed,
-                                            depth: depth,
-                                            failedCount: _failedCountUnder(
-                                              controller,
-                                              dir,
-                                            ),
-                                            retryTooltip: _retryTooltipUnder(
-                                              controller,
-                                              dir,
-                                            ),
-                                            onToggle: () => controller
-                                                .toggleCollapseSourceDir(dir),
-                                            onRemoveFolder: () =>
-                                                onRemoveFolder(dir, count),
-                                            onRetryFolder: onRetryFolder ==
-                                                    null
-                                                ? null
-                                                : () => onRetryFolder!(dir),
-                                            removing: isFolderRemoving
-                                                    ?.call(dir) ??
-                                                false,
-                                            retrying: isFolderRetrying
-                                                    ?.call(dir) ??
-                                                false,
-                                            retryEnabled: retryEnabled,
-                                          ),
-                                        LibraryItemEntry(
-                                          :final row,
-                                        ) =>
-                                          _DataRow(
-                                            index: index,
-                                            row: row,
-                                            controller: controller,
-                                            onOpenDetail: onOpenDetail,
-                                            onDelete: onDelete,
-                                            onRevealSource: onRevealSource,
-                                          ),
-                                      };
-                                    },
-                                  ),
-                          ),
-                        ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
-            ),
-            _PaginationBar(controller: controller),
-          ],
+              _PaginationBar(controller: controller),
+            ],
+          ),
         );
       },
     );
@@ -202,10 +206,7 @@ String _retryTooltipUnder(LibraryTableController controller, String dir) {
 }
 
 class _HeaderRow extends StatelessWidget {
-  const _HeaderRow({
-    required this.controller,
-    required this.multiColumnSort,
-  });
+  const _HeaderRow({required this.controller, required this.multiColumnSort});
 
   final LibraryTableController controller;
   final bool multiColumnSort;
@@ -266,35 +267,75 @@ class _HeaderRow extends StatelessWidget {
             SizedBox(
               width: _kColActions,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<ProcessingStatus?>(
-                    key: const Key('library-status-filter'),
-                    isDense: true,
-                    isExpanded: true,
-                    value: controller.statusFilter,
-                    hint: const Text(
-                      'All statuses',
-                      style: TextStyle(fontWeight: FontWeight.w600),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<ProcessingStatus?>(
+                          key: const Key('library-status-filter'),
+                          isDense: true,
+                          isExpanded: true,
+                          value: controller.statusFilter,
+                          hint: const Text(
+                            'All statuses',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
+                          items: [
+                            const DropdownMenuItem<ProcessingStatus?>(
+                              value: null,
+                              child: Text('All statuses'),
+                            ),
+                            ...ProcessingStatus.values.map(
+                              (s) => DropdownMenuItem<ProcessingStatus?>(
+                                value: s,
+                                child: Text(s.wire),
+                              ),
+                            ),
+                          ],
+                          onChanged: (v) => controller.setStatusFilter(v),
+                        ),
+                      ),
                     ),
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: Theme.of(context).colorScheme.onSurface,
+                    SizedBox(
+                      width: 96,
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<HiddenItemsFilter>(
+                          key: const Key('library-hidden-filter'),
+                          isDense: true,
+                          isExpanded: true,
+                          value: controller.hiddenItemsFilter,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: HiddenItemsFilter.visible,
+                              child: Text('Visible'),
+                            ),
+                            DropdownMenuItem(
+                              value: HiddenItemsFilter.hidden,
+                              child: Text('Hidden'),
+                            ),
+                            DropdownMenuItem(
+                              value: HiddenItemsFilter.both,
+                              child: Text('Both'),
+                            ),
+                          ],
+                          onChanged: (v) {
+                            if (v != null) controller.setHiddenItemsFilter(v);
+                          },
                         ),
-                    items: [
-                      const DropdownMenuItem<ProcessingStatus?>(
-                        value: null,
-                        child: Text('All statuses'),
                       ),
-                      ...ProcessingStatus.values.map(
-                        (s) => DropdownMenuItem<ProcessingStatus?>(
-                          value: s,
-                          child: Text(s.wire),
-                        ),
-                      ),
-                    ],
-                    onChanged: (v) => controller.setStatusFilter(v),
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -415,10 +456,7 @@ class _PathGroupHeader extends StatelessWidget {
         child: SizedBox(
           height: 40,
           child: Padding(
-            padding: EdgeInsets.only(
-              left: 4 + depth * _kPathIndent,
-              right: 8,
-            ),
+            padding: EdgeInsets.only(left: 4 + depth * _kPathIndent, right: 8),
             child: Row(
               children: [
                 Icon(
@@ -510,16 +548,13 @@ class _PathGroupHeader extends StatelessWidget {
                               waitDuration: Duration.zero,
                               child: TextButton(
                                 key: Key('source-group-retry-$dir'),
-                                onPressed: retryEnabled
-                                    ? onRetryFolder
-                                    : null,
+                                onPressed: retryEnabled ? onRetryFolder : null,
                                 child: const Text('Retry'),
                               ),
                             ),
                           SureActionButton(
                             idleKey: Key('source-group-remove-$dir'),
-                            confirmKey:
-                                Key('source-group-remove-confirm-$dir'),
+                            confirmKey: Key('source-group-remove-confirm-$dir'),
                             tooltip: 'Remove folder',
                             confirmSemanticsLabel: 'Confirm remove folder',
                             icon: const Icon(
@@ -552,7 +587,7 @@ class _DataRow extends ConsumerWidget {
     required this.row,
     required this.controller,
     required this.onOpenDetail,
-    required this.onDelete,
+    required this.onHideToggle,
     required this.onRevealSource,
   });
 
@@ -560,14 +595,15 @@ class _DataRow extends ConsumerWidget {
   final LibraryTableRow row;
   final LibraryTableController controller;
   final void Function(Item item) onOpenDetail;
-  final void Function(Item item) onDelete;
+  final void Function(Item item) onHideToggle;
   final void Function(Item item) onRevealSource;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final item = row.item;
     final zebra = index.isOdd;
-    final expanded = controller.expandedWho.contains(item.id) ||
+    final expanded =
+        controller.expandedWho.contains(item.id) ||
         controller.expandedWhere.contains(item.id) ||
         controller.expandedComments.contains(item.id);
     return Material(
@@ -598,7 +634,16 @@ class _DataRow extends ConsumerWidget {
                     width: _kColThumb,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: _Thumb(row: row, showScore: ref.watch(desktopPrefsProvider).showSharpnessScores),
+                      child: ItemHoverPreview(
+                        item: item,
+                        controller: controller,
+                        child: _Thumb(
+                          row: row,
+                          showScore: ref
+                              .watch(desktopPrefsProvider)
+                              .showSharpnessScores,
+                        ),
+                      ),
                     ),
                   ),
                   SizedBox(
@@ -663,8 +708,7 @@ class _DataRow extends ConsumerWidget {
                         keyPrefix: 'comment',
                         itemId: item.id,
                         values: row.comments,
-                        expanded:
-                            controller.expandedComments.contains(item.id),
+                        expanded: controller.expandedComments.contains(item.id),
                         loading: !row.commentsLoaded,
                         onToggle: () =>
                             controller.toggleExpandComments(item.id),
@@ -687,14 +731,24 @@ class _DataRow extends ConsumerWidget {
                               ),
                             ),
                           ),
-                          SureActionButton(
-                            idleKey: Key('item-list-remove-${item.id}'),
-                            confirmKey:
-                                Key('item-list-remove-confirm-${item.id}'),
-                            tooltip: 'Remove item',
-                            confirmSemanticsLabel: 'Confirm remove item',
-                            icon: const Icon(Icons.remove_circle_outline),
-                            onConfirm: () => onDelete(item),
+                          IconButton(
+                            key: Key('item-list-hide-${item.id}'),
+                            tooltip: item.isHidden
+                                ? 'Unhide item'
+                                : 'Hide item',
+                            icon: Icon(
+                              item.isHidden
+                                  ? Icons.visibility_outlined
+                                  : Icons.visibility_off_outlined,
+                              size: 18,
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
+                            onPressed: () => onHideToggle(item),
                           ),
                         ],
                       ),
@@ -764,7 +818,8 @@ class _Thumb extends StatelessWidget {
         ? Icons.videocam_outlined
         : Icons.image_outlined;
     final status = row.thumb?.status;
-    final missing = status == LocalMediaStatus.missing ||
+    final missing =
+        status == LocalMediaStatus.missing ||
         status == LocalMediaStatus.accessDenied;
     return ColoredBox(
       color: Colors.black12,
@@ -870,7 +925,8 @@ class _WhereEntryLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final style = Theme.of(context).textTheme.bodyMedium;
     final regionName = entry.regionName;
-    final showAdd = regionName != null &&
+    final showAdd =
+        regionName != null &&
         entry.region != null &&
         !isFamiliarRegion(regionName, familiarCsv);
 
@@ -1240,15 +1296,14 @@ class _PaginationBar extends StatelessWidget {
               total == 0
                   ? '0 items'
                   : '${page * controller.pageSize + 1}–'
-                      '${page * controller.pageSize + controller.visiblePageEntries.length} '
-                      'of $total',
+                        '${page * controller.pageSize + controller.visiblePageEntries.length} '
+                        'of $total',
               key: const Key('library-page-label'),
             ),
             const Spacer(),
             IconButton(
               key: const Key('library-page-prev'),
-              onPressed:
-                  page <= 0 ? null : () => controller.setPage(page - 1),
+              onPressed: page <= 0 ? null : () => controller.setPage(page - 1),
               icon: const Icon(Icons.chevron_left),
             ),
             Text('Page ${page + 1} / $pages'),

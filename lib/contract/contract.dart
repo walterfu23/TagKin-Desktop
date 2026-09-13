@@ -947,6 +947,7 @@ class Item {
     this.sharpness,
     required this.schemaVersion,
     required this.createdAt,
+    required this.isHidden,
   });
 
   final String id;
@@ -964,6 +965,7 @@ class Item {
   final double? sharpness;
   final int schemaVersion;
   final String createdAt;
+  final bool isHidden;
 
   factory Item.fromJson(Map<String, dynamic> json) => Item(
         id: json['id'] as String,
@@ -981,6 +983,7 @@ class Item {
         sharpness: json['sharpness'] == null ? null : (json['sharpness'] as num).toDouble(),
         schemaVersion: (json['schemaVersion'] as num).toInt(),
         createdAt: json['createdAt'] as String,
+        isHidden: json['isHidden'] as bool,
       );
 
   Map<String, dynamic> toJson() {
@@ -1000,6 +1003,7 @@ class Item {
     if (sharpness != null) json['sharpness'] = sharpness;
     json['schemaVersion'] = schemaVersion;
     json['createdAt'] = createdAt;
+    json['isHidden'] = isHidden;
     return json;
   }
 }
@@ -2068,6 +2072,24 @@ class RetargetItemSourceRef {
     json['sourceRef'] = sourceRef;
     if (contentHash != null) json['contentHash'] = contentHash;
     if (perceptualHash != null) json['perceptualHash'] = perceptualHash;
+    return json;
+  }
+}
+
+class SetItemHidden {
+  const SetItemHidden({
+    required this.isHidden,
+  });
+
+  final bool isHidden;
+
+  factory SetItemHidden.fromJson(Map<String, dynamic> json) => SetItemHidden(
+        isHidden: json['isHidden'] as bool,
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['isHidden'] = isHidden;
     return json;
   }
 }

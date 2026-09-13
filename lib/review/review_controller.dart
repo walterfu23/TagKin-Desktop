@@ -261,6 +261,7 @@ class ReviewController extends ChangeNotifier {
         processingError: item.processingError,
         schemaVersion: item.schemaVersion,
         createdAt: item.createdAt,
+        isHidden: item.isHidden,
       ),
       tags: snapshot.tags,
       keyPeriods: snapshot.keyPeriods,

@@ -682,36 +682,51 @@ void main() {
     expect(find.byKey(const Key('items-retry')), findsOneWidget);
   });
 
-  testWidgets('list remove uses Sure? then removes row via API', (
-    tester,
-  ) async {
-    final item = fixtureItem(id: 'item_list_del');
-    final items = FakeItemsRepository(items: [item]);
-    final jobs = FakeJobsRepository(
-      itemId: 'item_list_del',
-      item: item,
-      onDelete: items.removeItem,
-    );
-    await _pumpLibrary(tester, items: items, jobs: jobs);
-    expect(find.byKey(const Key('item-row-item_list_del')), findsOneWidget);
+  testWidgets(
+    'list hide toggle hides an item immediately, no confirm dialog',
+    (tester) async {
+      final item = fixtureItem(id: 'item_list_hide');
+      final items = FakeItemsRepository(items: [item]);
+      final jobs = FakeJobsRepository(itemId: 'item_list_hide', item: item);
+      await _pumpLibrary(tester, items: items, jobs: jobs);
+      expect(
+        find.byKey(const Key('item-row-item_list_hide')),
+        findsOneWidget,
+      );
 
-    await tester.ensureVisible(
-      find.byKey(const Key('item-list-remove-item_list_del')),
-    );
-    await tester.tap(find.byKey(const Key('item-list-remove-item_list_del')));
-    await tester.pump();
-    expect(find.text('Sure?'), findsOneWidget);
-    expect(find.text('Delete item?'), findsNothing);
+      await tester.ensureVisible(
+        find.byKey(const Key('item-list-hide-item_list_hide')),
+      );
+      await tester.tap(
+        find.byKey(const Key('item-list-hide-item_list_hide')),
+      );
+      await tester.pumpAndSettle();
 
-    await tester.tap(
-      find.byKey(const Key('item-list-remove-confirm-item_list_del')),
-    );
-    await tester.pumpAndSettle();
+      // Non-destructive: no two-step Sure? confirm.
+      expect(find.text('Sure?'), findsNothing);
+      expect(
+        items.setItemHiddenCalls,
+        [(itemId: 'item_list_hide', isHidden: true)],
+      );
+      // Hidden items are excluded from Folders by default (Visible filter)
+      // — the item stays in the account, only the row hides.
+      expect(find.byKey(const Key('item-row-item_list_hide')), findsNothing);
 
-    expect(jobs.deletedItemIds, ['item_list_del']);
-    expect(find.byKey(const Key('item-row-item_list_del')), findsNothing);
-    expect(find.byKey(const Key('items-empty')), findsOneWidget);
-  });
+      // Hide-column Both reveals it again (still marked isHidden: true).
+      await tester.tap(find.byKey(const Key('library-hidden-filter')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Both').last);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('item-row-item_list_hide')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('item-list-hide-item_list_hide')),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('remove folder confirms and soft-deletes subtree items', (
     tester,

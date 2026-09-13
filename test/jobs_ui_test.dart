@@ -137,19 +137,16 @@ void main() {
     expect(find.byKey(const Key('analyze-photo-only-hint')), findsNothing);
   });
 
-  testWidgets('Delete confirms and pops with deleted result', (tester) async {
+  testWidgets('Hide toggles item.isHidden immediately, no confirm dialog',
+      (tester) async {
     tester.view.physicalSize = const Size(1440, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final item = fixtureItem(id: 'item_del');
+    final item = fixtureItem(id: 'item_hide');
     final items = FakeItemsRepository(items: [item]);
-    final jobs = FakeJobsRepository(
-      itemId: 'item_del',
-      item: item,
-      onDelete: items.removeItem,
-    );
+    final jobs = FakeJobsRepository(itemId: 'item_hide', item: item);
     await tester.pumpWidget(
       ProviderScope(
         overrides: _overrides(
@@ -160,20 +157,36 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const Key('item-what-item_del')));
-    await tester.tap(find.byKey(const Key('item-what-item_del')));
+    await tester.ensureVisible(find.byKey(const Key('item-what-item_hide')));
+    await tester.tap(find.byKey(const Key('item-what-item_hide')));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('item-delete')));
-    await tester.pump();
-    expect(find.text('Sure?'), findsOneWidget);
-    expect(find.text('Delete item?'), findsNothing);
-    await tester.tap(find.byKey(const Key('item-remove-confirm')));
-    await tester.pumpAndSettle();
+    expect(
+      tester.widget<IconButton>(find.byKey(const Key('item-hide-toggle'))).tooltip,
+      'Hide item',
+    );
 
-    expect(jobs.deleteCallCount, 1);
-    // Back on list — deleted item gone after refresh.
-    expect(find.byKey(const Key('item-row-item_del')), findsNothing);
+    // Non-destructive: no two-step Sure? confirm, and the page stays open.
+    await tester.tap(find.byKey(const Key('item-hide-toggle')));
+    await tester.pumpAndSettle();
+    expect(find.text('Sure?'), findsNothing);
+    expect(items.setItemHiddenCalls, [(itemId: 'item_hide', isHidden: true)]);
+    expect(find.byKey(const Key('item-detail')), findsOneWidget);
+    expect(
+      tester.widget<IconButton>(find.byKey(const Key('item-hide-toggle'))).tooltip,
+      'Unhide item',
+    );
+
+    // Toggling back sends isHidden: false.
+    await tester.tap(find.byKey(const Key('item-hide-toggle')));
+    await tester.pumpAndSettle();
+    expect(
+      items.setItemHiddenCalls,
+      [
+        (itemId: 'item_hide', isHidden: true),
+        (itemId: 'item_hide', isHidden: false),
+      ],
+    );
   });
 
   testWidgets('tagged photo has no Analyze or re-analyze dialog',

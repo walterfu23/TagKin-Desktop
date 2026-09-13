@@ -203,4 +203,14 @@ class ItemsRepository {
     );
     return Item.fromJson(_client.decodeMap(response, 'source-ref'));
   }
+
+  /// `PATCH /items/{id}/hidden` — non-destructive show/hide (D2). The item
+  /// stays fully in the library and is never excluded from [listItems].
+  Future<Item> setItemHidden(String itemId, bool isHidden) async {
+    final response = await _client.patch(
+      '/items/$itemId/hidden',
+      body: SetItemHidden(isHidden: isHidden).toJson(),
+    );
+    return Item.fromJson(_client.decodeMap(response, 'hidden'));
+  }
 }

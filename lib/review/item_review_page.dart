@@ -11,6 +11,7 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/knowledge/key_period_bounds_dialog.dart';
 import 'package:tagkin_desktop/library/item_detail_edits.dart';
 import 'package:tagkin_desktop/library/item_fields_group.dart';
+import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/persons/person_detail_page.dart';
 import 'package:tagkin_desktop/persons/person_name.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
@@ -472,6 +473,21 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     );
   }
 
+  Future<void> _excludeOtherCrops(String keepTagId) async {
+    final review = ref.read(reviewControllerProvider(widget.itemId));
+    final knowledge = review.knowledge;
+    if (knowledge == null) return;
+    _mutateDraft(
+      () {
+        for (final tag in whoFaceCropTags(knowledge)) {
+          if (tag.id == keepTagId) continue;
+          _cropIntents[tag.id] = const PersonAssignIntent(exclude: true);
+        }
+      },
+      label: 'Exclude other faces',
+    );
+  }
+
   Future<void> _includeDraftCrop(String tagId) async {
     _mutateDraft(
       () {
@@ -524,6 +540,15 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     );
   }
 
+  Future<void> _refreshFoldersRows(Iterable<String> itemIds) async {
+    if (!mounted) return;
+    final container = ProviderScope.containerOf(context, listen: false);
+    if (!container.exists(libraryTableControllerProvider)) return;
+    await container
+        .read(libraryTableControllerProvider)
+        .refreshRowSummariesFor(itemIds);
+  }
+
   Future<void> _save() async {
     if (_saving || !_isDirty) return;
     final review = ref.read(reviewControllerProvider(widget.itemId));
@@ -550,6 +575,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     final forwardPending = List<PersonAssignIntent>.from(_pendingItemAssigns);
     final createdExclusionIds = <String>[];
     final alsoMovedIds = <String>[];
+    final alsoMovedItemIds = <String>{};
     String? alsoMovedDestName;
     final includedExclusionTagIds = <({String exclusionId, String? tagId})>[];
 
@@ -601,6 +627,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
         );
         createdExclusionIds.addAll(applied.createdExclusionIds);
         alsoMovedIds.addAll(applied.alsoMovedIds);
+        alsoMovedItemIds.addAll(applied.alsoMovedItemIds);
         alsoMovedDestName = applied.alsoMovedDestName;
       }
       await review.saveItemComment(forwardComment);
@@ -615,6 +642,8 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
       _exclusionIntents.clear();
       _pendingItemAssigns.clear();
       _baselineReady = true;
+      await _refreshFoldersRows({widget.itemId, ...alsoMovedItemIds});
+      if (!mounted) return;
       if (alsoMovedIds.isNotEmpty) {
         final n = alsoMovedIds.length;
         final faces = n == 1
@@ -677,6 +706,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
               );
             });
             _publishDirty();
+            await _refreshFoldersRows({widget.itemId, ...alsoMovedItemIds});
           },
           onRedo: () async {
             if (forwardExclusions.isNotEmpty) {
@@ -739,6 +769,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
               _pendingItemAssigns.clear();
             });
             _publishDirty();
+            await _refreshFoldersRows({widget.itemId, ...alsoMovedItemIds});
           },
         ),
       );
@@ -757,6 +788,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
       ({
         List<String> createdExclusionIds,
         List<String> alsoMovedIds,
+        Set<String> alsoMovedItemIds,
         String? alsoMovedDestName,
       })> _applyPersonIntents({
     required ItemKnowledge? knowledge,
@@ -770,6 +802,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     final unlinked = <String>{};
     final createdExclusionIds = <String>[];
     final alsoMovedIds = <String>[];
+    final alsoMovedItemIds = <String>{};
     String? alsoMovedDestName;
 
     void noteAlsoMoved(
@@ -779,6 +812,10 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
       if (result.alsoMoved.isEmpty) return;
       for (final a in result.alsoMoved) {
         alsoMovedIds.add(a.id);
+        final itemId = a.itemId;
+        if (itemId != null && itemId.isNotEmpty) {
+          alsoMovedItemIds.add(itemId);
+        }
       }
       if (alsoMovedDestName != null && alsoMovedDestName!.isNotEmpty) return;
       final named = intent.name?.trim();
@@ -852,6 +889,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     return (
       createdExclusionIds: createdExclusionIds,
       alsoMovedIds: alsoMovedIds,
+      alsoMovedItemIds: alsoMovedItemIds,
       alsoMovedDestName: alsoMovedDestName,
     );
   }
@@ -1046,6 +1084,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
       onReassignAppearance: _reassignAppearance,
       onUnassign: _unassignAppearance,
       onExcludeCrop: _excludeCrop,
+      onExcludeOtherCrops: _excludeOtherCrops,
       onAssignIncludedExclusion: _assignIncludedExclusion,
       onExcludeIncludedExclusion: _excludeIncludedExclusion,
       onRemovePendingItemAssign: (index) {

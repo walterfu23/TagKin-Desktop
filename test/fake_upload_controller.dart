@@ -48,6 +48,7 @@ class FakeUploadController extends UploadController {
       processingError: item.processingError,
       schemaVersion: item.schemaVersion,
       createdAt: item.createdAt,
+      isHidden: item.isHidden,
     );
     final outcome = UploadOutcome(
       itemId: item.id,

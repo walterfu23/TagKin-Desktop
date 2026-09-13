@@ -33,7 +33,7 @@ class FakeItemsRepository implements ItemsRepository {
   final Future<void> Function()? onListItems;
 
   /// Optional hook before returning knowledge (e.g. delay Folders apply).
-  final Future<void> Function(String itemId)? onGetKnowledge;
+  Future<void> Function(String itemId)? onGetKnowledge;
 
   /// When set, [createWhoExclusion] / [undoWhoExclusion] also mutate the
   /// linked persons fake (copy faceGroupId, move appearances ↔ exclusions).
@@ -188,6 +188,7 @@ class FakeItemsRepository implements ItemsRepository {
       processingStatus: ProcessingStatus.pending,
       schemaVersion: 1,
       createdAt: '2026-07-19T00:00:00.000Z',
+      isHidden: false,
     );
     _items.add(item);
     return item;
@@ -260,6 +261,7 @@ class FakeItemsRepository implements ItemsRepository {
       processingError: null,
       schemaVersion: prev.schemaVersion,
       createdAt: prev.createdAt,
+      isHidden: prev.isHidden,
     );
     _items[index] = updated;
     return updated;
@@ -567,6 +569,40 @@ class FakeItemsRepository implements ItemsRepository {
       sharpness: prev.sharpness,
       schemaVersion: prev.schemaVersion,
       createdAt: prev.createdAt,
+      isHidden: prev.isHidden,
+    );
+    _items[index] = updated;
+    return updated;
+  }
+
+  final List<({String itemId, bool isHidden})> setItemHiddenCalls =
+      <({String itemId, bool isHidden})>[];
+
+  @override
+  Future<Item> setItemHidden(String itemId, bool isHidden) async {
+    setItemHiddenCalls.add((itemId: itemId, isHidden: isHidden));
+    final index = _items.indexWhere((i) => i.id == itemId);
+    if (index < 0) {
+      throw ApiException(statusCode: 404, message: 'Not found');
+    }
+    final prev = _items[index];
+    final updated = Item(
+      id: prev.id,
+      type: prev.type,
+      sourceType: prev.sourceType,
+      sourceRef: prev.sourceRef,
+      analysisRef: prev.analysisRef,
+      analysisRefState: prev.analysisRefState,
+      contentHash: prev.contentHash,
+      perceptualHash: prev.perceptualHash,
+      dedupOfItemId: prev.dedupOfItemId,
+      capturedAt: prev.capturedAt,
+      processingStatus: prev.processingStatus,
+      processingError: prev.processingError,
+      sharpness: prev.sharpness,
+      schemaVersion: prev.schemaVersion,
+      createdAt: prev.createdAt,
+      isHidden: isHidden,
     );
     _items[index] = updated;
     return updated;
@@ -585,6 +621,7 @@ Item fixtureItem({
   String? contentHash = '__default__',
   String? processingError,
   double? sharpness,
+  bool isHidden = false,
 }) {
   return Item(
     id: id,
@@ -600,6 +637,7 @@ Item fixtureItem({
     sharpness: sharpness,
     schemaVersion: 1,
     createdAt: '2026-07-19T00:00:00.000Z',
+    isHidden: isHidden,
   );
 }
 

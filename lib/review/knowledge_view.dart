@@ -32,6 +32,7 @@ class KnowledgeView extends StatefulWidget {
     this.onReassignAppearance,
     this.onUnassign,
     this.onExcludeCrop,
+    this.onExcludeOtherCrops,
     this.onAssignIncludedExclusion,
     this.onExcludeIncludedExclusion,
     this.onRemovePendingItemAssign,
@@ -68,6 +69,7 @@ class KnowledgeView extends StatefulWidget {
   })? onReassignAppearance;
   final Future<void> Function(String appearanceId)? onUnassign;
   final Future<void> Function(String tagId)? onExcludeCrop;
+  final Future<void> Function(String keepTagId)? onExcludeOtherCrops;
   final Future<void> Function(
     String exclusionId, {
     String? personId,
@@ -153,6 +155,10 @@ class _KnowledgeViewState extends State<KnowledgeView> {
     await widget.onExcludeCrop!(tagId);
     if (!mounted) return;
     if (_selected == 'crop:$tagId') setState(() => _selected = null);
+  }
+
+  Future<void> _excludeOtherCrops(String keepTagId) async {
+    await widget.onExcludeOtherCrops!(keepTagId);
   }
 
   Future<void> _excludeIncluded(String exclusionId) async {
@@ -345,6 +351,10 @@ class _KnowledgeViewState extends State<KnowledgeView> {
             onAssignCrop: widget.onAssignCrop,
             onUnassign: widget.onUnassign,
             onExcludeCrop: widget.onExcludeCrop == null ? null : _excludeCrop,
+            onExcludeOtherCrops: widget.onExcludeOtherCrops == null
+                ? null
+                : _excludeOtherCrops,
+            cropIntents: widget.cropIntents,
           )
         else if (selectedIncluded != null)
           _IncludedActions(
@@ -550,6 +560,8 @@ class _CropActions extends StatelessWidget {
     this.onAssignCrop,
     this.onUnassign,
     this.onExcludeCrop,
+    this.onExcludeOtherCrops,
+    this.cropIntents = const {},
   });
 
   final Tag tag;
@@ -567,6 +579,8 @@ class _CropActions extends StatelessWidget {
   })? onAssignCrop;
   final Future<void> Function(String appearanceId)? onUnassign;
   final Future<void> Function(String tagId)? onExcludeCrop;
+  final Future<void> Function(String keepTagId)? onExcludeOtherCrops;
+  final Map<String, PersonAssignIntent> cropIntents;
 
   @override
   Widget build(BuildContext context) {
@@ -584,6 +598,18 @@ class _CropActions extends StatelessWidget {
         personId != null &&
         onUnassign != null &&
         !effective.unassign;
+    var hasOtherCrops = false;
+    if (onExcludeOtherCrops != null) {
+      for (final other in whoFaceCropTags(knowledge)) {
+        if (other.id == tag.id) continue;
+        if (cropIntents[other.id]?.exclude == true) continue;
+        hasOtherCrops = true;
+        break;
+      }
+    }
+    final othersLabel = knowledge.item.type == ItemType.video
+        ? 'Exclude others from video'
+        : 'Exclude others from photo';
     return Column(
       key: const Key('item-face-actions'),
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -606,7 +632,10 @@ class _CropActions extends StatelessWidget {
               ),
             ),
           ),
-        if (canOpenPerson || canUnassign || onExcludeCrop != null)
+        if (canOpenPerson ||
+            canUnassign ||
+            onExcludeCrop != null ||
+            hasOtherCrops)
           Wrap(
             spacing: 8,
             children: [
@@ -629,6 +658,13 @@ class _CropActions extends StatelessWidget {
                   key: Key('item-exclude-face-${tag.id}'),
                   onPressed: enabled ? () => onExcludeCrop!(tag.id) : null,
                   child: const Text('Exclude from photo'),
+                ),
+              if (hasOtherCrops)
+                TextButton(
+                  key: Key('item-exclude-others-face-${tag.id}'),
+                  onPressed:
+                      enabled ? () => onExcludeOtherCrops!(tag.id) : null,
+                  child: Text(othersLabel),
                 ),
             ],
           ),

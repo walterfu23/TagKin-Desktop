@@ -27,6 +27,10 @@ import 'package:tagkin_desktop/ui/alpha_order.dart';
 /// Columns that support header sorting on the library table.
 enum LibrarySortColumn { who, what, where, source, comment, type, status }
 
+/// Folders Hide-column filter ([Item.isHidden]). Default [visible] matches
+/// the previous "hidden items stay out of Folders" behavior.
+enum HiddenItemsFilter { visible, hidden, both }
+
 /// One sort key in a multi-column sort stack.
 class LibrarySortKey {
   const LibrarySortKey(this.column, {this.ascending = true});
@@ -89,6 +93,7 @@ class LibraryTableRow {
     this.whereEntries = const [],
     this.whereRaw = const [],
     this.comments = const [],
+    this.keyPeriods = const [],
     this.knowledgeLoaded = false,
     this.commentsLoaded = false,
     this.heldBadgeStatus,
@@ -108,6 +113,9 @@ class LibraryTableRow {
   /// Raw where tag values (for re-resolving after prefs change).
   final List<String> whereRaw;
   final List<String> comments;
+
+  /// Video key periods from `/knowledge` (empty for photos / before load).
+  final List<KeyPeriodKnowledge> keyPeriods;
   final bool knowledgeLoaded;
   final bool commentsLoaded;
 
@@ -155,6 +163,7 @@ class LibraryTableRow {
     List<WhereDisplay>? whereEntries,
     List<String>? whereRaw,
     List<String>? comments,
+    List<KeyPeriodKnowledge>? keyPeriods,
     bool? knowledgeLoaded,
     bool? commentsLoaded,
     ProcessingStatus? heldBadgeStatus,
@@ -167,6 +176,7 @@ class LibraryTableRow {
       whereEntries: whereEntries ?? this.whereEntries,
       whereRaw: whereRaw ?? this.whereRaw,
       comments: comments ?? this.comments,
+      keyPeriods: keyPeriods ?? this.keyPeriods,
       knowledgeLoaded: knowledgeLoaded ?? this.knowledgeLoaded,
       commentsLoaded: commentsLoaded ?? this.commentsLoaded,
       heldBadgeStatus: heldBadgeStatus ?? this.heldBadgeStatus,
@@ -266,6 +276,19 @@ class LibraryTableController extends ChangeNotifier {
   /// ([DesktopPrefs.itemListBlurrySharpnessThreshold]).
   double blurThreshold;
 
+  /// Folders Hide-column filter ([Item.isHidden]). In-memory (not a
+  /// [DesktopPrefs] entry) — the hidden state itself is server-persisted.
+  HiddenItemsFilter _hiddenItemsFilter = HiddenItemsFilter.visible;
+
+  HiddenItemsFilter get hiddenItemsFilter => _hiddenItemsFilter;
+
+  void setHiddenItemsFilter(HiddenItemsFilter value) {
+    if (value == _hiddenItemsFilter) return;
+    _hiddenItemsFilter = value;
+    pageIndex = 0;
+    _notify();
+  }
+
   /// When non-null, only rows whose leaf folder is in this set are shown.
   Set<String>? collectionLeafFolders;
 
@@ -294,6 +317,25 @@ class LibraryTableController extends ChangeNotifier {
 
   List<LibraryTableRow> get allRows => _rows;
 
+  LibraryTableRow? rowById(String itemId) {
+    for (final r in _rows) {
+      if (r.item.id == itemId) return r;
+    }
+    return null;
+  }
+
+  /// Cached key periods when `/knowledge` has already been applied; otherwise
+  /// fetches (same path as table warm-up) and returns the refreshed list.
+  Future<List<KeyPeriodKnowledge>> ensureKeyPeriods(String itemId) async {
+    if (_disposed) return const [];
+    final existing = rowById(itemId);
+    if (existing == null) return const [];
+    if (existing.knowledgeLoaded) return existing.keyPeriods;
+    await _fetchAndApplyKnowledge(itemId);
+    if (_disposed) return const [];
+    return rowById(itemId)?.keyPeriods ?? const [];
+  }
+
   List<LibraryTableRow> get filteredSorted {
     var list = List<LibraryTableRow>.from(_rows);
     final collectionFolders = collectionLeafFolders;
@@ -321,11 +363,16 @@ class LibraryTableController extends ChangeNotifier {
     }
     if (_hideBlurryPhotos) {
       list = list.where((r) {
-        return !isHiddenBlurryPhoto(
-          item: r.item,
-          threshold: blurThreshold,
-        );
+        return !isHiddenBlurryPhoto(item: r.item, threshold: blurThreshold);
       }).toList();
+    }
+    switch (_hiddenItemsFilter) {
+      case HiddenItemsFilter.visible:
+        list = list.where((r) => !r.item.isHidden).toList();
+      case HiddenItemsFilter.hidden:
+        list = list.where((r) => r.item.isHidden).toList();
+      case HiddenItemsFilter.both:
+        break;
     }
     if (sortKeys.isNotEmpty) {
       list.sort((a, b) {
@@ -380,8 +427,7 @@ class LibraryTableController extends ChangeNotifier {
         ..._rows,
         LibraryTableRow(
           item: item,
-          heldBadgeStatus:
-              goingTagged ? ProcessingStatus.processing : null,
+          heldBadgeStatus: goingTagged ? ProcessingStatus.processing : null,
         ),
       ];
       _notify();
@@ -407,41 +453,61 @@ class LibraryTableController extends ChangeNotifier {
 
   /// Re-fetch Item + who/what/where + comments for one Folders row (item
   /// detail Save / leave, including when detail was opened from Faces).
-  Future<void> refreshRowSummaries(String itemId) async {
+  Future<void> refreshRowSummaries(String itemId) {
+    return refreshRowSummariesFor([itemId]);
+  }
+
+  /// Re-fetch Item + who/what/where + comments for loaded Folders rows.
+  ///
+  /// Ids that are not in the table are skipped. Person names are fetched
+  /// once, then each remaining id is refreshed (alike-face Save siblings).
+  Future<void> refreshRowSummariesFor(Iterable<String> itemIds) async {
     if (_disposed) return;
-    if (!_rows.any((r) => r.item.id == itemId)) return;
-    _replaceRow(
-      itemId,
-      (r) => r.copyWith(
-        who: const [],
-        what: const [],
-        whereEntries: const [],
-        whereRaw: const [],
-        comments: const [],
-        knowledgeLoaded: false,
-        commentsLoaded: false,
-        heldBadgeStatus: r.item.processingStatus == ProcessingStatus.tagged
-            ? ProcessingStatus.tagged
-            : r.heldBadgeStatus,
-      ),
-    );
-    try {
-      await _refreshPersonNames();
-      if (_disposed || !_rows.any((r) => r.item.id == itemId)) return;
-      final fetched = await itemsRepository.getItem(itemId);
-      if (_disposed || !_rows.any((r) => r.item.id == itemId)) return;
-      final live = _resolveLiveItem(fetched);
-      _adoptedById[itemId] = live;
-      _replaceRow(itemId, (r) => r.copyWith(item: live));
-      await _fetchAndApplyKnowledge(itemId);
-      if (_disposed || !_rows.any((r) => r.item.id == itemId)) return;
-      await _fetchAndApplyComments(itemId);
-    } catch (_) {
-      if (_disposed) return;
+    final ids = <String>[];
+    final seen = <String>{};
+    for (final id in itemIds) {
+      if (!seen.add(id)) continue;
+      if (!_rows.any((r) => r.item.id == id)) continue;
+      ids.add(id);
+    }
+    if (ids.isEmpty) return;
+    for (final itemId in ids) {
       _replaceRow(
         itemId,
-        (r) => r.copyWith(knowledgeLoaded: true, commentsLoaded: true),
+        (r) => r.copyWith(
+          who: const [],
+          what: const [],
+          whereEntries: const [],
+          whereRaw: const [],
+          comments: const [],
+          keyPeriods: const [],
+          knowledgeLoaded: false,
+          commentsLoaded: false,
+          heldBadgeStatus: r.item.processingStatus == ProcessingStatus.tagged
+              ? ProcessingStatus.tagged
+              : r.heldBadgeStatus,
+        ),
       );
+    }
+    await _refreshPersonNames();
+    for (final itemId in ids) {
+      if (_disposed || !_rows.any((r) => r.item.id == itemId)) continue;
+      try {
+        final fetched = await itemsRepository.getItem(itemId);
+        if (_disposed || !_rows.any((r) => r.item.id == itemId)) continue;
+        final live = _resolveLiveItem(fetched);
+        _adoptedById[itemId] = live;
+        _replaceRow(itemId, (r) => r.copyWith(item: live));
+        await _fetchAndApplyKnowledge(itemId);
+        if (_disposed || !_rows.any((r) => r.item.id == itemId)) continue;
+        await _fetchAndApplyComments(itemId);
+      } catch (_) {
+        if (_disposed) return;
+        _replaceRow(
+          itemId,
+          (r) => r.copyWith(knowledgeLoaded: true, commentsLoaded: true),
+        );
+      }
     }
   }
 
@@ -801,12 +867,7 @@ class LibraryTableController extends ChangeNotifier {
   int _bumpSeq(Map<String, int> seqs, String id) =>
       seqs[id] = (seqs[id] ?? 0) + 1;
 
-  bool _seqCurrent(
-    Map<String, int> seqs,
-    String id,
-    int seq, {
-    int? loadGen,
-  }) {
+  bool _seqCurrent(Map<String, int> seqs, String id, int seq, {int? loadGen}) {
     if (_disposed) return false;
     if (loadGen != null && _loadGeneration != loadGen) return false;
     return seqs[id] == seq;
@@ -830,6 +891,7 @@ class LibraryTableController extends ChangeNotifier {
           what: grouped['what']!.map((t) => t.value).toList(),
           whereEntries: whereEntries,
           whereRaw: whereRaw,
+          keyPeriods: knowledge.keyPeriods,
           knowledgeLoaded: true,
         ),
       );

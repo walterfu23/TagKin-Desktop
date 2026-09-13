@@ -26,6 +26,7 @@ Map<String, dynamic> _itemJson({
       'processingStatus': status,
       'schemaVersion': 1,
       'createdAt': '2026-07-19T00:00:00.000Z',
+      'isHidden': false,
     };
 
 void main() {

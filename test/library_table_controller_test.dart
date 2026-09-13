@@ -82,6 +82,7 @@ void main() {
     expect(rowA.what, ['swim']);
     expect(rowA.where, ['pool']);
     expect(rowA.comments, ['nice day']);
+    expect(rowA.keyPeriods, isEmpty);
     expect(rowA.knowledgeLoaded, isTrue);
     expect(rowA.commentsLoaded, isTrue);
   });
@@ -365,10 +366,7 @@ void main() {
       );
       await controller.load();
       controller.setHideBlurryPhotos(true);
-      expect(
-        controller.filteredSorted.map((r) => r.item.id),
-        ['sharp'],
-      );
+      expect(controller.filteredSorted.map((r) => r.item.id), ['sharp']);
 
       controller.setHideBlurryPhotos(false);
       expect(controller.filteredSorted, hasLength(2));
@@ -426,52 +424,50 @@ void main() {
       expect(controller.filteredSorted, isEmpty);
     });
 
-    test('folder header count drops immediately from stored sharpness',
-        () async {
-      const shared = '/albums/20260516';
-      final items = [
-        fixtureItem(
-          id: 'b1',
-          sharpness: 5,
-          sourceRef: 'file://$shared/a.jpg',
-        ),
-        fixtureItem(
-          id: 'b2',
-          sharpness: 10,
-          sourceRef: 'file://$shared/b.jpg',
-        ),
-        fixtureItem(
-          id: 'ok',
-          sharpness: 400,
-          sourceRef: 'file://$shared/c.jpg',
-        ),
-      ];
-      final controller = LibraryTableController(
-        itemsRepository: FakeItemsRepository(items: items),
-        commentsRepository: FakeCommentsRepository(),
-        thumbCache: LocalThumbCache(),
-        pageSize: 10,
-      );
-      await controller.load();
-      expect(controller.filteredSorted, hasLength(3));
-      final beforeHeaders = controller.visibleEntries
-          .whereType<LibraryPathGroupHeader>()
-          .toList();
-      expect(beforeHeaders, isNotEmpty);
-      expect(beforeHeaders.first.count, 3);
-      controller.setHideBlurryPhotos(true);
-      expect(controller.filteredSorted, hasLength(1));
-      expect(controller.filteredSorted.single.item.id, 'ok');
-    });
+    test(
+      'folder header count drops immediately from stored sharpness',
+      () async {
+        const shared = '/albums/20260516';
+        final items = [
+          fixtureItem(
+            id: 'b1',
+            sharpness: 5,
+            sourceRef: 'file://$shared/a.jpg',
+          ),
+          fixtureItem(
+            id: 'b2',
+            sharpness: 10,
+            sourceRef: 'file://$shared/b.jpg',
+          ),
+          fixtureItem(
+            id: 'ok',
+            sharpness: 400,
+            sourceRef: 'file://$shared/c.jpg',
+          ),
+        ];
+        final controller = LibraryTableController(
+          itemsRepository: FakeItemsRepository(items: items),
+          commentsRepository: FakeCommentsRepository(),
+          thumbCache: LocalThumbCache(),
+          pageSize: 10,
+        );
+        await controller.load();
+        expect(controller.filteredSorted, hasLength(3));
+        final beforeHeaders = controller.visibleEntries
+            .whereType<LibraryPathGroupHeader>()
+            .toList();
+        expect(beforeHeaders, isNotEmpty);
+        expect(beforeHeaders.first.count, 3);
+        controller.setHideBlurryPhotos(true);
+        expect(controller.filteredSorted, hasLength(1));
+        expect(controller.filteredSorted.single.item.id, 'ok');
+      },
+    );
 
     test('folder header (N) drops while the group stays collapsed', () async {
       const shared = '/albums/20260516';
       final items = [
-        fixtureItem(
-          id: 'b1',
-          sharpness: 5,
-          sourceRef: 'file://$shared/a.jpg',
-        ),
+        fixtureItem(id: 'b1', sharpness: 5, sourceRef: 'file://$shared/a.jpg'),
         fixtureItem(
           id: 'ok1',
           sharpness: 400,
@@ -490,11 +486,13 @@ void main() {
         pageSize: 10,
       );
       await controller.load();
-      final before = controller.visibleEntries.whereType<LibraryPathGroupHeader>();
+      final before = controller.visibleEntries
+          .whereType<LibraryPathGroupHeader>();
       expect(before, isNotEmpty);
       expect(before.first.count, 3);
       controller.setHideBlurryPhotos(true);
-      final after = controller.visibleEntries.whereType<LibraryPathGroupHeader>();
+      final after = controller.visibleEntries
+          .whereType<LibraryPathGroupHeader>();
       expect(after, isNotEmpty);
       expect(after.first.count, 2);
     });
@@ -509,6 +507,30 @@ void main() {
       await controller.load();
       controller.setHideBlurryPhotos(true, threshold: 200);
       expect(controller.filteredSorted, isEmpty);
+    });
+  });
+
+  group('hiddenItemsFilter (Hide column Visible / Hidden / Both)', () {
+    test('visible (default) excludes hidden items', () async {
+      final shown = fixtureItem(id: 'shown');
+      final hidden = fixtureItem(id: 'hidden', isHidden: true);
+      final controller = LibraryTableController(
+        itemsRepository: FakeItemsRepository(items: [shown, hidden]),
+        commentsRepository: FakeCommentsRepository(),
+        thumbCache: LocalThumbCache(),
+      );
+      await controller.load();
+      expect(controller.hiddenItemsFilter, HiddenItemsFilter.visible);
+      expect(controller.filteredSorted.map((r) => r.item.id), ['shown']);
+
+      controller.setHiddenItemsFilter(HiddenItemsFilter.hidden);
+      expect(controller.filteredSorted.map((r) => r.item.id), ['hidden']);
+
+      controller.setHiddenItemsFilter(HiddenItemsFilter.both);
+      expect(
+        controller.filteredSorted.map((r) => r.item.id).toSet(),
+        {'shown', 'hidden'},
+      );
     });
   });
 
@@ -1086,7 +1108,12 @@ void main() {
         'a': fixtureKnowledge(
           item: item,
           tags: [
-            fixtureTag(id: 'w1', itemId: 'a', dimension: 'who', value: 'toddler'),
+            fixtureTag(
+              id: 'w1',
+              itemId: 'a',
+              dimension: 'who',
+              value: 'toddler',
+            ),
           ],
         ),
       },
@@ -1135,6 +1162,117 @@ void main() {
     await controller.load();
     await controller.refreshRowSummaries('missing');
     expect(controller.allRows, isEmpty);
+  });
+
+  test('refreshRowSummariesFor updates Who on loaded siblings; skips missing',
+      () async {
+    final a = fixtureItem(
+      id: 'a',
+      sourceRef: 'file:///albums/x/a.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final b = fixtureItem(
+      id: 'b',
+      sourceRef: 'file:///albums/x/b.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final appearanceA = fixtureAppearance(
+      id: 'ap_a',
+      personId: 'person_1',
+      itemId: 'a',
+      tagId: 'w_a',
+    );
+    final appearanceB = fixtureAppearance(
+      id: 'ap_b',
+      personId: 'person_1',
+      itemId: 'b',
+      tagId: 'w_b',
+    );
+    final items = FakeItemsRepository(
+      items: [a, b],
+      knowledgeByItemId: {
+        'a': fixtureKnowledge(
+          item: a,
+          tags: [
+            fixtureTag(
+              id: 'w_a',
+              itemId: 'a',
+              dimension: 'who',
+              value: 'toddler',
+            ),
+          ],
+        ),
+        'b': fixtureKnowledge(
+          item: b,
+          tags: [
+            fixtureTag(
+              id: 'w_b',
+              itemId: 'b',
+              dimension: 'who',
+              value: 'toddler',
+            ),
+          ],
+        ),
+      },
+    );
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: 'Pat',
+          appearances: [appearanceA, appearanceB],
+        ),
+      ],
+    );
+    final controller = LibraryTableController(
+      itemsRepository: items,
+      commentsRepository: FakeCommentsRepository(),
+      personsRepository: persons,
+      thumbCache: LocalThumbCache(),
+      knowledgeConcurrency: 1,
+    );
+    await controller.load();
+    await _awaitKnowledge(controller);
+    expect(
+      controller.allRows.firstWhere((r) => r.item.id == 'a').who,
+      ['toddler'],
+    );
+    expect(
+      controller.allRows.firstWhere((r) => r.item.id == 'b').who,
+      ['toddler'],
+    );
+
+    items.setKnowledge(
+      'a',
+      fixtureKnowledge(
+        item: a,
+        tags: [
+          fixtureTag(id: 'w_a', itemId: 'a', dimension: 'who', value: 'toddler'),
+        ],
+        appearances: [appearanceA],
+      ),
+    );
+    items.setKnowledge(
+      'b',
+      fixtureKnowledge(
+        item: b,
+        tags: [
+          fixtureTag(id: 'w_b', itemId: 'b', dimension: 'who', value: 'toddler'),
+        ],
+        appearances: [appearanceB],
+      ),
+    );
+
+    await controller.refreshRowSummariesFor(['a', 'b', 'missing']);
+    expect(
+      controller.allRows.firstWhere((r) => r.item.id == 'a').who,
+      ['Pat'],
+    );
+    expect(
+      controller.allRows.firstWhere((r) => r.item.id == 'b').who,
+      ['Pat'],
+    );
+    expect(controller.allRows, hasLength(2));
   });
 
   test(
@@ -1369,4 +1507,133 @@ void main() {
       await pumpEventQueue();
     },
   );
+
+  test('load stores video key periods from knowledge', () async {
+    final item = fixtureItem(
+      id: 'v',
+      type: ItemType.video,
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {
+        'v': fixtureKnowledge(
+          item: item,
+          tags: const [],
+          keyPeriods: [
+            KeyPeriodKnowledge(
+              id: 'kp1',
+              itemId: 'v',
+              startMs: 0,
+              endMs: 1800,
+              tags: const [],
+            ),
+            KeyPeriodKnowledge(
+              id: 'kp2',
+              itemId: 'v',
+              startMs: 1800,
+              endMs: 9000,
+              tags: const [],
+            ),
+          ],
+        ),
+      },
+    );
+    final controller = LibraryTableController(
+      itemsRepository: items,
+      commentsRepository: FakeCommentsRepository(),
+      thumbCache: LocalThumbCache(),
+      knowledgeConcurrency: 1,
+    );
+    await controller.load();
+    await _awaitKnowledge(controller);
+    expect(controller.allRows.single.keyPeriods, hasLength(2));
+    expect(controller.allRows.single.keyPeriods.first.endMs, 1800);
+    controller.dispose();
+  });
+
+  test('ensureKeyPeriods returns cache and does not refetch', () async {
+    final item = fixtureItem(
+      id: 'v',
+      type: ItemType.video,
+      processingStatus: ProcessingStatus.tagged,
+    );
+    var knowledgeCalls = 0;
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {
+        'v': fixtureKnowledge(
+          item: item,
+          tags: const [],
+          keyPeriods: [
+            KeyPeriodKnowledge(
+              id: 'kp1',
+              itemId: 'v',
+              startMs: 0,
+              endMs: 2500,
+              tags: const [],
+            ),
+          ],
+        ),
+      },
+      onGetKnowledge: (_) async {
+        knowledgeCalls++;
+      },
+    );
+    final controller = LibraryTableController(
+      itemsRepository: items,
+      commentsRepository: FakeCommentsRepository(),
+      thumbCache: LocalThumbCache(),
+      knowledgeConcurrency: 1,
+    );
+    await controller.load();
+    await _awaitKnowledge(controller);
+    final baseline = knowledgeCalls;
+    final periods = await controller.ensureKeyPeriods('v');
+    expect(periods.single.endMs, 2500);
+    expect(knowledgeCalls, baseline);
+    controller.dispose();
+  });
+
+  test('ensureKeyPeriods fetches when knowledge is not yet loaded', () async {
+    final item = fixtureItem(
+      id: 'v',
+      type: ItemType.video,
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final gate = Completer<void>();
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {
+        'v': fixtureKnowledge(
+          item: item,
+          tags: const [],
+          keyPeriods: [
+            KeyPeriodKnowledge(
+              id: 'kp1',
+              itemId: 'v',
+              startMs: 0,
+              endMs: 1800,
+              tags: const [],
+            ),
+          ],
+        ),
+      },
+      onGetKnowledge: (_) => gate.future,
+    );
+    final controller = LibraryTableController(
+      itemsRepository: items,
+      commentsRepository: FakeCommentsRepository(),
+      thumbCache: LocalThumbCache(),
+      knowledgeConcurrency: 1,
+    );
+    await controller.load();
+    expect(controller.allRows.single.knowledgeLoaded, isFalse);
+    final pending = controller.ensureKeyPeriods('v');
+    gate.complete();
+    final periods = await pending;
+    expect(periods.single.endMs, 1800);
+    expect(controller.allRows.single.knowledgeLoaded, isTrue);
+    controller.dispose();
+  });
 }

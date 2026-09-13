@@ -299,6 +299,41 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /items/{itemId}/hidden:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags: [items]
+      operationId: setItemHidden
+      summary: >
+        Non-destructive show/hide (S2). Distinct from soft-delete: the item
+        stays fully in the library and is never excluded from GET /items.
+        Owner is token-derived (R10).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetItemHidden"
+      responses:
+        "200":
+          description: Item with updated isHidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /items/{itemId}/upload-grant:
     parameters:
       - name: itemId
@@ -2174,6 +2209,7 @@ components:
         - analysisRefState
         - schemaVersion
         - createdAt
+        - isHidden
       properties:
         id:
           type: string
@@ -2235,6 +2271,12 @@ components:
         createdAt:
           type: string
           format: date-time
+        isHidden:
+          type: boolean
+          description: >
+            Non-destructive user hide (S2). False by default. Distinct from
+            soft-delete — a hidden item stays fully in the library and is
+            never excluded from GET /items.
 
     CreateItem:
       type: object
@@ -3012,6 +3054,16 @@ components:
         perceptualHash:
           type: string
           nullable: true
+
+    SetItemHidden:
+      type: object
+      required: [isHidden]
+      description: >
+        Non-destructive show/hide (S2). The item stays fully in the library;
+        this never triggers cleanup or a tombstone.
+      properties:
+        isHidden:
+          type: boolean
 
     CorrectKeyPeriodBounds:
       type: object

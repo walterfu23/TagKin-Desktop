@@ -132,18 +132,19 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     _retry();
   }
 
-  Future<void> _removeItemFromList(Item item) async {
+  Future<void> _toggleHiddenItem(Item item) async {
     try {
-      await ref.read(jobsRepositoryProvider).deleteItem(item.id);
+      final updated = await ref
+          .read(itemsRepositoryProvider)
+          .setItemHidden(item.id, !item.isHidden);
       if (!mounted) return;
-      ref.read(collectionsControllerProvider).markDirty();
-      _retry();
+      ref.read(libraryTableControllerProvider).adoptItem(updated);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          key: const Key('list-delete-error'),
-          content: Text('Remove failed: $e'),
+          key: const Key('list-hide-error'),
+          content: Text('Hide failed: $e'),
         ),
       );
     }
@@ -401,6 +402,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
       builder: (context, _) {
         final blocked = usage.gate.blocked;
         return Scaffold(
+          primary: false,
           body: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -411,7 +413,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
                 onBuyCredits: () => pushBuyCreditsPage(context),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                padding: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
                 child: Row(
                   children: [
                     Expanded(
@@ -420,7 +422,8 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
                         decoration: const InputDecoration(
                           isDense: true,
                           prefixIcon: Icon(Icons.search, size: 20),
-                          hintText: 'Filter who, what, where, source, comment…',
+                          hintText:
+                              'Filter who, what, where, source, comment…',
                           border: OutlineInputBorder(),
                         ),
                         onChanged: table.setFilterQuery,
@@ -441,6 +444,10 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
                     const SizedBox(width: 12),
                     FilledButton.icon(
                       key: const Key('add-from-folder'),
+                      style: FilledButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
                       onPressed: blocked ? null : _openFolderIngest,
                       icon: const Icon(Icons.drive_folder_upload),
                       label: const Text('Add from folder'),
@@ -501,7 +508,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
         return LibraryItemsTable(
           controller: table,
           onOpenDetail: _openDetail,
-          onDelete: _removeItemFromList,
+          onHideToggle: _toggleHiddenItem,
           onRemoveFolder: _removeFolderFromList,
           onRevealSource: _revealSource,
           onRetryFolder: _retryFailedInFolder,
