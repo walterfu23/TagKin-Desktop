@@ -15,6 +15,7 @@ import 'package:tagkin_desktop/library/library_membership_sync.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/main.dart';
 import 'package:tagkin_desktop/persons/collection.dart';
+import 'package:tagkin_desktop/persons/collection_navigation.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/collections_store.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
@@ -644,7 +645,7 @@ void main() {
   testWidgets('Who filter checklist and matching scope to Hidden when the '
       'Hide-column dropdown shows Hidden', (tester) async {
     final shown = fixtureItem(id: 'shown');
-    final hidden = fixtureItem(id: 'hidden_sam', isHidden: true);
+    final hidden = fixtureItem(id: 'hidden_sam');
     await _pumpLibrary(
       tester,
       items: FakeItemsRepository(
@@ -676,6 +677,12 @@ void main() {
       ),
     );
     await tester.pump(const Duration(milliseconds: 50));
+    await tester.pumpAndSettle();
+
+    final ctx = tester.element(find.byType(ItemsListPage));
+    ProviderScope.containerOf(ctx)
+        .read(libraryTableControllerProvider)
+        .setItemHiddenInView('hidden_sam', hidden: true);
     await tester.pumpAndSettle();
 
     // Default Visible: checklist only offers the visible row's name.
@@ -1027,14 +1034,12 @@ void main() {
 
     // Non-destructive: no two-step Sure? confirm.
     expect(find.text('Sure?'), findsNothing);
-    expect(items.setItemHiddenCalls, [
-      (itemId: 'item_list_hide', isHidden: true),
-    ]);
+    expect(items.setItemHiddenCalls, isEmpty);
     // Hidden items are excluded from Folders by default (Visible filter)
     // — the item stays in the account, only the row hides.
     expect(find.byKey(const Key('item-row-item_list_hide')), findsNothing);
 
-    // Hide-column Both reveals it again (still marked isHidden: true).
+    // Hide-column Both reveals it again (still in this view's hidden set).
     await tester.tap(find.byKey(const Key('library-hidden-filter')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Both').last);
@@ -1145,7 +1150,7 @@ void main() {
     expect(find.byKey(const Key('item-row-keep')), findsOneWidget);
   });
 
-  testWidgets('hide folder from All mints View1; All restores the folder', (
+  testWidgets('hide folder from All mints View01; All restores the folder', (
     tester,
   ) async {
     const shared = '/albums/view_hide';
@@ -1171,7 +1176,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('library-views-menu')));
     await tester.pumpAndSettle();
-    expect(find.text('View1'), findsWidgets);
+    expect(find.text('View01'), findsWidgets);
 
     await tester.tap(find.byKey(const Key('views-menu-all')));
     await tester.pumpAndSettle();
@@ -1179,7 +1184,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('library-views-menu')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('View1').last);
+    await tester.tap(find.text('View01').last);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('source-group-$shared')), findsNothing);
 
@@ -1188,8 +1193,146 @@ void main() {
       ctx,
     ).read(collectionsControllerProvider);
     expect(cols.dirty, isFalse);
-    expect(cols.views.single.name, 'View1');
+    expect(cols.views.single.name, 'View01');
     expect(cols.views.single.filters.hiddenFolders, [shared]);
+    expect(find.text('All*'), findsNothing);
+  });
+
+  testWidgets('Hide item on View01 stars it; All still shows the item', (
+    tester,
+  ) async {
+    final a = fixtureItem(id: 'a', processingStatus: ProcessingStatus.tagged);
+    final b = fixtureItem(id: 'b', processingStatus: ProcessingStatus.tagged);
+    final items = FakeItemsRepository(items: [a, b]);
+    await _pumpLibrary(tester, items: items);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('library-views-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('views-menu-save-as')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('view-name-field')), 'View01');
+    await tester.tap(find.byKey(const Key('view-name-confirm')));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byKey(const Key('item-list-hide-a')));
+    await tester.tap(find.byKey(const Key('item-list-hide-a')));
+    await tester.pumpAndSettle();
+    expect(items.setItemHiddenCalls, isEmpty);
+    expect(find.byKey(const Key('item-row-a')), findsNothing);
+    expect(find.byKey(const Key('item-row-b')), findsOneWidget);
+    expect(find.text('View01*'), findsWidgets);
+
+    await tester.tap(find.byKey(const Key('library-views-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('views-menu-all')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('view-dirty-dialog')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('view-dirty-save')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('item-row-a')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-b')), findsOneWidget);
+    expect(find.text('All*'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('library-views-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('View01').last);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('item-row-a')), findsNothing);
+    expect(find.byKey(const Key('item-row-b')), findsOneWidget);
+    expect(find.text('View01*'), findsNothing);
+  });
+
+  testWidgets('File Save persists a dirty named view without collection *', (
+    tester,
+  ) async {
+    final a = fixtureItem(id: 'a', processingStatus: ProcessingStatus.tagged);
+    final b = fixtureItem(id: 'b', processingStatus: ProcessingStatus.tagged);
+    await _pumpLibrary(tester, items: FakeItemsRepository(items: [a, b]));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('library-views-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('views-menu-save-as')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('view-name-field')), 'View01');
+    await tester.tap(find.byKey(const Key('view-name-confirm')));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byKey(const Key('item-list-hide-a')));
+    await tester.tap(find.byKey(const Key('item-list-hide-a')));
+    await tester.pumpAndSettle();
+    expect(find.text('View01*'), findsWidgets);
+
+    final ctx = tester.element(find.byType(ItemsListPage));
+    final container = ProviderScope.containerOf(ctx);
+    expect(container.read(activeViewDirtyProvider), isTrue);
+    expect(container.read(collectionsControllerProvider).dirty, isFalse);
+
+    container
+        .read(collectionMenuRequestProvider.notifier)
+        .state = const CollectionMenuRequest(
+      command: CollectionMenuCommand.save,
+      nonce: 1,
+    );
+    await tester.pumpAndSettle();
+
+    final table = container.read(libraryTableControllerProvider);
+    final cols = container.read(collectionsControllerProvider);
+    expect(table.isActiveViewModified, isFalse);
+    expect(container.read(activeViewDirtyProvider), isFalse);
+    expect(cols.dirty, isFalse);
+    expect(cols.views.single.filters.hiddenItemIds, ['a']);
+    expect(find.text('View01*'), findsNothing);
+  });
+
+  testWidgets('File Save on All does not mint a view', (tester) async {
+    final a = fixtureItem(id: 'a', processingStatus: ProcessingStatus.tagged);
+    await _pumpLibrary(tester, items: FakeItemsRepository(items: [a]));
+    await tester.pumpAndSettle();
+
+    final ctx = tester.element(find.byType(ItemsListPage));
+    final container = ProviderScope.containerOf(ctx);
+    expect(container.read(libraryTableControllerProvider).activeViewId, isNull);
+    expect(container.read(collectionsControllerProvider).views, isEmpty);
+
+    container
+        .read(collectionMenuRequestProvider.notifier)
+        .state = const CollectionMenuRequest(
+      command: CollectionMenuCommand.save,
+      nonce: 1,
+    );
+    await tester.pumpAndSettle();
+
+    expect(container.read(libraryTableControllerProvider).activeViewId, isNull);
+    expect(container.read(collectionsControllerProvider).views, isEmpty);
+  });
+
+  testWidgets('library reload on All does not mint a view', (tester) async {
+    const shared = '/albums/view_reload';
+    final a = fixtureItem(
+      id: 'a',
+      sourceRef: 'file://$shared/a.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    await _pumpLibrary(tester, items: FakeItemsRepository(items: [a]));
+    await tester.pumpAndSettle();
+
+    final ctx = tester.element(find.byType(ItemsListPage));
+    final container = ProviderScope.containerOf(ctx);
+    final table = container.read(libraryTableControllerProvider);
+    final cols = container.read(collectionsControllerProvider);
+    expect(table.activeViewId, isNull);
+    expect(cols.views, isEmpty);
+
+    await table.load();
+    await tester.pump();
+    await tester.pump();
+    expect(table.activeViewId, isNull);
+    expect(cols.views, isEmpty);
+    expect(table.isActiveViewModified, isFalse);
+    expect(find.text('All*'), findsNothing);
   });
 
   testWidgets('remove folder shows in-progress banner until deletes finish', (
@@ -1235,6 +1378,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(jobs.deletedItemIds.toSet(), {'a', 'b'});
     expect(find.text('Folder remove finished'), findsOneWidget);
+
+    final ctx = tester.element(find.byType(ItemsListPage));
+    final cols = ProviderScope.containerOf(
+      ctx,
+    ).read(collectionsControllerProvider);
+    expect(cols.views, isEmpty);
+    expect(find.text('All*'), findsNothing);
   });
 
   testWidgets('folder Retry is hidden when no items are failed', (
@@ -1808,7 +1958,12 @@ void main() {
 
     await tester.enterText(find.byKey(const Key('library-filter')), 'Sam');
     await tester.pumpAndSettle();
-    // Named views auto-update; Update is disabled once the snapshot matches.
+    expect(find.text('Ada only*'), findsWidgets);
+
+    await tester.tap(find.byKey(const Key('library-views-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('views-menu-update')));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('library-views-menu')));
     await tester.pumpAndSettle();

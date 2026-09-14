@@ -170,22 +170,20 @@ void main() {
     await tester.tap(find.byKey(const Key('item-hide-toggle')));
     await tester.pumpAndSettle();
     expect(find.text('Sure?'), findsNothing);
-    expect(items.setItemHiddenCalls, [(itemId: 'item_hide', isHidden: true)]);
+    expect(items.setItemHiddenCalls, isEmpty);
     expect(find.byKey(const Key('item-detail')), findsOneWidget);
     expect(
       tester.widget<IconButton>(find.byKey(const Key('item-hide-toggle'))).tooltip,
       'Unhide item',
     );
 
-    // Toggling back sends isHidden: false.
+    // Toggling back is also local to the Folders view.
     await tester.tap(find.byKey(const Key('item-hide-toggle')));
     await tester.pumpAndSettle();
+    expect(items.setItemHiddenCalls, isEmpty);
     expect(
-      items.setItemHiddenCalls,
-      [
-        (itemId: 'item_hide', isHidden: true),
-        (itemId: 'item_hide', isHidden: false),
-      ],
+      tester.widget<IconButton>(find.byKey(const Key('item-hide-toggle'))).tooltip,
+      'Hide item',
     );
   });
 

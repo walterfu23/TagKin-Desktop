@@ -243,14 +243,17 @@ class CollectionsController extends ChangeNotifier {
     return 'Collection$n';
   }
 
-  /// Next unused ViewN name on the open collection (View1, View2, …).
+  /// Next unused ViewNN name on the open collection (View01, View02, …).
   String nextDefaultViewName() {
     var n = 1;
-    while (_viewNameTaken('View$n')) {
+    while (_viewNameTaken(_defaultViewName(n))) {
       n++;
     }
-    return 'View$n';
+    return _defaultViewName(n);
   }
+
+  static String _defaultViewName(int n) =>
+      'View${n.toString().padLeft(2, '0')}';
 
   bool _viewNameTaken(String name) {
     final trimmed = name.trim().toLowerCase();

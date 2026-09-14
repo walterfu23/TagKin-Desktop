@@ -15,27 +15,20 @@ final activeTopLevelTabProvider = StateProvider<TopLevelTab>(
 ///
 /// Default tap: switch [activeTopLevelTabProvider] and pop to the first route
 /// (the signed-in shell). Pass [onSelected] from the shell itself so tabs
-/// switch without popping. [onBeforeNavigate] gates leave (item dirty edits).
+/// switch without popping. [onBeforeNavigate] gates leave (item dirty edits
+/// / unsaved view).
 class AppNavTabButtons extends ConsumerWidget {
-  const AppNavTabButtons({
-    super.key,
-    this.onSelected,
-    this.onBeforeNavigate,
-  });
+  const AppNavTabButtons({super.key, this.onSelected, this.onBeforeNavigate});
 
   /// When set, called instead of pop-to-root after the tab is chosen.
   final void Function(TopLevelTab)? onSelected;
 
   /// Awaited first; navigation is skipped when this returns false.
-  final Future<bool> Function()? onBeforeNavigate;
+  final Future<bool> Function(TopLevelTab tab)? onBeforeNavigate;
 
-  Future<void> _go(
-    BuildContext context,
-    WidgetRef ref,
-    TopLevelTab tab,
-  ) async {
+  Future<void> _go(BuildContext context, WidgetRef ref, TopLevelTab tab) async {
     if (onBeforeNavigate != null) {
-      final ok = await onBeforeNavigate!();
+      final ok = await onBeforeNavigate!(tab);
       if (!ok) return;
     }
     final selected = onSelected;

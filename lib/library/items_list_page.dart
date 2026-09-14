@@ -18,6 +18,7 @@ import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
 import 'package:tagkin_desktop/credits/credits_navigation.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prepass/hide_blurry_switch.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
@@ -57,27 +58,41 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
       // ensureLoaded (not load) dedupes with the shell's own initial
       // ensureLoaded call for Folders-look baseline capture.
       final table = ref.read(libraryTableControllerProvider);
-      _table = table;
+      _ensureTableListener(table);
       table.ensureLoaded();
-      table.addListener(_onTableChanged);
       _syncFilterField();
+      _applyLivePrefs(ref.read(desktopPrefsProvider));
       _bindIngestQueue(ref.read(folderIngestQueueProvider));
       _bindRemoveQueue(ref.read(folderRemoveQueueProvider));
     });
   }
 
-  void _onTableChanged() {
-    _syncFilterField();
-    unawaited(_commitView());
+  void _ensureTableListener(LibraryTableController table) {
+    if (identical(_table, table)) return;
+    _table?.removeListener(_onTableChanged);
+    _table = table;
+    table.addListener(_onTableChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncFilterField();
+    });
   }
 
-  Future<void> _commitView() async {
+  void _onTableChanged() {
+    _syncFilterField();
+  }
+
+  void _applyLivePrefs(DesktopPrefs next, {DesktopPrefs? previous}) {
     if (!mounted) return;
-    final table = _table;
-    if (table == null) return;
-    await commitActiveView(
-      table: table,
-      cols: ref.read(collectionsControllerProvider),
+    final table = ref.read(libraryTableControllerProvider);
+    table.pageSize = next.libraryPageSize;
+    if (previous?.hideBlurryPhotos == next.hideBlurryPhotos &&
+        previous?.itemListBlurrySharpnessThreshold ==
+            next.itemListBlurrySharpnessThreshold) {
+      return;
+    }
+    table.setHideBlurryPhotos(
+      next.hideBlurryPhotos,
+      threshold: next.itemListBlurrySharpnessThreshold.toDouble(),
     );
   }
 
@@ -168,22 +183,12 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     _retry();
   }
 
-  Future<void> _toggleHiddenItem(Item item) async {
-    try {
-      final updated = await ref
-          .read(itemsRepositoryProvider)
-          .setItemHidden(item.id, !item.isHidden);
-      if (!mounted) return;
-      ref.read(libraryTableControllerProvider).adoptItem(updated);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          key: const Key('list-hide-error'),
-          content: Text('Hide failed: $e'),
-        ),
-      );
-    }
+  void _toggleHiddenItem(Item item) {
+    final table = ref.read(libraryTableControllerProvider);
+    table.setItemHiddenInView(
+      item.id,
+      hidden: !table.isItemHiddenInView(item.id),
+    );
   }
 
   void _setFolderHidden(String dir, {required bool hide}) {
@@ -422,23 +427,14 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     ref.listen<FolderRemoveQueue>(folderRemoveQueueProvider, (previous, next) {
       _bindRemoveQueue(next);
     });
-    // Shared Hide blurry toggle — reaches an already-mounted Folders page
-    // even when flipped from Export list or restored on app start.
+    // Shared Hide blurry / page size — reaches an already-mounted Folders
+    // page even when flipped from Export list or restored on app start.
     ref.listen(desktopPrefsProvider, (previous, next) {
-      if (previous?.hideBlurryPhotos == next.hideBlurryPhotos &&
-          previous?.itemListBlurrySharpnessThreshold ==
-              next.itemListBlurrySharpnessThreshold) {
-        return;
-      }
-      ref
-          .read(libraryTableControllerProvider)
-          .setHideBlurryPhotos(
-            next.hideBlurryPhotos,
-            threshold: next.itemListBlurrySharpnessThreshold.toDouble(),
-          );
+      _applyLivePrefs(next, previous: previous);
     });
     final usage = ref.watch(usageControllerProvider);
     final table = ref.watch(libraryTableControllerProvider);
+    _ensureTableListener(table);
     return ListenableBuilder(
       listenable: Listenable.merge([usage, table]),
       builder: (context, _) {

@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/local_thumb_cache.dart';
@@ -9,6 +11,8 @@ import 'package:tagkin_desktop/library/views_menu.dart';
 import 'package:tagkin_desktop/persons/collection.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/collections_store.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_store.dart';
 import 'package:tagkin_desktop/where/reverse_geocoder.dart';
 import 'package:tagkin_desktop/where/where_label_resolver.dart';
 import 'package:tagkin_desktop/where/where_place_label.dart';
@@ -525,13 +529,14 @@ void main() {
   group('hiddenItemsFilter (Hide column Visible / Hidden / Both)', () {
     test('visible (default) excludes hidden items', () async {
       final shown = fixtureItem(id: 'shown');
-      final hidden = fixtureItem(id: 'hidden', isHidden: true);
+      final hidden = fixtureItem(id: 'hidden');
       final controller = LibraryTableController(
         itemsRepository: FakeItemsRepository(items: [shown, hidden]),
         commentsRepository: FakeCommentsRepository(),
         thumbCache: LocalThumbCache(),
       );
       await controller.load();
+      controller.setItemHiddenInView('hidden', hidden: true);
       expect(controller.hiddenItemsFilter, HiddenItemsFilter.visible);
       expect(controller.filteredSorted.map((r) => r.item.id), ['shown']);
 
@@ -1772,8 +1777,8 @@ void main() {
     test('availableWhoNames and the filter scope to Hidden when the '
         'Hide-column dropdown shows Hidden', () async {
       final shown = fixtureItem(id: 'shown');
-      final hiddenSam = fixtureItem(id: 'hidden_sam', isHidden: true);
-      final hiddenAda = fixtureItem(id: 'hidden_ada', isHidden: true);
+      final hiddenSam = fixtureItem(id: 'hidden_sam');
+      final hiddenAda = fixtureItem(id: 'hidden_ada');
       final controller = LibraryTableController(
         itemsRepository: FakeItemsRepository(
           items: [shown, hiddenSam, hiddenAda],
@@ -1819,6 +1824,8 @@ void main() {
       );
       await controller.load();
       await _awaitKnowledge(controller);
+      controller.setItemHiddenInView('hidden_sam', hidden: true);
+      controller.setItemHiddenInView('hidden_ada', hidden: true);
 
       // Default Visible: checklist only sees the visible row's name.
       expect(controller.availableWhoNames, {'Visible Vic'});
@@ -1927,7 +1934,9 @@ void main() {
       controller.setHiddenItemsFilter(HiddenItemsFilter.both);
       controller.toggleSort(LibrarySortColumn.who);
       controller.setHideBlurryPhotos(true);
-      expect(controller.isActiveViewModified, isTrue);
+      // All is never starred.
+      expect(controller.isActiveViewModified, isFalse);
+      expect(controller.activeViewId, isNull);
 
       final snap = controller.captureViewFilters();
       expect(snap.filterQuery, 'Sam');
@@ -1937,12 +1946,20 @@ void main() {
       expect(snap.hideBlurryPhotos, isTrue);
       expect(snap.sortKeys, isNotEmpty);
       expect(snap.hiddenFolders, isEmpty);
+      expect(snap.hiddenItemIds, isEmpty);
 
       controller.setActiveView('v1', snap);
       expect(controller.isActiveViewModified, isFalse);
 
+      controller.setHiddenItemsFilter(HiddenItemsFilter.hidden);
+      expect(controller.isActiveViewModified, isFalse);
+
       controller.setFolderHidden('/albums/Trip', hidden: true);
       expect(controller.captureViewFilters().hiddenFolders, ['/albums/Trip']);
+      expect(controller.isActiveViewModified, isTrue);
+
+      controller.setItemHiddenInView('a', hidden: true);
+      expect(controller.captureViewFilters().hiddenItemIds, ['a']);
       expect(controller.isActiveViewModified, isTrue);
 
       controller.setFilterQuery('Ada');
@@ -1955,6 +1972,7 @@ void main() {
       expect(controller.hiddenItemsFilter, HiddenItemsFilter.visible);
       expect(controller.sortKeys, isEmpty);
       expect(controller.hiddenFolders, isEmpty);
+      expect(controller.hiddenItemIds, isEmpty);
 
       await controller.applyLibraryViewFilters(snap);
       expect(controller.filterQuery, 'Sam');
@@ -2045,7 +2063,7 @@ void main() {
   });
 
   group('commitActiveView', () {
-    test('All + hide folder mints View1; Hide-column alone does not', () async {
+    test('All + hide folder mints View01; Hide-column alone does not', () async {
       final tempDir = await Directory.systemTemp.createTemp('tagkin_views_');
       addTearDown(() async {
         if (tempDir.existsSync()) await tempDir.delete(recursive: true);
@@ -2072,7 +2090,7 @@ void main() {
 
       table.setFolderHidden('/albums/Trip', hidden: true);
       await commitActiveView(table: table, cols: cols);
-      expect(cols.views.single.name, 'View1');
+      expect(cols.views.single.name, 'View01');
       expect(cols.views.single.filters.hiddenFolders, ['/albums/Trip']);
       expect(cols.views.single.filters.hiddenItemsFilter, 'visible');
       expect(table.activeViewId, cols.views.single.id);
@@ -2080,11 +2098,136 @@ void main() {
       table.setFolderHidden('/albums/Other', hidden: true);
       await commitActiveView(table: table, cols: cols);
       expect(cols.views, hasLength(1));
+      expect(cols.views.single.filters.hiddenFolders, ['/albums/Trip']);
+      expect(table.isActiveViewModified, isTrue);
+
+      await saveNamedActiveView(table: table, cols: cols);
       expect(cols.views.single.filters.hiddenFolders.toSet(), {
         '/albums/Other',
         '/albums/Trip',
       });
+      expect(table.isActiveViewModified, isFalse);
+
+      await table.load();
+      await commitActiveView(table: table, cols: cols);
+      expect(cols.views, hasLength(1));
       table.dispose();
     });
+
+    test('Hide item on All mints View01; named view hide dirties until save',
+        () async {
+      final tempDir = await Directory.systemTemp.createTemp('tagkin_views_');
+      addTearDown(() async {
+        if (tempDir.existsSync()) await tempDir.delete(recursive: true);
+      });
+      final cols = CollectionsController(
+        store: CollectionsStore(supportDir: tempDir),
+      );
+      await cols.load();
+      await cols.create(name: 'Trip', seedFolders: ['/albums/Trip']);
+
+      final table = LibraryTableController(
+        itemsRepository: FakeItemsRepository(
+          items: [
+            fixtureItem(id: 'a', sourceRef: 'file:///albums/Trip/a.jpg'),
+            fixtureItem(id: 'b', sourceRef: 'file:///albums/Trip/b.jpg'),
+          ],
+        ),
+        commentsRepository: FakeCommentsRepository(),
+        thumbCache: LocalThumbCache(),
+      );
+      await table.load();
+
+      table.setItemHiddenInView('a', hidden: true);
+      await commitActiveView(table: table, cols: cols);
+      expect(cols.views.single.name, 'View01');
+      expect(cols.views.single.filters.hiddenItemIds, ['a']);
+      expect(table.isActiveViewModified, isFalse);
+      expect(table.filteredSorted.map((r) => r.item.id), ['b']);
+
+      table.setItemHiddenInView('b', hidden: true);
+      await commitActiveView(table: table, cols: cols);
+      expect(cols.views.single.filters.hiddenItemIds, ['a']);
+      expect(table.isActiveViewModified, isTrue);
+      expect(table.filteredSorted, isEmpty);
+
+      await saveNamedActiveView(table: table, cols: cols);
+      expect(cols.views.single.filters.hiddenItemIds.toSet(), {'a', 'b'});
+      expect(table.isActiveViewModified, isFalse);
+
+      await table.applyLibraryViewFilters(LibraryViewFilters.all);
+      table.setActiveView(null, LibraryViewFilters.all);
+      expect(table.filteredSorted.map((r) => r.item.id).toSet(), {'a', 'b'});
+
+      await table.applyLibraryViewFilters(cols.views.single.filters);
+      table.setActiveView(cols.views.single.id, cols.views.single.filters);
+      expect(table.filteredSorted, isEmpty);
+      table.dispose();
+    });
+
+    test('reload on All does not mint a view', () async {
+      final tempDir = await Directory.systemTemp.createTemp('tagkin_views_');
+      addTearDown(() async {
+        if (tempDir.existsSync()) await tempDir.delete(recursive: true);
+      });
+      final cols = CollectionsController(
+        store: CollectionsStore(supportDir: tempDir),
+      );
+      await cols.load();
+      await cols.create(name: 'Trip', seedFolders: ['/albums/Trip']);
+
+      final table = LibraryTableController(
+        itemsRepository: FakeItemsRepository(
+          items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/Trip/a.jpg')],
+        ),
+        commentsRepository: FakeCommentsRepository(),
+        thumbCache: LocalThumbCache(),
+      );
+      await table.load();
+      table.setActiveView(null, LibraryViewFilters.all);
+      await table.load();
+      await commitActiveView(table: table, cols: cols);
+      expect(cols.views, isEmpty);
+      expect(table.activeViewId, isNull);
+      expect(table.isActiveViewModified, isFalse);
+      table.dispose();
+    });
+  });
+
+  test('desktop prefs notify does not recreate the Folders table', () async {
+    final tempDir = await Directory.systemTemp.createTemp('tagkin_prefs_');
+    addTearDown(() async {
+      if (tempDir.existsSync()) await tempDir.delete(recursive: true);
+    });
+    final prefsController = DesktopPrefsController(
+      store: DesktopPrefsStore(supportDir: tempDir),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        desktopPrefsControllerProvider.overrideWith((ref) => prefsController),
+        itemsRepositoryProvider.overrideWithValue(
+          FakeItemsRepository(
+            items: [
+              fixtureItem(id: 'a', sourceRef: 'file:///albums/Trip/a.jpg'),
+            ],
+          ),
+        ),
+        commentsRepositoryProvider.overrideWithValue(FakeCommentsRepository()),
+        personsRepositoryProvider.overrideWithValue(FakePersonsRepository()),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(libraryTableControllerProvider, (previous, next) {});
+
+    final table = container.read(libraryTableControllerProvider);
+    table.setFolderHidden('/albums/Trip', hidden: true);
+    await prefsController.update(
+      prefsController.prefs.copyWith(libraryPageSize: 40),
+    );
+    expect(
+      identical(table, container.read(libraryTableControllerProvider)),
+      isTrue,
+    );
+    expect(table.hiddenFolders, contains('/albums/Trip'));
   });
 }

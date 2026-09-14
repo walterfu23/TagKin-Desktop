@@ -90,6 +90,7 @@ class TagKinPlatformMenu extends ConsumerWidget {
     final cols = ref.watch(collectionsControllerProvider);
     final sessionReady = cols.sessionReady;
     final recents = cols.recentCollections;
+    final viewDirty = ref.watch(activeViewDirtyProvider);
 
     final fileMenus = <PlatformMenuItem>[
       PlatformMenuItemGroup(
@@ -136,7 +137,7 @@ class TagKinPlatformMenu extends ConsumerWidget {
               LogicalKeyboardKey.keyS,
               meta: true,
             ),
-            onSelected: sessionReady && cols.dirty
+            onSelected: sessionReady && (cols.dirty || viewDirty)
                 ? () => requestCollectionMenu(ref, CollectionMenuCommand.save)
                 : null,
           ),

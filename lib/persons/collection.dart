@@ -300,7 +300,7 @@ class CollectionSortKey {
 /// Folders filter/sort snapshot stored on a [SavedView].
 ///
 /// [all] is the built-in All view: no filters, Visible only, Hide blurry
-/// off, no sort, no hidden folders.
+/// off, no sort, no hidden folders, no hidden items.
 class LibraryViewFilters {
   const LibraryViewFilters({
     this.filterQuery = '',
@@ -311,6 +311,7 @@ class LibraryViewFilters {
     this.hideBlurryPhotos = false,
     this.sortKeys = const [],
     this.hiddenFolders = const [],
+    this.hiddenItemIds = const [],
   });
 
   final String filterQuery;
@@ -333,6 +334,9 @@ class LibraryViewFilters {
   /// Folder paths hidden in this view (item [Item.isHidden] is unchanged).
   final List<String> hiddenFolders;
 
+  /// Item ids hidden in this view (Folders-only; not [Item.isHidden]).
+  final List<String> hiddenItemIds;
+
   static const all = LibraryViewFilters();
 
   LibraryViewFilters copyWith({
@@ -345,6 +349,7 @@ class LibraryViewFilters {
     bool? hideBlurryPhotos,
     List<CollectionSortKey>? sortKeys,
     List<String>? hiddenFolders,
+    List<String>? hiddenItemIds,
   }) {
     return LibraryViewFilters(
       filterQuery: filterQuery ?? this.filterQuery,
@@ -357,6 +362,7 @@ class LibraryViewFilters {
       hideBlurryPhotos: hideBlurryPhotos ?? this.hideBlurryPhotos,
       sortKeys: sortKeys ?? this.sortKeys,
       hiddenFolders: hiddenFolders ?? this.hiddenFolders,
+      hiddenItemIds: hiddenItemIds ?? this.hiddenItemIds,
     );
   }
 
@@ -369,6 +375,7 @@ class LibraryViewFilters {
     'hideBlurryPhotos': hideBlurryPhotos,
     'sortKeys': [for (final k in sortKeys) k.toJson()],
     'hiddenFolders': hiddenFolders,
+    'hiddenItemIds': hiddenItemIds,
   };
 
   factory LibraryViewFilters.fromJson(Map<String, dynamic> json) {
@@ -407,6 +414,15 @@ class LibraryViewFilters {
         if (d is String && d.isNotEmpty) folders.add(d);
       }
     }
+    folders.sort();
+    final idsRaw = json['hiddenItemIds'];
+    final ids = <String>[];
+    if (idsRaw is List) {
+      for (final id in idsRaw) {
+        if (id is String && id.isNotEmpty) ids.add(id);
+      }
+    }
+    ids.sort();
     return LibraryViewFilters(
       filterQuery: q is String ? q : '',
       statusFilter: status is String && status.isNotEmpty ? status : null,
@@ -416,6 +432,7 @@ class LibraryViewFilters {
       hideBlurryPhotos: hideBlurry is bool ? hideBlurry : false,
       sortKeys: keys,
       hiddenFolders: folders,
+      hiddenItemIds: ids,
     );
   }
 
@@ -429,7 +446,8 @@ class LibraryViewFilters {
       other.hiddenItemsFilter == hiddenItemsFilter &&
       other.hideBlurryPhotos == hideBlurryPhotos &&
       _listEquals(other.sortKeys, sortKeys) &&
-      _listEquals(other.hiddenFolders, hiddenFolders);
+      _listEquals(other.hiddenFolders, hiddenFolders) &&
+      _listEquals(other.hiddenItemIds, hiddenItemIds);
 
   @override
   int get hashCode => Object.hash(
@@ -441,6 +459,7 @@ class LibraryViewFilters {
     hideBlurryPhotos,
     Object.hashAll(sortKeys),
     Object.hashAll(hiddenFolders),
+    Object.hashAll(hiddenItemIds),
   );
 }
 

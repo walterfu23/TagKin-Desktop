@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/persons/collection.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
+import 'package:tagkin_desktop/persons/dirty_leave_prompt.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 
 enum _ViewsCmd { all, saveAs, update, rename, delete, manage }
@@ -46,14 +47,16 @@ Future<void> applyAllView({
 
 /// Persist the current Folders filters onto a View.
 ///
-/// All stays empty: the first real mutation (not Hide-column alone) mints
-/// View1, View2, … and switches to it. Named views auto-update. Hide-column
-/// is never written by this helper (inspect Hidden/Both without saving it).
+/// All stays empty: the first real mutation (not Hide-column, ingest, or
+/// Remove folder) mints View01, View02, … and switches to it. Named views
+/// stay dirty until Update or a leave-prompt Save. Hide-column is never
+/// written by this helper.
 Future<void> commitActiveView({
   required LibraryTableController table,
   required CollectionsController cols,
 }) async {
   if (table.viewCommitPaused || !cols.sessionReady) return;
+  if (table.activeViewId != null) return;
   if (!_viewCommitNeeded(table)) return;
   table.viewCommitPaused = true;
   try {
@@ -63,43 +66,81 @@ Future<void> commitActiveView({
   }
 }
 
-LibraryViewFilters _persistableViewFilters(LibraryTableController table) {
-  final current = table.captureViewFilters();
-  final hide = table.activeViewId == null
-      ? 'visible'
-      : (table.activeViewSnapshot?.hiddenItemsFilter ?? 'visible');
-  return current.copyWith(hiddenItemsFilter: hide);
+/// Write the live filters onto the active named view (Update / leave Save).
+Future<void> saveNamedActiveView({
+  required LibraryTableController table,
+  required CollectionsController cols,
+}) async {
+  if (table.viewCommitPaused || !cols.sessionReady) return;
+  final id = table.activeViewId;
+  if (id == null) return;
+  table.viewCommitPaused = true;
+  try {
+    final persist = table.persistableViewFilters();
+    final ok = await cols.updateView(id, persist);
+    if (!ok) return;
+    table.setActiveView(id, persist);
+  } finally {
+    table.viewCommitPaused = false;
+  }
+}
+
+/// Revert live filters to the last saved named-view snapshot.
+Future<void> discardActiveViewChanges({
+  required LibraryTableController table,
+  required DesktopPrefsController prefs,
+}) async {
+  final snap = table.activeViewSnapshot;
+  if (snap == null || table.activeViewId == null) {
+    await applyAllView(table: table, prefs: prefs);
+    return;
+  }
+  await table.runViewCommitPaused(() async {
+    await table.applyLibraryViewFilters(snap);
+    await prefs.setHideBlurryPhotos(snap.hideBlurryPhotos);
+    table.setActiveView(table.activeViewId, snap);
+  });
+}
+
+/// Save / Discard / Cancel when a named view is dirty.
+Future<bool> confirmLeaveIfViewDirty({
+  required BuildContext context,
+  required LibraryTableController table,
+  required CollectionsController cols,
+  required DesktopPrefsController prefs,
+  Future<DirtyPromptChoice> Function()? resolveDirty,
+}) async {
+  if (!table.isActiveViewModified) return true;
+  final choice =
+      await (resolveDirty ?? () => showViewDirtyLeaveOverlayPrompt(context))();
+  if (choice == DirtyPromptChoice.cancel) return false;
+  if (choice == DirtyPromptChoice.discard) {
+    await discardActiveViewChanges(table: table, prefs: prefs);
+    return true;
+  }
+  await saveNamedActiveView(table: table, cols: cols);
+  return true;
 }
 
 bool _viewCommitNeeded(LibraryTableController table) {
-  final persist = _persistableViewFilters(table);
-  if (table.activeViewId == null) {
-    if (persist == LibraryViewFilters.all) return false;
-    final snap = table.activeViewSnapshot;
-    if (snap != null && persist == snap) return false;
-    return true;
-  }
-  return persist != table.activeViewSnapshot;
+  final persist = table.persistableViewFilters();
+  if (persist == LibraryViewFilters.all) return false;
+  final snap = table.activeViewSnapshot;
+  if (snap != null && persist == snap) return false;
+  return true;
 }
 
 Future<void> _commitActiveViewBody({
   required LibraryTableController table,
   required CollectionsController cols,
 }) async {
-  final persist = _persistableViewFilters(table);
-  final id = table.activeViewId;
-  if (id == null) {
-    final saved = await cols.saveView(
-      name: cols.nextDefaultViewName(),
-      filters: persist,
-    );
-    if (saved == null) return;
-    table.setActiveView(saved.id, saved.filters);
-    return;
-  }
-  final ok = await cols.updateView(id, persist);
-  if (!ok) return;
-  table.setActiveView(id, persist);
+  final persist = table.persistableViewFilters();
+  final saved = await cols.saveView(
+    name: cols.nextDefaultViewName(),
+    filters: persist,
+  );
+  if (saved == null) return;
+  table.setActiveView(saved.id, saved.filters);
 }
 
 /// Folders toolbar Views menu: All, recents, save / update / rename / delete.
@@ -207,22 +248,38 @@ class ViewsMenu extends ConsumerWidget {
     final prefs = ref.read(desktopPrefsControllerProvider);
     final viewId = sel.viewId;
     if (viewId != null) {
+      if (table.activeViewId == viewId) return;
       final view = cols.viewById(viewId);
       if (view == null) return;
+      final ok = await confirmLeaveIfViewDirty(
+        context: context,
+        table: table,
+        cols: cols,
+        prefs: prefs,
+      );
+      if (!ok) return;
       await applySavedView(table: table, prefs: prefs, view: view, cols: cols);
       return;
     }
     switch (sel.cmd) {
       case _ViewsCmd.all:
+        if (table.activeViewId == null) return;
+        final ok = await confirmLeaveIfViewDirty(
+          context: context,
+          table: table,
+          cols: cols,
+          prefs: prefs,
+        );
+        if (!ok) return;
         await applyAllView(table: table, prefs: prefs);
       case _ViewsCmd.saveAs:
         await _saveAs(context, cols, table);
       case _ViewsCmd.update:
-        await _update(cols, table);
+        await saveNamedActiveView(table: table, cols: cols);
       case _ViewsCmd.rename:
         await _rename(context, cols, table);
       case _ViewsCmd.delete:
-        await _delete(context, cols, table);
+        await _delete(context, cols, table, prefs);
       case _ViewsCmd.manage:
         if (!context.mounted) return;
         await showDialog<void>(
@@ -249,22 +306,10 @@ class ViewsMenu extends ConsumerWidget {
     final saved = await cols.saveView(
       name: result.name,
       description: result.description,
-      filters: table.captureViewFilters(),
+      filters: table.persistableViewFilters(),
     );
     if (saved == null) return;
     table.setActiveView(saved.id, saved.filters);
-  }
-
-  Future<void> _update(
-    CollectionsController cols,
-    LibraryTableController table,
-  ) async {
-    final id = table.activeViewId;
-    if (id == null) return;
-    final filters = table.captureViewFilters();
-    final ok = await cols.updateView(id, filters);
-    if (!ok) return;
-    table.setActiveView(id, filters);
   }
 
   Future<void> _rename(
@@ -295,6 +340,7 @@ class ViewsMenu extends ConsumerWidget {
     BuildContext context,
     CollectionsController cols,
     LibraryTableController table,
+    DesktopPrefsController prefs,
   ) async {
     final id = table.activeViewId;
     if (id == null) return;
@@ -304,7 +350,7 @@ class ViewsMenu extends ConsumerWidget {
     if (!ok) return;
     await cols.deleteView(id);
     if (table.activeViewId == id) {
-      table.setActiveView(null, table.captureViewFilters());
+      await applyAllView(table: table, prefs: prefs);
     }
   }
 }
@@ -486,6 +532,15 @@ class _ManageViewsDialog extends StatelessWidget {
                                 TextButton(
                                   key: Key('views-manage-load-${v.id}'),
                                   onPressed: () async {
+                                    if (table.activeViewId != v.id) {
+                                      final ok = await confirmLeaveIfViewDirty(
+                                        context: context,
+                                        table: table,
+                                        cols: cols,
+                                        prefs: prefs,
+                                      );
+                                      if (!ok) return;
+                                    }
                                     await applySavedView(
                                       table: table,
                                       prefs: prefs,
@@ -536,9 +591,9 @@ class _ManageViewsDialog extends StatelessWidget {
                                     if (!ok) return;
                                     await cols.deleteView(v.id);
                                     if (table.activeViewId == v.id) {
-                                      table.setActiveView(
-                                        null,
-                                        table.captureViewFilters(),
+                                      await applyAllView(
+                                        table: table,
+                                        prefs: prefs,
                                       );
                                     }
                                   },

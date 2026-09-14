@@ -76,9 +76,7 @@ class CollectionStartGate extends ConsumerWidget {
                     );
                     if (name == null) return;
                     cols.setLibraryFolders(libraryFolders);
-                    final ok = await cols.create(
-                      name: name,
-                    );
+                    final ok = await cols.create(name: name);
                     if (!context.mounted) return;
                     if (!ok) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -145,10 +143,7 @@ Future<void> runCollectionMenuCommand({
         confirmLabel: 'Create',
       );
       if (name == null || !context.mounted) return;
-      final ok = await cols.create(
-        name: name,
-        resolveDirty: dirty,
-      );
+      final ok = await cols.create(name: name, resolveDirty: dirty);
       if (!ok && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -173,6 +168,7 @@ Future<void> runCollectionMenuCommand({
       await cols.open(id, resolveDirty: dirty);
     case CollectionMenuCommand.save:
       if (!cols.hasCurrent) return;
+      if (!cols.dirty) return;
       await cols.save();
     case CollectionMenuCommand.saveAs:
       if (!cols.hasCurrent) return;
@@ -208,16 +204,15 @@ Future<void> runCollectionMenuCommand({
     case CollectionMenuCommand.delete:
       if (!cols.hasCurrent) return;
       await cols.delete(
-        confirm: () => showDeleteCollectionDialog(
-          context,
-          name: cols.current.name,
-        ),
+        confirm: () =>
+            showDeleteCollectionDialog(context, name: cols.current.name),
       );
     case CollectionMenuCommand.addFolder:
       if (!cols.hasCurrent) return;
       final currentFolders = cols.current.leafFolders.toSet();
-      final claimedElsewhere =
-          cols.foldersClaimedByOthers(exceptId: cols.current.id);
+      final claimedElsewhere = cols.foldersClaimedByOthers(
+        exceptId: cols.current.id,
+      );
       final candidates = [
         for (final f in libraryFolders)
           if (!currentFolders.contains(f) && !claimedElsewhere.contains(f)) f,
@@ -229,7 +224,7 @@ Future<void> runCollectionMenuCommand({
             content: Text(
               othersHaveFolders
                   ? 'No free folders left. Remaining folders belong '
-                      'to other collections.'
+                        'to other collections.'
                   : 'All folders are already in this collection.',
             ),
           ),
@@ -255,10 +250,7 @@ Future<void> runCollectionMenuCommand({
       cols.addFolder(picked);
     case CollectionMenuCommand.removeFolder:
       if (!cols.hasCurrent) return;
-      final members = sortedAlphaBy(
-        cols.current.leafFolders,
-        leafFolderLabel,
-      );
+      final members = sortedAlphaBy(cols.current.leafFolders, leafFolderLabel);
       if (members.isEmpty) return;
       final picked = await showDialog<String>(
         context: context,

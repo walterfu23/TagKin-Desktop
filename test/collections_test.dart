@@ -565,19 +565,19 @@ void main() {
         expect(disk.collections.single.views.single.name, 'Ada');
       });
 
-      test('nextDefaultViewName skips taken ViewN', () async {
+      test('nextDefaultViewName skips taken ViewNN', () async {
         await controller.create(name: 'Trip', seedFolders: ['/a']);
-        expect(controller.nextDefaultViewName(), 'View1');
+        expect(controller.nextDefaultViewName(), 'View01');
         await controller.saveView(
-          name: 'View1',
+          name: 'View01',
           filters: LibraryViewFilters.all,
         );
-        expect(controller.nextDefaultViewName(), 'View2');
+        expect(controller.nextDefaultViewName(), 'View02');
         await controller.saveView(
-          name: 'view2',
+          name: 'view02',
           filters: const LibraryViewFilters(filterQuery: 'x'),
         );
-        expect(controller.nextDefaultViewName(), 'View3');
+        expect(controller.nextDefaultViewName(), 'View03');
       });
 
       test('hiddenFolders round-trips on a saved view', () async {
@@ -591,6 +591,20 @@ void main() {
         final disk = await CollectionsStore(supportDir: tempDir).load();
         expect(disk.collections.single.views.single.filters.hiddenFolders, [
           '/albums/Trip',
+        ]);
+      });
+
+      test('hiddenItemIds round-trips on a saved view', () async {
+        await controller.create(name: 'Trip', seedFolders: ['/a']);
+        const filters = LibraryViewFilters(hiddenItemIds: ['item_a']);
+        final saved = await controller.saveView(
+          name: 'No a',
+          filters: filters,
+        );
+        expect(saved!.filters.hiddenItemIds, ['item_a']);
+        final disk = await CollectionsStore(supportDir: tempDir).load();
+        expect(disk.collections.single.views.single.filters.hiddenItemIds, [
+          'item_a',
         ]);
       });
     });

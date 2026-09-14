@@ -34,6 +34,8 @@ import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/persons/face_crop_trays_page.dart';
 import 'package:tagkin_desktop/persons/persons_list_page.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
+import 'package:tagkin_desktop/library/views_menu.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prefs/settings_navigation.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_status_banner.dart';
@@ -905,6 +907,7 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
     HardwareKeyboard.instance.removeHandler(_onHardwareKeyForFacesSelectAll);
     unawaited(_disarmWindowCloseGate());
     _libraryLookSource?.removeListener(_onLibraryLookChanged);
+    _libraryLookSource?.onViewFiltersChanged = null;
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -912,17 +915,53 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
   void _ensureLibraryLookSync(LibraryTableController table) {
     if (identical(_libraryLookSource, table)) return;
     _libraryLookSource?.removeListener(_onLibraryLookChanged);
+    _libraryLookSource?.onViewFiltersChanged = null;
     _libraryLookSource = table;
     table.addListener(_onLibraryLookChanged);
+    table.onViewFiltersChanged = _onViewFiltersChanged;
+    table.ensureLoaded();
   }
 
   void _onLibraryLookChanged() {
+    _syncActiveViewDirty();
     if (!mounted || _applyingCollectionUi) return;
     final cols = ref.read(collectionsControllerProvider);
     if (!cols.sessionReady) return;
-    cols.updateLibraryLook(
-      ref.read(libraryTableControllerProvider).captureCollectionLibraryUi(),
-    );
+    final table = _libraryLookSource;
+    if (table == null) return;
+    cols.updateLibraryLook(table.captureCollectionLibraryUi());
+  }
+
+  void _syncActiveViewDirty() {
+    if (!mounted) return;
+    var dirty = false;
+    try {
+      dirty = ref.read(libraryTableControllerProvider).isActiveViewModified;
+    } catch (_) {}
+    if (ref.read(activeViewDirtyProvider) != dirty) {
+      ref.read(activeViewDirtyProvider.notifier).state = dirty;
+    }
+  }
+
+  Future<void> _persistDirtyNamedView() async {
+    try {
+      final table = ref.read(libraryTableControllerProvider);
+      final cols = ref.read(collectionsControllerProvider);
+      if (table.isActiveViewModified) {
+        await saveNamedActiveView(table: table, cols: cols);
+      }
+    } catch (_) {}
+    _syncActiveViewDirty();
+  }
+
+  void _onViewFiltersChanged() {
+    if (!mounted || _applyingCollectionUi) return;
+    final cols = ref.read(collectionsControllerProvider);
+    if (!cols.sessionReady) return;
+    final table = _libraryLookSource;
+    if (table == null) return;
+    if (table.activeViewId != null) return;
+    unawaited(commitActiveView(table: table, cols: cols));
   }
 
   /// Applies the collection's saved Folders look and folds any auto-expand
@@ -943,13 +982,17 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
         if (!mounted) return;
         await table.applyCollectionLibraryUi(cols.current.ui.library);
         if (!mounted) return;
-        table.setActiveView(null, table.captureViewFilters());
+        await applyAllView(
+          table: table,
+          prefs: ref.read(desktopPrefsControllerProvider),
+        );
         if (!mounted) return;
         // Auto-expand may change expandedDirs; fold into baseline, not dirty.
         cols.adoptLibraryLook(table.captureCollectionLibraryUi());
       });
     } finally {
       _applyingCollectionUi = false;
+      _syncActiveViewDirty();
     }
   }
 
@@ -965,6 +1008,8 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
     if (existing != null) return existing;
     final future = () async {
       try {
+        final viewOk = await _confirmLeaveIfViewDirty();
+        if (!viewOk) return false;
         final cols = ref.read(collectionsControllerProvider);
         if (!cols.dirty) return true;
         if (!mounted) return false;
@@ -992,7 +1037,8 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
     if (_quitConfirmed) return AppExitResponse.exit;
     if (_windowCloseGateActive) {
       final cols = ref.read(collectionsControllerProvider);
-      if (!cols.dirty) {
+      final viewDirty = _isActiveViewModified();
+      if (!cols.dirty && !viewDirty) {
         _quitConfirmed = true;
         await _disarmWindowCloseGate();
         return AppExitResponse.exit;
@@ -1034,6 +1080,7 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
     if (!ok) return;
     if (!mounted) return;
     ref.read(collectionsControllerProvider).clearSession();
+    ref.read(activeViewDirtyProvider.notifier).state = false;
     _collectionBootstrapRequested = false;
     await _disarmWindowCloseGate();
     await handler();
@@ -1049,6 +1096,22 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
   }
 
   Future<void> _runCollectionCommand(CollectionMenuRequest req) async {
+    const switchers = {
+      CollectionMenuCommand.newCollection,
+      CollectionMenuCommand.open,
+      CollectionMenuCommand.openRecent,
+      CollectionMenuCommand.delete,
+    };
+    if (switchers.contains(req.command)) {
+      final ok = await _confirmLeaveIfViewDirty();
+      if (!ok) return;
+      if (!mounted) return;
+    }
+    if (req.command == CollectionMenuCommand.save ||
+        req.command == CollectionMenuCommand.saveAs) {
+      await _persistDirtyNamedView();
+      if (!mounted) return;
+    }
     final cols = ref.read(collectionsControllerProvider);
     await runCollectionMenuCommand(
       context: context,
@@ -1057,6 +1120,39 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
       libraryFolders: _libraryFolders(),
       recentCollectionId: req.recentCollectionId,
     );
+  }
+
+  bool _isActiveViewModified() {
+    try {
+      return ref.read(libraryTableControllerProvider).isActiveViewModified;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> _confirmLeaveIfViewDirty() async {
+    if (!mounted) return false;
+    try {
+      final table = ref.read(libraryTableControllerProvider);
+      final cols = ref.read(collectionsControllerProvider);
+      final prefs = ref.read(desktopPrefsControllerProvider);
+      return await confirmLeaveIfViewDirty(
+        context: context,
+        table: table,
+        cols: cols,
+        prefs: prefs,
+      );
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<bool> _confirmLeaveFoldersIfViewDirty(TopLevelTab tab) async {
+    final current = ref.read(activeTopLevelTabProvider);
+    if (current != TopLevelTab.folders || tab == TopLevelTab.folders) {
+      return true;
+    }
+    return _confirmLeaveIfViewDirty();
   }
 
   void _selectTab(TopLevelTab tab) {
@@ -1313,7 +1409,8 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
                         const PopupMenuDivider(),
                         PopupMenuItem(
                           value: CollectionMenuCommand.save,
-                          enabled: cols.dirty,
+                          enabled:
+                              cols.dirty || ref.watch(activeViewDirtyProvider),
                           child: const Text('Save Collection'),
                         ),
                         const PopupMenuItem(
@@ -1350,7 +1447,10 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
                     },
                     icon: const Icon(Icons.menu),
                   ),
-                AppNavTabButtons(onSelected: _selectTab),
+                AppNavTabButtons(
+                  onSelected: _selectTab,
+                  onBeforeNavigate: _confirmLeaveFoldersIfViewDirty,
+                ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: Center(

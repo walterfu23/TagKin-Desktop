@@ -724,8 +724,8 @@ class _PathGroupHeader extends StatelessWidget {
                                 : 'Hide folder',
                             icon: Icon(
                               folderHidden
-                                  ? Icons.visibility_outlined
-                                  : Icons.visibility_off_outlined,
+                                  ? Icons.visibility_off_outlined
+                                  : Icons.visibility_outlined,
                               size: 18,
                             ),
                             visualDensity: VisualDensity.compact,
@@ -827,11 +827,13 @@ class _DataRow extends ConsumerWidget {
                     child: Center(
                       child: IconButton(
                         key: Key('item-list-hide-$scopeId'),
-                        tooltip: item.isHidden ? 'Unhide item' : 'Hide item',
+                        tooltip: controller.isItemHiddenInView(item.id)
+                            ? 'Unhide item'
+                            : 'Hide item',
                         icon: Icon(
-                          item.isHidden
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
+                          controller.isItemHiddenInView(item.id)
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
                           size: 18,
                         ),
                         visualDensity: VisualDensity.compact,

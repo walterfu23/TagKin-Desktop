@@ -27,16 +27,22 @@ class CollectionMenuRequest {
 
 int _collectionMenuNonce = 0;
 
-final collectionMenuRequestProvider =
-    StateProvider<CollectionMenuRequest?>((ref) => null);
+final collectionMenuRequestProvider = StateProvider<CollectionMenuRequest?>(
+  (ref) => null,
+);
+
+/// Named Folders view is dirty (`View01*`). Root-scoped so macOS File Save
+/// (outside the signed-in [ProviderScope]) can enable Cmd-S.
+final activeViewDirtyProvider = StateProvider<bool>((ref) => false);
 
 void requestCollectionMenu(
   WidgetRef ref,
   CollectionMenuCommand command, {
   String? recentCollectionId,
 }) {
-  ref.read(collectionMenuRequestProvider.notifier).state =
-      CollectionMenuRequest(
+  ref
+      .read(collectionMenuRequestProvider.notifier)
+      .state = CollectionMenuRequest(
     command: command,
     nonce: ++_collectionMenuNonce,
     recentCollectionId: recentCollectionId,

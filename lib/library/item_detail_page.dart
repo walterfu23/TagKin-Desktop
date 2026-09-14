@@ -8,6 +8,9 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/jobs/jobs_controller.dart';
 import 'package:tagkin_desktop/library/item_detail_edits.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
+import 'package:tagkin_desktop/library/views_menu.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/review/item_review_page.dart';
 import 'package:tagkin_desktop/ui/async_state_view.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
@@ -27,10 +30,7 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
   final ItemDetailEdits _edits = ItemDetailEdits();
   final GlobalKey _reviewKey = GlobalKey();
   LibraryTableController? _libraryTable;
-
-  /// Set right after a successful [_toggleHidden] so the AppBar toggle
-  /// reflects the new state immediately (before/regardless of [_future]).
-  Item? _hiddenOverride;
+  bool _localHiddenInView = false;
 
   @override
   void initState() {
@@ -85,32 +85,30 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
     });
   }
 
-  /// Current best-known [Item]: a just-applied hide/unhide wins, then any
-  /// job-adopted refresh (analyze/cancel), then the last `_future` snapshot.
+  /// Current best-known [Item]: job-adopted refresh (analyze/cancel), then
+  /// the last `_future` snapshot.
   Item? _currentItem(JobsController jobs, Item? snapshotItem) {
-    return _hiddenOverride ?? jobs.item ?? snapshotItem;
+    return jobs.item ?? snapshotItem;
   }
 
-  /// Non-destructive show/hide (D2). The item stays fully in the library;
-  /// this never closes the page (unlike the old destructive Remove).
-  Future<void> _toggleHidden(Item item) async {
-    try {
-      final updated = await ref
-          .read(itemsRepositoryProvider)
-          .setItemHidden(item.id, !item.isHidden);
-      if (!mounted) return;
-      setState(() => _hiddenOverride = updated);
-      _cacheLibraryTable();
-      _libraryTable?.adoptItem(updated);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          key: const Key('item-detail-hide-error'),
-          content: Text('Hide failed: $e'),
-        ),
+  /// Non-destructive show/hide in the current Folders view (D2). The item
+  /// stays fully in the library; this never closes the page.
+  void _toggleHidden(Item item) {
+    _cacheLibraryTable();
+    final table = _libraryTable;
+    if (table != null) {
+      table.setItemHiddenInView(
+        item.id,
+        hidden: !table.isItemHiddenInView(item.id),
       );
+      setState(() {});
+      return;
     }
+    setState(() => _localHiddenInView = !_localHiddenInView);
+  }
+
+  bool _hiddenInView(String itemId) {
+    return _libraryTable?.isItemHiddenInView(itemId) ?? _localHiddenInView;
   }
 
   @override
@@ -199,8 +197,26 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
                   title: const Text('Item'),
                   actions: [
                     AppNavTabButtons(
-                      onBeforeNavigate: () async =>
-                          await _edits.confirmLeave?.call() ?? true,
+                      onBeforeNavigate: (tab) async {
+                        final editsOk =
+                            await _edits.confirmLeave?.call() ?? true;
+                        if (!editsOk) return false;
+                        if (tab == TopLevelTab.folders) return true;
+                        _cacheLibraryTable();
+                        final table = _libraryTable;
+                        if (table == null || !table.isActiveViewModified) {
+                          return true;
+                        }
+                        if (!context.mounted) return false;
+                        final cols = ref.read(collectionsControllerProvider);
+                        final prefs = ref.read(desktopPrefsControllerProvider);
+                        return confirmLeaveIfViewDirty(
+                          context: context,
+                          table: table,
+                          cols: cols,
+                          prefs: prefs,
+                        );
+                      },
                     ),
                     ListenableBuilder(
                       listenable: _edits.undo,
@@ -219,7 +235,8 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
                     ),
                     FilledButton(
                       key: const Key('item-detail-save'),
-                      onPressed: _edits.isDirty &&
+                      onPressed:
+                          _edits.isDirty &&
                               !_edits.saving &&
                               _edits.save != null
                           ? _saveAndRefreshFolders
@@ -232,15 +249,14 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
                       builder: (context, snapshot) {
                         final item = _currentItem(jobs, snapshot.data);
                         if (item == null) return const SizedBox.shrink();
+                        final hidden = _hiddenInView(item.id);
                         return IconButton(
                           key: const Key('item-hide-toggle'),
-                          tooltip: item.isHidden
-                              ? 'Unhide item'
-                              : 'Hide item',
+                          tooltip: hidden ? 'Unhide item' : 'Hide item',
                           icon: Icon(
-                            item.isHidden
-                                ? Icons.visibility_outlined
-                                : Icons.visibility_off_outlined,
+                            hidden
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
                           ),
                           onPressed: () => _toggleHidden(item),
                         );

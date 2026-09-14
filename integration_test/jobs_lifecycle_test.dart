@@ -81,19 +81,10 @@ void main() {
     await tester.tap(find.byKey(const Key('item-hide-toggle')));
     await tester.pumpAndSettle();
     expect(find.text('Sure?'), findsNothing);
-    expect(items.setItemHiddenCalls, [(itemId: 'item_int', isHidden: true)]);
+    expect(items.setItemHiddenCalls, isEmpty);
 
-    // Toggling back sends isHidden: false and flips the tooltip again.
-    // (Folders excluding hidden items by default is covered at the widget
-    // level in items_list_page_test.dart — no page pop needed there.)
     await tester.tap(find.byKey(const Key('item-hide-toggle')));
     await tester.pumpAndSettle();
-    expect(
-      items.setItemHiddenCalls,
-      [
-        (itemId: 'item_int', isHidden: true),
-        (itemId: 'item_int', isHidden: false),
-      ],
-    );
+    expect(items.setItemHiddenCalls, isEmpty);
   });
 }

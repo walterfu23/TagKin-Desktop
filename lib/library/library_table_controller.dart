@@ -22,14 +22,13 @@ import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/where/where_label_resolver.dart';
 import 'package:tagkin_desktop/where/where_place_label.dart';
-import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/ui/alpha_order.dart';
 
 /// Columns that support header sorting on the library table.
 enum LibrarySortColumn { who, what, where, source, comment, type, status }
 
-/// Folders Hide-column filter ([Item.isHidden]). Default [visible] matches
-/// the previous "hidden items stay out of Folders" behavior.
+/// Folders Hide-column filter (view-local hidden items/folders). Default
+/// [visible] matches "hidden rows stay out of Folders".
 enum HiddenItemsFilter { visible, hidden, both }
 
 /// One sort key in a multi-column sort stack.
@@ -344,8 +343,8 @@ class LibraryTableController extends ChangeNotifier {
   /// ([DesktopPrefs.itemListBlurrySharpnessThreshold]).
   double blurThreshold;
 
-  /// Folders Hide-column filter ([Item.isHidden]). In-memory (not a
-  /// [DesktopPrefs] entry) — the hidden state itself is server-persisted.
+  /// Folders Hide-column filter (view-local hidden items/folders). In-memory
+  /// (not a [DesktopPrefs] entry) — inspect-only, not written to a View.
   HiddenItemsFilter _hiddenItemsFilter = HiddenItemsFilter.visible;
 
   HiddenItemsFilter get hiddenItemsFilter => _hiddenItemsFilter;
@@ -375,7 +374,17 @@ class LibraryTableController extends ChangeNotifier {
     if (names != null) _whoFilterNames = Set<String>.from(names);
     if (matchAll != null) _whoFilterMatchAll = matchAll;
     pageIndex = 0;
-    _notify();
+    _notifyViewMutation();
+  }
+
+  /// All is never dirty: it is not a saved view. Star only named views.
+  /// Hide-column Visible/Hidden/Both is inspect-only and does not dirty.
+  bool get isActiveViewModified {
+    if (activeViewId == null) return false;
+    final current = persistableViewFilters();
+    final snap = _activeViewSnapshot;
+    if (snap == null) return current != LibraryViewFilters.all;
+    return current != snap;
   }
 
   /// Active named view id, or null for the built-in All view.
@@ -397,11 +406,13 @@ class LibraryTableController extends ChangeNotifier {
     }
   }
 
-  bool get isActiveViewModified {
-    final current = captureViewFilters();
-    final snap = _activeViewSnapshot;
-    if (snap == null) return current != LibraryViewFilters.all;
-    return current != snap;
+  /// Called after a real View mutation (filter / hide-unhide / sort), not
+  /// after load, expand, or collection membership changes.
+  VoidCallback? onViewFiltersChanged;
+
+  void _notifyViewMutation() {
+    _notify();
+    onViewFiltersChanged?.call();
   }
 
   void setActiveView(String? id, LibraryViewFilters? snapshot) {
@@ -414,6 +425,26 @@ class LibraryTableController extends ChangeNotifier {
   Set<String> _hiddenFolders = const {};
 
   Set<String> get hiddenFolders => _hiddenFolders;
+
+  /// Item ids hidden in the current view (not [Item.isHidden]).
+  Set<String> _hiddenItemIds = const {};
+
+  Set<String> get hiddenItemIds => _hiddenItemIds;
+
+  bool isItemHiddenInView(String itemId) => _hiddenItemIds.contains(itemId);
+
+  void setItemHiddenInView(String itemId, {required bool hidden}) {
+    if (itemId.isEmpty) return;
+    final next = Set<String>.from(_hiddenItemIds);
+    if (hidden) {
+      if (!next.add(itemId)) return;
+    } else {
+      if (!next.remove(itemId)) return;
+    }
+    _hiddenItemIds = next;
+    pageIndex = 0;
+    _notifyViewMutation();
+  }
 
   bool isFolderHidden(String dir) {
     final key = normalizeLeafFolder(dir);
@@ -432,7 +463,7 @@ class LibraryTableController extends ChangeNotifier {
     }
     _hiddenFolders = next;
     pageIndex = 0;
-    _notify();
+    _notifyViewMutation();
   }
 
   /// When non-null, only rows whose leaf folder is in this set are shown.
@@ -492,12 +523,15 @@ class LibraryTableController extends ChangeNotifier {
     return false;
   }
 
+  bool _itemHiddenInView(LibraryTableRow r) =>
+      _hiddenItemIds.contains(r.item.id);
+
   /// Rows after every Folders filter except the Who filter and sort:
   /// collection scope, text query, Hide blurry, Visible/Hidden/Both, and
-  /// view-local hidden folders. This is the population the Who filter's
-  /// checklist ([availableWhoNames]) and predicate operate on, so e.g.
-  /// switching the Hide-column dropdown to **Hidden** scopes both the
-  /// checklist and the filter to hidden rows only.
+  /// view-local hidden folders and hidden item ids. This is the population
+  /// the Who filter's checklist ([availableWhoNames]) and predicate operate
+  /// on, so e.g. switching the Hide-column dropdown to **Hidden** scopes both
+  /// the checklist and the filter to hidden rows only.
   List<LibraryTableRow> get _rowsForWhoFilter {
     var list = List<LibraryTableRow>.from(_rows);
     final collectionFolders = collectionLeafFolders;
@@ -531,11 +565,11 @@ class LibraryTableController extends ChangeNotifier {
     switch (_hiddenItemsFilter) {
       case HiddenItemsFilter.visible:
         list = list
-            .where((r) => !r.item.isHidden && !_underHiddenFolder(r))
+            .where((r) => !_itemHiddenInView(r) && !_underHiddenFolder(r))
             .toList();
       case HiddenItemsFilter.hidden:
         list = list
-            .where((r) => r.item.isHidden || _underHiddenFolder(r))
+            .where((r) => _itemHiddenInView(r) || _underHiddenFolder(r))
             .toList();
       case HiddenItemsFilter.both:
         break;
@@ -795,7 +829,7 @@ class LibraryTableController extends ChangeNotifier {
   void setFilterQuery(String value) {
     filterQuery = value;
     pageIndex = 0;
-    _notify();
+    _notifyViewMutation();
   }
 
   /// Synced from the shared [DesktopPrefs.hideBlurryPhotos] pref (Folders
@@ -806,7 +840,7 @@ class LibraryTableController extends ChangeNotifier {
     _hideBlurryPhotos = value;
     if (threshold != null) blurThreshold = threshold;
     pageIndex = 0;
-    _notify();
+    _notifyViewMutation();
   }
 
   /// Snapshot of Folders look for the open collection.
@@ -822,25 +856,13 @@ class LibraryTableController extends ChangeNotifier {
     );
   }
 
-  /// Restore Folders look from a saved collection (no network reload unless
-  /// status filter requires it).
+  /// Restore expanded folder rows from the collection page look.
+  /// Query / status / sort live on Views; All is every collection item.
   Future<void> applyCollectionLibraryUi(CollectionLibraryUi ui) async {
-    filterQuery = ui.filterQuery;
     pageIndex = 0;
-    sortKeys = [
-      for (final k in ui.sortKeys)
-        if (_sortColumnFromName(k.column) != null)
-          LibrarySortKey(
-            _sortColumnFromName(k.column)!,
-            ascending: k.ascending,
-          ),
-    ];
     expandedSourceDirs
       ..clear()
       ..addAll(ui.expandedDirs);
-    // Empty saved expansion → default expand sibling-folder parents.
-    // Non-empty → respect saved set; mark all current branches seeded so we
-    // do not immediately re-expand a collapsed parent.
     final branches = _multiChildFolderParentPaths(filteredSorted);
     if (ui.expandedDirs.isEmpty) {
       expandedSourceDirs.addAll(branches);
@@ -848,21 +870,7 @@ class LibraryTableController extends ChangeNotifier {
     _seededBranchParents
       ..clear()
       ..addAll(branches);
-    ProcessingStatus? nextStatus;
-    final raw = ui.statusFilter;
-    if (raw != null && raw.isNotEmpty) {
-      try {
-        nextStatus = ProcessingStatus.fromWire(raw);
-      } catch (_) {
-        nextStatus = null;
-      }
-    }
-    if (nextStatus != statusFilter) {
-      statusFilter = nextStatus;
-      await load();
-    } else {
-      _notify();
-    }
+    _notify();
   }
 
   /// Snapshot of Folders filters/sort for a saved View.
@@ -880,7 +888,17 @@ class LibraryTableController extends ChangeNotifier {
           CollectionSortKey(k.column.name, ascending: k.ascending),
       ],
       hiddenFolders: (hiddenFolders.toList()..sort()),
+      hiddenItemIds: (hiddenItemIds.toList()..sort()),
     );
+  }
+
+  /// Snapshot written to a View: Hide-column stays inspect-only.
+  LibraryViewFilters persistableViewFilters() {
+    final current = captureViewFilters();
+    final hide = activeViewId == null
+        ? 'visible'
+        : (activeViewSnapshot?.hiddenItemsFilter ?? 'visible');
+    return current.copyWith(hiddenItemsFilter: hide);
   }
 
   /// Restore Folders filters/sort from a View. Hide blurry is prefs-owned
@@ -910,6 +928,10 @@ class LibraryTableController extends ChangeNotifier {
     _hiddenFolders = {
       for (final d in f.hiddenFolders)
         if (normalizeLeafFolder(d) case final k when k.isNotEmpty) k,
+    };
+    _hiddenItemIds = {
+      for (final id in f.hiddenItemIds)
+        if (id.isNotEmpty) id,
     };
     ProcessingStatus? nextStatus;
     final raw = f.statusFilter;
@@ -953,6 +975,7 @@ class LibraryTableController extends ChangeNotifier {
   Future<void> setStatusFilter(ProcessingStatus? status) async {
     statusFilter = status;
     await load();
+    onViewFiltersChanged?.call();
   }
 
   /// Click a column header (Cliptorium-style).
@@ -988,7 +1011,7 @@ class LibraryTableController extends ChangeNotifier {
       }
     }
     pageIndex = 0;
-    _notify();
+    _notifyViewMutation();
   }
 
   /// When multi-column sort is disabled, keep only the primary sort column.
@@ -1196,10 +1219,7 @@ class LibraryTableController extends ChangeNotifier {
           period: period,
           who: whoColumnValuesForPeriod(knowledge, period, _personNamesById),
           what: whatColumnValuesForPeriod(period),
-          whereRaw: whereRawForPeriod(
-            period,
-            itemLevelWhereRaw: itemWhereRaw,
-          ),
+          whereRaw: whereRawForPeriod(period, itemLevelWhereRaw: itemWhereRaw),
           whereEntries: whereEntriesByPeriodId[period.id] ?? const [],
           comments: periodComments[period.id] ?? const [],
         ),
@@ -1404,18 +1424,18 @@ class LibraryTableController extends ChangeNotifier {
   }
 }
 
+/// Folders table. Do not depend on desktop prefs: that snapshot churns on disk
+/// load and Hide blurry, and recreating this controller orphans listeners
+/// (Views auto-mint, page-look sync) bound to the prior instance. Live prefs
+/// are pushed onto the existing controller (Folders listen / Settings).
 final libraryTableControllerProvider =
     ChangeNotifierProvider.autoDispose<LibraryTableController>(
       (ref) {
-        final prefs = ref.read(desktopPrefsProvider);
         return LibraryTableController(
           itemsRepository: ref.watch(itemsRepositoryProvider),
           commentsRepository: ref.watch(commentsRepositoryProvider),
           personsRepository: ref.watch(personsRepositoryProvider),
           whereLabelResolver: ref.watch(whereLabelResolverProvider),
-          pageSize: prefs.libraryPageSize,
-          hideBlurryPhotos: prefs.hideBlurryPhotos,
-          blurThreshold: prefs.itemListBlurrySharpnessThreshold.toDouble(),
         );
       },
       dependencies: [
@@ -1423,7 +1443,6 @@ final libraryTableControllerProvider =
         commentsRepositoryProvider,
         personsRepositoryProvider,
         whereLabelResolverProvider,
-        desktopPrefsProvider,
       ],
     );
 
