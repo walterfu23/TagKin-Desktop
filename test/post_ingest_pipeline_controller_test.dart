@@ -406,6 +406,47 @@ void main() {
       expect(pipeline.analyzeOutcomes.single.succeeded, isFalse);
     });
 
+    test('retryFailedAnalyzeOnce retries a 400 high-demand provider error',
+        () async {
+      final photo = fixtureItem(id: 'item_1', type: ItemType.photo);
+      final items = FakeItemsRepository(items: [photo]);
+      var analyzeCount = 0;
+      final jobs = _SelectiveAnalyzeJobs(
+        onAnalyze: (id) async {
+          analyzeCount++;
+          if (analyzeCount == 1) {
+            throw ApiException(
+              statusCode: 400,
+              code: 'bad_request',
+              message:
+                  'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.',
+            );
+          }
+          return AnalyzeResultResponse(
+            item: fixtureItem(id: id, type: ItemType.photo),
+            tagIds: const [],
+            provider: 'stub',
+            modelId: 'stub',
+            escalated: false,
+          );
+        },
+      );
+      final pipeline = PostIngestPipelineController(
+        prePass: _stubPrePass(items),
+        upload: _stubUpload(items),
+        jobsRepository: jobs,
+        whoFaceLinker: WhoFaceLinker(items: items),
+      );
+
+      await pipeline.start(
+        ingestOutcomes: [_ingest(item: photo, path: '/a.jpg')],
+        usageBlocked: false,
+      );
+      await pipeline.retryFailedAnalyzeOnce();
+      expect(analyzeCount, 2);
+      expect(pipeline.analyzeOutcomes.single.succeeded, isTrue);
+    });
+
     test('retryFailedAnalyzeOnce does not retry outOfCredits', () async {
       final photo = fixtureItem(id: 'item_1', type: ItemType.photo);
       final items = FakeItemsRepository(items: [photo]);

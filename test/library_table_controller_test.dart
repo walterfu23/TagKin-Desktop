@@ -1,9 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/local_thumb_cache.dart';
+import 'package:tagkin_desktop/library/views_menu.dart';
+import 'package:tagkin_desktop/persons/collection.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
+import 'package:tagkin_desktop/persons/collections_store.dart';
 import 'package:tagkin_desktop/where/reverse_geocoder.dart';
 import 'package:tagkin_desktop/where/where_label_resolver.dart';
 import 'package:tagkin_desktop/where/where_place_label.dart';
@@ -18,6 +23,13 @@ Future<void> _awaitKnowledge(LibraryTableController c) async {
       return;
     }
     await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+}
+
+class _ThrowingWhereLabelResolver extends WhereLabelResolver {
+  @override
+  Future<List<WhereDisplay>> resolveAllDisplays(Iterable<String> values) {
+    throw StateError('where failed');
   }
 }
 
@@ -527,10 +539,10 @@ void main() {
       expect(controller.filteredSorted.map((r) => r.item.id), ['hidden']);
 
       controller.setHiddenItemsFilter(HiddenItemsFilter.both);
-      expect(
-        controller.filteredSorted.map((r) => r.item.id).toSet(),
-        {'shown', 'hidden'},
-      );
+      expect(controller.filteredSorted.map((r) => r.item.id).toSet(), {
+        'shown',
+        'hidden',
+      });
     });
   });
 
@@ -1164,34 +1176,86 @@ void main() {
     expect(controller.allRows, isEmpty);
   });
 
-  test('refreshRowSummariesFor updates Who on loaded siblings; skips missing',
-      () async {
-    final a = fixtureItem(
-      id: 'a',
-      sourceRef: 'file:///albums/x/a.jpg',
-      processingStatus: ProcessingStatus.tagged,
-    );
-    final b = fixtureItem(
-      id: 'b',
-      sourceRef: 'file:///albums/x/b.jpg',
-      processingStatus: ProcessingStatus.tagged,
-    );
-    final appearanceA = fixtureAppearance(
-      id: 'ap_a',
-      personId: 'person_1',
-      itemId: 'a',
-      tagId: 'w_a',
-    );
-    final appearanceB = fixtureAppearance(
-      id: 'ap_b',
-      personId: 'person_1',
-      itemId: 'b',
-      tagId: 'w_b',
-    );
-    final items = FakeItemsRepository(
-      items: [a, b],
-      knowledgeByItemId: {
-        'a': fixtureKnowledge(
+  test(
+    'refreshRowSummariesFor updates Who on loaded siblings; skips missing',
+    () async {
+      final a = fixtureItem(
+        id: 'a',
+        sourceRef: 'file:///albums/x/a.jpg',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final b = fixtureItem(
+        id: 'b',
+        sourceRef: 'file:///albums/x/b.jpg',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final appearanceA = fixtureAppearance(
+        id: 'ap_a',
+        personId: 'person_1',
+        itemId: 'a',
+        tagId: 'w_a',
+      );
+      final appearanceB = fixtureAppearance(
+        id: 'ap_b',
+        personId: 'person_1',
+        itemId: 'b',
+        tagId: 'w_b',
+      );
+      final items = FakeItemsRepository(
+        items: [a, b],
+        knowledgeByItemId: {
+          'a': fixtureKnowledge(
+            item: a,
+            tags: [
+              fixtureTag(
+                id: 'w_a',
+                itemId: 'a',
+                dimension: 'who',
+                value: 'toddler',
+              ),
+            ],
+          ),
+          'b': fixtureKnowledge(
+            item: b,
+            tags: [
+              fixtureTag(
+                id: 'w_b',
+                itemId: 'b',
+                dimension: 'who',
+                value: 'toddler',
+              ),
+            ],
+          ),
+        },
+      );
+      final persons = FakePersonsRepository(
+        persons: [
+          fixturePersonDetail(
+            id: 'person_1',
+            name: 'Pat',
+            appearances: [appearanceA, appearanceB],
+          ),
+        ],
+      );
+      final controller = LibraryTableController(
+        itemsRepository: items,
+        commentsRepository: FakeCommentsRepository(),
+        personsRepository: persons,
+        thumbCache: LocalThumbCache(),
+        knowledgeConcurrency: 1,
+      );
+      await controller.load();
+      await _awaitKnowledge(controller);
+      expect(controller.allRows.firstWhere((r) => r.item.id == 'a').who, [
+        'toddler',
+      ]);
+      expect(controller.allRows.firstWhere((r) => r.item.id == 'b').who, [
+        'toddler',
+      ]);
+
+      items.setKnowledge(
+        'a',
+        fixtureKnowledge(
           item: a,
           tags: [
             fixtureTag(
@@ -1201,8 +1265,12 @@ void main() {
               value: 'toddler',
             ),
           ],
+          appearances: [appearanceA],
         ),
-        'b': fixtureKnowledge(
+      );
+      items.setKnowledge(
+        'b',
+        fixtureKnowledge(
           item: b,
           tags: [
             fixtureTag(
@@ -1212,68 +1280,20 @@ void main() {
               value: 'toddler',
             ),
           ],
+          appearances: [appearanceB],
         ),
-      },
-    );
-    final persons = FakePersonsRepository(
-      persons: [
-        fixturePersonDetail(
-          id: 'person_1',
-          name: 'Pat',
-          appearances: [appearanceA, appearanceB],
-        ),
-      ],
-    );
-    final controller = LibraryTableController(
-      itemsRepository: items,
-      commentsRepository: FakeCommentsRepository(),
-      personsRepository: persons,
-      thumbCache: LocalThumbCache(),
-      knowledgeConcurrency: 1,
-    );
-    await controller.load();
-    await _awaitKnowledge(controller);
-    expect(
-      controller.allRows.firstWhere((r) => r.item.id == 'a').who,
-      ['toddler'],
-    );
-    expect(
-      controller.allRows.firstWhere((r) => r.item.id == 'b').who,
-      ['toddler'],
-    );
+      );
 
-    items.setKnowledge(
-      'a',
-      fixtureKnowledge(
-        item: a,
-        tags: [
-          fixtureTag(id: 'w_a', itemId: 'a', dimension: 'who', value: 'toddler'),
-        ],
-        appearances: [appearanceA],
-      ),
-    );
-    items.setKnowledge(
-      'b',
-      fixtureKnowledge(
-        item: b,
-        tags: [
-          fixtureTag(id: 'w_b', itemId: 'b', dimension: 'who', value: 'toddler'),
-        ],
-        appearances: [appearanceB],
-      ),
-    );
-
-    await controller.refreshRowSummariesFor(['a', 'b', 'missing']);
-    expect(
-      controller.allRows.firstWhere((r) => r.item.id == 'a').who,
-      ['Pat'],
-    );
-    expect(
-      controller.allRows.firstWhere((r) => r.item.id == 'b').who,
-      ['Pat'],
-    );
-    expect(controller.allRows, hasLength(2));
-  });
+      await controller.refreshRowSummariesFor(['a', 'b', 'missing']);
+      expect(controller.allRows.firstWhere((r) => r.item.id == 'a').who, [
+        'Pat',
+      ]);
+      expect(controller.allRows.firstWhere((r) => r.item.id == 'b').who, [
+        'Pat',
+      ]);
+      expect(controller.allRows, hasLength(2));
+    },
+  );
 
   test(
     'adoptItem insert then load keeps tagged over stale pending fetch',
@@ -1549,8 +1569,63 @@ void main() {
     await _awaitKnowledge(controller);
     expect(controller.allRows.single.keyPeriods, hasLength(2));
     expect(controller.allRows.single.keyPeriods.first.endMs, 1800);
+    final periodRows = controller.visibleEntries.whereType<LibraryItemEntry>();
+    expect(periodRows, hasLength(2));
+    expect(periodRows.first.period?.id, 'kp1');
+    expect(periodRows.last.period?.id, 'kp2');
     controller.dispose();
   });
+
+  test(
+    'load keeps two period rows when where labels throw',
+    () async {
+      final item = fixtureItem(
+        id: 'v',
+        type: ItemType.video,
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final items = FakeItemsRepository(
+        items: [item],
+        knowledgeByItemId: {
+          'v': fixtureKnowledge(
+            item: item,
+            tags: const [],
+            keyPeriods: [
+              KeyPeriodKnowledge(
+                id: 'kp1',
+                itemId: 'v',
+                startMs: 0,
+                endMs: 1800,
+                tags: const [],
+              ),
+              KeyPeriodKnowledge(
+                id: 'kp2',
+                itemId: 'v',
+                startMs: 1800,
+                endMs: 9000,
+                tags: const [],
+              ),
+            ],
+          ),
+        },
+      );
+      final controller = LibraryTableController(
+        itemsRepository: items,
+        commentsRepository: FakeCommentsRepository(),
+        thumbCache: LocalThumbCache(),
+        whereLabelResolver: _ThrowingWhereLabelResolver(),
+        knowledgeConcurrency: 1,
+      );
+      await controller.load();
+      await _awaitKnowledge(controller);
+      expect(controller.allRows.single.keyPeriods, hasLength(2));
+      final periodRows = controller.visibleEntries.whereType<LibraryItemEntry>();
+      expect(periodRows, hasLength(2));
+      expect(periodRows.first.period?.id, 'kp1');
+      expect(periodRows.last.period?.id, 'kp2');
+      controller.dispose();
+    },
+  );
 
   test('ensureKeyPeriods returns cache and does not refetch', () async {
     final item = fixtureItem(
@@ -1595,6 +1670,185 @@ void main() {
     controller.dispose();
   });
 
+  group('whoFilter (Match Any / Match All)', () {
+    Future<LibraryTableController> buildController() async {
+      final a = fixtureItem(id: 'a', processingStatus: ProcessingStatus.tagged);
+      final b = fixtureItem(id: 'b', processingStatus: ProcessingStatus.tagged);
+      final c = fixtureItem(id: 'c', processingStatus: ProcessingStatus.tagged);
+      final items = FakeItemsRepository(
+        items: [a, b, c],
+        knowledgeByItemId: {
+          // a: Sam only
+          'a': fixtureKnowledge(
+            item: a,
+            tags: [
+              fixtureTag(id: 'wa', itemId: 'a', dimension: 'who', value: 'Sam'),
+            ],
+          ),
+          // b: Sam + Ada
+          'b': fixtureKnowledge(
+            item: b,
+            tags: [
+              fixtureTag(
+                id: 'wb1',
+                itemId: 'b',
+                dimension: 'who',
+                value: 'Sam',
+              ),
+              fixtureTag(
+                id: 'wb2',
+                itemId: 'b',
+                dimension: 'who',
+                value: 'Ada',
+              ),
+            ],
+          ),
+          // c: Ada only
+          'c': fixtureKnowledge(
+            item: c,
+            tags: [
+              fixtureTag(id: 'wc', itemId: 'c', dimension: 'who', value: 'Ada'),
+            ],
+          ),
+        },
+      );
+      final controller = LibraryTableController(
+        itemsRepository: items,
+        commentsRepository: FakeCommentsRepository(),
+        thumbCache: LocalThumbCache(),
+        knowledgeConcurrency: 3,
+      );
+      await controller.load();
+      await _awaitKnowledge(controller);
+      return controller;
+    }
+
+    test('empty selection is a no-op', () async {
+      final controller = await buildController();
+      expect(controller.filteredSorted, hasLength(3));
+    });
+
+    test('defaults to Match Any (OR)', () async {
+      final controller = await buildController();
+      expect(controller.whoFilterMatchAll, isFalse);
+    });
+
+    test('Match Any (OR) matches rows with any selected name', () async {
+      final controller = await buildController();
+      controller.setWhoFilter(names: {'Sam', 'Ada'});
+      expect(controller.filteredSorted.map((r) => r.item.id).toSet(), {
+        'a',
+        'b',
+        'c',
+      });
+
+      controller.setWhoFilter(names: {'Sam'});
+      expect(controller.filteredSorted.map((r) => r.item.id).toSet(), {
+        'a',
+        'b',
+      });
+    });
+
+    test('Match All (AND) requires every selected name on the row', () async {
+      final controller = await buildController();
+      controller.setWhoFilter(names: {'Sam', 'Ada'}, matchAll: true);
+      expect(controller.filteredSorted.map((r) => r.item.id).toSet(), {'b'});
+    });
+
+    test('clearing the selection restores the full population', () async {
+      final controller = await buildController();
+      controller.setWhoFilter(names: {'Sam'});
+      expect(controller.filteredSorted, hasLength(2));
+
+      controller.setWhoFilter(names: {});
+      expect(controller.filteredSorted, hasLength(3));
+    });
+
+    test('availableWhoNames dedups and sorts A-Z case-insensitively', () async {
+      final controller = await buildController();
+      expect(controller.availableWhoNames.toList(), ['Ada', 'Sam']);
+    });
+
+    test('availableWhoNames and the filter scope to Hidden when the '
+        'Hide-column dropdown shows Hidden', () async {
+      final shown = fixtureItem(id: 'shown');
+      final hiddenSam = fixtureItem(id: 'hidden_sam', isHidden: true);
+      final hiddenAda = fixtureItem(id: 'hidden_ada', isHidden: true);
+      final controller = LibraryTableController(
+        itemsRepository: FakeItemsRepository(
+          items: [shown, hiddenSam, hiddenAda],
+          knowledgeByItemId: {
+            'shown': fixtureKnowledge(
+              item: shown,
+              tags: [
+                fixtureTag(
+                  id: 'w0',
+                  itemId: 'shown',
+                  dimension: 'who',
+                  value: 'Visible Vic',
+                ),
+              ],
+            ),
+            'hidden_sam': fixtureKnowledge(
+              item: hiddenSam,
+              tags: [
+                fixtureTag(
+                  id: 'w1',
+                  itemId: 'hidden_sam',
+                  dimension: 'who',
+                  value: 'Sam',
+                ),
+              ],
+            ),
+            'hidden_ada': fixtureKnowledge(
+              item: hiddenAda,
+              tags: [
+                fixtureTag(
+                  id: 'w2',
+                  itemId: 'hidden_ada',
+                  dimension: 'who',
+                  value: 'Ada',
+                ),
+              ],
+            ),
+          },
+        ),
+        commentsRepository: FakeCommentsRepository(),
+        thumbCache: LocalThumbCache(),
+        knowledgeConcurrency: 3,
+      );
+      await controller.load();
+      await _awaitKnowledge(controller);
+
+      // Default Visible: checklist only sees the visible row's name.
+      expect(controller.availableWhoNames, {'Visible Vic'});
+
+      controller.setHiddenItemsFilter(HiddenItemsFilter.hidden);
+      expect(controller.availableWhoNames, {'Ada', 'Sam'});
+
+      controller.setWhoFilter(names: {'Sam'});
+      expect(controller.filteredSorted.map((r) => r.item.id).toSet(), {
+        'hidden_sam',
+      });
+
+      // Flipping back to Visible re-scopes both without touching the
+      // selected name set.
+      controller.setHiddenItemsFilter(HiddenItemsFilter.visible);
+      expect(controller.availableWhoNames, {'Visible Vic'});
+      expect(controller.filteredSorted, isEmpty);
+    });
+
+    test('selecting a page resets pageIndex to 0', () async {
+      final controller = await buildController();
+      controller.pageSize = 2; // minimum pageSize is 2
+      controller.setPage(1);
+      expect(controller.pageIndex, 1);
+
+      controller.setWhoFilter(names: {'Sam'});
+      expect(controller.pageIndex, 0);
+    });
+  });
+
   test('ensureKeyPeriods fetches when knowledge is not yet loaded', () async {
     final item = fixtureItem(
       id: 'v',
@@ -1635,5 +1889,202 @@ void main() {
     expect(periods.single.endMs, 1800);
     expect(controller.allRows.single.knowledgeLoaded, isTrue);
     controller.dispose();
+  });
+
+  group('library views capture / apply', () {
+    test('round-trips filters and sort; tracks modified', () async {
+      final item = fixtureItem(
+        id: 'a',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final controller = LibraryTableController(
+        itemsRepository: FakeItemsRepository(
+          items: [item],
+          knowledgeByItemId: {
+            'a': fixtureKnowledge(
+              item: item,
+              tags: [
+                fixtureTag(
+                  id: 'w1',
+                  itemId: 'a',
+                  dimension: 'who',
+                  value: 'Sam',
+                ),
+              ],
+            ),
+          },
+        ),
+        commentsRepository: FakeCommentsRepository(),
+        thumbCache: LocalThumbCache(),
+        knowledgeConcurrency: 1,
+      );
+      await controller.load();
+      await _awaitKnowledge(controller);
+
+      expect(controller.isActiveViewModified, isFalse);
+      controller.setFilterQuery('Sam');
+      controller.setWhoFilter(names: {'Sam'}, matchAll: true);
+      controller.setHiddenItemsFilter(HiddenItemsFilter.both);
+      controller.toggleSort(LibrarySortColumn.who);
+      controller.setHideBlurryPhotos(true);
+      expect(controller.isActiveViewModified, isTrue);
+
+      final snap = controller.captureViewFilters();
+      expect(snap.filterQuery, 'Sam');
+      expect(snap.whoNames, ['Sam']);
+      expect(snap.whoMatchAll, isTrue);
+      expect(snap.hiddenItemsFilter, 'both');
+      expect(snap.hideBlurryPhotos, isTrue);
+      expect(snap.sortKeys, isNotEmpty);
+      expect(snap.hiddenFolders, isEmpty);
+
+      controller.setActiveView('v1', snap);
+      expect(controller.isActiveViewModified, isFalse);
+
+      controller.setFolderHidden('/albums/Trip', hidden: true);
+      expect(controller.captureViewFilters().hiddenFolders, ['/albums/Trip']);
+      expect(controller.isActiveViewModified, isTrue);
+
+      controller.setFilterQuery('Ada');
+      expect(controller.isActiveViewModified, isTrue);
+
+      await controller.applyLibraryViewFilters(LibraryViewFilters.all);
+      expect(controller.filterQuery, '');
+      expect(controller.whoFilterNames, isEmpty);
+      expect(controller.whoFilterMatchAll, isFalse);
+      expect(controller.hiddenItemsFilter, HiddenItemsFilter.visible);
+      expect(controller.sortKeys, isEmpty);
+      expect(controller.hiddenFolders, isEmpty);
+
+      await controller.applyLibraryViewFilters(snap);
+      expect(controller.filterQuery, 'Sam');
+      expect(controller.whoFilterNames, {'Sam'});
+      expect(controller.whoFilterMatchAll, isTrue);
+      expect(controller.hiddenItemsFilter, HiddenItemsFilter.both);
+      controller.dispose();
+    });
+  });
+
+  group('hiddenFolders (Hide folder)', () {
+    test(
+      'Visible drops the subtree; Hidden brings it back; isHidden unchanged',
+      () async {
+        const trip = '/albums/Trip';
+        final nested = fixtureItem(
+          id: 'nested',
+          sourceRef: 'file://$trip/Day1/a.jpg',
+        );
+        final leaf = fixtureItem(id: 'leaf', sourceRef: 'file://$trip/b.jpg');
+        final other = fixtureItem(
+          id: 'other',
+          sourceRef: 'file:///albums/Other/c.jpg',
+        );
+        final controller = LibraryTableController(
+          itemsRepository: FakeItemsRepository(items: [nested, leaf, other]),
+          commentsRepository: FakeCommentsRepository(),
+          thumbCache: LocalThumbCache(),
+        );
+        await controller.load();
+
+        expect(controller.filteredSorted.map((r) => r.item.id).toSet(), {
+          'nested',
+          'leaf',
+          'other',
+        });
+        expect(nested.isHidden, isFalse);
+        expect(leaf.isHidden, isFalse);
+
+        controller.setFolderHidden(trip, hidden: true);
+        expect(controller.isFolderHidden(trip), isTrue);
+        expect(controller.filteredSorted.map((r) => r.item.id), ['other']);
+        expect(
+          controller.allRows
+              .firstWhere((r) => r.item.id == 'nested')
+              .item
+              .isHidden,
+          isFalse,
+        );
+        expect(
+          controller.allRows
+              .firstWhere((r) => r.item.id == 'leaf')
+              .item
+              .isHidden,
+          isFalse,
+        );
+        expect(controller.captureViewFilters().hiddenFolders, [trip]);
+        expect(LibraryViewFilters.all.hiddenFolders, isEmpty);
+
+        controller.setHiddenItemsFilter(HiddenItemsFilter.hidden);
+        expect(controller.filteredSorted.map((r) => r.item.id).toSet(), {
+          'nested',
+          'leaf',
+        });
+
+        controller.setHiddenItemsFilter(HiddenItemsFilter.both);
+        expect(controller.filteredSorted.map((r) => r.item.id).toSet(), {
+          'nested',
+          'leaf',
+          'other',
+        });
+
+        controller.setFolderHidden(trip, hidden: false);
+        controller.setHiddenItemsFilter(HiddenItemsFilter.visible);
+        expect(controller.filteredSorted.map((r) => r.item.id).toSet(), {
+          'nested',
+          'leaf',
+          'other',
+        });
+
+        await controller.applyLibraryViewFilters(
+          const LibraryViewFilters(hiddenFolders: [trip]),
+        );
+        expect(controller.filteredSorted.map((r) => r.item.id), ['other']);
+        controller.dispose();
+      },
+    );
+  });
+
+  group('commitActiveView', () {
+    test('All + hide folder mints View1; Hide-column alone does not', () async {
+      final tempDir = await Directory.systemTemp.createTemp('tagkin_views_');
+      addTearDown(() async {
+        if (tempDir.existsSync()) await tempDir.delete(recursive: true);
+      });
+      final cols = CollectionsController(
+        store: CollectionsStore(supportDir: tempDir),
+      );
+      await cols.load();
+      await cols.create(name: 'Trip', seedFolders: ['/albums/Trip']);
+
+      final table = LibraryTableController(
+        itemsRepository: FakeItemsRepository(
+          items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/Trip/a.jpg')],
+        ),
+        commentsRepository: FakeCommentsRepository(),
+        thumbCache: LocalThumbCache(),
+      );
+      await table.load();
+
+      table.setHiddenItemsFilter(HiddenItemsFilter.hidden);
+      await commitActiveView(table: table, cols: cols);
+      expect(cols.views, isEmpty);
+      expect(table.activeViewId, isNull);
+
+      table.setFolderHidden('/albums/Trip', hidden: true);
+      await commitActiveView(table: table, cols: cols);
+      expect(cols.views.single.name, 'View1');
+      expect(cols.views.single.filters.hiddenFolders, ['/albums/Trip']);
+      expect(cols.views.single.filters.hiddenItemsFilter, 'visible');
+      expect(table.activeViewId, cols.views.single.id);
+
+      table.setFolderHidden('/albums/Other', hidden: true);
+      await commitActiveView(table: table, cols: cols);
+      expect(cols.views, hasLength(1));
+      expect(cols.views.single.filters.hiddenFolders.toSet(), {
+        '/albums/Other',
+        '/albums/Trip',
+      });
+      table.dispose();
+    });
   });
 }

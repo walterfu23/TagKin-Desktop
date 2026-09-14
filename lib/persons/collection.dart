@@ -12,6 +12,8 @@ class Collection {
     required this.name,
     required this.leafFolders,
     this.ui = CollectionUiState.empty,
+    this.views = const [],
+    this.recentViewIds = const [],
   });
 
   /// Collection GUID persisted in collections.json.
@@ -24,32 +26,68 @@ class Collection {
   /// Folders / Faces page look (not Settings — those stay app-global).
   final CollectionUiState ui;
 
+  /// Named Folders filter snapshots (Views). Independent of [ui] dirty.
+  final List<SavedView> views;
+
+  /// Most-recent-first saved-view ids (capped when written).
+  final List<String> recentViewIds;
+
+  /// Default cap for [recentViewIds] (Settings [recentViewsLimit]).
+  static const maxRecentViews = 10;
+
   Collection copyWith({
     String? id,
     String? name,
     List<String>? leafFolders,
     CollectionUiState? ui,
+    List<SavedView>? views,
+    List<String>? recentViewIds,
   }) {
     return Collection(
       id: id ?? this.id,
       name: name ?? this.name,
       leafFolders: leafFolders ?? this.leafFolders,
       ui: ui ?? this.ui,
+      views: views ?? this.views,
+      recentViewIds: recentViewIds ?? this.recentViewIds,
     );
   }
 
   Map<String, Object?> toJson() => {
-        'id': id,
-        'name': name,
-        'leafFolders': leafFolders,
-        if (ui != CollectionUiState.empty) 'ui': ui.toJson(),
-      };
+    'id': id,
+    'name': name,
+    'leafFolders': leafFolders,
+    if (ui != CollectionUiState.empty) 'ui': ui.toJson(),
+    if (views.isNotEmpty) 'views': [for (final v in views) v.toJson()],
+    if (recentViewIds.isNotEmpty) 'recentViewIds': recentViewIds,
+  };
 
   factory Collection.fromJson(Map<String, dynamic> json) {
     final id = json['id'];
     final name = json['name'];
     final folders = json['leafFolders'];
     final uiRaw = json['ui'];
+    final viewsRaw = json['views'];
+    final views = <SavedView>[];
+    if (viewsRaw is List) {
+      for (final entry in viewsRaw) {
+        if (entry is Map) {
+          final v = SavedView.fromJson(
+            entry.map((k, v) => MapEntry(k.toString(), v)),
+          );
+          if (v.id.isNotEmpty && v.name.trim().isNotEmpty) views.add(v);
+        }
+      }
+    }
+    final recentsRaw = json['recentViewIds'];
+    final recents = <String>[];
+    if (recentsRaw is List) {
+      for (final rid in recentsRaw) {
+        if (rid is String && rid.isNotEmpty && !recents.contains(rid)) {
+          recents.add(rid);
+        }
+      }
+    }
     return Collection(
       id: id is String ? id : '',
       name: name is String ? name : '',
@@ -64,6 +102,8 @@ class Collection {
               uiRaw.map((k, v) => MapEntry(k.toString(), v)),
             )
           : CollectionUiState.empty,
+      views: views,
+      recentViewIds: recents,
     );
   }
 
@@ -73,11 +113,19 @@ class Collection {
       other.id == id &&
       other.name == name &&
       _listEquals(other.leafFolders, leafFolders) &&
-      other.ui == ui;
+      other.ui == ui &&
+      _listEquals(other.views, views) &&
+      _listEquals(other.recentViewIds, recentViewIds);
 
   @override
-  int get hashCode =>
-      Object.hash(id, name, Object.hashAll(leafFolders), ui);
+  int get hashCode => Object.hash(
+    id,
+    name,
+    Object.hashAll(leafFolders),
+    ui,
+    Object.hashAll(views),
+    Object.hashAll(recentViewIds),
+  );
 }
 
 /// Persisted page look for one collection (Folders + Faces only).
@@ -103,9 +151,9 @@ class CollectionUiState {
   }
 
   Map<String, Object?> toJson() => {
-        if (library != const CollectionLibraryUi()) 'library': library.toJson(),
-        if (faces != const CollectionFacesUi()) 'faces': faces.toJson(),
-      };
+    if (library != const CollectionLibraryUi()) 'library': library.toJson(),
+    if (faces != const CollectionFacesUi()) 'faces': faces.toJson(),
+  };
 
   factory CollectionUiState.fromJson(Map<String, dynamic> json) {
     final lib = json['library'];
@@ -159,19 +207,20 @@ class CollectionLibraryUi {
   }) {
     return CollectionLibraryUi(
       filterQuery: filterQuery ?? this.filterQuery,
-      statusFilter:
-          clearStatusFilter ? null : (statusFilter ?? this.statusFilter),
+      statusFilter: clearStatusFilter
+          ? null
+          : (statusFilter ?? this.statusFilter),
       sortKeys: sortKeys ?? this.sortKeys,
       expandedDirs: expandedDirs ?? this.expandedDirs,
     );
   }
 
   Map<String, Object?> toJson() => {
-        'filterQuery': filterQuery,
-        'statusFilter': statusFilter,
-        'sortKeys': [for (final k in sortKeys) k.toJson()],
-        'expandedDirs': expandedDirs,
-      };
+    'filterQuery': filterQuery,
+    'statusFilter': statusFilter,
+    'sortKeys': [for (final k in sortKeys) k.toJson()],
+    'expandedDirs': expandedDirs,
+  };
 
   factory CollectionLibraryUi.fromJson(Map<String, dynamic> json) {
     final q = json['filterQuery'];
@@ -214,11 +263,11 @@ class CollectionLibraryUi {
 
   @override
   int get hashCode => Object.hash(
-        filterQuery,
-        statusFilter,
-        Object.hashAll(sortKeys),
-        Object.hashAll(expandedDirs),
-      );
+    filterQuery,
+    statusFilter,
+    Object.hashAll(sortKeys),
+    Object.hashAll(expandedDirs),
+  );
 }
 
 class CollectionSortKey {
@@ -227,10 +276,7 @@ class CollectionSortKey {
   final String column;
   final bool ascending;
 
-  Map<String, Object?> toJson() => {
-        'column': column,
-        'ascending': ascending,
-      };
+  Map<String, Object?> toJson() => {'column': column, 'ascending': ascending};
 
   factory CollectionSortKey.fromJson(Map<String, dynamic> json) {
     final col = json['column'];
@@ -251,11 +297,219 @@ class CollectionSortKey {
   int get hashCode => Object.hash(column, ascending);
 }
 
-class CollectionFacesUi {
-  const CollectionFacesUi({
-    this.leafFolder,
-    this.personId,
+/// Folders filter/sort snapshot stored on a [SavedView].
+///
+/// [all] is the built-in All view: no filters, Visible only, Hide blurry
+/// off, no sort, no hidden folders.
+class LibraryViewFilters {
+  const LibraryViewFilters({
+    this.filterQuery = '',
+    this.statusFilter,
+    this.whoNames = const [],
+    this.whoMatchAll = false,
+    this.hiddenItemsFilter = 'visible',
+    this.hideBlurryPhotos = false,
+    this.sortKeys = const [],
+    this.hiddenFolders = const [],
   });
+
+  final String filterQuery;
+
+  /// [ProcessingStatus.wire] value, or null for all statuses.
+  final String? statusFilter;
+
+  /// Selected Who names (A–Z when captured).
+  final List<String> whoNames;
+
+  /// false = Match Any (OR); true = Match All (AND).
+  final bool whoMatchAll;
+
+  /// [HiddenItemsFilter.name]: visible / hidden / both.
+  final String hiddenItemsFilter;
+
+  final bool hideBlurryPhotos;
+  final List<CollectionSortKey> sortKeys;
+
+  /// Folder paths hidden in this view (item [Item.isHidden] is unchanged).
+  final List<String> hiddenFolders;
+
+  static const all = LibraryViewFilters();
+
+  LibraryViewFilters copyWith({
+    String? filterQuery,
+    String? statusFilter,
+    bool clearStatusFilter = false,
+    List<String>? whoNames,
+    bool? whoMatchAll,
+    String? hiddenItemsFilter,
+    bool? hideBlurryPhotos,
+    List<CollectionSortKey>? sortKeys,
+    List<String>? hiddenFolders,
+  }) {
+    return LibraryViewFilters(
+      filterQuery: filterQuery ?? this.filterQuery,
+      statusFilter: clearStatusFilter
+          ? null
+          : (statusFilter ?? this.statusFilter),
+      whoNames: whoNames ?? this.whoNames,
+      whoMatchAll: whoMatchAll ?? this.whoMatchAll,
+      hiddenItemsFilter: hiddenItemsFilter ?? this.hiddenItemsFilter,
+      hideBlurryPhotos: hideBlurryPhotos ?? this.hideBlurryPhotos,
+      sortKeys: sortKeys ?? this.sortKeys,
+      hiddenFolders: hiddenFolders ?? this.hiddenFolders,
+    );
+  }
+
+  Map<String, Object?> toJson() => {
+    'filterQuery': filterQuery,
+    'statusFilter': statusFilter,
+    'whoNames': whoNames,
+    'whoMatchAll': whoMatchAll,
+    'hiddenItemsFilter': hiddenItemsFilter,
+    'hideBlurryPhotos': hideBlurryPhotos,
+    'sortKeys': [for (final k in sortKeys) k.toJson()],
+    'hiddenFolders': hiddenFolders,
+  };
+
+  factory LibraryViewFilters.fromJson(Map<String, dynamic> json) {
+    final q = json['filterQuery'];
+    final status = json['statusFilter'];
+    final whoRaw = json['whoNames'];
+    final who = <String>[];
+    if (whoRaw is List) {
+      for (final n in whoRaw) {
+        if (n is String && n.isNotEmpty) who.add(n);
+      }
+    }
+    final matchAll = json['whoMatchAll'];
+    final hidden = json['hiddenItemsFilter'];
+    final hideBlurry = json['hideBlurryPhotos'];
+    final keysRaw = json['sortKeys'];
+    final keys = <CollectionSortKey>[];
+    if (keysRaw is List) {
+      for (final entry in keysRaw) {
+        if (entry is Map) {
+          keys.add(
+            CollectionSortKey.fromJson(
+              entry.map((k, v) => MapEntry(k.toString(), v)),
+            ),
+          );
+        }
+      }
+    }
+    final hiddenName = hidden is String && hidden.isNotEmpty
+        ? hidden
+        : 'visible';
+    final foldersRaw = json['hiddenFolders'];
+    final folders = <String>[];
+    if (foldersRaw is List) {
+      for (final d in foldersRaw) {
+        if (d is String && d.isNotEmpty) folders.add(d);
+      }
+    }
+    return LibraryViewFilters(
+      filterQuery: q is String ? q : '',
+      statusFilter: status is String && status.isNotEmpty ? status : null,
+      whoNames: who,
+      whoMatchAll: matchAll is bool ? matchAll : false,
+      hiddenItemsFilter: hiddenName,
+      hideBlurryPhotos: hideBlurry is bool ? hideBlurry : false,
+      sortKeys: keys,
+      hiddenFolders: folders,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is LibraryViewFilters &&
+      other.filterQuery == filterQuery &&
+      other.statusFilter == statusFilter &&
+      _listEquals(other.whoNames, whoNames) &&
+      other.whoMatchAll == whoMatchAll &&
+      other.hiddenItemsFilter == hiddenItemsFilter &&
+      other.hideBlurryPhotos == hideBlurryPhotos &&
+      _listEquals(other.sortKeys, sortKeys) &&
+      _listEquals(other.hiddenFolders, hiddenFolders);
+
+  @override
+  int get hashCode => Object.hash(
+    filterQuery,
+    statusFilter,
+    Object.hashAll(whoNames),
+    whoMatchAll,
+    hiddenItemsFilter,
+    hideBlurryPhotos,
+    Object.hashAll(sortKeys),
+    Object.hashAll(hiddenFolders),
+  );
+}
+
+/// Named saved Folders view (filter set) inside a [Collection].
+class SavedView {
+  const SavedView({
+    required this.id,
+    required this.name,
+    this.description = '',
+    required this.filters,
+  });
+
+  final String id;
+  final String name;
+  final String description;
+  final LibraryViewFilters filters;
+
+  SavedView copyWith({
+    String? id,
+    String? name,
+    String? description,
+    LibraryViewFilters? filters,
+  }) {
+    return SavedView(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      description: description ?? this.description,
+      filters: filters ?? this.filters,
+    );
+  }
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'name': name,
+    'description': description,
+    'filters': filters.toJson(),
+  };
+
+  factory SavedView.fromJson(Map<String, dynamic> json) {
+    final id = json['id'];
+    final name = json['name'];
+    final description = json['description'];
+    final filtersRaw = json['filters'];
+    return SavedView(
+      id: id is String ? id : '',
+      name: name is String ? name : '',
+      description: description is String ? description : '',
+      filters: filtersRaw is Map
+          ? LibraryViewFilters.fromJson(
+              filtersRaw.map((k, v) => MapEntry(k.toString(), v)),
+            )
+          : LibraryViewFilters.all,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is SavedView &&
+      other.id == id &&
+      other.name == name &&
+      other.description == description &&
+      other.filters == filters;
+
+  @override
+  int get hashCode => Object.hash(id, name, description, filters);
+}
+
+class CollectionFacesUi {
+  const CollectionFacesUi({this.leafFolder, this.personId});
 
   final String? leafFolder;
   final String? personId;
@@ -273,9 +527,9 @@ class CollectionFacesUi {
   }
 
   Map<String, Object?> toJson() => {
-        'leafFolder': leafFolder,
-        'personId': personId,
-      };
+    'leafFolder': leafFolder,
+    'personId': personId,
+  };
 
   factory CollectionFacesUi.fromJson(Map<String, dynamic> json) {
     final folder = json['leafFolder'];
@@ -329,10 +583,10 @@ class CollectionsFile {
   }
 
   Map<String, Object?> toJson() => {
-        'collections': [for (final c in collections) c.toJson()],
-        'currentCollectionId': currentCollectionId,
-        'recentCollectionIds': recentCollectionIds,
-      };
+    'collections': [for (final c in collections) c.toJson()],
+    'currentCollectionId': currentCollectionId,
+    'recentCollectionIds': recentCollectionIds,
+  };
 
   factory CollectionsFile.fromJson(Map<String, dynamic> json) {
     final raw = json['collections'];
@@ -377,10 +631,10 @@ class CollectionsFile {
 
   @override
   int get hashCode => Object.hash(
-        currentCollectionId,
-        Object.hashAll(collections),
-        Object.hashAll(recentCollectionIds),
-      );
+    currentCollectionId,
+    Object.hashAll(collections),
+    Object.hashAll(recentCollectionIds),
+  );
 }
 
 bool _listEquals<T>(List<T> a, List<T> b) {

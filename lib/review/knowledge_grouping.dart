@@ -101,9 +101,78 @@ List<String> whoColumnValues(
   final names = assignedPersonNames(knowledge, namesById);
   if (names.isNotEmpty) return names;
   return sortedAlphaBy([
-    for (final tag in groupDisplayTagsByDimension(knowledge)['who']!)
-      tag.value,
+    for (final tag in groupDisplayTagsByDimension(knowledge)['who']!) tag.value,
   ], (v) => v);
+}
+
+/// Active tags on one key period, bucketed by dimension.
+Map<String, List<Tag>> groupPeriodTagsByDimension(KeyPeriodKnowledge period) {
+  final grouped = <String, List<Tag>>{
+    for (final d in kKnowledgeDimensions) d: <Tag>[],
+  };
+  for (final tag in period.tags) {
+    if (tag.status != TagStatus.active) continue;
+    grouped[tag.dimension]?.add(tag);
+  }
+  return grouped;
+}
+
+/// Assigned person names on [keyPeriodId] only (A–Z, case-insensitive).
+List<String> assignedPersonNamesForPeriod({
+  required ItemKnowledge knowledge,
+  required String keyPeriodId,
+  required Map<String, String> namesById,
+}) {
+  final seen = <String>{};
+  final out = <String>[];
+  for (final appearance in knowledge.appearances) {
+    if (appearance.keyPeriodId != keyPeriodId) continue;
+    final id = appearance.personId;
+    if (id == null || id.isEmpty) continue;
+    if (!seen.add(id)) continue;
+    final name = namesById[id]?.trim();
+    if (name == null || name.isEmpty) continue;
+    out.add(name);
+  }
+  return sortedAlphaBy(out, (n) => n);
+}
+
+/// Folders Who for one key period: assigned names on that period, else its
+/// who-tags. Item-level who is not mixed in.
+List<String> whoColumnValuesForPeriod(
+  ItemKnowledge knowledge,
+  KeyPeriodKnowledge period,
+  Map<String, String> namesById,
+) {
+  final names = assignedPersonNamesForPeriod(
+    knowledge: knowledge,
+    keyPeriodId: period.id,
+    namesById: namesById,
+  );
+  if (names.isNotEmpty) return names;
+  return sortedAlphaBy([
+    for (final tag in groupPeriodTagsByDimension(period)['who']!) tag.value,
+  ], (v) => v);
+}
+
+/// Folders What for one key period (A–Z, case-insensitive).
+List<String> whatColumnValuesForPeriod(KeyPeriodKnowledge period) {
+  return sortedAlphaBy([
+    for (final tag in groupPeriodTagsByDimension(period)['what']!) tag.value,
+  ], (v) => v);
+}
+
+/// Raw where values for a period; falls back to [itemLevelWhereRaw] when the
+/// period has none (GPS/scene is often item-level).
+List<String> whereRawForPeriod(
+  KeyPeriodKnowledge period, {
+  required List<String> itemLevelWhereRaw,
+}) {
+  final values = [
+    for (final tag in groupPeriodTagsByDimension(period)['where']!) tag.value,
+  ];
+  if (values.isNotEmpty) return values;
+  return itemLevelWhereRaw;
 }
 
 /// Active who tag with a face box (item-detail crop).
@@ -269,10 +338,7 @@ int? _sampleTimestampMsMatchingTag(ItemKnowledge knowledge, String tagId) {
   return null;
 }
 
-PersonAppearance? appearanceForWhoTag(
-  ItemKnowledge knowledge,
-  String tagId,
-) {
+PersonAppearance? appearanceForWhoTag(ItemKnowledge knowledge, String tagId) {
   for (final appearance in knowledge.appearances) {
     if (appearance.tagId == tagId) return appearance;
   }
@@ -291,7 +357,8 @@ List<PersonAppearance> itemLevelPersonAssignments(ItemKnowledge knowledge) {
 }
 
 /// Draft-aware assigned person for a crop or appearance row.
-({String? personId, String? personName, bool unassign}) effectiveAssignedPerson({
+({String? personId, String? personName, bool unassign})
+effectiveAssignedPerson({
   required PersonAssignIntent? intent,
   required String? baselinePersonId,
   required Map<String, String> personNamesById,
@@ -370,6 +437,7 @@ List<String> knowledgeCsvValues({
   String? exceptTagId,
   String? exceptAppearanceId,
   String? exceptExclusionId,
+
   /// When set (video key-period crop), occupancy is that period only.
   String? sameKeyPeriodId,
 }) {

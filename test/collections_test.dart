@@ -40,6 +40,38 @@ void main() {
       await store.save(catalog);
       expect(await store.load(), catalog);
     });
+
+    test('round-trips saved views', () async {
+      final store = CollectionsStore(supportDir: tempDir);
+      const catalog = CollectionsFile(
+        collections: [
+          Collection(
+            id: 'collection_1',
+            name: 'Europe',
+            leafFolders: ['/albums/Paris'],
+            views: [
+              SavedView(
+                id: 'view_1',
+                name: 'Ada',
+                description: 'Ada photos',
+                filters: LibraryViewFilters(
+                  filterQuery: 'Ada',
+                  whoNames: ['Ada'],
+                  whoMatchAll: true,
+                  hiddenItemsFilter: 'both',
+                  hideBlurryPhotos: true,
+                  hiddenFolders: ['/albums/Paris'],
+                ),
+              ),
+            ],
+            recentViewIds: ['view_1'],
+          ),
+        ],
+        currentCollectionId: 'collection_1',
+      );
+      await store.save(catalog);
+      expect(await store.load(), catalog);
+    });
   });
 
   group('CollectionsController', () {
@@ -451,6 +483,116 @@ void main() {
       expect(notifies, 1);
       expect(controller.removeFolders(['/b']), isFalse);
       expect(notifies, 1);
+    });
+
+    group('saved views', () {
+      test('save / update / rename / delete', () async {
+        await controller.create(name: 'Trip', seedFolders: ['/a']);
+        const filters = LibraryViewFilters(filterQuery: 'Ada');
+        final saved = await controller.saveView(
+          name: 'Ada',
+          description: 'Ada only',
+          filters: filters,
+        );
+        expect(saved, isNotNull);
+        expect(controller.views.single.name, 'Ada');
+        expect(controller.views.single.description, 'Ada only');
+        expect(controller.views.single.filters.filterQuery, 'Ada');
+        expect(controller.dirty, isFalse);
+
+        expect(
+          await controller.updateView(
+            saved!.id,
+            const LibraryViewFilters(filterQuery: 'Sam'),
+          ),
+          isTrue,
+        );
+        expect(controller.viewById(saved.id)!.filters.filterQuery, 'Sam');
+
+        expect(
+          await controller.renameView(
+            saved.id,
+            name: 'Sam',
+            description: 'Sam only',
+          ),
+          isTrue,
+        );
+        expect(controller.viewById(saved.id)!.name, 'Sam');
+        expect(controller.viewById(saved.id)!.description, 'Sam only');
+
+        expect(await controller.deleteView(saved.id), isTrue);
+        expect(controller.views, isEmpty);
+      });
+
+      test('recentViews is MRU capped; all views remain', () async {
+        final capped = CollectionsController(
+          store: CollectionsStore(supportDir: tempDir),
+          maxRecentViews: () => 2,
+        );
+        await capped.load();
+        await capped.create(name: 'Trip', seedFolders: ['/a']);
+        final a = await capped.saveView(
+          name: 'A',
+          filters: const LibraryViewFilters(filterQuery: 'a'),
+        );
+        final b = await capped.saveView(
+          name: 'B',
+          filters: const LibraryViewFilters(filterQuery: 'b'),
+        );
+        final c = await capped.saveView(
+          name: 'C',
+          filters: const LibraryViewFilters(filterQuery: 'c'),
+        );
+        expect(capped.views, hasLength(3));
+        expect(capped.recentViews.map((v) => v.id), [c!.id, b!.id]);
+        expect(capped.recentViews.map((v) => v.id), isNot(contains(a!.id)));
+      });
+
+      test('saving a view does not dirty or flush unsaved rename', () async {
+        await controller.create(name: 'Trip', seedFolders: ['/a']);
+        expect(controller.rename('TripDirty'), isTrue);
+        expect(controller.dirty, isTrue);
+        await controller.saveView(
+          name: 'Ada',
+          filters: const LibraryViewFilters(filterQuery: 'Ada'),
+        );
+        expect(controller.dirty, isTrue);
+        expect(controller.current.name, 'TripDirty');
+        expect(controller.views, hasLength(1));
+        final disk = await CollectionsStore(supportDir: tempDir).load();
+        expect(disk.collections.single.name, 'Trip');
+        expect(disk.collections.single.views, hasLength(1));
+        expect(disk.collections.single.views.single.name, 'Ada');
+      });
+
+      test('nextDefaultViewName skips taken ViewN', () async {
+        await controller.create(name: 'Trip', seedFolders: ['/a']);
+        expect(controller.nextDefaultViewName(), 'View1');
+        await controller.saveView(
+          name: 'View1',
+          filters: LibraryViewFilters.all,
+        );
+        expect(controller.nextDefaultViewName(), 'View2');
+        await controller.saveView(
+          name: 'view2',
+          filters: const LibraryViewFilters(filterQuery: 'x'),
+        );
+        expect(controller.nextDefaultViewName(), 'View3');
+      });
+
+      test('hiddenFolders round-trips on a saved view', () async {
+        await controller.create(name: 'Trip', seedFolders: ['/a']);
+        const filters = LibraryViewFilters(hiddenFolders: ['/albums/Trip']);
+        final saved = await controller.saveView(
+          name: 'No trip',
+          filters: filters,
+        );
+        expect(saved!.filters.hiddenFolders, ['/albums/Trip']);
+        final disk = await CollectionsStore(supportDir: tempDir).load();
+        expect(disk.collections.single.views.single.filters.hiddenFolders, [
+          '/albums/Trip',
+        ]);
+      });
     });
   });
 }

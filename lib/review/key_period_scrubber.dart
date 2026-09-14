@@ -15,6 +15,7 @@ class KeyPeriodScrubber extends StatelessWidget {
     this.player,
     this.duration,
     this.onSeek,
+    this.onSelectPeriod,
     this.onEditBounds,
     this.commentsFor,
     this.onAddComment,
@@ -35,6 +36,9 @@ class KeyPeriodScrubber extends StatelessWidget {
   /// Injectable seek hook (unit/widget tests without media_kit).
   final void Function(Duration seek)? onSeek;
 
+  /// Called with the period that was tapped (tests; item detail only seeks).
+  final void Function(KeyPeriodKnowledge period)? onSelectPeriod;
+
   /// Edit key-period start/end (D10).
   final void Function(KeyPeriodKnowledge period)? onEditBounds;
 
@@ -49,13 +53,14 @@ class KeyPeriodScrubber extends StatelessWidget {
   /// Face-assign grid for this period (D8 video layout).
   final Widget Function(KeyPeriodKnowledge period)? periodFaces;
 
-  void _seekTo(int startMs) {
-    var seek = keyPeriodMsToSeek(startMs);
+  void _seekTo(KeyPeriodKnowledge period) {
+    var seek = keyPeriodMsToSeek(period.startMs);
     final d = duration;
     if (d != null) {
       seek = clampSeekToDuration(seek, d);
     }
     onSeek?.call(seek);
+    onSelectPeriod?.call(period);
     player?.seek(seek);
   }
 
@@ -79,7 +84,7 @@ class KeyPeriodScrubber extends StatelessWidget {
           for (final period in keyPeriods)
             _KeyPeriodTile(
               period: period,
-              onTap: () => _seekTo(period.startMs),
+              onTap: () => _seekTo(period),
               onEditBounds: onEditBounds,
               comments: commentsFor?.call(period.id) ?? const [],
               onAddComment: onAddComment == null

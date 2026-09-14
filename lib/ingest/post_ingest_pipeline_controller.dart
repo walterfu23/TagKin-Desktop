@@ -16,13 +16,13 @@ import 'package:tagkin_desktop/usage/usage_gate.dart';
 const kInvalidPhotoAnalyzeMessage =
     'This file could not be analyzed. It may not be a valid photo (for example a renamed or corrupt file).';
 
-/// Failures that must not be auto-retried after ingest (credit, 400 validation).
+/// Failures that must not be auto-retried after ingest (credit, invalid file).
+/// Provider capacity (429/5xx, often mis-surfaced as 400) is retryable.
 bool isPermanentAnalyzeFailure(Object? error) {
   if (error is ApiException) {
     if (isCreditRejectCode(error.code) || isHardCreditStop(error.code)) {
       return true;
     }
-    if (error.statusCode == 400) return true;
     if (error.message.contains(kInvalidPhotoAnalyzeMessage)) return true;
   }
   final text = error?.toString() ?? '';

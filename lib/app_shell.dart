@@ -938,12 +938,16 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
     _applyingCollectionUi = true;
     try {
       final table = ref.read(libraryTableControllerProvider);
-      await table.ensureLoaded();
-      if (!mounted) return;
-      await table.applyCollectionLibraryUi(cols.current.ui.library);
-      if (!mounted) return;
-      // Auto-expand may change expandedDirs; fold into baseline, not dirty.
-      cols.adoptLibraryLook(table.captureCollectionLibraryUi());
+      await table.runViewCommitPaused(() async {
+        await table.ensureLoaded();
+        if (!mounted) return;
+        await table.applyCollectionLibraryUi(cols.current.ui.library);
+        if (!mounted) return;
+        table.setActiveView(null, table.captureViewFilters());
+        if (!mounted) return;
+        // Auto-expand may change expandedDirs; fold into baseline, not dirty.
+        cols.adoptLibraryLook(table.captureCollectionLibraryUi());
+      });
     } finally {
       _applyingCollectionUi = false;
     }
@@ -1141,8 +1145,10 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
       unawaited(_runCollectionCommand(next));
     });
 
-    final support = ref.watch(clientSupportProvider) ?? widget.account.clientSupport;
-    final blocked = ref.watch(forceUpdateRequiredProvider) ||
+    final support =
+        ref.watch(clientSupportProvider) ?? widget.account.clientSupport;
+    final blocked =
+        ref.watch(forceUpdateRequiredProvider) ||
         support?.status == ClientSupportStatus.blocked;
     if (blocked) {
       return UpdateRequiredPage(
@@ -1369,9 +1375,7 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ClientUpdateBanner(
-            launchUrl: ref.watch(checkoutUrlLauncherProvider),
-          ),
+          ClientUpdateBanner(launchUrl: ref.watch(checkoutUrlLauncherProvider)),
           const FolderIngestStatusBanner(),
           Expanded(
             // Offstage IndexedStack siblings must not participate in

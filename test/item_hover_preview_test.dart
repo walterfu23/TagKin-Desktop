@@ -24,9 +24,10 @@ LibraryTableController _controller(FakeItemsRepository items) {
 
 class _FakeVideoSession implements HoverPreviewVideoSession {
   _FakeVideoSession();
-  final StreamController<Duration> positions =
-      StreamController<Duration>.broadcast();
+  final List<({Duration start, Duration stopAt})> clips =
+      <({Duration start, Duration stopAt})>[];
   final List<Duration> seeks = <Duration>[];
+  final List<String> calls = <String>[];
   var playCount = 0;
   var disposed = false;
 
@@ -35,30 +36,49 @@ class _FakeVideoSession implements HoverPreviewVideoSession {
       const ColoredBox(key: Key('fake-hover-video'), color: Colors.black);
 
   @override
-  Stream<Duration> get position => positions.stream;
-
-  @override
   Stream<Size> get videoSize => Stream<Size>.value(const Size(1920, 1080));
 
   @override
+  Future<void> prepare() async {
+    calls.add('prepare');
+  }
+
+  @override
+  Future<void> setClip(Duration start, Duration stopAt) async {
+    calls.add('setClip');
+    clips.add((start: start, stopAt: stopAt));
+  }
+
+  @override
   Future<void> seek(Duration to) async {
+    calls.add('seek');
     seeks.add(to);
   }
 
   @override
   Future<void> play() async {
+    calls.add('play');
     playCount++;
   }
 
   @override
   Future<void> dispose() async {
     disposed = true;
-    await positions.close();
   }
 }
 
-Future<TestGesture> _hoverThumb(WidgetTester tester, String itemId) async {
-  final finder = find.byKey(Key('item-hover-preview-$itemId'));
+Future<TestGesture> _hoverThumb(
+  WidgetTester tester,
+  String itemId, {
+  String? periodId,
+}) async {
+  final finder = find.byKey(
+    Key(
+      periodId == null
+          ? 'item-hover-preview-$itemId'
+          : 'item-hover-preview-$itemId-kp-$periodId',
+    ),
+  );
   final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
   await gesture.addPointer(location: Offset.zero);
   addTearDown(gesture.removePointer);
@@ -75,9 +95,11 @@ Future<void> _awaitKnowledge(
   WidgetTester tester,
   LibraryTableController c,
 ) async {
-  for (var i = 0; i < 20; i++) {
-    if (c.allRows.every((r) => r.knowledgeLoaded)) return;
-    await tester.pump(const Duration(milliseconds: 10));
+  for (var i = 0; i < 50; i++) {
+    if (c.allRows.isNotEmpty && c.allRows.every((r) => r.knowledgeLoaded)) {
+      return;
+    }
+    await tester.pump();
   }
 }
 
@@ -126,6 +148,79 @@ void main() {
         ],
       ),
       const Duration(milliseconds: 1800),
+    );
+  });
+
+  test('hoverPreviewWindow plays a specific period start to end', () {
+    const period = KeyPeriodKnowledge(
+      id: 'b',
+      itemId: 'v',
+      startMs: 2000,
+      endMs: 9000,
+      tags: [],
+    );
+    final window = hoverPreviewWindow(period: period);
+    expect(window.start, const Duration(milliseconds: 2000));
+    expect(window.stopAt, const Duration(milliseconds: 9000));
+  });
+
+  test('hoverPreviewWindow uses earliest period start, not file 0', () {
+    final window = hoverPreviewWindow(
+      keyPeriods: [
+        KeyPeriodKnowledge(
+          id: 'late',
+          itemId: 'v',
+          startMs: 9583,
+          endMs: 42357,
+          tags: const [],
+        ),
+      ],
+    );
+    expect(window.start, const Duration(milliseconds: 9583));
+    expect(window.stopAt, const Duration(milliseconds: 42357));
+  });
+
+  test('hoverExactSeekCommand is mpv absolute+exact', () {
+    expect(hoverExactSeekCommand(const Duration(milliseconds: 9583)), [
+      'seek',
+      hoverAbLoopTimestamp(const Duration(milliseconds: 9583)),
+      'absolute+exact',
+    ]);
+  });
+
+  test('hoverSeekPositionLanded treats in-span as landed', () {
+    expect(
+      hoverSeekPositionLanded(
+        position: const Duration(milliseconds: 9583),
+        start: const Duration(milliseconds: 9583),
+        stopAt: const Duration(milliseconds: 42357),
+      ),
+      isTrue,
+    );
+    expect(
+      hoverSeekPositionLanded(
+        position: Duration.zero,
+        start: const Duration(milliseconds: 9583),
+        stopAt: const Duration(milliseconds: 42357),
+      ),
+      isFalse,
+    );
+  });
+
+  test('hoverSeekStuckAtZero is true when a late start is still at 0', () {
+    expect(
+      hoverSeekStuckAtZero(
+        position: Duration.zero,
+        start: const Duration(milliseconds: 9583),
+      ),
+      isTrue,
+    );
+    expect(
+      hoverSeekStuckAtZero(
+        position: const Duration(milliseconds: 9583),
+        start: const Duration(milliseconds: 9583),
+      ),
+      isFalse,
     );
   });
 
@@ -249,10 +344,10 @@ void main() {
     expect(find.byKey(const Key('item-hover-preview-video')), findsOneWidget);
     expect(session.playCount, 1);
     expect(session.seeks, contains(Duration.zero));
-
-    session.positions.add(const Duration(milliseconds: 1800));
-    await tester.pump();
-    expect(session.seeks.last, Duration.zero);
+    expect(session.clips, hasLength(1));
+    expect(session.clips.single.start, Duration.zero);
+    expect(session.clips.single.stopAt, const Duration(milliseconds: 1800));
+    expect(session.calls, ['prepare', 'setClip', 'seek', 'play']);
 
     await hover.moveTo(const Offset(-80, -80));
     await tester.pump();
@@ -329,19 +424,152 @@ void main() {
     await _hoverThumb(tester, 'v2');
     await tester.pump();
     expect(session.playCount, 1);
-
-    session.positions.add(const Duration(milliseconds: 1200));
-    await tester.pump();
-    expect(session.seeks.where((s) => s == Duration.zero).length, 1);
+    expect(session.clips.single.stopAt, const Duration(seconds: 4));
 
     gate.complete();
     await tester.pump();
     await tester.pump();
-    session.positions.add(const Duration(milliseconds: 1200));
+    expect(session.clips.last.stopAt, const Duration(milliseconds: 1200));
+    expect(session.clips.last.start, Duration.zero);
+  });
+
+  testWidgets('video hover on a key-period tile plays that span', (
+    tester,
+  ) async {
+    final item = fixtureItem(
+      id: 'v3',
+      type: ItemType.video,
+      processingStatus: ProcessingStatus.tagged,
+    );
+    const period = KeyPeriodKnowledge(
+      id: 'kp-late',
+      itemId: 'v3',
+      startMs: 2000,
+      endMs: 4500,
+      tags: [],
+    );
+    final controller = _controller(FakeItemsRepository(items: [item]));
+    addTearDown(controller.dispose);
+
+    final session = _FakeVideoSession();
+    final dummy = File('/tmp/unused.mp4');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: ItemHoverPreview(
+              item: item,
+              controller: controller,
+              period: period,
+              hoverDelay: Duration.zero,
+              resolveMedia: (_) async => LocalMediaResolution(
+                status: LocalMediaStatus.available,
+                file: dummy,
+                path: dummy.path,
+              ),
+              openVideo: (_) async => session,
+              child: const SizedBox(
+                width: 56,
+                height: 56,
+                child: ColoredBox(color: Colors.grey),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final hover = await _hoverThumb(tester, 'v3', periodId: 'kp-late');
     await tester.pump();
+    expect(find.byKey(const Key('item-hover-preview-video')), findsOneWidget);
+    expect(session.playCount, 1);
+    expect(session.seeks, isNot(contains(Duration.zero)));
+    expect(session.seeks, contains(const Duration(milliseconds: 2000)));
+    expect(session.clips.single.start, const Duration(milliseconds: 2000));
+    expect(session.clips.single.stopAt, const Duration(milliseconds: 4500));
+    expect(session.calls, ['prepare', 'setClip', 'seek', 'play']);
+
+    await hover.moveTo(const Offset(-80, -80));
+    await tester.pump();
+    await tester.pump(kHoverPreviewHideDelay);
+    expect(session.disposed, isTrue);
+  });
+
+  testWidgets('video hover with one late period starts at that period not 0', (
+    tester,
+  ) async {
+    final item = fixtureItem(
+      id: 'v-late',
+      type: ItemType.video,
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {
+        'v-late': fixtureKnowledge(
+          item: item,
+          tags: const [],
+          keyPeriods: [
+            KeyPeriodKnowledge(
+              id: 'kp-late',
+              itemId: 'v-late',
+              startMs: 9583,
+              endMs: 42357,
+              tags: const [],
+            ),
+          ],
+        ),
+      },
+    );
+    final controller = _controller(items);
+    addTearDown(controller.dispose);
+
+    final session = _FakeVideoSession();
+    final dummy = File('/tmp/unused.mp4');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: ItemHoverPreview(
+              item: item,
+              controller: controller,
+              hoverDelay: Duration.zero,
+              resolveMedia: (_) async => LocalMediaResolution(
+                status: LocalMediaStatus.available,
+                file: dummy,
+                path: dummy.path,
+              ),
+              openVideo: (_) async => session,
+              child: const SizedBox(
+                width: 56,
+                height: 56,
+                child: ColoredBox(color: Colors.grey),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await controller.load();
+    await _awaitKnowledge(tester, controller);
+
+    await _hoverThumb(tester, 'v-late');
+    await tester.pump();
+    expect(session.seeks, isNot(contains(Duration.zero)));
+    expect(session.seeks, contains(const Duration(milliseconds: 9583)));
+    expect(session.clips.single.start, const Duration(milliseconds: 9583));
+    expect(session.clips.single.stopAt, const Duration(milliseconds: 42357));
+    expect(session.calls.first, 'prepare');
+    expect(session.calls.last, 'play');
+  });
+
+  test('hoverAbLoopTimestamp is seconds for mpv ab-loop', () {
+    expect(hoverAbLoopTimestamp(Duration.zero), '0');
     expect(
-      session.seeks.where((s) => s == Duration.zero).length,
-      greaterThan(1),
+      double.parse(hoverAbLoopTimestamp(const Duration(milliseconds: 9583))),
+      closeTo(9.583, 0.000001),
     );
   });
 

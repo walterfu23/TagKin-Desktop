@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
@@ -10,6 +12,7 @@ import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/library/library_items_table.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/source_reveal.dart';
+import 'package:tagkin_desktop/library/views_menu.dart';
 import 'package:tagkin_desktop/persons/collection_dialogs.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
@@ -42,7 +45,9 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
   int _lastRemoveRefreshTick = 0;
   FolderIngestQueue? _ingestQueue;
   FolderRemoveQueue? _removeQueue;
+  LibraryTableController? _table;
   final Set<String> _retryingFolders = {};
+  late final TextEditingController _filterController = TextEditingController();
 
   @override
   void initState() {
@@ -51,14 +56,45 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
       ref.read(usageControllerProvider).load();
       // ensureLoaded (not load) dedupes with the shell's own initial
       // ensureLoaded call for Folders-look baseline capture.
-      ref.read(libraryTableControllerProvider).ensureLoaded();
+      final table = ref.read(libraryTableControllerProvider);
+      _table = table;
+      table.ensureLoaded();
+      table.addListener(_onTableChanged);
+      _syncFilterField();
       _bindIngestQueue(ref.read(folderIngestQueueProvider));
       _bindRemoveQueue(ref.read(folderRemoveQueueProvider));
     });
   }
 
+  void _onTableChanged() {
+    _syncFilterField();
+    unawaited(_commitView());
+  }
+
+  Future<void> _commitView() async {
+    if (!mounted) return;
+    final table = _table;
+    if (table == null) return;
+    await commitActiveView(
+      table: table,
+      cols: ref.read(collectionsControllerProvider),
+    );
+  }
+
+  void _syncFilterField() {
+    if (!mounted) return;
+    final q = _table?.filterQuery ?? '';
+    if (_filterController.text == q) return;
+    _filterController.value = TextEditingValue(
+      text: q,
+      selection: TextSelection.collapsed(offset: q.length),
+    );
+  }
+
   @override
   void dispose() {
+    _table?.removeListener(_onTableChanged);
+    _filterController.dispose();
     _ingestQueue?.removeListener(_onIngestQueueChanged);
     _removeQueue?.removeListener(_onRemoveQueueChanged);
     super.dispose();
@@ -148,6 +184,10 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
         ),
       );
     }
+  }
+
+  void _setFolderHidden(String dir, {required bool hide}) {
+    ref.read(libraryTableControllerProvider).setFolderHidden(dir, hidden: hide);
   }
 
   Future<void> _removeFolderFromList(String dir, int count) async {
@@ -390,7 +430,9 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
               next.itemListBlurrySharpnessThreshold) {
         return;
       }
-      ref.read(libraryTableControllerProvider).setHideBlurryPhotos(
+      ref
+          .read(libraryTableControllerProvider)
+          .setHideBlurryPhotos(
             next.hideBlurryPhotos,
             threshold: next.itemListBlurrySharpnessThreshold.toDouble(),
           );
@@ -414,45 +456,65 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
               ),
               Padding(
                 padding: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        key: const Key('library-filter'),
-                        decoration: const InputDecoration(
-                          isDense: true,
-                          prefixIcon: Icon(Icons.search, size: 20),
-                          hintText:
-                              'Filter who, what, where, source, comment…',
-                          border: OutlineInputBorder(),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    const minToolbar = 1100.0;
+                    final width = constraints.maxWidth < minToolbar
+                        ? minToolbar
+                        : constraints.maxWidth;
+                    return FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: SizedBox(
+                        width: width,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                key: const Key('library-filter'),
+                                controller: _filterController,
+                                decoration: const InputDecoration(
+                                  isDense: true,
+                                  prefixIcon: Icon(Icons.search, size: 20),
+                                  hintText:
+                                      'Filter who, what, where, source, comment…',
+                                  border: OutlineInputBorder(),
+                                ),
+                                onChanged: table.setFilterQuery,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            const ViewsMenu(),
+                            const SizedBox(width: 12),
+                            const HideBlurrySwitch(),
+                            if (table.knowledgeWarming) ...[
+                              const SizedBox(width: 12),
+                              const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            ],
+                            const SizedBox(width: 12),
+                            const CreditsRemainingChip(),
+                            const SizedBox(width: 12),
+                            FilledButton.icon(
+                              key: const Key('add-from-folder'),
+                              style: FilledButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              onPressed: blocked ? null : _openFolderIngest,
+                              icon: const Icon(Icons.drive_folder_upload),
+                              label: const Text('Add from folder'),
+                            ),
+                          ],
                         ),
-                        onChanged: table.setFilterQuery,
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    const HideBlurrySwitch(),
-                    if (table.knowledgeWarming) ...[
-                      const SizedBox(width: 12),
-                      const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ],
-                    const SizedBox(width: 12),
-                    const CreditsRemainingChip(),
-                    const SizedBox(width: 12),
-                    FilledButton.icon(
-                      key: const Key('add-from-folder'),
-                      style: FilledButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      onPressed: blocked ? null : _openFolderIngest,
-                      icon: const Icon(Icons.drive_folder_upload),
-                      label: const Text('Add from folder'),
-                    ),
-                  ],
+                    );
+                  },
                 ),
               ),
               Expanded(child: _buildBody(table, retryEnabled: !blocked)),
@@ -509,6 +571,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
           controller: table,
           onOpenDetail: _openDetail,
           onHideToggle: _toggleHiddenItem,
+          onHideFolder: _setFolderHidden,
           onRemoveFolder: _removeFolderFromList,
           onRevealSource: _revealSource,
           onRetryFolder: _retryFailedInFolder,

@@ -4,6 +4,7 @@ import 'package:tagkin_desktop/persons/collection.dart';
 import 'package:tagkin_desktop/persons/collections_store.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
+import 'package:tagkin_desktop/ui/alpha_order.dart';
 import 'package:uuid/uuid.dart';
 
 /// Result of a dirty-prompt: save first, discard changes, or cancel the action.
@@ -39,11 +40,15 @@ String newCollectionId() => _uuid.v4();
 /// Dirty = structural diff vs last-saved baseline (name / folders / page look)
 /// OR sticky [markDirty] activity (Faces moves, deletes, etc.).
 class CollectionsController extends ChangeNotifier {
-  CollectionsController({CollectionsStore? store, this._maxRecents})
-    : _store = store ?? CollectionsStore();
+  CollectionsController({
+    CollectionsStore? store,
+    this._maxRecents,
+    this._maxRecentViews,
+  }) : _store = store ?? CollectionsStore();
 
   final CollectionsStore _store;
   final int Function()? _maxRecents;
+  final int Function()? _maxRecentViews;
   CollectionsFile _catalog = CollectionsFile.empty;
   Collection? _current;
   Collection? _baseline;
@@ -238,6 +243,23 @@ class CollectionsController extends ChangeNotifier {
     return 'Collection$n';
   }
 
+  /// Next unused ViewN name on the open collection (View1, View2, …).
+  String nextDefaultViewName() {
+    var n = 1;
+    while (_viewNameTaken('View$n')) {
+      n++;
+    }
+    return 'View$n';
+  }
+
+  bool _viewNameTaken(String name) {
+    final trimmed = name.trim().toLowerCase();
+    if (trimmed.isEmpty) return false;
+    final cur = _current;
+    if (cur == null) return false;
+    return cur.views.any((v) => v.name.toLowerCase() == trimmed);
+  }
+
   Future<void> _mintDefaultCollection(List<String> libraryFolders) async {
     final name = _nextDefaultName();
     final created = Collection(
@@ -273,9 +295,12 @@ class CollectionsController extends ChangeNotifier {
     name: c.name,
     leafFolders: List<String>.of(c.leafFolders),
     ui: c.ui,
+    views: List<SavedView>.of(c.views),
+    recentViewIds: List<String>.of(c.recentViewIds),
   );
 
   /// Structural fields only (id ignored for dirty — same collection).
+  /// Views are persisted immediately and never turn on the collection `*`.
   bool _structurallyEqual(Collection a, Collection b) =>
       a.name == b.name && _listEq(a.leafFolders, b.leafFolders) && a.ui == b.ui;
 
@@ -659,6 +684,178 @@ class CollectionsController extends ChangeNotifier {
     return true;
   }
 
+  /// Saved views on the open collection, A–Z by name.
+  List<SavedView> get views {
+    final cur = _current;
+    if (cur == null) return const [];
+    return sortedAlphaBy(cur.views, (v) => v.name);
+  }
+
+  SavedView? viewById(String id) {
+    final cur = _current;
+    if (cur == null) return null;
+    for (final v in cur.views) {
+      if (v.id == id) return v;
+    }
+    return null;
+  }
+
+  /// Most-recent-first views, capped by Settings recent-views limit.
+  List<SavedView> get recentViews {
+    final cur = _current;
+    if (cur == null) return const [];
+    final byId = {for (final v in cur.views) v.id: v};
+    final limit = (_maxRecentViews?.call() ?? Collection.maxRecentViews).clamp(
+      1,
+      100,
+    );
+    final out = <SavedView>[];
+    for (final id in cur.recentViewIds) {
+      final v = byId[id];
+      if (v == null) continue;
+      out.add(v);
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+
+  Future<SavedView?> saveView({
+    required String name,
+    String description = '',
+    required LibraryViewFilters filters,
+  }) async {
+    final cur = _current;
+    if (cur == null || !sessionReady) return null;
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return null;
+    final created = SavedView(
+      id: newCollectionId(),
+      name: trimmed,
+      description: description.trim(),
+      filters: filters,
+    );
+    final nextViews = [...cur.views, created];
+    final nextRecents = _cappedViewRecents(created.id, cur.recentViewIds);
+    await _persistViewsPatch(views: nextViews, recentViewIds: nextRecents);
+    return created;
+  }
+
+  Future<bool> updateView(String id, LibraryViewFilters filters) async {
+    final cur = _current;
+    if (cur == null || !sessionReady) return false;
+    final idx = cur.views.indexWhere((v) => v.id == id);
+    if (idx < 0) return false;
+    final nextViews = List<SavedView>.of(cur.views);
+    nextViews[idx] = nextViews[idx].copyWith(filters: filters);
+    final nextRecents = _cappedViewRecents(id, cur.recentViewIds);
+    await _persistViewsPatch(views: nextViews, recentViewIds: nextRecents);
+    return true;
+  }
+
+  Future<bool> renameView(
+    String id, {
+    String? name,
+    String? description,
+  }) async {
+    final cur = _current;
+    if (cur == null || !sessionReady) return false;
+    final idx = cur.views.indexWhere((v) => v.id == id);
+    if (idx < 0) return false;
+    final trimmedName = name?.trim();
+    if (trimmedName != null && trimmedName.isEmpty) return false;
+    final nextViews = List<SavedView>.of(cur.views);
+    nextViews[idx] = nextViews[idx].copyWith(
+      name: trimmedName,
+      description: description?.trim(),
+    );
+    final nextRecents = _cappedViewRecents(id, cur.recentViewIds);
+    await _persistViewsPatch(views: nextViews, recentViewIds: nextRecents);
+    return true;
+  }
+
+  Future<bool> deleteView(String id) async {
+    final cur = _current;
+    if (cur == null || !sessionReady) return false;
+    if (!cur.views.any((v) => v.id == id)) return false;
+    final nextViews = [
+      for (final v in cur.views)
+        if (v.id != id) v,
+    ];
+    final nextRecents = [
+      for (final rid in cur.recentViewIds)
+        if (rid != id) rid,
+    ];
+    await _persistViewsPatch(views: nextViews, recentViewIds: nextRecents);
+    return true;
+  }
+
+  Future<bool> touchViewRecent(String id) async {
+    final cur = _current;
+    if (cur == null || !sessionReady) return false;
+    if (!cur.views.any((v) => v.id == id)) return false;
+    final nextRecents = _cappedViewRecents(id, cur.recentViewIds);
+    if (_listEq(nextRecents, cur.recentViewIds)) return true;
+    await _persistViewsPatch(views: cur.views, recentViewIds: nextRecents);
+    return true;
+  }
+
+  List<String> _cappedViewRecents(String id, List<String> existing) {
+    final limit = (_maxRecentViews?.call() ?? Collection.maxRecentViews).clamp(
+      1,
+      100,
+    );
+    final next = <String>[id];
+    for (final existingId in existing) {
+      if (existingId != id) next.add(existingId);
+      if (next.length >= limit) break;
+    }
+    return next;
+  }
+
+  /// Writes views/recents onto the catalog row without flushing dirty
+  /// name / folders / page-look edits.
+  Future<void> _persistViewsPatch({
+    required List<SavedView> views,
+    required List<String> recentViewIds,
+  }) async {
+    final cur = _current;
+    if (cur == null) return;
+    _current = cur.copyWith(views: views, recentViewIds: recentViewIds);
+    Collection catalogRow = cur;
+    for (final c in _catalog.collections) {
+      if (c.id == cur.id) {
+        catalogRow = c;
+        break;
+      }
+    }
+    final persisted = catalogRow.copyWith(
+      views: views,
+      recentViewIds: recentViewIds,
+    );
+    final next = <Collection>[];
+    var found = false;
+    for (final c in _catalog.collections) {
+      if (c.id == cur.id) {
+        next.add(persisted);
+        found = true;
+      } else {
+        next.add(c);
+      }
+    }
+    if (!found) next.add(persisted);
+    _catalog = CollectionsFile(
+      collections: next,
+      currentCollectionId: _catalog.currentCollectionId,
+      recentCollectionIds: _catalog.recentCollectionIds,
+    );
+    await _store.save(_catalog);
+    final base = _baseline;
+    if (base != null && base.id == cur.id) {
+      _baseline = base.copyWith(views: views, recentViewIds: recentViewIds);
+    }
+    notifyListeners();
+  }
+
   Future<bool> save() async {
     final cur = _current;
     if (cur == null || cur.name.trim().isEmpty) return false;
@@ -686,6 +883,8 @@ class CollectionsController extends ChangeNotifier {
       name: trimmed,
       leafFolders: const [],
       ui: cur.ui,
+      views: List<SavedView>.of(cur.views),
+      recentViewIds: List<String>.of(cur.recentViewIds),
     );
     _current = copy;
     _sessionReady = true;
@@ -806,6 +1005,7 @@ final collectionsControllerProvider =
       final controller = CollectionsController(
         store: ref.read(collectionsStoreProvider),
         maxRecents: () => ref.read(desktopPrefsProvider).recentCollectionsLimit,
+        maxRecentViews: () => ref.read(desktopPrefsProvider).recentViewsLimit,
       );
       controller.load();
       return controller;

@@ -113,6 +113,7 @@ void main() {
       expect(DesktopPrefs.defaults.familiarRegions, '');
       expect(DesktopPrefs.defaults.libraryPageSize, 50);
       expect(DesktopPrefs.defaults.recentCollectionsLimit, 20);
+      expect(DesktopPrefs.defaults.recentViewsLimit, 10);
       expect(DesktopPrefs.defaults.nearDuplicateThreshold, 4);
       expect(DesktopPrefs.defaults.sampleMinIntervalMs, 1000);
       expect(DesktopPrefs.defaults.sampleMaxIntervalMs, 15000);
@@ -150,6 +151,7 @@ void main() {
         familiarRegions: 'CA',
         libraryPageSize: 25,
         recentCollectionsLimit: 10,
+        recentViewsLimit: 5,
         nearDuplicateThreshold: 6,
         sampleMinIntervalMs: 800,
         sampleMaxIntervalMs: 12000,
@@ -187,6 +189,7 @@ void main() {
       });
       expect(prefs.showFaceOverlays, isTrue);
       expect(prefs.recentCollectionsLimit, 20);
+      expect(prefs.recentViewsLimit, 10);
       expect(prefs.libraryPageSize, 50);
       expect(prefs.dateTimeFormat, DateTimeDisplayFormat.local);
       expect(prefs.dateTimeFormatOrLocal, DateTimeDisplayFormat.local);

@@ -183,19 +183,18 @@ void main() {
     expect(find.byKey(const Key('library-filter')), findsOneWidget);
   });
 
-  testWidgets('Folders thumbs show stored sharpness when the pref is on',
-      (tester) async {
+  testWidgets('Folders thumbs show stored sharpness when the pref is on', (
+    tester,
+  ) async {
     final item = fixtureItem(id: 'item_1', sharpness: 8583);
-    await _pumpLibrary(
-      tester,
-      items: FakeItemsRepository(items: [item]),
-    );
+    await _pumpLibrary(tester, items: FakeItemsRepository(items: [item]));
     expect(find.byKey(const Key('item-sharpness-item_1')), findsOneWidget);
     expect(find.text('8583'), findsOneWidget);
   });
 
-  testWidgets('Folders thumbs omit sharpness when the pref is off',
-      (tester) async {
+  testWidgets('Folders thumbs omit sharpness when the pref is off', (
+    tester,
+  ) async {
     final item = fixtureItem(id: 'item_1', sharpness: 8583);
     await _pumpLibrary(
       tester,
@@ -239,6 +238,182 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('item-detail')), findsOneWidget);
+  });
+
+  testWidgets('video with two key periods shows a row per period', (
+    tester,
+  ) async {
+    final item = fixtureItem(
+      id: 'vid_multi',
+      type: ItemType.video,
+      processingStatus: ProcessingStatus.tagged,
+    );
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(
+        items: [item],
+        knowledgeByItemId: {
+          'vid_multi': fixtureKnowledge(
+            item: item,
+            tags: [
+              fixtureTag(
+                id: 'where_item',
+                itemId: 'vid_multi',
+                dimension: 'where',
+                value: 'park',
+              ),
+            ],
+            keyPeriods: [
+              KeyPeriodKnowledge(
+                id: 'kp-late',
+                itemId: 'vid_multi',
+                startMs: 4000,
+                endMs: 8000,
+                tags: [
+                  fixtureTag(
+                    id: 'who_late',
+                    itemId: 'vid_multi',
+                    keyPeriodId: 'kp-late',
+                    dimension: 'who',
+                    value: 'Ada',
+                  ),
+                  fixtureTag(
+                    id: 'what_late',
+                    itemId: 'vid_multi',
+                    keyPeriodId: 'kp-late',
+                    dimension: 'what',
+                    value: 'picnic',
+                  ),
+                ],
+              ),
+              KeyPeriodKnowledge(
+                id: 'kp-early',
+                itemId: 'vid_multi',
+                startMs: 1000,
+                endMs: 3000,
+                tags: [
+                  fixtureTag(
+                    id: 'who_early',
+                    itemId: 'vid_multi',
+                    keyPeriodId: 'kp-early',
+                    dimension: 'who',
+                    value: 'Sam',
+                  ),
+                  fixtureTag(
+                    id: 'what_early',
+                    itemId: 'vid_multi',
+                    keyPeriodId: 'kp-early',
+                    dimension: 'what',
+                    value: 'swimming',
+                  ),
+                ],
+              ),
+            ],
+          ),
+        },
+      ),
+      extraOverrides: [
+        commentsRepositoryProvider.overrideWithValue(
+          FakeCommentsRepository(
+            comments: [
+              fixtureComment(
+                id: 'c_early',
+                itemId: 'vid_multi',
+                keyPeriodId: 'kp-early',
+                body: 'early note',
+              ),
+              fixtureComment(
+                id: 'c_late',
+                itemId: 'vid_multi',
+                keyPeriodId: 'kp-late',
+                body: 'late note',
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('item-row-vid_multi-kp-kp-early')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('item-row-vid_multi-kp-kp-late')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('item-row-vid_multi')), findsNothing);
+    expect(
+      find.byKey(const Key('item-thumb-placeholder-vid_multi-kp-kp-early')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('item-thumb-placeholder-vid_multi-kp-kp-late')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('item-thumb-placeholder-vid_multi')),
+      findsNothing,
+    );
+    expect(
+      tester
+          .widget<Text>(find.byKey(const Key('item-who-vid_multi-kp-kp-early')))
+          .data,
+      'Sam',
+    );
+    expect(
+      tester
+          .widget<Text>(find.byKey(const Key('item-who-vid_multi-kp-kp-late')))
+          .data,
+      'Ada',
+    );
+    expect(find.text('swimming'), findsOneWidget);
+    expect(find.text('picnic'), findsOneWidget);
+    expect(find.text('early note'), findsOneWidget);
+    expect(find.text('late note'), findsOneWidget);
+    expect(find.text('park'), findsNWidgets(2));
+  });
+
+  testWidgets('video with one key period keeps a single thumb', (tester) async {
+    final item = fixtureItem(
+      id: 'vid_one',
+      type: ItemType.video,
+      processingStatus: ProcessingStatus.tagged,
+    );
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(
+        items: [item],
+        knowledgeByItemId: {
+          'vid_one': fixtureKnowledge(
+            item: item,
+            tags: const [],
+            keyPeriods: [
+              const KeyPeriodKnowledge(
+                id: 'kp1',
+                itemId: 'vid_one',
+                startMs: 0,
+                endMs: 1800,
+                tags: [],
+              ),
+            ],
+          ),
+        },
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('item-thumb-placeholder-vid_one')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('item-thumb-placeholder-vid_one-kp-kp1')),
+      findsNothing,
+    );
   });
 
   testWidgets('source control does not open detail', (tester) async {
@@ -378,6 +553,157 @@ void main() {
     expect(find.byKey(const Key('item-row-a')), findsNothing);
   });
 
+  testWidgets('Who filter: Match Any / Match All checklist narrows rows', (
+    tester,
+  ) async {
+    final a = fixtureItem(id: 'a', processingStatus: ProcessingStatus.tagged);
+    final b = fixtureItem(id: 'b', processingStatus: ProcessingStatus.tagged);
+    final c = fixtureItem(id: 'c', processingStatus: ProcessingStatus.tagged);
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(
+        items: [a, b, c],
+        knowledgeByItemId: {
+          // a: Sam only; b: Sam + Ada; c: Ada only.
+          'a': fixtureKnowledge(
+            item: a,
+            tags: [
+              fixtureTag(id: 'wa', itemId: 'a', dimension: 'who', value: 'Sam'),
+            ],
+          ),
+          'b': fixtureKnowledge(
+            item: b,
+            tags: [
+              fixtureTag(
+                id: 'wb1',
+                itemId: 'b',
+                dimension: 'who',
+                value: 'Sam',
+              ),
+              fixtureTag(
+                id: 'wb2',
+                itemId: 'b',
+                dimension: 'who',
+                value: 'Ada',
+              ),
+            ],
+          ),
+          'c': fixtureKnowledge(
+            item: c,
+            tags: [
+              fixtureTag(id: 'wc', itemId: 'c', dimension: 'who', value: 'Ada'),
+            ],
+          ),
+        },
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('item-row-a')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-b')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-c')), findsOneWidget);
+
+    // Open the Who filter dialog, select Sam + Ada, default Match Any (OR).
+    await tester.tap(find.byKey(const Key('library-who-filter-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('who-filter-option-Sam')));
+    await tester.tap(find.byKey(const Key('who-filter-option-Ada')));
+    await tester.tap(find.byKey(const Key('who-filter-apply')));
+    await tester.pumpAndSettle();
+
+    // Match Any: all three rows have Sam or Ada.
+    expect(find.byKey(const Key('item-row-a')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-b')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-c')), findsOneWidget);
+
+    // Switch to Match All: only b (has both Sam and Ada) remains.
+    await tester.tap(find.byKey(const Key('library-who-filter-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Match All'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('who-filter-apply')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('item-row-a')), findsNothing);
+    expect(find.byKey(const Key('item-row-b')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-c')), findsNothing);
+
+    // Clear resets to showing everything again.
+    await tester.tap(find.byKey(const Key('library-who-filter-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('who-filter-clear')));
+    await tester.tap(find.byKey(const Key('who-filter-apply')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('item-row-a')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-b')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-c')), findsOneWidget);
+  });
+
+  testWidgets('Who filter checklist and matching scope to Hidden when the '
+      'Hide-column dropdown shows Hidden', (tester) async {
+    final shown = fixtureItem(id: 'shown');
+    final hidden = fixtureItem(id: 'hidden_sam', isHidden: true);
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(
+        items: [shown, hidden],
+        knowledgeByItemId: {
+          'shown': fixtureKnowledge(
+            item: shown,
+            tags: [
+              fixtureTag(
+                id: 'w0',
+                itemId: 'shown',
+                dimension: 'who',
+                value: 'Visible Vic',
+              ),
+            ],
+          ),
+          'hidden_sam': fixtureKnowledge(
+            item: hidden,
+            tags: [
+              fixtureTag(
+                id: 'w1',
+                itemId: 'hidden_sam',
+                dimension: 'who',
+                value: 'Sam',
+              ),
+            ],
+          ),
+        },
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pumpAndSettle();
+
+    // Default Visible: checklist only offers the visible row's name.
+    await tester.tap(find.byKey(const Key('library-who-filter-button')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('who-filter-option-Visible Vic')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('who-filter-option-Sam')), findsNothing);
+    await tester.tap(find.byKey(const Key('who-filter-cancel')));
+    await tester.pumpAndSettle();
+
+    // Switch Hide-column to Hidden — checklist now offers Sam only.
+    await tester.tap(find.byKey(const Key('library-hidden-filter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Hidden').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('library-who-filter-button')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('who-filter-option-Sam')), findsOneWidget);
+    expect(
+      find.byKey(const Key('who-filter-option-Visible Vic')),
+      findsNothing,
+    );
+  });
+
   testWidgets('shared source path group collapses and expands', (tester) async {
     const shared = '/users/w/test';
     final a = fixtureItem(
@@ -459,7 +785,9 @@ void main() {
     expect(find.text('Source'), findsNothing);
   });
 
-  testWidgets('File column icon is photo or video by item type', (tester) async {
+  testWidgets('File column icon is photo or video by item type', (
+    tester,
+  ) async {
     final photo = fixtureItem(id: 'file_photo', type: ItemType.photo);
     final video = fixtureItem(id: 'file_video', type: ItemType.video);
     await _pumpLibrary(
@@ -682,51 +1010,41 @@ void main() {
     expect(find.byKey(const Key('items-retry')), findsOneWidget);
   });
 
-  testWidgets(
-    'list hide toggle hides an item immediately, no confirm dialog',
-    (tester) async {
-      final item = fixtureItem(id: 'item_list_hide');
-      final items = FakeItemsRepository(items: [item]);
-      final jobs = FakeJobsRepository(itemId: 'item_list_hide', item: item);
-      await _pumpLibrary(tester, items: items, jobs: jobs);
-      expect(
-        find.byKey(const Key('item-row-item_list_hide')),
-        findsOneWidget,
-      );
+  testWidgets('list hide toggle hides an item immediately, no confirm dialog', (
+    tester,
+  ) async {
+    final item = fixtureItem(id: 'item_list_hide');
+    final items = FakeItemsRepository(items: [item]);
+    final jobs = FakeJobsRepository(itemId: 'item_list_hide', item: item);
+    await _pumpLibrary(tester, items: items, jobs: jobs);
+    expect(find.byKey(const Key('item-row-item_list_hide')), findsOneWidget);
 
-      await tester.ensureVisible(
-        find.byKey(const Key('item-list-hide-item_list_hide')),
-      );
-      await tester.tap(
-        find.byKey(const Key('item-list-hide-item_list_hide')),
-      );
-      await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const Key('item-list-hide-item_list_hide')),
+    );
+    await tester.tap(find.byKey(const Key('item-list-hide-item_list_hide')));
+    await tester.pumpAndSettle();
 
-      // Non-destructive: no two-step Sure? confirm.
-      expect(find.text('Sure?'), findsNothing);
-      expect(
-        items.setItemHiddenCalls,
-        [(itemId: 'item_list_hide', isHidden: true)],
-      );
-      // Hidden items are excluded from Folders by default (Visible filter)
-      // — the item stays in the account, only the row hides.
-      expect(find.byKey(const Key('item-row-item_list_hide')), findsNothing);
+    // Non-destructive: no two-step Sure? confirm.
+    expect(find.text('Sure?'), findsNothing);
+    expect(items.setItemHiddenCalls, [
+      (itemId: 'item_list_hide', isHidden: true),
+    ]);
+    // Hidden items are excluded from Folders by default (Visible filter)
+    // — the item stays in the account, only the row hides.
+    expect(find.byKey(const Key('item-row-item_list_hide')), findsNothing);
 
-      // Hide-column Both reveals it again (still marked isHidden: true).
-      await tester.tap(find.byKey(const Key('library-hidden-filter')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Both').last);
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const Key('item-row-item_list_hide')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const Key('item-list-hide-item_list_hide')),
-        findsOneWidget,
-      );
-    },
-  );
+    // Hide-column Both reveals it again (still marked isHidden: true).
+    await tester.tap(find.byKey(const Key('library-hidden-filter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Both').last);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('item-row-item_list_hide')), findsOneWidget);
+    expect(
+      find.byKey(const Key('item-list-hide-item_list_hide')),
+      findsOneWidget,
+    );
+  });
 
   testWidgets('remove folder confirms and soft-deletes subtree items', (
     tester,
@@ -770,6 +1088,108 @@ void main() {
     expect(jobs.deletedItemIds.toSet(), {'a', 'b'});
     expect(find.byKey(const Key('source-group-$shared')), findsNothing);
     expect(find.byKey(const Key('item-row-keep')), findsOneWidget);
+  });
+
+  testWidgets('hide folder drops the subtree without flipping item flags', (
+    tester,
+  ) async {
+    const shared = '/albums/hide_me';
+    final a = fixtureItem(
+      id: 'a',
+      sourceRef: 'file://$shared/a.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final b = fixtureItem(
+      id: 'b',
+      sourceRef: 'file://$shared/nested/b.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final keep = fixtureItem(
+      id: 'keep',
+      sourceRef: 'file:///other_root/c.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final items = FakeItemsRepository(items: [a, b, keep]);
+    await _pumpLibrary(tester, items: items);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('source-group-$shared')), findsOneWidget);
+    await tester.ensureVisible(
+      find.byKey(const Key('source-group-hide-$shared')),
+    );
+    await tester.tap(find.byKey(const Key('source-group-hide-$shared')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sure?'), findsNothing);
+    expect(items.setItemHiddenCalls, isEmpty);
+    expect(find.byKey(const Key('source-group-$shared')), findsNothing);
+    expect(find.byKey(const Key('item-row-keep')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('library-hidden-filter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Hidden').last);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('source-group-$shared')), findsOneWidget);
+
+    await tester.ensureVisible(
+      find.byKey(const Key('source-group-hide-$shared')),
+    );
+    await tester.tap(find.byKey(const Key('source-group-hide-$shared')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('library-hidden-filter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Visible').last);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('source-group-$shared')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-keep')), findsOneWidget);
+  });
+
+  testWidgets('hide folder from All mints View1; All restores the folder', (
+    tester,
+  ) async {
+    const shared = '/albums/view_hide';
+    final a = fixtureItem(
+      id: 'a',
+      sourceRef: 'file://$shared/a.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final b = fixtureItem(
+      id: 'b',
+      sourceRef: 'file://$shared/b.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    await _pumpLibrary(tester, items: FakeItemsRepository(items: [a, b]));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(
+      find.byKey(const Key('source-group-hide-$shared')),
+    );
+    await tester.tap(find.byKey(const Key('source-group-hide-$shared')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('source-group-$shared')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('library-views-menu')));
+    await tester.pumpAndSettle();
+    expect(find.text('View1'), findsWidgets);
+
+    await tester.tap(find.byKey(const Key('views-menu-all')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('source-group-$shared')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('library-views-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('View1').last);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('source-group-$shared')), findsNothing);
+
+    final ctx = tester.element(find.byType(ItemsListPage));
+    final cols = ProviderScope.containerOf(
+      ctx,
+    ).read(collectionsControllerProvider);
+    expect(cols.dirty, isFalse);
+    expect(cols.views.single.name, 'View1');
+    expect(cols.views.single.filters.hiddenFolders, [shared]);
   });
 
   testWidgets('remove folder shows in-progress banner until deletes finish', (
@@ -1320,5 +1740,120 @@ void main() {
       cols.catalog.collections.firstWhere((c) => c.id == 'c-other').leafFolders,
       isEmpty,
     );
+  });
+
+  testWidgets('Views menu save / load / All / update / delete', (tester) async {
+    final a = fixtureItem(id: 'a', processingStatus: ProcessingStatus.tagged);
+    final b = fixtureItem(id: 'b', processingStatus: ProcessingStatus.tagged);
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(
+        items: [a, b],
+        knowledgeByItemId: {
+          'a': fixtureKnowledge(
+            item: a,
+            tags: [
+              fixtureTag(id: 'wa', itemId: 'a', dimension: 'who', value: 'Sam'),
+            ],
+          ),
+          'b': fixtureKnowledge(
+            item: b,
+            tags: [
+              fixtureTag(id: 'wb', itemId: 'b', dimension: 'who', value: 'Ada'),
+            ],
+          ),
+        },
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(const Key('library-filter')), 'Ada');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('item-row-b')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-a')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('library-views-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('views-menu-save-as')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('view-name-field')),
+      'Ada only',
+    );
+    await tester.tap(find.byKey(const Key('view-name-confirm')));
+    await tester.pumpAndSettle();
+    expect(find.text('Ada only'), findsWidgets);
+
+    await tester.tap(find.byKey(const Key('library-views-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('views-menu-all')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('item-row-a')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-b')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('library-views-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Ada only'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('item-row-b')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-a')), findsNothing);
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('library-filter')))
+          .controller
+          ?.text,
+      'Ada',
+    );
+
+    await tester.enterText(find.byKey(const Key('library-filter')), 'Sam');
+    await tester.pumpAndSettle();
+    // Named views auto-update; Update is disabled once the snapshot matches.
+
+    await tester.tap(find.byKey(const Key('library-views-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('views-menu-all')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('library-views-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Ada only'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('item-row-a')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-b')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('library-views-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('views-menu-delete')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('view-delete-confirm')));
+    await tester.pumpAndSettle();
+    expect(find.text('Ada only'), findsNothing);
+  });
+
+  testWidgets('Manage views reaches a saved view', (tester) async {
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(items: [fixtureItem(id: 'a')]),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(const Key('library-filter')), 'xyz');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('library-views-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('views-menu-save-as')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('view-name-field')), 'Needle');
+    await tester.tap(find.byKey(const Key('view-name-confirm')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('library-views-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('views-menu-manage')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('views-manage-dialog')), findsOneWidget);
+    expect(find.text('Needle'), findsWidgets);
+    await tester.tap(find.byKey(const Key('views-manage-close')));
+    await tester.pumpAndSettle();
   });
 }

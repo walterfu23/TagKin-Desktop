@@ -17,6 +17,7 @@ import 'package:tagkin_desktop/persons/collection.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/prepass/photo_blur_score_cache.dart';
 import 'package:tagkin_desktop/prepass/sharpness.dart';
+import 'package:tagkin_desktop/review/key_period_offsets.dart';
 import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/where/where_label_resolver.dart';
@@ -72,6 +73,7 @@ class LibraryItemEntry extends LibraryVisibleEntry {
     required this.row,
     required this.sourceDisplay,
     this.depth = 0,
+    this.period,
   });
 
   final LibraryTableRow row;
@@ -80,8 +82,48 @@ class LibraryItemEntry extends LibraryVisibleEntry {
   final String sourceDisplay;
   final int depth;
 
+  /// When set, this visible row is one key period of [row] (2+ periods).
+  final KeyPeriodKnowledge? period;
+
   /// True when [sourceDisplay] is not the full [LibraryTableRow.sourceLabel].
   bool get showBasenameOnly => sourceDisplay != row.sourceLabel;
+}
+
+/// Folders cells for one video key period (Who/What/Where/Comment).
+class PeriodFolderSummary {
+  const PeriodFolderSummary({
+    required this.period,
+    this.who = const [],
+    this.what = const [],
+    this.whereRaw = const [],
+    this.whereEntries = const [],
+    this.comments = const [],
+  });
+
+  final KeyPeriodKnowledge period;
+  final List<String> who;
+  final List<String> what;
+  final List<String> whereRaw;
+  final List<WhereDisplay> whereEntries;
+  final List<String> comments;
+
+  PeriodFolderSummary copyWith({
+    KeyPeriodKnowledge? period,
+    List<String>? who,
+    List<String>? what,
+    List<String>? whereRaw,
+    List<WhereDisplay>? whereEntries,
+    List<String>? comments,
+  }) {
+    return PeriodFolderSummary(
+      period: period ?? this.period,
+      who: who ?? this.who,
+      what: what ?? this.what,
+      whereRaw: whereRaw ?? this.whereRaw,
+      whereEntries: whereEntries ?? this.whereEntries,
+      comments: comments ?? this.comments,
+    );
+  }
 }
 
 /// View-model for one library table row.
@@ -94,6 +136,9 @@ class LibraryTableRow {
     this.whereRaw = const [],
     this.comments = const [],
     this.keyPeriods = const [],
+    this.periodThumbs = const {},
+    this.periodSummaries = const [],
+    this.periodComments = const {},
     this.knowledgeLoaded = false,
     this.commentsLoaded = false,
     this.heldBadgeStatus,
@@ -116,6 +161,15 @@ class LibraryTableRow {
 
   /// Video key periods from `/knowledge` (empty for photos / before load).
   final List<KeyPeriodKnowledge> keyPeriods;
+
+  /// Stills for Folders period tiles (`resolveKeyPeriod`), keyed by period id.
+  final Map<String, LocalThumbResult> periodThumbs;
+
+  /// Per-period Who/What/Where for Folders rows when there are 2+ periods.
+  final List<PeriodFolderSummary> periodSummaries;
+
+  /// Key-period comment bodies, keyed by period id (filled from comments GET).
+  final Map<String, List<String>> periodComments;
   final bool knowledgeLoaded;
   final bool commentsLoaded;
 
@@ -123,6 +177,14 @@ class LibraryTableRow {
   /// been applied yet (ingest/Retry). Null → `processing`.
   final ProcessingStatus? heldBadgeStatus;
   final LocalThumbResult? thumb;
+
+  PeriodFolderSummary? summaryFor(KeyPeriodKnowledge? period) {
+    if (period == null) return null;
+    for (final summary in periodSummaries) {
+      if (summary.period.id == period.id) return summary;
+    }
+    return null;
+  }
 
   /// Folders Status cell: hold `tagged` until who/what/where are applied.
   ProcessingStatus get foldersBadgeStatus {
@@ -164,6 +226,9 @@ class LibraryTableRow {
     List<String>? whereRaw,
     List<String>? comments,
     List<KeyPeriodKnowledge>? keyPeriods,
+    Map<String, LocalThumbResult>? periodThumbs,
+    List<PeriodFolderSummary>? periodSummaries,
+    Map<String, List<String>>? periodComments,
     bool? knowledgeLoaded,
     bool? commentsLoaded,
     ProcessingStatus? heldBadgeStatus,
@@ -177,6 +242,9 @@ class LibraryTableRow {
       whereRaw: whereRaw ?? this.whereRaw,
       comments: comments ?? this.comments,
       keyPeriods: keyPeriods ?? this.keyPeriods,
+      periodThumbs: periodThumbs ?? this.periodThumbs,
+      periodSummaries: periodSummaries ?? this.periodSummaries,
+      periodComments: periodComments ?? this.periodComments,
       knowledgeLoaded: knowledgeLoaded ?? this.knowledgeLoaded,
       commentsLoaded: commentsLoaded ?? this.commentsLoaded,
       heldBadgeStatus: heldBadgeStatus ?? this.heldBadgeStatus,
@@ -289,6 +357,84 @@ class LibraryTableController extends ChangeNotifier {
     _notify();
   }
 
+  /// Who column header filter (person/who-tag names). In-memory, per table
+  /// session (not a [DesktopPrefs] entry). Empty = no filter. Applied to
+  /// whatever population the other Folders filters (collection scope, text
+  /// query, Hide blurry, Visible/Hidden/Both) are currently showing — see
+  /// [_rowsForWhoFilter] / [availableWhoNames].
+  Set<String> _whoFilterNames = const {};
+
+  Set<String> get whoFilterNames => _whoFilterNames;
+
+  /// false = Match Any (OR, default); true = Match All (AND).
+  bool _whoFilterMatchAll = false;
+
+  bool get whoFilterMatchAll => _whoFilterMatchAll;
+
+  void setWhoFilter({Set<String>? names, bool? matchAll}) {
+    if (names != null) _whoFilterNames = Set<String>.from(names);
+    if (matchAll != null) _whoFilterMatchAll = matchAll;
+    pageIndex = 0;
+    _notify();
+  }
+
+  /// Active named view id, or null for the built-in All view.
+  String? activeViewId;
+
+  LibraryViewFilters? _activeViewSnapshot;
+
+  LibraryViewFilters? get activeViewSnapshot => _activeViewSnapshot;
+
+  /// When true, [commitActiveView] no-ops so apply/load does not mint views.
+  bool viewCommitPaused = false;
+
+  Future<T> runViewCommitPaused<T>(Future<T> Function() action) async {
+    viewCommitPaused = true;
+    try {
+      return await action();
+    } finally {
+      viewCommitPaused = false;
+    }
+  }
+
+  bool get isActiveViewModified {
+    final current = captureViewFilters();
+    final snap = _activeViewSnapshot;
+    if (snap == null) return current != LibraryViewFilters.all;
+    return current != snap;
+  }
+
+  void setActiveView(String? id, LibraryViewFilters? snapshot) {
+    activeViewId = id;
+    _activeViewSnapshot = snapshot;
+    _notify();
+  }
+
+  /// Folder paths hidden in the current view (item [Item.isHidden] unchanged).
+  Set<String> _hiddenFolders = const {};
+
+  Set<String> get hiddenFolders => _hiddenFolders;
+
+  bool isFolderHidden(String dir) {
+    final key = normalizeLeafFolder(dir);
+    if (key.isEmpty) return false;
+    return _hiddenFolders.contains(key);
+  }
+
+  void setFolderHidden(String dir, {required bool hidden}) {
+    final key = normalizeLeafFolder(dir);
+    if (key.isEmpty) return;
+    final next = Set<String>.from(_hiddenFolders);
+    if (hidden) {
+      if (!next.add(key)) return;
+    } else {
+      if (!next.remove(key)) return;
+    }
+    _hiddenFolders = next;
+    pageIndex = 0;
+    _notify();
+  }
+
   /// When non-null, only rows whose leaf folder is in this set are shown.
   Set<String>? collectionLeafFolders;
 
@@ -336,7 +482,23 @@ class LibraryTableController extends ChangeNotifier {
     return rowById(itemId)?.keyPeriods ?? const [];
   }
 
-  List<LibraryTableRow> get filteredSorted {
+  bool _underHiddenFolder(LibraryTableRow r) {
+    if (_hiddenFolders.isEmpty) return false;
+    final path = localPathFromSourceRef(r.item.sourceRef) ?? r.sourceLabel;
+    if (path.isEmpty) return false;
+    for (final folder in _hiddenFolders) {
+      if (pathIsUnderFolder(path, folder)) return true;
+    }
+    return false;
+  }
+
+  /// Rows after every Folders filter except the Who filter and sort:
+  /// collection scope, text query, Hide blurry, Visible/Hidden/Both, and
+  /// view-local hidden folders. This is the population the Who filter's
+  /// checklist ([availableWhoNames]) and predicate operate on, so e.g.
+  /// switching the Hide-column dropdown to **Hidden** scopes both the
+  /// checklist and the filter to hidden rows only.
+  List<LibraryTableRow> get _rowsForWhoFilter {
     var list = List<LibraryTableRow>.from(_rows);
     final collectionFolders = collectionLeafFolders;
     if (collectionFolders != null) {
@@ -368,20 +530,46 @@ class LibraryTableController extends ChangeNotifier {
     }
     switch (_hiddenItemsFilter) {
       case HiddenItemsFilter.visible:
-        list = list.where((r) => !r.item.isHidden).toList();
+        list = list
+            .where((r) => !r.item.isHidden && !_underHiddenFolder(r))
+            .toList();
       case HiddenItemsFilter.hidden:
-        list = list.where((r) => r.item.isHidden).toList();
+        list = list
+            .where((r) => r.item.isHidden || _underHiddenFolder(r))
+            .toList();
       case HiddenItemsFilter.both:
         break;
     }
+    return list;
+  }
+
+  /// Distinct Who names available to pick in the Who filter checklist, drawn
+  /// from [_rowsForWhoFilter] (i.e. the population currently surviving every
+  /// other active Folders filter) — A–Z, case-insensitive.
+  Set<String> get availableWhoNames {
+    final names = <String>{for (final r in _rowsForWhoFilter) ...r.who};
+    return sortedAlphaBy(names, (n) => n).toSet();
+  }
+
+  List<LibraryTableRow> get filteredSorted {
+    var list = _rowsForWhoFilter;
+    if (_whoFilterNames.isNotEmpty) {
+      list = list.where((r) {
+        final names = r.who.toSet();
+        return _whoFilterMatchAll
+            ? _whoFilterNames.every(names.contains)
+            : _whoFilterNames.any(names.contains);
+      }).toList();
+    }
     if (sortKeys.isNotEmpty) {
-      list.sort((a, b) {
-        for (final key in sortKeys) {
-          final cmp = _compare(a, b, key.column);
-          if (cmp != 0) return key.ascending ? cmp : -cmp;
-        }
-        return a.item.id.compareTo(b.item.id);
-      });
+      list = List<LibraryTableRow>.from(list)
+        ..sort((a, b) {
+          for (final key in sortKeys) {
+            final cmp = _compare(a, b, key.column);
+            if (cmp != 0) return key.ascending ? cmp : -cmp;
+          }
+          return a.item.id.compareTo(b.item.id);
+        });
     }
     return list;
   }
@@ -481,6 +669,9 @@ class LibraryTableController extends ChangeNotifier {
           whereRaw: const [],
           comments: const [],
           keyPeriods: const [],
+          periodThumbs: const {},
+          periodSummaries: const [],
+          periodComments: const {},
           knowledgeLoaded: false,
           commentsLoaded: false,
           heldBadgeStatus: r.item.processingStatus == ProcessingStatus.tagged
@@ -537,10 +728,12 @@ class LibraryTableController extends ChangeNotifier {
   }
 
   /// Item rows on the current visible page (excludes path group headers).
+  /// One [LibraryTableRow] per item even when a video expands to period rows.
   List<LibraryTableRow> get pageRows {
+    final seen = <String>{};
     return [
       for (final e in visiblePageEntries)
-        if (e is LibraryItemEntry) e.row,
+        if (e is LibraryItemEntry && seen.add(e.row.item.id)) e.row,
     ];
   }
 
@@ -672,6 +865,69 @@ class LibraryTableController extends ChangeNotifier {
     }
   }
 
+  /// Snapshot of Folders filters/sort for a saved View.
+  LibraryViewFilters captureViewFilters() {
+    final who = whoFilterNames.toList()..sort(compareLabelsAlpha);
+    return LibraryViewFilters(
+      filterQuery: filterQuery,
+      statusFilter: statusFilter?.wire,
+      whoNames: who,
+      whoMatchAll: whoFilterMatchAll,
+      hiddenItemsFilter: hiddenItemsFilter.name,
+      hideBlurryPhotos: hideBlurryPhotos,
+      sortKeys: [
+        for (final k in sortKeys)
+          CollectionSortKey(k.column.name, ascending: k.ascending),
+      ],
+      hiddenFolders: (hiddenFolders.toList()..sort()),
+    );
+  }
+
+  /// Restore Folders filters/sort from a View. Hide blurry is prefs-owned
+  /// — callers push [LibraryViewFilters.hideBlurryPhotos] through
+  /// [DesktopPrefsController.setHideBlurryPhotos] separately.
+  Future<void> applyLibraryViewFilters(LibraryViewFilters f) async {
+    filterQuery = f.filterQuery;
+    pageIndex = 0;
+    sortKeys = [
+      for (final k in f.sortKeys)
+        if (_sortColumnFromName(k.column) != null)
+          LibrarySortKey(
+            _sortColumnFromName(k.column)!,
+            ascending: k.ascending,
+          ),
+    ];
+    _whoFilterNames = Set<String>.from(f.whoNames);
+    _whoFilterMatchAll = f.whoMatchAll;
+    HiddenItemsFilter nextHidden = HiddenItemsFilter.visible;
+    for (final v in HiddenItemsFilter.values) {
+      if (v.name == f.hiddenItemsFilter) {
+        nextHidden = v;
+        break;
+      }
+    }
+    _hiddenItemsFilter = nextHidden;
+    _hiddenFolders = {
+      for (final d in f.hiddenFolders)
+        if (normalizeLeafFolder(d) case final k when k.isNotEmpty) k,
+    };
+    ProcessingStatus? nextStatus;
+    final raw = f.statusFilter;
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        nextStatus = ProcessingStatus.fromWire(raw);
+      } catch (_) {
+        nextStatus = null;
+      }
+    }
+    if (nextStatus != statusFilter) {
+      statusFilter = nextStatus;
+      await load();
+    } else {
+      _notify();
+    }
+  }
+
   static LibrarySortColumn? _sortColumnFromName(String name) {
     for (final c in LibrarySortColumn.values) {
       if (c.name == name) return c;
@@ -747,11 +1003,35 @@ class LibraryTableController extends ChangeNotifier {
   Future<void> refreshWhereLabels() async {
     final snapshot = List<LibraryTableRow>.from(_rows);
     for (final row in snapshot) {
-      if (!row.knowledgeLoaded || row.whereRaw.isEmpty) continue;
-      final entries = collapseWhereDisplays(
-        await _whereLabels.resolveAllDisplays(row.whereRaw),
+      if (!row.knowledgeLoaded) continue;
+      if (row.whereRaw.isEmpty && row.periodSummaries.isEmpty) continue;
+      List<WhereDisplay>? itemWhere;
+      if (row.whereRaw.isNotEmpty) {
+        itemWhere = collapseWhereDisplays(
+          await _whereLabels.resolveAllDisplays(row.whereRaw),
+        );
+      }
+      final periodSummaries = <PeriodFolderSummary>[];
+      for (final summary in row.periodSummaries) {
+        if (summary.whereRaw.isEmpty) {
+          periodSummaries.add(summary.copyWith(whereEntries: const []));
+          continue;
+        }
+        periodSummaries.add(
+          summary.copyWith(
+            whereEntries: collapseWhereDisplays(
+              await _whereLabels.resolveAllDisplays(summary.whereRaw),
+            ),
+          ),
+        );
+      }
+      _replaceRow(
+        row.item.id,
+        (r) => r.copyWith(
+          whereEntries: itemWhere ?? r.whereEntries,
+          periodSummaries: periodSummaries,
+        ),
       );
-      _replaceRow(row.item.id, (r) => r.copyWith(whereEntries: entries));
     }
   }
 
@@ -864,6 +1144,37 @@ class LibraryTableController extends ChangeNotifier {
     }
   }
 
+  Future<void> _warmPeriodThumbs(
+    String itemId,
+    List<KeyPeriodKnowledge> periods, {
+    int? loadGen,
+    required int knowledgeSeq,
+  }) async {
+    final tiles = foldersKeyPeriodTiles(periods);
+    if (tiles.isEmpty) return;
+    for (final period in tiles) {
+      if (!_seqCurrent(_knowledgeSeq, itemId, knowledgeSeq, loadGen: loadGen)) {
+        return;
+      }
+      final row = rowById(itemId);
+      if (row == null) return;
+      if (row.item.type != ItemType.video) return;
+      final thumb = await _thumbCache.resolveKeyPeriod(
+        row.item,
+        keyPeriodId: period.id,
+        timestampMs: keyPeriodThumbTimestampMs(period),
+      );
+      if (!_seqCurrent(_knowledgeSeq, itemId, knowledgeSeq, loadGen: loadGen)) {
+        return;
+      }
+      _replaceRow(itemId, (r) {
+        final next = Map<String, LocalThumbResult>.from(r.periodThumbs);
+        next[period.id] = thumb;
+        return r.copyWith(periodThumbs: next);
+      });
+    }
+  }
+
   int _bumpSeq(Map<String, int> seqs, String id) =>
       seqs[id] = (seqs[id] ?? 0) + 1;
 
@@ -873,31 +1184,102 @@ class LibraryTableController extends ChangeNotifier {
     return seqs[id] == seq;
   }
 
+  List<PeriodFolderSummary> _folderPeriodSummaries({
+    required ItemKnowledge knowledge,
+    required List<String> itemWhereRaw,
+    required Map<String, List<String>> periodComments,
+    Map<String, List<WhereDisplay>> whereEntriesByPeriodId = const {},
+  }) {
+    return [
+      for (final period in foldersKeyPeriodTiles(knowledge.keyPeriods))
+        PeriodFolderSummary(
+          period: period,
+          who: whoColumnValuesForPeriod(knowledge, period, _personNamesById),
+          what: whatColumnValuesForPeriod(period),
+          whereRaw: whereRawForPeriod(
+            period,
+            itemLevelWhereRaw: itemWhereRaw,
+          ),
+          whereEntries: whereEntriesByPeriodId[period.id] ?? const [],
+          comments: periodComments[period.id] ?? const [],
+        ),
+    ];
+  }
+
   Future<void> _fetchAndApplyKnowledge(String id, {int? loadGen}) async {
     final seq = _bumpSeq(_knowledgeSeq, id);
+    ItemKnowledge? parsed;
     try {
       final knowledge = await itemsRepository.getKnowledge(id);
+      parsed = knowledge;
       if (!_seqCurrent(_knowledgeSeq, id, seq, loadGen: loadGen)) return;
       final grouped = groupDisplayTagsByDimension(knowledge);
+      final itemGrouped = groupItemLevelTagsByDimension(knowledge.tags);
       final whereRaw = grouped['where']!.map((t) => t.value).toList();
-      final whereEntries = collapseWhereDisplays(
-        await _whereLabels.resolveAllDisplays(whereRaw),
-      );
-      if (!_seqCurrent(_knowledgeSeq, id, seq, loadGen: loadGen)) return;
+      final itemWhereRaw = itemGrouped['where']!.map((t) => t.value).toList();
       _replaceRow(
         id,
         (r) => r.copyWith(
           who: whoColumnValues(knowledge, _personNamesById),
           what: grouped['what']!.map((t) => t.value).toList(),
-          whereEntries: whereEntries,
           whereRaw: whereRaw,
           keyPeriods: knowledge.keyPeriods,
+          periodThumbs: const {},
+          periodSummaries: _folderPeriodSummaries(
+            knowledge: knowledge,
+            itemWhereRaw: itemWhereRaw,
+            periodComments: r.periodComments,
+          ),
           knowledgeLoaded: true,
+        ),
+      );
+      unawaited(
+        _warmPeriodThumbs(
+          id,
+          knowledge.keyPeriods,
+          loadGen: loadGen,
+          knowledgeSeq: seq,
+        ),
+      );
+      final whereEntries = collapseWhereDisplays(
+        await _whereLabels.resolveAllDisplays(whereRaw),
+      );
+      if (!_seqCurrent(_knowledgeSeq, id, seq, loadGen: loadGen)) return;
+      final whereByPeriod = <String, List<WhereDisplay>>{};
+      for (final period in foldersKeyPeriodTiles(knowledge.keyPeriods)) {
+        final periodWhereRaw = whereRawForPeriod(
+          period,
+          itemLevelWhereRaw: itemWhereRaw,
+        );
+        whereByPeriod[period.id] = collapseWhereDisplays(
+          await _whereLabels.resolveAllDisplays(periodWhereRaw),
+        );
+        if (!_seqCurrent(_knowledgeSeq, id, seq, loadGen: loadGen)) return;
+      }
+      _replaceRow(
+        id,
+        (r) => r.copyWith(
+          whereEntries: whereEntries,
+          periodSummaries: _folderPeriodSummaries(
+            knowledge: knowledge,
+            itemWhereRaw: itemWhereRaw,
+            periodComments: r.periodComments,
+            whereEntriesByPeriodId: whereByPeriod,
+          ),
         ),
       );
     } catch (_) {
       if (!_seqCurrent(_knowledgeSeq, id, seq, loadGen: loadGen)) return;
-      _replaceRow(id, (r) => r.copyWith(knowledgeLoaded: true));
+      final knowledge = parsed;
+      _replaceRow(id, (r) {
+        if (knowledge == null) {
+          return r.copyWith(knowledgeLoaded: true);
+        }
+        return r.copyWith(
+          keyPeriods: knowledge.keyPeriods,
+          knowledgeLoaded: true,
+        );
+      });
     }
   }
 
@@ -910,9 +1292,26 @@ class LibraryTableController extends ChangeNotifier {
           .where((c) => c.keyPeriodId == null && c.deletedAt == null)
           .map((c) => c.body)
           .toList();
+      final byPeriod = <String, List<String>>{};
+      for (final comment in list) {
+        if (comment.deletedAt != null) continue;
+        final periodId = comment.keyPeriodId;
+        if (periodId == null) continue;
+        byPeriod.putIfAbsent(periodId, () => []).add(comment.body);
+      }
       _replaceRow(
         id,
-        (r) => r.copyWith(comments: bodies, commentsLoaded: true),
+        (r) => r.copyWith(
+          comments: bodies,
+          periodComments: byPeriod,
+          commentsLoaded: true,
+          periodSummaries: [
+            for (final summary in r.periodSummaries)
+              summary.copyWith(
+                comments: byPeriod[summary.period.id] ?? const [],
+              ),
+          ],
+        ),
       );
     } catch (_) {
       if (!_seqCurrent(_commentsSeq, id, seq, loadGen: loadGen)) return;
@@ -1079,8 +1478,11 @@ List<LibraryVisibleEntry> _buildPathGroupedEntries({
       _TopEmit(
         sortLabel: row.sourceLabel,
         tiebreak: row.item.id,
-        emit: (list) => list.add(
-          LibraryItemEntry(row: row, depth: 0, sourceDisplay: row.sourceLabel),
+        emit: (list) => _emitItemEntries(
+          row: row,
+          depth: 0,
+          sourceDisplay: row.sourceLabel,
+          out: list,
         ),
       ),
     );
@@ -1279,12 +1681,11 @@ void _emitPathChildren({
       (a, b) => (indexOf[a.item.id] ?? 0).compareTo(indexOf[b.item.id] ?? 0),
     );
   for (final row in direct) {
-    out.add(
-      LibraryItemEntry(
-        row: row,
-        depth: depth,
-        sourceDisplay: ctx.relative(row.sourceLabel, from: parentAbs),
-      ),
+    _emitItemEntries(
+      row: row,
+      depth: depth,
+      sourceDisplay: ctx.relative(row.sourceLabel, from: parentAbs),
+      out: out,
     );
   }
 }
@@ -1301,6 +1702,31 @@ void _emitSingletonFiles({
     final display = parentAbs == null || parentAbs.isEmpty
         ? row.sourceLabel
         : ctx.relative(row.sourceLabel, from: parentAbs);
-    out.add(LibraryItemEntry(row: row, depth: depth, sourceDisplay: display));
+    _emitItemEntries(row: row, depth: depth, sourceDisplay: display, out: out);
+  }
+}
+
+void _emitItemEntries({
+  required LibraryTableRow row,
+  required int depth,
+  required String sourceDisplay,
+  required List<LibraryVisibleEntry> out,
+}) {
+  final tiles = foldersKeyPeriodTiles(row.keyPeriods);
+  if (tiles.isEmpty) {
+    out.add(
+      LibraryItemEntry(row: row, depth: depth, sourceDisplay: sourceDisplay),
+    );
+    return;
+  }
+  for (final period in tiles) {
+    out.add(
+      LibraryItemEntry(
+        row: row,
+        depth: depth,
+        sourceDisplay: sourceDisplay,
+        period: period,
+      ),
+    );
   }
 }

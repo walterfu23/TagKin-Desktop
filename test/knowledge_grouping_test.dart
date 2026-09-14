@@ -43,51 +43,53 @@ void main() {
     expect(provenanceLabel(tag), 'model · stub · flash · 91%');
   });
 
-  test('assignedPersonNames is unique A–Z case-insensitive; skips missing map',
-      () {
-    final item = fixtureItem(id: 'item_1');
-    final knowledge = fixtureKnowledge(
-      item: item,
-      tags: [fixtureTag(id: 't1', dimension: 'who', value: 'toddler')],
-      appearances: [
-        fixtureAppearance(
-          id: 'ap_b',
-          personId: 'person_bea',
-          itemId: 'item_1',
-        ),
-        fixtureAppearance(
-          id: 'ap_a',
-          personId: 'person_alex',
-          itemId: 'item_1',
-          tagId: 't1',
-        ),
-        fixtureAppearance(
-          id: 'ap_a2',
-          personId: 'person_alex',
-          itemId: 'item_1',
-          tagId: 't1',
-        ),
-        fixtureAppearance(
-          id: 'ap_missing',
-          personId: 'person_gone',
-          itemId: 'item_1',
-        ),
-        fixtureAppearance(
-          id: 'ap_z',
-          personId: 'person_zoe',
-          itemId: 'item_1',
-        ),
-      ],
-    );
-    expect(
-      assignedPersonNames(knowledge, {
-        'person_alex': 'Alex',
-        'person_bea': 'bea',
-        'person_zoe': 'Zoe',
-      }),
-      ['Alex', 'bea', 'Zoe'],
-    );
-  });
+  test(
+    'assignedPersonNames is unique A–Z case-insensitive; skips missing map',
+    () {
+      final item = fixtureItem(id: 'item_1');
+      final knowledge = fixtureKnowledge(
+        item: item,
+        tags: [fixtureTag(id: 't1', dimension: 'who', value: 'toddler')],
+        appearances: [
+          fixtureAppearance(
+            id: 'ap_b',
+            personId: 'person_bea',
+            itemId: 'item_1',
+          ),
+          fixtureAppearance(
+            id: 'ap_a',
+            personId: 'person_alex',
+            itemId: 'item_1',
+            tagId: 't1',
+          ),
+          fixtureAppearance(
+            id: 'ap_a2',
+            personId: 'person_alex',
+            itemId: 'item_1',
+            tagId: 't1',
+          ),
+          fixtureAppearance(
+            id: 'ap_missing',
+            personId: 'person_gone',
+            itemId: 'item_1',
+          ),
+          fixtureAppearance(
+            id: 'ap_z',
+            personId: 'person_zoe',
+            itemId: 'item_1',
+          ),
+        ],
+      );
+      expect(
+        assignedPersonNames(knowledge, {
+          'person_alex': 'Alex',
+          'person_bea': 'bea',
+          'person_zoe': 'Zoe',
+        }),
+        ['Alex', 'bea', 'Zoe'],
+      );
+    },
+  );
 
   test('whoColumnValues uses names when any assigned appearance resolves', () {
     final item = fixtureItem(id: 'item_1');
@@ -103,42 +105,43 @@ void main() {
         ),
       ],
     );
-    expect(
-      whoColumnValues(knowledge, {'person_alex': 'Alex'}),
-      ['Alex'],
-    );
+    expect(whoColumnValues(knowledge, {'person_alex': 'Alex'}), ['Alex']);
   });
 
-  test('whoColumnValues falls back to who-tag values when no names resolve',
-      () {
-    final item = fixtureItem(id: 'item_1');
-    final knowledge = fixtureKnowledge(
-      item: item,
-      tags: [fixtureTag(id: 't1', dimension: 'who', value: 'toddler')],
-      appearances: [
-        fixtureAppearance(
-          id: 'ap_unlinked',
-          personId: null,
-          itemId: 'item_1',
-          tagId: 't1',
-        ),
-      ],
-    );
-    expect(whoColumnValues(knowledge, const {}), ['toddler']);
-  });
+  test(
+    'whoColumnValues falls back to who-tag values when no names resolve',
+    () {
+      final item = fixtureItem(id: 'item_1');
+      final knowledge = fixtureKnowledge(
+        item: item,
+        tags: [fixtureTag(id: 't1', dimension: 'who', value: 'toddler')],
+        appearances: [
+          fixtureAppearance(
+            id: 'ap_unlinked',
+            personId: null,
+            itemId: 'item_1',
+            tagId: 't1',
+          ),
+        ],
+      );
+      expect(whoColumnValues(knowledge, const {}), ['toddler']);
+    },
+  );
 
-  test('whoColumnValues fallback sorts who-tag values A–Z case-insensitive',
-      () {
-    final item = fixtureItem(id: 'item_1');
-    final knowledge = fixtureKnowledge(
-      item: item,
-      tags: [
-        fixtureTag(id: 't2', dimension: 'who', value: 'Sam'),
-        fixtureTag(id: 't1', dimension: 'who', value: 'ada'),
-      ],
-    );
-    expect(whoColumnValues(knowledge, const {}), ['ada', 'Sam']);
-  });
+  test(
+    'whoColumnValues fallback sorts who-tag values A–Z case-insensitive',
+    () {
+      final item = fixtureItem(id: 'item_1');
+      final knowledge = fixtureKnowledge(
+        item: item,
+        tags: [
+          fixtureTag(id: 't2', dimension: 'who', value: 'Sam'),
+          fixtureTag(id: 't1', dimension: 'who', value: 'ada'),
+        ],
+      );
+      expect(whoColumnValues(knowledge, const {}), ['ada', 'Sam']);
+    },
+  );
 
   test('knowledgeCsvValues who is names then tag values', () {
     expect(
@@ -216,22 +219,11 @@ void main() {
     final knowledge = fixtureKnowledge(
       item: fixtureItem(id: 'item_1'),
       appearances: [
-        fixtureAppearance(
-          id: 'ap_item',
-          personId: 'p1',
-          tagId: null,
-        ),
-        fixtureAppearance(
-          id: 'ap_crop',
-          personId: 'p1',
-          tagId: 'tag_who',
-        ),
+        fixtureAppearance(id: 'ap_item', personId: 'p1', tagId: null),
+        fixtureAppearance(id: 'ap_crop', personId: 'p1', tagId: 'tag_who'),
       ],
     );
-    expect(
-      itemLevelPersonAssignments(knowledge).map((a) => a.id),
-      ['ap_item'],
-    );
+    expect(itemLevelPersonAssignments(knowledge).map((a) => a.id), ['ap_item']);
   });
 
   test('whoOverlayPersonNames is assigned name, draft-aware', () {
@@ -243,12 +235,7 @@ void main() {
           id: 'tag_who',
           dimension: 'who',
           value: 'toddler',
-          region: const TagRegion(
-            yMin: 0.1,
-            xMin: 0.1,
-            yMax: 0.4,
-            xMax: 0.4,
-          ),
+          region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
         ),
       ],
       appearances: [
@@ -273,9 +260,7 @@ void main() {
     expect(
       whoOverlayPersonNames(
         knowledge: knowledge,
-        cropIntents: const {
-          'tag_who': PersonAssignIntent(name: 'Maya'),
-        },
+        cropIntents: const {'tag_who': PersonAssignIntent(name: 'Maya')},
         personNamesById: names,
       ),
       {'tag_who': 'Maya'},
@@ -283,9 +268,7 @@ void main() {
     expect(
       whoOverlayPersonNames(
         knowledge: knowledge,
-        cropIntents: const {
-          'tag_who': PersonAssignIntent(unassign: true),
-        },
+        cropIntents: const {'tag_who': PersonAssignIntent(unassign: true)},
         personNamesById: names,
       ),
       isEmpty,
@@ -293,9 +276,7 @@ void main() {
     expect(
       whoOverlayPersonNames(
         knowledge: knowledge,
-        cropIntents: const {
-          'tag_who': PersonAssignIntent(exclude: true),
-        },
+        cropIntents: const {'tag_who': PersonAssignIntent(exclude: true)},
         personNamesById: names,
       ),
       isEmpty,
@@ -366,43 +347,123 @@ void main() {
     );
   });
 
-  test('groupDisplayTagsByDimension unions item-level and key-period values',
-      () {
-    final item = fixtureItem(id: 'item_v', type: ItemType.video);
-    final knowledge = fixtureKnowledge(
-      item: item,
-      tags: [fixtureTag(id: 't_item', dimension: 'what', value: 'picnic')],
-      keyPeriods: [
-        KeyPeriodKnowledge(
-          id: 'kp_1',
-          itemId: item.id,
-          startMs: 0,
-          endMs: 2000,
-          sampleTimestampMs: 500,
-          tags: [
-            fixtureTag(
-              id: 't_period',
-              itemId: item.id,
-              keyPeriodId: 'kp_1',
-              dimension: 'what',
-              value: 'swimming',
-            ),
-            fixtureTag(
-              id: 't_dup',
-              itemId: item.id,
-              keyPeriodId: 'kp_1',
-              dimension: 'what',
-              value: 'Picnic',
-            ),
-          ],
+  test(
+    'groupDisplayTagsByDimension unions item-level and key-period values',
+    () {
+      final item = fixtureItem(id: 'item_v', type: ItemType.video);
+      final knowledge = fixtureKnowledge(
+        item: item,
+        tags: [fixtureTag(id: 't_item', dimension: 'what', value: 'picnic')],
+        keyPeriods: [
+          KeyPeriodKnowledge(
+            id: 'kp_1',
+            itemId: item.id,
+            startMs: 0,
+            endMs: 2000,
+            sampleTimestampMs: 500,
+            tags: [
+              fixtureTag(
+                id: 't_period',
+                itemId: item.id,
+                keyPeriodId: 'kp_1',
+                dimension: 'what',
+                value: 'swimming',
+              ),
+              fixtureTag(
+                id: 't_dup',
+                itemId: item.id,
+                keyPeriodId: 'kp_1',
+                dimension: 'what',
+                value: 'Picnic',
+              ),
+            ],
+          ),
+        ],
+      );
+      expect(
+        groupDisplayTagsByDimension(knowledge)['what']!.map((t) => t.value),
+        ['picnic', 'swimming'],
+      );
+    },
+  );
+
+  test(
+    'period Folders helpers keep Who/What on the period; Where falls back',
+    () {
+      final item = fixtureItem(id: 'item_v', type: ItemType.video);
+      final knowledge = fixtureKnowledge(
+        item: item,
+        tags: [fixtureTag(id: 't_where', dimension: 'where', value: 'park')],
+        keyPeriods: [
+          KeyPeriodKnowledge(
+            id: 'kp_early',
+            itemId: item.id,
+            startMs: 0,
+            endMs: 2000,
+            tags: [
+              fixtureTag(
+                id: 't_who',
+                itemId: item.id,
+                keyPeriodId: 'kp_early',
+                dimension: 'who',
+                value: 'Sam',
+              ),
+              fixtureTag(
+                id: 't_what',
+                itemId: item.id,
+                keyPeriodId: 'kp_early',
+                dimension: 'what',
+                value: 'swimming',
+              ),
+            ],
+          ),
+          KeyPeriodKnowledge(
+            id: 'kp_late',
+            itemId: item.id,
+            startMs: 2000,
+            endMs: 4000,
+            tags: [
+              fixtureTag(
+                id: 't_who2',
+                itemId: item.id,
+                keyPeriodId: 'kp_late',
+                dimension: 'who',
+                value: 'Ada',
+              ),
+            ],
+          ),
+        ],
+        appearances: [
+          fixtureAppearance(
+            id: 'ap_late',
+            personId: 'person_ada',
+            itemId: item.id,
+            keyPeriodId: 'kp_late',
+          ),
+        ],
+      );
+      const names = {'person_ada': 'Ada'};
+      expect(
+        whoColumnValuesForPeriod(knowledge, knowledge.keyPeriods.first, names),
+        ['Sam'],
+      );
+      expect(
+        whoColumnValuesForPeriod(knowledge, knowledge.keyPeriods.last, names),
+        ['Ada'],
+      );
+      expect(whatColumnValuesForPeriod(knowledge.keyPeriods.first), [
+        'swimming',
+      ]);
+      expect(whatColumnValuesForPeriod(knowledge.keyPeriods.last), isEmpty);
+      expect(
+        whereRawForPeriod(
+          knowledge.keyPeriods.first,
+          itemLevelWhereRaw: ['park'],
         ),
-      ],
-    );
-    expect(
-      groupDisplayTagsByDimension(knowledge)['what']!.map((t) => t.value),
-      ['picnic', 'swimming'],
-    );
-  });
+        ['park'],
+      );
+    },
+  );
 
   test('whoFaceCropTags includes key-period who boxes', () {
     final item = fixtureItem(id: 'item_v', type: ItemType.video);
@@ -533,121 +594,118 @@ void main() {
     expect(regionIou(a, b), 0.0);
   });
 
-  test('collapseOverlappingWhoFaces keeps first; identical box drops later', () {
-    const left = TagRegion(yMin: 0.0, xMin: 0.0, yMax: 1.0, xMax: 0.5);
-    const rightShift = TagRegion(yMin: 0.0, xMin: 0.5, yMax: 1.0, xMax: 1.0);
-    expect(regionIou(left, rightShift), 0.0);
+  test(
+    'collapseOverlappingWhoFaces keeps first; identical box drops later',
+    () {
+      const left = TagRegion(yMin: 0.0, xMin: 0.0, yMax: 1.0, xMax: 0.5);
+      const rightShift = TagRegion(yMin: 0.0, xMin: 0.5, yMax: 1.0, xMax: 1.0);
+      expect(regionIou(left, rightShift), 0.0);
 
-    final item = fixtureItem(id: 'item_v', type: ItemType.video);
-    final tags = [
-      fixtureTag(
-        id: 't_first',
-        itemId: item.id,
-        keyPeriodId: 'kp_1',
-        dimension: 'who',
-        value: 'A',
-        region: left,
-      ),
-      fixtureTag(
-        id: 't_overlap',
-        itemId: item.id,
-        keyPeriodId: 'kp_1',
-        dimension: 'who',
-        value: 'B',
-        region: left,
-      ),
-      fixtureTag(
-        id: 't_other',
-        itemId: item.id,
-        keyPeriodId: 'kp_1',
-        dimension: 'who',
-        value: 'C',
-        region: rightShift,
-      ),
-    ];
-    final collapsed = collapseOverlappingWhoFaces(tags);
-    expect(collapsed.kept.map((t) => t.id), ['t_first', 't_other']);
-    expect(collapsed.excludeIds, ['t_overlap']);
-  });
+      final item = fixtureItem(id: 'item_v', type: ItemType.video);
+      final tags = [
+        fixtureTag(
+          id: 't_first',
+          itemId: item.id,
+          keyPeriodId: 'kp_1',
+          dimension: 'who',
+          value: 'A',
+          region: left,
+        ),
+        fixtureTag(
+          id: 't_overlap',
+          itemId: item.id,
+          keyPeriodId: 'kp_1',
+          dimension: 'who',
+          value: 'B',
+          region: left,
+        ),
+        fixtureTag(
+          id: 't_other',
+          itemId: item.id,
+          keyPeriodId: 'kp_1',
+          dimension: 'who',
+          value: 'C',
+          region: rightShift,
+        ),
+      ];
+      final collapsed = collapseOverlappingWhoFaces(tags);
+      expect(collapsed.kept.map((t) => t.id), ['t_first', 't_other']);
+      expect(collapsed.excludeIds, ['t_overlap']);
+    },
+  );
 
   test('collapseOverlappingWhoFaces drops at IoU exactly 0.5', () {
     const a = TagRegion(yMin: 0.0, xMin: 0.0, yMax: 1.0, xMax: 1.0);
     const b = TagRegion(yMin: 0.0, xMin: 1 / 3, yMax: 1.0, xMax: 1 + 1 / 3);
     expect(regionIou(a, b), closeTo(0.5, 0.001));
     final collapsed = collapseOverlappingWhoFaces([
-      fixtureTag(
-        id: 'keep',
-        dimension: 'who',
-        value: 'A',
-        region: a,
-      ),
-      fixtureTag(
-        id: 'drop',
-        dimension: 'who',
-        value: 'B',
-        region: b,
-      ),
+      fixtureTag(id: 'keep', dimension: 'who', value: 'A', region: a),
+      fixtureTag(id: 'drop', dimension: 'who', value: 'B', region: b),
     ]);
     expect(collapsed.kept.single.id, 'keep');
     expect(collapsed.excludeIds, ['drop']);
   });
 
-  test('overlappingWhoFaceExcludeIds is per period; same region on two periods kept',
-      () {
-    final item = fixtureItem(id: 'item_v', type: ItemType.video);
-    const region = TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4);
-    const overlap = TagRegion(yMin: 0.12, xMin: 0.12, yMax: 0.42, xMax: 0.42);
-    final knowledge = fixtureKnowledge(
-      item: item,
-      tags: const [],
-      keyPeriods: [
-        KeyPeriodKnowledge(
-          id: 'kp_a',
-          itemId: item.id,
-          startMs: 0,
-          endMs: 2000,
-          sampleTimestampMs: 500,
-          tags: [
-            fixtureTag(
-              id: 'a1',
-              itemId: item.id,
-              keyPeriodId: 'kp_a',
-              dimension: 'who',
-              value: 'first',
-              region: region,
-            ),
-            fixtureTag(
-              id: 'a2',
-              itemId: item.id,
-              keyPeriodId: 'kp_a',
-              dimension: 'who',
-              value: 'dup',
-              region: overlap,
-            ),
-          ],
-        ),
-        KeyPeriodKnowledge(
-          id: 'kp_b',
-          itemId: item.id,
-          startMs: 2000,
-          endMs: 4000,
-          sampleTimestampMs: 3000,
-          tags: [
-            fixtureTag(
-              id: 'b1',
-              itemId: item.id,
-              keyPeriodId: 'kp_b',
-              dimension: 'who',
-              value: 'other-frame',
-              region: region,
-            ),
-          ],
-        ),
-      ],
-    );
-    expect(whoFaceCropTagsForPeriod(knowledge, 'kp_a').map((t) => t.id),
-        ['a1', 'a2']);
-    expect(overlappingWhoFaceExcludeIds(knowledge), ['a2']);
-    expect(itemLevelWhoFaceCropTags(knowledge), isEmpty);
-  });
+  test(
+    'overlappingWhoFaceExcludeIds is per period; same region on two periods kept',
+    () {
+      final item = fixtureItem(id: 'item_v', type: ItemType.video);
+      const region = TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4);
+      const overlap = TagRegion(yMin: 0.12, xMin: 0.12, yMax: 0.42, xMax: 0.42);
+      final knowledge = fixtureKnowledge(
+        item: item,
+        tags: const [],
+        keyPeriods: [
+          KeyPeriodKnowledge(
+            id: 'kp_a',
+            itemId: item.id,
+            startMs: 0,
+            endMs: 2000,
+            sampleTimestampMs: 500,
+            tags: [
+              fixtureTag(
+                id: 'a1',
+                itemId: item.id,
+                keyPeriodId: 'kp_a',
+                dimension: 'who',
+                value: 'first',
+                region: region,
+              ),
+              fixtureTag(
+                id: 'a2',
+                itemId: item.id,
+                keyPeriodId: 'kp_a',
+                dimension: 'who',
+                value: 'dup',
+                region: overlap,
+              ),
+            ],
+          ),
+          KeyPeriodKnowledge(
+            id: 'kp_b',
+            itemId: item.id,
+            startMs: 2000,
+            endMs: 4000,
+            sampleTimestampMs: 3000,
+            tags: [
+              fixtureTag(
+                id: 'b1',
+                itemId: item.id,
+                keyPeriodId: 'kp_b',
+                dimension: 'who',
+                value: 'other-frame',
+                region: region,
+              ),
+            ],
+          ),
+        ],
+      );
+      expect(whoFaceCropTagsForPeriod(knowledge, 'kp_a').map((t) => t.id), [
+        'a1',
+        'a2',
+      ]);
+      expect(overlappingWhoFaceExcludeIds(knowledge), ['a2']);
+      expect(itemLevelWhoFaceCropTags(knowledge), isEmpty);
+    },
+  );
 }

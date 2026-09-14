@@ -5,10 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/item_hover_preview.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
+import 'package:tagkin_desktop/library/local_thumb_cache.dart';
 import 'package:tagkin_desktop/library/processing_status_view.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prepass/sharpness_score_chip.dart';
+import 'package:tagkin_desktop/review/key_period_offsets.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/where/where_label_resolver.dart';
 import 'package:tagkin_desktop/where/where_place_label.dart';
@@ -24,18 +26,20 @@ const double _kColComment = 200;
 
 /// Narrow first column: reveal icon; wide enough for "File" + sort arrow.
 const double _kColFile = 72;
-const double _kColActions = 280;
+const double _kColVisibility = 96;
+const double _kColStatus = 184;
 
 /// Per-depth indent for path-group chevrons and file icons.
 const double _kPathIndent = 8;
 const double _kTableMinWidth =
     _kColFile +
+    _kColVisibility +
     _kColThumb +
     _kColWho +
     _kColWhat +
     _kColWhere +
     _kColComment +
-    _kColActions;
+    _kColStatus;
 
 /// Slight grey for even (1-based) rows — index.isOdd in 0-based list.
 const Color _kZebraRow = TagKinTokens.zebraRow;
@@ -47,6 +51,7 @@ class LibraryItemsTable extends ConsumerWidget {
     required this.controller,
     required this.onOpenDetail,
     required this.onHideToggle,
+    required this.onHideFolder,
     required this.onRemoveFolder,
     required this.onRevealSource,
     this.onRetryFolder,
@@ -58,6 +63,7 @@ class LibraryItemsTable extends ConsumerWidget {
   final LibraryTableController controller;
   final void Function(Item item) onOpenDetail;
   final void Function(Item item) onHideToggle;
+  final void Function(String dir, {required bool hide}) onHideFolder;
   final void Function(String dir, int count) onRemoveFolder;
   final void Function(Item item) onRevealSource;
   final void Function(String dir)? onRetryFolder;
@@ -136,6 +142,13 @@ class LibraryItemsTable extends ConsumerWidget {
                                                   .toggleCollapseSourceDir(dir),
                                               onRemoveFolder: () =>
                                                   onRemoveFolder(dir, count),
+                                              onHideFolder: () => onHideFolder(
+                                                dir,
+                                                hide: !controller
+                                                    .isFolderHidden(dir),
+                                              ),
+                                              folderHidden: controller
+                                                  .isFolderHidden(dir),
                                               onRetryFolder:
                                                   onRetryFolder == null
                                                   ? null
@@ -148,10 +161,14 @@ class LibraryItemsTable extends ConsumerWidget {
                                                   false,
                                               retryEnabled: retryEnabled,
                                             ),
-                                          LibraryItemEntry(:final row) =>
+                                          LibraryItemEntry(
+                                            :final row,
+                                            :final period,
+                                          ) =>
                                             _DataRow(
                                               index: index,
                                               row: row,
+                                              period: period,
                                               controller: controller,
                                               onOpenDetail: onOpenDetail,
                                               onHideToggle: onHideToggle,
@@ -226,6 +243,41 @@ class _HeaderRow extends StatelessWidget {
               controller: controller,
               multiColumnSort: multiColumnSort,
             ),
+            SizedBox(
+              width: _kColVisibility,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<HiddenItemsFilter>(
+                    key: const Key('library-hidden-filter'),
+                    isDense: true,
+                    isExpanded: true,
+                    value: controller.hiddenItemsFilter,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: HiddenItemsFilter.visible,
+                        child: Text('Visible'),
+                      ),
+                      DropdownMenuItem(
+                        value: HiddenItemsFilter.hidden,
+                        child: Text('Hidden'),
+                      ),
+                      DropdownMenuItem(
+                        value: HiddenItemsFilter.both,
+                        child: Text('Both'),
+                      ),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) controller.setHiddenItemsFilter(v);
+                    },
+                  ),
+                ),
+              ),
+            ),
             const SizedBox(
               width: _kColThumb,
               child: Padding(
@@ -242,6 +294,7 @@ class _HeaderRow extends StatelessWidget {
               column: LibrarySortColumn.who,
               controller: controller,
               multiColumnSort: multiColumnSort,
+              trailing: _WhoFilterButton(controller: controller),
             ),
             _SortHeader(
               label: 'What',
@@ -265,77 +318,37 @@ class _HeaderRow extends StatelessWidget {
               multiColumnSort: multiColumnSort,
             ),
             SizedBox(
-              width: _kColActions,
+              width: _kColStatus,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<ProcessingStatus?>(
-                          key: const Key('library-status-filter'),
-                          isDense: true,
-                          isExpanded: true,
-                          value: controller.statusFilter,
-                          hint: const Text(
-                            'All statuses',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: Theme.of(context).colorScheme.onSurface,
-                              ),
-                          items: [
-                            const DropdownMenuItem<ProcessingStatus?>(
-                              value: null,
-                              child: Text('All statuses'),
-                            ),
-                            ...ProcessingStatus.values.map(
-                              (s) => DropdownMenuItem<ProcessingStatus?>(
-                                value: s,
-                                child: Text(s.wire),
-                              ),
-                            ),
-                          ],
-                          onChanged: (v) => controller.setStatusFilter(v),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<ProcessingStatus?>(
+                    key: const Key('library-status-filter'),
+                    isDense: true,
+                    isExpanded: true,
+                    value: controller.statusFilter,
+                    hint: const Text(
+                      'All statuses',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                    items: [
+                      const DropdownMenuItem<ProcessingStatus?>(
+                        value: null,
+                        child: Text('All statuses'),
+                      ),
+                      ...ProcessingStatus.values.map(
+                        (s) => DropdownMenuItem<ProcessingStatus?>(
+                          value: s,
+                          child: Text(s.wire),
                         ),
                       ),
-                    ),
-                    SizedBox(
-                      width: 96,
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<HiddenItemsFilter>(
-                          key: const Key('library-hidden-filter'),
-                          isDense: true,
-                          isExpanded: true,
-                          value: controller.hiddenItemsFilter,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: Theme.of(context).colorScheme.onSurface,
-                              ),
-                          items: const [
-                            DropdownMenuItem(
-                              value: HiddenItemsFilter.visible,
-                              child: Text('Visible'),
-                            ),
-                            DropdownMenuItem(
-                              value: HiddenItemsFilter.hidden,
-                              child: Text('Hidden'),
-                            ),
-                            DropdownMenuItem(
-                              value: HiddenItemsFilter.both,
-                              child: Text('Both'),
-                            ),
-                          ],
-                          onChanged: (v) {
-                            if (v != null) controller.setHiddenItemsFilter(v);
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
+                    ],
+                    onChanged: (v) => controller.setStatusFilter(v),
+                  ),
                 ),
               ),
             ),
@@ -353,6 +366,7 @@ class _SortHeader extends StatelessWidget {
     required this.column,
     required this.controller,
     required this.multiColumnSort,
+    this.trailing,
   });
 
   final String label;
@@ -360,6 +374,10 @@ class _SortHeader extends StatelessWidget {
   final LibrarySortColumn column;
   final LibraryTableController controller;
   final bool multiColumnSort;
+
+  /// Optional control (e.g. a column filter button) shown after the sort
+  /// label, outside the sort tap target.
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -372,36 +390,179 @@ class _SortHeader extends StatelessWidget {
     }
     return SizedBox(
       width: width,
-      child: InkWell(
-        key: Key('sort-header-${column.name}'),
-        onTap: () {
-          controller.toggleSort(column, multiColumn: multiColumnSort);
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Row(
-            children: [
-              Flexible(
-                child: Text(
-                  label,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+      child: Row(
+        children: [
+          Expanded(
+            child: InkWell(
+              key: Key('sort-header-${column.name}'),
+              onTap: () {
+                controller.toggleSort(column, multiColumn: multiColumnSort);
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        label,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (icon != null) ...[
+                      const SizedBox(width: 4),
+                      Icon(icon, size: 14),
+                      if (multiColumnSort && keys.length > 1)
+                        Text(
+                          '${idx + 1}',
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                    ],
+                  ],
                 ),
               ),
-              if (icon != null) ...[
-                const SizedBox(width: 4),
-                Icon(icon, size: 14),
-                if (multiColumnSort && keys.length > 1)
-                  Text(
-                    '${idx + 1}',
-                    style: Theme.of(context).textTheme.labelSmall,
-                  ),
-              ],
-            ],
+            ),
           ),
+          ?trailing,
+        ],
+      ),
+    );
+  }
+}
+
+/// Who column header filter icon; opens [_WhoFilterDialog].
+class _WhoFilterButton extends StatelessWidget {
+  const _WhoFilterButton({required this.controller});
+
+  final LibraryTableController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = controller.whoFilterNames.isNotEmpty;
+    final color = active ? Theme.of(context).colorScheme.primary : null;
+    final matchLabel = controller.whoFilterMatchAll ? 'Match All' : 'Match Any';
+    final tooltip = active
+        ? 'Who filter: ${controller.whoFilterNames.length} selected ($matchLabel)'
+        : 'Filter Who';
+    return Tooltip(
+      message: tooltip,
+      waitDuration: Duration.zero,
+      child: IconButton(
+        key: const Key('library-who-filter-button'),
+        icon: Icon(
+          active ? Icons.filter_alt : Icons.filter_alt_outlined,
+          size: 18,
+          color: color,
+        ),
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+        onPressed: () => showDialog<void>(
+          context: context,
+          builder: (_) => _WhoFilterDialog(controller: controller),
         ),
       ),
+    );
+  }
+}
+
+/// Who filter dialog: checklist of names in the currently displayed
+/// population (see [LibraryTableController.availableWhoNames]) plus a
+/// Match Any (OR) / Match All (AND) toggle for combining multiple names.
+class _WhoFilterDialog extends StatefulWidget {
+  const _WhoFilterDialog({required this.controller});
+
+  final LibraryTableController controller;
+
+  @override
+  State<_WhoFilterDialog> createState() => _WhoFilterDialogState();
+}
+
+class _WhoFilterDialogState extends State<_WhoFilterDialog> {
+  late final Set<String> _selected = Set<String>.from(
+    widget.controller.whoFilterNames,
+  );
+  late bool _matchAll = widget.controller.whoFilterMatchAll;
+
+  @override
+  Widget build(BuildContext context) {
+    final names = widget.controller.availableWhoNames.toList();
+    return AlertDialog(
+      title: const Text('Filter Who'),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SegmentedButton<bool>(
+              key: const Key('who-filter-match-mode'),
+              segments: const [
+                ButtonSegment(value: false, label: Text('Match Any')),
+                ButtonSegment(value: true, label: Text('Match All')),
+              ],
+              selected: {_matchAll},
+              onSelectionChanged: (s) => setState(() => _matchAll = s.first),
+            ),
+            const SizedBox(height: 12),
+            if (names.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Text('No names in the current view yet.'),
+              )
+            else
+              Flexible(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 320),
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final name in names)
+                        CheckboxListTile(
+                          key: Key('who-filter-option-$name'),
+                          dense: true,
+                          controlAffinity: ListTileControlAffinity.leading,
+                          title: Text(name),
+                          value: _selected.contains(name),
+                          onChanged: (checked) => setState(() {
+                            if (checked ?? false) {
+                              _selected.add(name);
+                            } else {
+                              _selected.remove(name);
+                            }
+                          }),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          key: const Key('who-filter-clear'),
+          onPressed: () => setState(_selected.clear),
+          child: const Text('Clear'),
+        ),
+        TextButton(
+          key: const Key('who-filter-cancel'),
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: const Key('who-filter-apply'),
+          onPressed: () {
+            widget.controller.setWhoFilter(
+              names: _selected,
+              matchAll: _matchAll,
+            );
+            Navigator.of(context).pop();
+          },
+          child: const Text('Apply'),
+        ),
+      ],
     );
   }
 }
@@ -418,6 +579,8 @@ class _PathGroupHeader extends StatelessWidget {
     this.retryTooltip = 'Retry failed items',
     required this.onToggle,
     required this.onRemoveFolder,
+    required this.onHideFolder,
+    required this.folderHidden,
     this.onRetryFolder,
     required this.removing,
     required this.retrying,
@@ -434,6 +597,8 @@ class _PathGroupHeader extends StatelessWidget {
   final String retryTooltip;
   final VoidCallback onToggle;
   final VoidCallback onRemoveFolder;
+  final VoidCallback onHideFolder;
+  final bool folderHidden;
   final VoidCallback? onRetryFolder;
   final bool removing;
   final bool retrying;
@@ -552,6 +717,25 @@ class _PathGroupHeader extends StatelessWidget {
                                 child: const Text('Retry'),
                               ),
                             ),
+                          IconButton(
+                            key: Key('source-group-hide-$dir'),
+                            tooltip: folderHidden
+                                ? 'Unhide folder'
+                                : 'Hide folder',
+                            icon: Icon(
+                              folderHidden
+                                  ? Icons.visibility_outlined
+                                  : Icons.visibility_off_outlined,
+                              size: 18,
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
+                            onPressed: onHideFolder,
+                          ),
                           SureActionButton(
                             idleKey: Key('source-group-remove-$dir'),
                             confirmKey: Key('source-group-remove-confirm-$dir'),
@@ -589,10 +773,12 @@ class _DataRow extends ConsumerWidget {
     required this.onOpenDetail,
     required this.onHideToggle,
     required this.onRevealSource,
+    this.period,
   });
 
   final int index;
   final LibraryTableRow row;
+  final KeyPeriodKnowledge? period;
   final LibraryTableController controller;
   final void Function(Item item) onOpenDetail;
   final void Function(Item item) onHideToggle;
@@ -602,14 +788,20 @@ class _DataRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final item = row.item;
     final zebra = index.isOdd;
+    final scopeId = foldersRowScopeId(item.id, period);
+    final summary = row.summaryFor(period);
+    final who = summary?.who ?? row.who;
+    final what = summary?.what ?? row.what;
+    final whereEntries = summary?.whereEntries ?? row.whereEntries;
+    final comments = summary?.comments ?? row.comments;
     final expanded =
-        controller.expandedWho.contains(item.id) ||
-        controller.expandedWhere.contains(item.id) ||
-        controller.expandedComments.contains(item.id);
+        controller.expandedWho.contains(scopeId) ||
+        controller.expandedWhere.contains(scopeId) ||
+        controller.expandedComments.contains(scopeId);
     return Material(
       color: zebra ? _kZebraRow : Colors.transparent,
       child: InkWell(
-        key: Key('item-row-${item.id}'),
+        key: Key('item-row-$scopeId'),
         onTap: () => onOpenDetail(item),
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 72),
@@ -631,18 +823,38 @@ class _DataRow extends ConsumerWidget {
                     ),
                   ),
                   SizedBox(
+                    width: _kColVisibility,
+                    child: Center(
+                      child: IconButton(
+                        key: Key('item-list-hide-$scopeId'),
+                        tooltip: item.isHidden ? 'Unhide item' : 'Hide item',
+                        icon: Icon(
+                          item.isHidden
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          size: 18,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                        onPressed: () => onHideToggle(item),
+                      ),
+                    ),
+                  ),
+                  SizedBox(
                     width: _kColThumb,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: ItemHoverPreview(
-                        item: item,
+                      child: _ThumbCell(
+                        row: row,
+                        period: period,
                         controller: controller,
-                        child: _Thumb(
-                          row: row,
-                          showScore: ref
-                              .watch(desktopPrefsProvider)
-                              .showSharpnessScores,
-                        ),
+                        showScore: ref
+                            .watch(desktopPrefsProvider)
+                            .showSharpnessScores,
                       ),
                     ),
                   ),
@@ -651,11 +863,11 @@ class _DataRow extends ConsumerWidget {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: _WhoValues(
-                        itemId: item.id,
-                        values: row.who,
-                        expanded: controller.expandedWho.contains(item.id),
+                        itemId: scopeId,
+                        values: who,
+                        expanded: controller.expandedWho.contains(scopeId),
                         loading: !row.knowledgeLoaded,
-                        onToggle: () => controller.toggleExpandWho(item.id),
+                        onToggle: () => controller.toggleExpandWho(scopeId),
                       ),
                     ),
                   ),
@@ -665,7 +877,8 @@ class _DataRow extends ConsumerWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: _WhatCell(
                         item: item,
-                        values: row.what,
+                        scopeId: scopeId,
+                        values: what,
                         loading: !row.knowledgeLoaded,
                         onOpenDetail: onOpenDetail,
                       ),
@@ -676,11 +889,11 @@ class _DataRow extends ConsumerWidget {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: _WhereValues(
-                        itemId: item.id,
-                        entries: row.whereEntries,
-                        expanded: controller.expandedWhere.contains(item.id),
+                        itemId: scopeId,
+                        entries: whereEntries,
+                        expanded: controller.expandedWhere.contains(scopeId),
                         loading: !row.knowledgeLoaded,
-                        onToggle: () => controller.toggleExpandWhere(item.id),
+                        onToggle: () => controller.toggleExpandWhere(scopeId),
                         onAddFamiliar: (region) async {
                           final added = await ref
                               .read(desktopPrefsControllerProvider)
@@ -706,51 +919,29 @@ class _DataRow extends ConsumerWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: _ExpandableValues(
                         keyPrefix: 'comment',
-                        itemId: item.id,
-                        values: row.comments,
-                        expanded: controller.expandedComments.contains(item.id),
+                        itemId: scopeId,
+                        values: comments,
+                        expanded: controller.expandedComments.contains(scopeId),
                         loading: !row.commentsLoaded,
                         onToggle: () =>
-                            controller.toggleExpandComments(item.id),
+                            controller.toggleExpandComments(scopeId),
                       ),
                     ),
                   ),
                   SizedBox(
-                    width: _kColActions,
+                    width: _kColStatus,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: ProcessingStatusBadge(
-                                status: row.foldersBadgeStatus,
-                                processingError: item.processingError,
-                              ),
-                            ),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: ProcessingStatusBadge(
+                            status: row.foldersBadgeStatus,
+                            processingError: item.processingError,
                           ),
-                          IconButton(
-                            key: Key('item-list-hide-${item.id}'),
-                            tooltip: item.isHidden
-                                ? 'Unhide item'
-                                : 'Hide item',
-                            icon: Icon(
-                              item.isHidden
-                                  ? Icons.visibility_outlined
-                                  : Icons.visibility_off_outlined,
-                              size: 18,
-                            ),
-                            visualDensity: VisualDensity.compact,
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(
-                              minWidth: 32,
-                              minHeight: 32,
-                            ),
-                            onPressed: () => onHideToggle(item),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
@@ -764,30 +955,60 @@ class _DataRow extends ConsumerWidget {
   }
 }
 
-class _Thumb extends StatelessWidget {
-  const _Thumb({required this.row, required this.showScore});
+class _ThumbCell extends StatelessWidget {
+  const _ThumbCell({
+    required this.row,
+    required this.controller,
+    required this.showScore,
+    this.period,
+  });
 
   final LibraryTableRow row;
+  final LibraryTableController controller;
   final bool showScore;
+  final KeyPeriodKnowledge? period;
 
   @override
   Widget build(BuildContext context) {
-    final thumb = row.thumb;
+    return ItemHoverPreview(
+      item: row.item,
+      controller: controller,
+      period: period,
+      child: _Thumb(
+        row: row,
+        showScore: showScore && period == null,
+        period: period,
+      ),
+    );
+  }
+}
+
+class _Thumb extends StatelessWidget {
+  const _Thumb({required this.row, required this.showScore, this.period});
+
+  final LibraryTableRow row;
+  final bool showScore;
+  final KeyPeriodKnowledge? period;
+
+  @override
+  Widget build(BuildContext context) {
+    final period = this.period;
+    final thumb = period == null ? row.thumb : row.periodThumbs[period.id];
     final path = thumb?.hasImage == true ? thumb!.path : null;
     final Widget child;
     if (path != null) {
       child = Image.file(
         File(path),
-        key: Key('item-thumb-${row.item.id}'),
+        key: Key(_thumbKey(row.item.id, period)),
         width: _kThumbSize,
         height: _kThumbSize,
         fit: BoxFit.cover,
         cacheWidth: (_kThumbSize * 2).round(),
         cacheHeight: (_kThumbSize * 2).round(),
-        errorBuilder: (_, _, _) => _placeholder(row.item),
+        errorBuilder: (_, _, _) => _placeholder(row.item, thumb),
       );
     } else {
-      child = _placeholder(row.item);
+      child = _placeholder(row.item, thumb);
     }
     return ClipRRect(
       borderRadius: BorderRadius.circular(4),
@@ -813,11 +1034,11 @@ class _Thumb extends StatelessWidget {
     );
   }
 
-  Widget _placeholder(Item item) {
+  Widget _placeholder(Item item, LocalThumbResult? thumb) {
     final icon = item.type == ItemType.video
         ? Icons.videocam_outlined
         : Icons.image_outlined;
-    final status = row.thumb?.status;
+    final status = thumb?.status;
     final missing =
         status == LocalMediaStatus.missing ||
         status == LocalMediaStatus.accessDenied;
@@ -825,10 +1046,20 @@ class _Thumb extends StatelessWidget {
       color: Colors.black12,
       child: Icon(
         missing ? Icons.broken_image_outlined : icon,
-        key: Key('item-thumb-placeholder-${item.id}'),
+        key: Key(_thumbPlaceholderKey(item.id, period)),
       ),
     );
   }
+}
+
+String _thumbKey(String itemId, KeyPeriodKnowledge? period) {
+  if (period == null) return 'item-thumb-$itemId';
+  return 'item-thumb-$itemId-kp-${period.id}';
+}
+
+String _thumbPlaceholderKey(String itemId, KeyPeriodKnowledge? period) {
+  if (period == null) return 'item-thumb-placeholder-$itemId';
+  return 'item-thumb-placeholder-$itemId-kp-${period.id}';
 }
 
 class _WhereValues extends ConsumerWidget {
@@ -1195,25 +1426,28 @@ class _WhatCell extends StatelessWidget {
     required this.values,
     required this.loading,
     required this.onOpenDetail,
+    this.scopeId,
   });
 
   final Item item;
+  final String? scopeId;
   final List<String> values;
   final bool loading;
   final void Function(Item item) onOpenDetail;
 
   @override
   Widget build(BuildContext context) {
+    final id = scopeId ?? item.id;
     if (loading && values.isEmpty) {
       return Text(
         '…',
-        key: Key('item-what-loading-${item.id}'),
+        key: Key('item-what-loading-$id'),
         style: Theme.of(context).textTheme.bodySmall,
       );
     }
     final label = values.isEmpty ? 'Details…' : values.join(', ');
     return TextButton(
-      key: Key('item-what-${item.id}'),
+      key: Key('item-what-$id'),
       style: TextButton.styleFrom(
         padding: EdgeInsets.zero,
         alignment: Alignment.centerLeft,
