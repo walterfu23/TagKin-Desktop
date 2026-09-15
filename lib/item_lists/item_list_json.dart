@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/persons/collection.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 
 /// Pretty-printed item-list JSON (D13). Metadata and local paths only — never
@@ -8,20 +9,20 @@ import 'package:tagkin_desktop/review/local_media_resolver.dart';
 String itemListToJson({
   required List<ItemListEntry> entries,
   required Map<String, Item> itemsById,
-  ItemListFilter? filters,
+  SavedView? view,
   String description = '',
   required DateTime exportedAt,
 }) {
   final doc = <String, Object?>{
     'exportedAt': exportedAt.toUtc().toIso8601String(),
     'description': description,
-    'filters': {
-      'who': filters?.who ?? const <String>[],
-      'what': filters?.what ?? const <String>[],
-      'where': filters?.where ?? const <String>[],
-      'whenFrom': filters?.whenFrom,
-      'whenTo': filters?.whenTo,
-    },
+    'view': view == null
+        ? null
+        : {
+            'id': view.id,
+            'name': view.name,
+            'filters': view.filters.toJson(),
+          },
     'entries': [
       for (final e in entries)
         {

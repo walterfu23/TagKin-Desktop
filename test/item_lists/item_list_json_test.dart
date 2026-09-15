@@ -4,12 +4,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/item_lists/item_list_csv.dart';
 import 'package:tagkin_desktop/item_lists/item_list_json.dart';
+import 'package:tagkin_desktop/persons/collection.dart';
 
 import '../fake_items_repository.dart';
 import 'fake_item_lists_repository.dart';
 
 void main() {
-  test('itemListToJson includes path, filters, description, and row order', () {
+  test('itemListToJson includes path, selected view, description, and row order',
+      () {
     final exportedAt = DateTime.utc(2026, 9, 11, 22, 42);
     final json = itemListToJson(
       entries: [
@@ -40,10 +42,13 @@ void main() {
           sourceRef: 'file:///Pictures/clip.mp4',
         ),
       },
-      filters: ItemListFilter(
-        who: const ['Sam'],
-        what: const ['swimming'],
-        whenFrom: itemListWhenFromIso(DateTime(2020, 1, 15)),
+      view: const SavedView(
+        id: 'v1',
+        name: 'Beach',
+        filters: LibraryViewFilters(
+          whoNames: ['Sam'],
+          filterQuery: 'swimming',
+        ),
       ),
       description: 'Beach weekend with Sam',
       exportedAt: exportedAt,
@@ -51,12 +56,11 @@ void main() {
     final doc = jsonDecode(json) as Map<String, dynamic>;
     expect(doc['exportedAt'], '2026-09-11T22:42:00.000Z');
     expect(doc['description'], 'Beach weekend with Sam');
-    final filters = doc['filters'] as Map<String, dynamic>;
-    expect(filters['who'], ['Sam']);
-    expect(filters['what'], ['swimming']);
-    expect(filters['where'], <dynamic>[]);
-    expect(filters['whenFrom'], itemListWhenFromIso(DateTime(2020, 1, 15)));
-    expect(filters['whenTo'], isNull);
+    final view = doc['view'] as Map<String, dynamic>;
+    expect(view['id'], 'v1');
+    expect(view['name'], 'Beach');
+    expect((view['filters'] as Map)['whoNames'], ['Sam']);
+    expect((view['filters'] as Map)['filterQuery'], 'swimming');
     final entries = doc['entries'] as List<dynamic>;
     expect(entries, hasLength(2));
     final photo = entries[0] as Map<String, dynamic>;
@@ -70,6 +74,21 @@ void main() {
     expect(video['keyPeriodId'], 'kp-1');
     expect(video['startMs'], 1000);
     expect(video['where'], ['park, beach']);
+  });
+
+  test('itemListToJson writes view: null for All', () {
+    final json = itemListToJson(
+      entries: [fixtureEntry(itemId: 'photo-1')],
+      itemsById: {
+        'photo-1': fixtureItem(
+          id: 'photo-1',
+          sourceRef: 'file:///Pictures/Holiday.jpg',
+        ),
+      },
+      exportedAt: DateTime.utc(2026, 1, 1),
+    );
+    final doc = jsonDecode(json) as Map<String, dynamic>;
+    expect(doc['view'], isNull);
   });
 
   test('itemListEntryKindLabel uses canonical terms (R2)', () {

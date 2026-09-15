@@ -40,6 +40,9 @@ void main() {
       File('lib/item_lists/item_list_export_controller.dart'),
       File('lib/item_lists/item_list_export_page.dart'),
       File('lib/item_lists/item_list_csv.dart'),
+      File('lib/item_lists/item_list_nle.dart'),
+      File('lib/item_lists/item_list_fcp7_xml.dart'),
+      File('lib/item_lists/item_list_fcpxml.dart'),
     ];
     for (final file in files) {
       final source = file.readAsStringSync();
@@ -57,6 +60,8 @@ void main() {
     final files = [
       File('lib/api/item_lists_repository.dart'),
       File('lib/item_lists/item_list_export_controller.dart'),
+      File('lib/item_lists/item_list_fcp7_xml.dart'),
+      File('lib/item_lists/item_list_fcpxml.dart'),
     ];
     for (final file in files) {
       final source = file.readAsStringSync();
@@ -76,7 +81,9 @@ void main() {
         File('lib/item_lists/item_list_export_page.dart').readAsStringSync();
     final csv =
         File('lib/item_lists/item_list_csv.dart').readAsStringSync();
-    final combined = '$page\n$csv';
+    final nle =
+        File('lib/item_lists/item_list_nle.dart').readAsStringSync();
+    final combined = '$page\n$csv\n$nle';
     expect(combined.contains('Item list'), isTrue);
     expect(combined.contains('Key period'), isTrue);
     expect(combined.toLowerCase().contains('annotation'), isFalse);

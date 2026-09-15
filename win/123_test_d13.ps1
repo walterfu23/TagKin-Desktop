@@ -1,5 +1,5 @@
-# 123_test_d13.ps1 — D13 Item List Export regression: filter body, reorder,
-# JSON export, R10/R1/R5/R8 §5 mandatory assertions.
+# 123_test_d13.ps1 — D13 Item List Export regression: Views dropdown, reorder,
+# JSON / FCP7 XML / FCPXML export, R10/R1/R5/R8 §5 mandatory assertions.
 # Naming: NNN_test_dN.ps1 for desktop subsystem regression Windows entry points.
 $ErrorActionPreference = 'Stop'
 $winDir = Split-Path -Parent $PSCommandPath

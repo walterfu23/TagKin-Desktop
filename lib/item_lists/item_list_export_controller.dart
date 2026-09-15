@@ -3,207 +3,183 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:tagkin_desktop/api/item_lists_repository.dart';
+import 'package:tagkin_desktop/api/comments_repository.dart';
 import 'package:tagkin_desktop/api/items_repository.dart';
 import 'package:tagkin_desktop/api/persons_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
-import 'package:tagkin_desktop/item_lists/item_list_csv.dart';
-import 'package:tagkin_desktop/item_lists/item_list_faces.dart';
+import 'package:tagkin_desktop/item_lists/item_list_fcp7_xml.dart';
+import 'package:tagkin_desktop/item_lists/item_list_fcpxml.dart';
 import 'package:tagkin_desktop/item_lists/item_list_json.dart';
+import 'package:tagkin_desktop/item_lists/item_list_media_size.dart';
+import 'package:tagkin_desktop/item_lists/item_list_nle.dart';
+import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/local_thumb_cache.dart';
-import 'package:tagkin_desktop/review/knowledge_grouping.dart';
+import 'package:tagkin_desktop/persons/collection.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 
-/// Writes [json] via a native save dialog. Returns the path, or null if cancelled.
+export 'package:tagkin_desktop/item_lists/item_list_nle.dart'
+    show ItemListExportFormat;
+
+/// Writes JSON via a native save dialog. Returns the path, or null if cancelled.
 typedef ItemListJsonSaver = Future<String?> Function(String json);
 
-Future<String?> saveItemListJsonToFile(String json) async {
+/// Writes export [contents] via a native save dialog. Returns the path, or
+/// null if cancelled.
+typedef ItemListFileSaver = Future<String?> Function({
+  required String contents,
+  required ItemListExportFormat format,
+});
+
+Future<String?> saveItemListToFile({
+  required String contents,
+  required ItemListExportFormat format,
+}) async {
+  final ext = format.fileExtension;
   final path = await FilePicker.platform.saveFile(
     dialogTitle: 'Export item list',
-    fileName: 'item-list.json',
+    fileName: 'item-list.$ext',
     type: FileType.custom,
-    allowedExtensions: const ['json'],
+    allowedExtensions: [ext],
   );
   if (path == null || path.isEmpty) return null;
-  final file = File(path.toLowerCase().endsWith('.json') ? path : '$path.json');
-  await file.writeAsString(json);
+  final file = File(
+    path.toLowerCase().endsWith('.$ext') ? path : '$path.$ext',
+  );
+  await file.writeAsString(contents);
   return file.path;
 }
 
-/// Filter builder + reorderable filmstrip for POST /item-lists (D13).
+String itemListEntryKey(ItemListEntry entry) =>
+    entry.keyPeriodId ?? 'photo-${entry.itemId}';
+
+ItemListFileSaver _resolveItemListSaver(
+  ItemListJsonSaver? saveJson,
+  ItemListFileSaver? saveFile,
+) {
+  if (saveJson != null) {
+    return ({required contents, required format}) => saveJson(contents);
+  }
+  return saveFile ?? saveItemListToFile;
+}
+
+/// Reorderable filmstrip of the photos and video key periods in a Folders View.
 ///
-/// Matching/dedup/sort stay on the server. Manual reorder and remove are
-/// client-only and only affect the JSON export. Preview reloads from the server.
+/// Matching uses D2's client-side [LibraryViewFilters] (a separate
+/// [LibraryTableController] so Folders' own filters stay untouched). Manual
+/// reorder and remove are client-only and only affect the export file.
 class ItemListExportController extends ChangeNotifier {
   ItemListExportController({
-    required this.repository,
-    required this.itemsRepository,
+    required ItemsRepository itemsRepository,
+    required CommentsRepository commentsRepository,
     this.personsRepository,
     LocalThumbCache? thumbCache,
     ItemListJsonSaver? saveJson,
+    ItemListFileSaver? saveFile,
+    LibraryTableController? libraryTable,
+    ItemListMediaSizeProbe? probeMediaSize,
   })  : thumbCache = thumbCache ?? LocalThumbCache(),
-        saveJson = saveJson ?? saveItemListJsonToFile;
+        saveFile = _resolveItemListSaver(saveJson, saveFile),
+        probeMediaSize = probeMediaSize ?? probeItemListMediaSize,
+        _ownsLibraryTable = libraryTable == null {
+    this.libraryTable = libraryTable ??
+        LibraryTableController(
+          itemsRepository: itemsRepository,
+          commentsRepository: commentsRepository,
+          personsRepository: personsRepository,
+          thumbCache: this.thumbCache,
+        );
+    this.libraryTable.addListener(_onLibraryTableChanged);
+  }
 
-  final ItemListsRepository repository;
-  final ItemsRepository itemsRepository;
   final PersonsRepository? personsRepository;
   final LocalThumbCache thumbCache;
-  final ItemListJsonSaver saveJson;
+  final ItemListFileSaver saveFile;
+  final ItemListMediaSizeProbe probeMediaSize;
+  late final LibraryTableController libraryTable;
+  final bool _ownsLibraryTable;
 
-  ItemListFacets facets = const ItemListFacets(who: [], what: [], where: []);
-  final Set<String> selectedWho = <String>{};
-  final Set<String> selectedWhat = <String>{};
-  final Set<String> selectedWhere = <String>{};
-  DateTime? whenFromDay;
-  DateTime? whenToDay;
+  /// [saveFile] with a hot-reload fallback (new non-null fields read as
+  /// null on instances created before the field existed).
+  ItemListFileSaver get saveFileOrDefault {
+    try {
+      return saveFile;
+    } on TypeError {
+      return saveItemListToFile;
+    }
+  }
+
+  ItemListMediaSizeProbe get probeMediaSizeOrDefault {
+    try {
+      return probeMediaSize;
+    } on TypeError {
+      return probeItemListMediaSize;
+    }
+  }
+
   List<ItemListEntry> entries = const [];
   Map<String, Item> itemsById = const {};
-  Map<String, ItemKnowledge> knowledgeByItemId = {};
-  Map<String, String> personNameById = const {};
-  final Map<String, Future<ItemKnowledge?>> _knowledgeInflight = {};
-  bool loadingFacets = false;
   bool loadingList = false;
   String? error;
-  /// Filter last sent to `POST /item-lists` that produced [entries].
-  ItemListFilter? lastPreviewFilter;
+  SavedView? selectedView;
+  final Set<String> _removedKeys = <String>{};
+  bool _disposed = false;
 
   bool get hasEntries => entries.isNotEmpty;
 
-  ItemListFilter buildFilter() {
-    return ItemListFilter(
-      who: selectedWho.isEmpty ? null : selectedWho.toList(),
-      what: selectedWhat.isEmpty ? null : selectedWhat.toList(),
-      where: selectedWhere.isEmpty ? null : selectedWhere.toList(),
-      whenFrom: whenFromDay == null ? null : itemListWhenFromIso(whenFromDay!),
-      whenTo: whenToDay == null ? null : itemListWhenToIso(whenToDay!),
-    );
-  }
-
-  Future<void> load() async {
-    loadingFacets = true;
-    error = null;
-    notifyListeners();
-    try {
-      facets = await repository.listFacets();
-    } catch (e) {
-      error = '$e';
-    } finally {
-      loadingFacets = false;
-      notifyListeners();
+  Future<void> load({
+    Set<String>? collectionFolders,
+    SavedView? view,
+  }) async {
+    if (collectionFolders != null) {
+      libraryTable.setCollectionLeafFolders(collectionFolders);
     }
-    await _refreshPersons();
-    await preview();
-  }
-
-  Future<void> _refreshPersons() async {
-    final repo = personsRepository;
-    if (repo == null) {
-      personNameById = const {};
-      return;
-    }
-    try {
-      final people = await repo.listPersons();
-      personNameById = {for (final p in people) p.id: p.name};
-    } catch (_) {
-      personNameById = const {};
-    }
-  }
-
-  Future<void> preview() async {
     loadingList = true;
     error = null;
     notifyListeners();
-    try {
-      final filter = _snapshotFilter(buildFilter());
-      final list = await repository.createItemList(filter);
-      entries = List<ItemListEntry>.from(list.entries);
-      lastPreviewFilter = filter;
-      knowledgeByItemId = {};
-      _knowledgeInflight.clear();
-      await _refreshItems();
-    } catch (e) {
-      error = '$e';
-      entries = const [];
-      itemsById = const {};
-      knowledgeByItemId = {};
-      lastPreviewFilter = null;
-    } finally {
-      loadingList = false;
-      notifyListeners();
+    await libraryTable.ensureLoaded();
+    if (_disposed) return;
+    if (view != null) {
+      await selectView(view);
+      return;
     }
+    _onLibraryTableChanged();
   }
 
-  ItemListFilter _snapshotFilter(ItemListFilter filter) {
-    return ItemListFilter(
-      who: filter.who == null ? null : List<String>.from(filter.who!),
-      what: filter.what == null ? null : List<String>.from(filter.what!),
-      where: filter.where == null ? null : List<String>.from(filter.where!),
-      whenFrom: filter.whenFrom,
-      whenTo: filter.whenTo,
+  void setCollectionFolders(Set<String>? folders) {
+    libraryTable.setCollectionLeafFolders(folders);
+  }
+
+  /// Apply a saved Folders view, or [LibraryViewFilters.all] when [view] is null.
+  Future<void> selectView(SavedView? view, {double? blurThreshold}) async {
+    selectedView = view;
+    _removedKeys.clear();
+    final filters = view?.filters ?? LibraryViewFilters.all;
+    libraryTable.setHideBlurryPhotos(
+      filters.hideBlurryPhotos,
+      threshold: blurThreshold,
     );
+    await libraryTable.applyLibraryViewFilters(filters);
+    if (_disposed) return;
+    loadingList = libraryTable.loading;
+    entries = _entriesFromTable();
+    _syncItemsById();
+    notifyListeners();
   }
 
-  Future<void> _refreshItems() async {
-    itemsById = const {};
-    if (entries.isEmpty) return;
-    try {
-      final all = await itemsRepository.listItems(limit: 5000);
-      final needed = {for (final e in entries) e.itemId};
-      itemsById = {
-        for (final item in all)
-          if (needed.contains(item.id)) item.id: item,
-      };
-    } catch (_) {
-      itemsById = const {};
+  /// Cached [GET /items/{id}/knowledge] periods for hover preview.
+  KeyPeriodKnowledge? periodFor(ItemListEntry entry) {
+    if (entry.kind != ItemListEntryKind.keyperiod) return null;
+    final row = libraryTable.rowById(entry.itemId);
+    if (row == null) return null;
+    for (final period in row.keyPeriods) {
+      if (period.id == entry.keyPeriodId) return period;
     }
+    return null;
   }
 
-  /// Cached [GET /items/{id}/knowledge]. Fail closed on 404 / network.
-  Future<ItemKnowledge?> knowledgeFor(String itemId) {
-    final hit = knowledgeByItemId[itemId];
-    if (hit != null) return Future.value(hit);
-    return _knowledgeInflight.putIfAbsent(itemId, () async {
-      try {
-        final knowledge = await itemsRepository.getKnowledge(itemId);
-        knowledgeByItemId[itemId] = knowledge;
-        notifyListeners();
-        return knowledge;
-      } catch (_) {
-        return null;
-      } finally {
-        _knowledgeInflight.remove(itemId);
-      }
-    });
-  }
-
-  /// Analyze-frame timestamp for a key-period still (`sampleTimestampMs`).
-  int timestampMsFor(ItemListEntry entry) {
-    if (entry.kind != ItemListEntryKind.keyperiod) return 0;
-    final knowledge = knowledgeByItemId[entry.itemId];
-    if (knowledge != null) {
-      final sample = sampleTimestampMsForKeyPeriodId(
-        knowledge,
-        entry.keyPeriodId,
-      );
-      if (sample != null) return sample;
-    }
-    return entry.startMs ?? 0;
-  }
-
-  List<({String id, TagRegion region})> faceRegionsFor(ItemListEntry entry) {
-    final knowledge = knowledgeByItemId[entry.itemId];
-    if (knowledge == null) return const [];
-    return selectedWhoFaceRegions(
-      entry: entry,
-      knowledge: knowledge,
-      selectedWho: selectedWho,
-      personNameById: personNameById,
-    );
-  }
-
-  /// Local still for a filmstrip tile (photo or key-period frame). Never
-  /// uploads bytes (R1).
+  /// Local still for a filmstrip tile (photo or first frame of a key period).
+  /// Never uploads bytes (R1).
   Future<LocalThumbResult> thumbFor(ItemListEntry entry) {
     final item = itemsById[entry.itemId];
     if (item == null) {
@@ -215,37 +191,10 @@ class ItemListExportController extends ChangeNotifier {
       return thumbCache.resolveKeyPeriod(
         item,
         keyPeriodId: entry.keyPeriodId ?? entry.itemId,
-        timestampMs: timestampMsFor(entry),
+        timestampMs: entry.startMs ?? 0,
       );
     }
     return thumbCache.resolve(item);
-  }
-
-  void toggleWho(String value) {
-    _toggle(selectedWho, value);
-  }
-
-  void toggleWhat(String value) {
-    _toggle(selectedWhat, value);
-  }
-
-  void toggleWhere(String value) {
-    _toggle(selectedWhere, value);
-  }
-
-  void setWhenFromDay(DateTime? day) {
-    whenFromDay = day;
-    notifyListeners();
-  }
-
-  void setWhenToDay(DateTime? day) {
-    whenToDay = day;
-    notifyListeners();
-  }
-
-  void _toggle(Set<String> set, String value) {
-    if (!set.add(value)) set.remove(value);
-    notifyListeners();
   }
 
   /// Drag-reorder. [newIndex] is already adjusted (Flutter [onReorderItem]).
@@ -260,81 +209,224 @@ class ItemListExportController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Drop one preview row. Client-only; Preview restores from the server.
+  /// Drop one preview row. Client-only; selecting the view again restores it.
   void removeAt(int index) {
     if (index < 0 || index >= entries.length) return;
-    final next = List<ItemListEntry>.from(entries)..removeAt(index);
+    final next = List<ItemListEntry>.from(entries);
+    final removed = next.removeAt(index);
+    _removedKeys.add(itemListEntryKey(removed));
     entries = next;
     notifyListeners();
   }
 
-  /// Entries visible under the shared Hide blurry toggle
-  /// ([DesktopPrefs.hideBlurryPhotos]). Photos below [threshold] on stored
-  /// pre-pass sharpness are hidden. Unknown stays visible. Key periods and
-  /// Who chips never change this rule.
-  List<ItemListEntry> visibleEntries({
-    required bool hideBlurry,
-    double threshold = kBlurrySharpnessThreshold,
+  /// Save the current filmstrip as JSON. Returns the path, or null if
+  /// cancelled or nothing is visible.
+  Future<String?> exportJson({
+    String description = '',
+    DateTime? exportedAt,
   }) {
-    if (!hideBlurry) return entries;
-    final out = <ItemListEntry>[];
-    for (final entry in entries) {
-      final item =
-          entry.kind == ItemListEntryKind.photo ? itemsById[entry.itemId] : null;
-      if (isBlurryItemListEntry(
-        entry: entry,
-        item: item,
-        threshold: threshold,
-      )) {
-        continue;
-      }
-      out.add(entry);
+    return export(
+      format: ItemListExportFormat.json,
+      description: description,
+      exportedAt: exportedAt,
+    );
+  }
+
+  /// Save the current filmstrip in [format]. Returns the path, or null if
+  /// cancelled or nothing is visible.
+  Future<String?> export({
+    ItemListExportFormat format = ItemListExportFormat.json,
+    String description = '',
+    DateTime? exportedAt,
+    double stillDurationSeconds = kItemListNleStillDurationSeconds,
+    ExportPhotoTransition transition = ExportPhotoTransition.crossDissolve,
+    double transitionSeconds = kItemListNleTransitionSeconds,
+    ExportSequenceSize sequenceSize = ExportSequenceSize.matchSmallest,
+  }) async {
+    if (entries.isEmpty) return null;
+    final trimmed = description.trim();
+    var fileSizes = const <String, ItemListPixelSize>{};
+    var sequenceWidth = kItemListNleWidth;
+    var sequenceHeight = kItemListNleHeight;
+    if (format != ItemListExportFormat.json) {
+      fileSizes = await _probeFileSizes();
+      final seq = itemListNleSequencePixelSize(
+        mode: sequenceSize,
+        probed: fileSizes.values,
+      );
+      sequenceWidth = seq.width;
+      sequenceHeight = seq.height;
+    }
+    final contents = switch (format) {
+      ItemListExportFormat.json => itemListToJson(
+          entries: entries,
+          itemsById: itemsById,
+          view: selectedView,
+          description: trimmed,
+          exportedAt: exportedAt ?? DateTime.now(),
+        ),
+      ItemListExportFormat.fcp7Xml => itemListToFcp7Xml(
+          entries: entries,
+          itemsById: itemsById,
+          view: selectedView,
+          description: trimmed,
+          stillDurationSeconds: stillDurationSeconds,
+          transition: transition,
+          transitionSeconds: transitionSeconds,
+          sequenceWidth: sequenceWidth,
+          sequenceHeight: sequenceHeight,
+          fileSizesByItemId: fileSizes,
+          scaleToFit: sequenceSize.scaleToFit,
+        ),
+      ItemListExportFormat.fcpxml => itemListToFcpxml(
+          entries: entries,
+          itemsById: itemsById,
+          view: selectedView,
+          description: trimmed,
+          stillDurationSeconds: stillDurationSeconds,
+          transition: transition,
+          transitionSeconds: transitionSeconds,
+          sequenceWidth: sequenceWidth,
+          sequenceHeight: sequenceHeight,
+          fileSizesByItemId: fileSizes,
+          scaleToFit: sequenceSize.scaleToFit,
+        ),
+    };
+    return saveFileOrDefault(contents: contents, format: format);
+  }
+
+  Future<Map<String, ItemListPixelSize>> _probeFileSizes() async {
+    final out = <String, ItemListPixelSize>{};
+    final seen = <String>{};
+    for (final e in entries) {
+      if (!seen.add(e.itemId)) continue;
+      final path = itemListNleLocalPath(e, itemsById);
+      if (path == null || path.isEmpty) continue;
+      final size = await probeMediaSizeOrDefault(
+        path,
+        isStill: e.kind != ItemListEntryKind.keyperiod,
+      );
+      if (size != null && size.isValid) out[e.itemId] = size;
     }
     return out;
   }
 
-  /// Save the current visible order as JSON (Hide blurry excludes hidden
-  /// photos from the export, same as from the on-screen filmstrip). Returns
-  /// the path, or null if cancelled or nothing is visible.
-  Future<String?> exportJson({
-    required bool hideBlurry,
-    double threshold = kBlurrySharpnessThreshold,
-    String description = '',
-    DateTime? exportedAt,
-  }) async {
-    final visible = visibleEntries(hideBlurry: hideBlurry, threshold: threshold);
-    if (visible.isEmpty) return null;
-    return saveJson(
-      itemListToJson(
-        entries: visible,
-        itemsById: itemsById,
-        filters: lastPreviewFilter,
-        description: description.trim(),
-        exportedAt: exportedAt ?? DateTime.now(),
-      ),
-    );
+  void _onLibraryTableChanged() {
+    if (_disposed) return;
+    loadingList = libraryTable.loading;
+    final tableError = libraryTable.error;
+    error = tableError == null ? null : '$tableError';
+    _syncItemsById();
+    entries = _mergeEntries(entries, _entriesFromTable());
+    notifyListeners();
+  }
+
+  void _syncItemsById() {
+    itemsById = {
+      for (final row in libraryTable.allRows) row.item.id: row.item,
+    };
+  }
+
+  List<ItemListEntry> _entriesFromTable() {
+    final out = <ItemListEntry>[];
+    for (final row in libraryTable.filteredSorted) {
+      if (row.item.type == ItemType.photo) {
+        out.add(
+          ItemListEntry(
+            kind: ItemListEntryKind.photo,
+            itemId: row.item.id,
+            when: row.item.capturedAt,
+            who: row.who,
+            what: row.what,
+            where: row.where,
+          ),
+        );
+        continue;
+      }
+      final periods = List<KeyPeriodKnowledge>.from(row.keyPeriods)
+        ..sort((a, b) => a.startMs.compareTo(b.startMs));
+      for (final period in periods) {
+        final summary = row.summaryFor(period);
+        out.add(
+          ItemListEntry(
+            kind: ItemListEntryKind.keyperiod,
+            itemId: row.item.id,
+            keyPeriodId: period.id,
+            startMs: period.startMs,
+            endMs: period.endMs,
+            when: row.item.capturedAt,
+            who: summary?.who ?? row.who,
+            what: summary?.what ?? row.what,
+            where: summary != null
+                ? [for (final e in summary.whereEntries) e.label]
+                : row.where,
+          ),
+        );
+      }
+    }
+    return out;
+  }
+
+  List<ItemListEntry> _mergeEntries(
+    List<ItemListEntry> current,
+    List<ItemListEntry> incoming,
+  ) {
+    final incomingByKey = {
+      for (final e in incoming) itemListEntryKey(e): e,
+    };
+    final seen = <String>{};
+    final out = <ItemListEntry>[];
+    for (final e in current) {
+      final key = itemListEntryKey(e);
+      if (_removedKeys.contains(key)) continue;
+      final fresh = incomingByKey[key];
+      if (fresh == null) continue;
+      seen.add(key);
+      out.add(fresh);
+    }
+    for (final e in incoming) {
+      final key = itemListEntryKey(e);
+      if (_removedKeys.contains(key)) continue;
+      if (seen.add(key)) out.add(e);
+    }
+    return out;
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    libraryTable.removeListener(_onLibraryTableChanged);
+    if (_ownsLibraryTable) {
+      libraryTable.dispose();
+    }
+    super.dispose();
   }
 }
 
-final itemListJsonSaverProvider = Provider<ItemListJsonSaver>(
-  (ref) => saveItemListJsonToFile,
+final itemListJsonSaverProvider = Provider<ItemListJsonSaver?>(
+  (ref) => null,
+);
+
+final itemListFileSaverProvider = Provider<ItemListFileSaver>(
+  (ref) => saveItemListToFile,
 );
 
 final itemListExportControllerProvider =
     ChangeNotifierProvider.autoDispose<ItemListExportController>(
   (ref) {
     return ItemListExportController(
-      repository: ref.watch(itemListsRepositoryProvider),
       itemsRepository: ref.watch(itemsRepositoryProvider),
+      commentsRepository: ref.watch(commentsRepositoryProvider),
       personsRepository: ref.watch(personsRepositoryProvider),
       saveJson: ref.watch(itemListJsonSaverProvider),
+      saveFile: ref.watch(itemListFileSaverProvider),
     );
   },
   dependencies: [
-    itemListsRepositoryProvider,
     itemsRepositoryProvider,
+    commentsRepositoryProvider,
     personsRepositoryProvider,
     itemListJsonSaverProvider,
+    itemListFileSaverProvider,
   ],
 );
-

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 123_test_d13.sh — D13 Item List Export regression: filter body, reorder,
-# JSON export, R10/R1/R5/R8 §5 mandatory assertions.
+# 123_test_d13.sh — D13 Item List Export regression: Views dropdown, reorder,
+# JSON / FCP7 XML / FCPXML export, R10/R1/R5/R8 §5 mandatory assertions.
 # Naming: NNN_test_dN.sh for desktop subsystem regression mac entry points.
 set -euo pipefail
 MAC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

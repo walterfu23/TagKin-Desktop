@@ -4,6 +4,8 @@ import 'package:tagkin_desktop/api/me_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/credits/credits_navigation.dart';
+import 'package:tagkin_desktop/item_lists/export_photo_transition.dart';
+import 'package:tagkin_desktop/item_lists/export_sequence_size.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/update/client_support_providers.dart';
 import 'package:tagkin_desktop/usage/credits_remaining.dart';
@@ -53,6 +55,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   late bool _autoFixBlurryPhotos;
   late bool _saveFixedPhotoInFolder;
   late bool _showSharpnessScores;
+  late double _exportPhotoStillDurationSeconds;
+  late ExportPhotoTransition _exportPhotoTransition;
+  late double _exportPhotoTransitionSeconds;
+  late ExportSequenceSize _exportSequenceSize;
   final UndoController _undoStack = UndoController();
 
   @override
@@ -92,6 +98,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _autoFixBlurryPhotos = prefs.autoFixBlurryPhotos;
     _saveFixedPhotoInFolder = prefs.saveFixedPhotoInFolder;
     _showSharpnessScores = prefs.showSharpnessScores;
+    _exportPhotoStillDurationSeconds =
+        prefs.exportPhotoStillDurationSecondsOrDefault;
+    _exportPhotoTransition = prefs.exportPhotoTransitionOrDefault;
+    _exportPhotoTransitionSeconds =
+        prefs.exportPhotoTransitionSecondsOrDefault;
+    _exportSequenceSize = prefs.exportSequenceSizeOrDefault;
   }
 
   /// Restore draft fields without recreating text controllers (undo/redo).
@@ -121,6 +133,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _autoFixBlurryPhotos = prefs.autoFixBlurryPhotos;
     _saveFixedPhotoInFolder = prefs.saveFixedPhotoInFolder;
     _showSharpnessScores = prefs.showSharpnessScores;
+    _exportPhotoStillDurationSeconds =
+        prefs.exportPhotoStillDurationSecondsOrDefault;
+    _exportPhotoTransition = prefs.exportPhotoTransitionOrDefault;
+    _exportPhotoTransitionSeconds =
+        prefs.exportPhotoTransitionSecondsOrDefault;
+    _exportSequenceSize = prefs.exportSequenceSizeOrDefault;
   }
 
   void _mutateDraft(VoidCallback change, {String label = 'Edit setting'}) {
@@ -182,6 +200,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       'export.autoFixBlurryPhotos': _autoFixBlurryPhotos,
       'export.saveFixedPhotoInFolder': _saveFixedPhotoInFolder,
       'export.showSharpnessScores': _showSharpnessScores,
+      'export.photoStillDurationSeconds': _exportPhotoStillDurationSeconds,
+      'export.photoTransition': _exportPhotoTransition.wire,
+      'export.photoTransitionSeconds': _exportPhotoTransitionSeconds,
+      'export.sequenceSize': _exportSequenceSize.wire,
     });
   }
 
@@ -490,6 +512,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     required double max,
     required double step,
     required ValueChanged<double> onChanged,
+    bool enabled = true,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -511,6 +534,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             min: min,
             max: max,
             step: step,
+            enabled: enabled,
             onChanged: (v) => _mutateDraft(() => onChanged(v)),
           ),
         ],
@@ -884,7 +908,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     'Export list (stored pre-pass score) and when auto-fix '
                     'runs at ingest. Show scores on photo thumbs to choose a '
                     'bar. Auto-fix is local (0 credits) and never overwrites '
-                    'the original file.',
+                    'the original file. Export photo duration, sequence size, '
+                    'and photo transitions are for FCP7 XML and FCPXML '
+                    'timelines only.',
                 children: [
                   SwitchListTile(
                     key: const Key('pref-show-sharpness-scores'),
@@ -941,6 +967,103 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                               () => _saveFixedPhotoInFolder = v,
                             )
                         : null,
+                  ),
+                  _doubleSlider(
+                    key: const Key('pref-export-photo-still-duration'),
+                    label: 'Export photo duration',
+                    helper:
+                        'How long each photo still lasts on an FCP7 XML or '
+                        'FCPXML timeline. Default 2.5 s (0.5–10, step 0.5). '
+                        'JSON export is unaffected.',
+                    value: _exportPhotoStillDurationSeconds,
+                    min: DesktopPrefs.exportPhotoStillDurationSecondsMin,
+                    max: DesktopPrefs.exportPhotoStillDurationSecondsMax,
+                    step: DesktopPrefs.exportPhotoStillDurationSecondsStep,
+                    onChanged: (v) => _exportPhotoStillDurationSeconds = v,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Export sequence size',
+                        helperText:
+                            'FCP7 XML / FCPXML sequence. Match smallest '
+                            '(default) uses the smallest width and height '
+                            'among the files. 1080p, 4K, and Match smallest '
+                            'scale clips to fit. Match largest uses native '
+                            'pixels with no scale. JSON export is unaffected.',
+                        border: OutlineInputBorder(),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<ExportSequenceSize>(
+                          key: const Key('pref-export-sequence-size'),
+                          value: _exportSequenceSize,
+                          isExpanded: true,
+                          items: [
+                            for (final f in ExportSequenceSize.values)
+                              DropdownMenuItem(
+                                value: f,
+                                child: Text(f.settingsLabel),
+                              ),
+                          ],
+                          onChanged: (v) {
+                            if (v == null) return;
+                            _mutateDraft(() => _exportSequenceSize = v);
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Export photo transition',
+                        helperText:
+                            'Between adjacent photos on FCP7 XML / FCPXML. '
+                            'Hard cut into and out of video key periods. '
+                            'JSON export is unaffected.',
+                        border: OutlineInputBorder(),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<ExportPhotoTransition>(
+                          key: const Key('pref-export-photo-transition'),
+                          value: _exportPhotoTransition,
+                          isExpanded: true,
+                          items: [
+                            for (final f in ExportPhotoTransition.values)
+                              DropdownMenuItem(
+                                value: f,
+                                child: Text(f.settingsLabel),
+                              ),
+                          ],
+                          onChanged: (v) {
+                            if (v == null) return;
+                            _mutateDraft(() => _exportPhotoTransition = v);
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                  _doubleSlider(
+                    key: const Key('pref-export-photo-transition-duration'),
+                    label: 'Export transition duration',
+                    helper:
+                        'How long the photo-to-photo transition lasts. '
+                        'Default 1 s (0.1–2, step 0.1).',
+                    value: _exportPhotoTransitionSeconds,
+                    min: DesktopPrefs.exportPhotoTransitionSecondsMin,
+                    max: DesktopPrefs.exportPhotoTransitionSecondsMax,
+                    step: DesktopPrefs.exportPhotoTransitionSecondsStep,
+                    enabled: _exportPhotoTransition !=
+                        ExportPhotoTransition.none,
+                    onChanged: (v) => _exportPhotoTransitionSeconds = v,
                   ),
                 ],
               ),

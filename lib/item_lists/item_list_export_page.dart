@@ -1,23 +1,24 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/item_lists/item_list_csv.dart';
 import 'package:tagkin_desktop/item_lists/item_list_export_controller.dart';
+import 'package:tagkin_desktop/library/item_hover_preview.dart';
+import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/local_thumb_cache.dart';
-import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
-import 'package:tagkin_desktop/prepass/hide_blurry_switch.dart';
-import 'package:tagkin_desktop/prepass/sharpness_score_chip.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
-import 'package:tagkin_desktop/review/media_viewer.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
+import 'package:tagkin_desktop/prepass/sharpness_score_chip.dart';
 import 'package:tagkin_desktop/shell/app_nav_tab_buttons.dart';
 import 'package:tagkin_desktop/ui/format_local_datetime.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
-/// Filter photos and video key periods, reorder, and export a JSON manifest.
+/// Filter photos and video key periods from a Folders View, reorder, and
+/// export JSON, FCP7 XML, or FCPXML.
 class ItemListExportPage extends ConsumerStatefulWidget {
   const ItemListExportPage({super.key});
 
@@ -28,13 +29,22 @@ class ItemListExportPage extends ConsumerStatefulWidget {
 class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
   final _previewScroll = ScrollController();
   final _description = TextEditingController();
+  ItemListExportFormat _format = ItemListExportFormat.json;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      unawaited(ref.read(itemListExportControllerProvider).load());
+      final controller = ref.read(itemListExportControllerProvider);
+      final cols = ref.read(collectionsControllerProvider);
+      Set<String>? folders;
+      if (cols.sessionReady && cols.current.leafFolders.isNotEmpty) {
+        folders = cols.current.leafFolders.toSet();
+      }
+      final viewId = ref.read(libraryTableControllerProvider).activeViewId;
+      final view = viewId == null ? null : cols.viewById(viewId);
+      unawaited(controller.load(collectionFolders: folders, view: view));
     });
   }
 
@@ -45,30 +55,16 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
     super.dispose();
   }
 
-  Future<void> _pickDay({required bool from}) async {
-    final controller = ref.read(itemListExportControllerProvider);
-    final initial = (from ? controller.whenFromDay : controller.whenToDay) ??
-        DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: DateTime(1900),
-      lastDate: DateTime(2100),
-    );
-    if (!mounted) return;
-    if (from) {
-      controller.setWhenFromDay(picked);
-    } else {
-      controller.setWhenToDay(picked);
-    }
-  }
-
   Future<void> _export() async {
     final prefs = ref.read(desktopPrefsProvider);
-    final path = await ref.read(itemListExportControllerProvider).exportJson(
+    final path = await ref.read(itemListExportControllerProvider).export(
+          format: _format,
           description: _description.text,
-          hideBlurry: prefs.hideBlurryPhotos,
-          threshold: prefs.itemListBlurrySharpnessThreshold.toDouble(),
+          stillDurationSeconds:
+              prefs.exportPhotoStillDurationSecondsOrDefault,
+          transition: prefs.exportPhotoTransitionOrDefault,
+          transitionSeconds: prefs.exportPhotoTransitionSecondsOrDefault,
+          sequenceSize: prefs.exportSequenceSizeOrDefault,
         );
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
@@ -81,129 +77,112 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
     final controller = ref.watch(itemListExportControllerProvider);
     final prefs = ref.watch(desktopPrefsProvider);
     final format = prefs.dateTimeFormatOrLocal;
-    final hideBlurry = prefs.hideBlurryPhotos;
-    final blurBar = prefs.itemListBlurrySharpnessThreshold.toDouble();
-    final visible = controller.visibleEntries(
-      hideBlurry: hideBlurry,
-      threshold: blurBar,
-    );
-    // [visible] is an identity-preserving subsequence of [controller.entries]
-    // (Hide blurry only ever drops entries, never copies them), so a single
-    // walk maps real indices -> hidden without relying on entry equality.
-    final hiddenIndices = <int>{};
-    if (hideBlurry) {
-      var vi = 0;
-      for (var i = 0; i < controller.entries.length; i++) {
-        if (vi < visible.length && identical(controller.entries[i], visible[vi])) {
-          vi++;
-        } else {
-          hiddenIndices.add(i);
-        }
-      }
-    }
+    final visible = controller.entries;
 
     return SelectableScope(
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Item list'),
-          actions: [
+          actions: const [
             SelectionContainer.disabled(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextButton(
-                    key: const Key('item-list-export'),
-                    onPressed: controller.hasEntries ? _export : null,
-                    child: const Text('Export'),
-                  ),
-                  const AppNavTabButtons(),
-                ],
-              ),
+              child: AppNavTabButtons(),
             ),
           ],
         ),
-        body: LayoutBuilder(
-          builder: (context, constraints) {
-            final filterMax = math.min(280.0, constraints.maxHeight * 0.45);
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                ConstrainedBox(
-                  constraints: BoxConstraints(maxHeight: filterMax),
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                    child: _FilterPanel(
-                      controller: controller,
-                      description: _description,
-                      onPickFrom: () => unawaited(_pickDay(from: true)),
-                      onPickTo: () => unawaited(_pickDay(from: false)),
-                      onPreview: () => unawaited(controller.preview()),
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    key: const Key('item-list-description'),
+                    controller: _description,
+                    decoration: const InputDecoration(
+                      labelText: 'Description',
+                      hintText: 'Optional note saved with the export',
+                      border: OutlineInputBorder(),
                     ),
                   ),
-                ),
-                if (controller.error != null)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(
-                      controller.error!,
-                      key: const Key('item-list-error'),
-                    ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      _ViewsDropdown(controller: controller),
+                      const SizedBox(width: 16),
+                      _FormatDropdown(
+                        format: _format,
+                        onSelected: (next) => setState(() => _format = next),
+                      ),
+                      const SizedBox(width: 16),
+                      FilledButton(
+                        key: const Key('item-list-export'),
+                        onPressed: controller.hasEntries ? _export : null,
+                        child: const Text('Export'),
+                      ),
+                    ],
                   ),
-                if (controller.loadingList || controller.loadingFacets)
-                  const LinearProgressIndicator(),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                  child: Text(
-                    '${visible.length} '
-                    '${visible.length == 1 ? 'item' : 'items'}',
-                    key: const Key('item-list-count'),
-                  ),
+                ],
+              ),
+            ),
+            if (controller.error != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  controller.error!,
+                  key: const Key('item-list-error'),
                 ),
-                Expanded(
-                  child: SelectionContainer.disabled(
-                    child: Scrollbar(
+              ),
+            if (controller.loadingList) const LinearProgressIndicator(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Text(
+                '${visible.length} '
+                '${visible.length == 1 ? 'item' : 'items'}',
+                key: const Key('item-list-count'),
+              ),
+            ),
+            Expanded(
+              child: SelectionContainer.disabled(
+                child: ItemHoverPreviewScope(
+                  child: Scrollbar(
+                    controller: _previewScroll,
+                    thumbVisibility: true,
+                    child: SingleChildScrollView(
                       controller: _previewScroll,
-                      thumbVisibility: true,
-                      child: SingleChildScrollView(
-                        controller: _previewScroll,
-                        padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-                        child: Wrap(
-                          spacing: 8,
-                          runSpacing: 12,
-                          children: [
-                            for (var i = 0; i < controller.entries.length; i++)
-                              if (!hiddenIndices.contains(i))
-                                _FilmstripTile(
-                                  key: ValueKey(
-                                    controller.entries[i].keyPeriodId ??
-                                        'photo-${controller.entries[i].itemId}',
-                                  ),
-                                  index: i,
-                                  entry: controller.entries[i],
-                                  item: controller.itemsById[
-                                      controller.entries[i].itemId],
-                                  showSharpnessScore: prefs.showSharpnessScores,
-                                  format: format,
-                                  timestampMs: controller
-                                      .timestampMsFor(controller.entries[i]),
-                                  faceRegions: controller
-                                      .faceRegionsFor(controller.entries[i]),
-                                  ensureKnowledge: () => controller
-                                      .knowledgeFor(controller.entries[i].itemId),
-                                  resolveThumb: () =>
-                                      controller.thumbFor(controller.entries[i]),
-                                  onRemove: () => controller.removeAt(i),
-                                  onReorder: controller.reorder,
-                                ),
-                          ],
-                        ),
+                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 12,
+                        children: [
+                          for (var i = 0; i < controller.entries.length; i++)
+                            _FilmstripTile(
+                              key: ValueKey(
+                                itemListEntryKey(controller.entries[i]),
+                              ),
+                              index: i,
+                              entry: controller.entries[i],
+                              item: controller.itemsById[
+                                  controller.entries[i].itemId],
+                              period: controller
+                                  .periodFor(controller.entries[i]),
+                              libraryTable: controller.libraryTable,
+                              showSharpnessScore: prefs.showSharpnessScores,
+                              format: format,
+                              resolveThumb: () =>
+                                  controller.thumbFor(controller.entries[i]),
+                              onRemove: () => controller.removeAt(i),
+                              onReorder: controller.reorder,
+                            ),
+                        ],
                       ),
                     ),
                   ),
                 ),
-              ],
-            );
-          },
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -212,17 +191,123 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
 
 const double _kFilmstripStill = 180;
 
+class _ViewsDropdown extends ConsumerWidget {
+  const _ViewsDropdown({required this.controller});
+
+  final ItemListExportController controller;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cols = ref.watch(collectionsControllerProvider);
+    final active = controller.selectedView;
+    final label = active?.name ?? 'All';
+    final views = cols.views;
+
+    return PopupMenuButton<String>(
+      key: const Key('item-list-views-menu'),
+      tooltip: 'Views',
+      onSelected: (id) {
+        if (id.isEmpty) {
+          unawaited(controller.selectView(null));
+          return;
+        }
+        final view = cols.viewById(id);
+        if (view == null) return;
+        unawaited(controller.selectView(view));
+      },
+      itemBuilder: (context) {
+        return [
+          PopupMenuItem(
+            key: const Key('item-list-views-all'),
+            value: '',
+            child: Text(active == null ? 'All ✓' : 'All'),
+          ),
+          if (views.isNotEmpty) const PopupMenuDivider(),
+          for (final v in views)
+            PopupMenuItem(
+              key: Key('item-list-views-${v.id}'),
+              value: v.id,
+              child: Text(
+                v.id == active?.id ? '${v.name} ✓' : v.name,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+        ];
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.layers_outlined, size: 18),
+            const SizedBox(width: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 160),
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            const Icon(Icons.arrow_drop_down, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FormatDropdown extends StatelessWidget {
+  const _FormatDropdown({required this.format, required this.onSelected});
+
+  final ItemListExportFormat format;
+  final ValueChanged<ItemListExportFormat> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<ItemListExportFormat>(
+      key: const Key('item-list-format-menu'),
+      tooltip: 'Format',
+      onSelected: onSelected,
+      itemBuilder: (context) {
+        return [
+          for (final f in ItemListExportFormat.values)
+            PopupMenuItem(
+              key: Key('item-list-format-${f.name}'),
+              value: f,
+              child: Text(f == format ? '${f.label} ✓' : f.label),
+            ),
+        ];
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.insert_drive_file_outlined, size: 18),
+            const SizedBox(width: 6),
+            Text(
+              format.label,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const Icon(Icons.arrow_drop_down, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _FilmstripTile extends StatefulWidget {
   const _FilmstripTile({
     super.key,
     required this.index,
     required this.entry,
     this.item,
+    this.period,
+    required this.libraryTable,
     required this.showSharpnessScore,
     required this.format,
-    required this.timestampMs,
-    required this.faceRegions,
-    required this.ensureKnowledge,
     required this.resolveThumb,
     required this.onRemove,
     required this.onReorder,
@@ -231,11 +316,10 @@ class _FilmstripTile extends StatefulWidget {
   final int index;
   final ItemListEntry entry;
   final Item? item;
+  final KeyPeriodKnowledge? period;
+  final LibraryTableController libraryTable;
   final bool showSharpnessScore;
   final DateTimeDisplayFormat format;
-  final int timestampMs;
-  final List<({String id, TagRegion region})> faceRegions;
-  final Future<ItemKnowledge?> Function() ensureKnowledge;
   final Future<LocalThumbResult> Function() resolveThumb;
   final VoidCallback onRemove;
   final void Function(int from, int to) onReorder;
@@ -246,26 +330,24 @@ class _FilmstripTile extends StatefulWidget {
 
 class _FilmstripTileState extends State<_FilmstripTile> {
   late Future<LocalThumbResult> _thumb;
-  Size? _imageSize;
 
   @override
   void initState() {
     super.initState();
     _thumb = widget.resolveThumb();
-    unawaited(widget.ensureKnowledge());
   }
 
   @override
   void didUpdateWidget(_FilmstripTile oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.timestampMs != widget.timestampMs ||
-        oldWidget.entry.itemId != widget.entry.itemId ||
-        oldWidget.entry.keyPeriodId != widget.entry.keyPeriodId) {
+    if (oldWidget.entry.itemId != widget.entry.itemId ||
+        oldWidget.entry.keyPeriodId != widget.entry.keyPeriodId ||
+        oldWidget.entry.startMs != widget.entry.startMs) {
       _thumb = widget.resolveThumb();
     }
   }
 
-  String get _id => widget.entry.keyPeriodId ?? widget.entry.itemId;
+  String get _id => itemListEntryKey(widget.entry);
 
   @override
   Widget build(BuildContext context) {
@@ -305,7 +387,9 @@ class _FilmstripTileState extends State<_FilmstripTile> {
                         child: ColoredBox(
                           color: Theme.of(context).colorScheme.surface,
                           child: Center(
-                            child: Text(itemListEntryKindLabel(widget.entry.kind)),
+                            child: Text(
+                              itemListEntryKindLabel(widget.entry.kind),
+                            ),
                           ),
                         ),
                       ),
@@ -331,13 +415,8 @@ class _FilmstripTileState extends State<_FilmstripTile> {
                     children: [
                       ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: _still(),
+                        child: _hoverStill(),
                       ),
-                      if (widget.faceRegions.isNotEmpty)
-                        _CoverFaceOverlay(
-                          regions: widget.faceRegions,
-                          imageSize: _imageSize,
-                        ),
                       if (widget.showSharpnessScore &&
                           widget.item != null &&
                           widget.item!.type == ItemType.photo)
@@ -387,6 +466,18 @@ class _FilmstripTileState extends State<_FilmstripTile> {
     );
   }
 
+  Widget _hoverStill() {
+    final item = widget.item;
+    final still = _still();
+    if (item == null) return still;
+    return ItemHoverPreview(
+      item: item,
+      controller: widget.libraryTable,
+      period: widget.period,
+      child: still,
+    );
+  }
+
   Widget _still() {
     return FutureBuilder<LocalThumbResult>(
       future: _thumb,
@@ -400,14 +491,6 @@ class _FilmstripTileState extends State<_FilmstripTile> {
             fit: BoxFit.cover,
             cacheWidth: (_kFilmstripStill * 2).round(),
             cacheHeight: (_kFilmstripStill * 2).round(),
-            frameBuilder: (context, child, frame, sync) {
-              if (frame != null) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _rememberImageSize(path);
-                });
-              }
-              return child;
-            },
             errorBuilder: (_, _, _) => _placeholder(result?.status),
           );
         }
@@ -442,70 +525,6 @@ class _FilmstripTileState extends State<_FilmstripTile> {
       ),
     );
   }
-
-  void _rememberImageSize(String path) {
-    final stream = FileImage(File(path)).resolve(const ImageConfiguration());
-    stream.addListener(
-      ImageStreamListener((info, _) {
-        final next = Size(
-          info.image.width.toDouble(),
-          info.image.height.toDouble(),
-        );
-        if (!mounted || _imageSize == next) return;
-        setState(() => _imageSize = next);
-      }),
-    );
-  }
-}
-
-class _CoverFaceOverlay extends StatelessWidget {
-  const _CoverFaceOverlay({
-    required this.regions,
-    this.imageSize,
-  });
-
-  final List<({String id, TagRegion region})> regions;
-  final Size? imageSize;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final viewport = Size(constraints.maxWidth, constraints.maxHeight);
-        final src = imageSize ?? viewport;
-        final scheme = Theme.of(context).colorScheme;
-        return IgnorePointer(
-          child: Stack(
-            children: [
-              for (final face in regions)
-                Builder(
-                  builder: (context) {
-                    final rect = coverMappedRegion(
-                      region: face.region,
-                      viewport: viewport,
-                      imageSize: src,
-                    );
-                    if (rect.isEmpty) return const SizedBox.shrink();
-                    return Positioned(
-                      left: rect.left,
-                      top: rect.top,
-                      width: rect.width,
-                      height: rect.height,
-                      child: DecoratedBox(
-                        key: Key('item-list-face-${face.id}'),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: scheme.primary, width: 2),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-            ],
-          ),
-        );
-      },
-    );
-  }
 }
 
 String _caption(ItemListEntry entry, DateTimeDisplayFormat format) {
@@ -515,146 +534,4 @@ String _caption(ItemListEntry entry, DateTimeDisplayFormat format) {
     return '${formatKeyPeriodMs(entry.startMs!)}–${formatKeyPeriodMs(entry.endMs!)}';
   }
   return formatLocalDateTime(entry.when, format: format);
-}
-
-class _FilterPanel extends StatelessWidget {
-  const _FilterPanel({
-    required this.controller,
-    required this.description,
-    required this.onPickFrom,
-    required this.onPickTo,
-    required this.onPreview,
-  });
-
-  final ItemListExportController controller;
-  final TextEditingController description;
-  final VoidCallback onPickFrom;
-  final VoidCallback onPickTo;
-  final VoidCallback onPreview;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TextField(
-          key: const Key('item-list-description'),
-          controller: description,
-          decoration: const InputDecoration(
-            labelText: 'Description',
-            hintText: 'Optional note saved with the export',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 12),
-        _FacetChips(
-          label: 'Who',
-          values: controller.facets.who,
-          selected: controller.selectedWho,
-          onToggle: controller.toggleWho,
-        ),
-        _FacetChips(
-          label: 'What',
-          values: controller.facets.what,
-          selected: controller.selectedWhat,
-          onToggle: controller.toggleWhat,
-        ),
-        _FacetChips(
-          label: 'Where',
-          values: controller.facets.where,
-          selected: controller.selectedWhere,
-          onToggle: controller.toggleWhere,
-        ),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            const Text('When'),
-            TextButton(
-              key: const Key('item-list-when-from'),
-              onPressed: onPickFrom,
-              child: Text(
-                controller.whenFromDay == null
-                    ? 'From'
-                    : _dayLabel(controller.whenFromDay!),
-              ),
-            ),
-            TextButton(
-              key: const Key('item-list-when-to'),
-              onPressed: onPickTo,
-              child: Text(
-                controller.whenToDay == null
-                    ? 'To'
-                    : _dayLabel(controller.whenToDay!),
-              ),
-            ),
-            if (controller.whenFromDay != null || controller.whenToDay != null)
-              TextButton(
-                onPressed: () {
-                  controller.setWhenFromDay(null);
-                  controller.setWhenToDay(null);
-                },
-                child: const Text('Clear dates'),
-              ),
-            FilledButton(
-              key: const Key('item-list-preview'),
-              onPressed: controller.loadingList ? null : onPreview,
-              child: const Text('Preview'),
-            ),
-            const HideBlurrySwitch(),
-          ],
-        ),
-      ],
-    );
-  }
-
-  String _dayLabel(DateTime d) {
-    final y = d.year.toString().padLeft(4, '0');
-    final m = d.month.toString().padLeft(2, '0');
-    final day = d.day.toString().padLeft(2, '0');
-    return '$y-$m-$day';
-  }
-}
-
-class _FacetChips extends StatelessWidget {
-  const _FacetChips({
-    required this.label,
-    required this.values,
-    required this.selected,
-    required this.onToggle,
-  });
-
-  final String label;
-  final List<String> values;
-  final Set<String> selected;
-  final void Function(String value) onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    if (values.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Text('$label — none'),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 4,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          Text(label),
-          for (final value in values)
-            FilterChip(
-              key: Key('item-list-facet-$label-$value'),
-              label: Text(value),
-              selected: selected.contains(value),
-              onSelected: (_) => onToggle(value),
-            ),
-        ],
-      ),
-    );
-  }
 }

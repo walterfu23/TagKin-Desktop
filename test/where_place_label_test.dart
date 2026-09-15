@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tagkin_desktop/item_lists/export_photo_transition.dart';
+import 'package:tagkin_desktop/item_lists/export_sequence_size.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_store.dart';
@@ -135,8 +137,36 @@ void main() {
       expect(DesktopPrefs.defaults.saveFixedPhotoInFolder, isTrue);
       expect(DesktopPrefs.defaults.hideBlurryPhotos, isFalse);
       expect(DesktopPrefs.defaults.showSharpnessScores, isTrue);
+      expect(DesktopPrefs.defaults.exportPhotoStillDurationSeconds, 2.5);
+      expect(
+        DesktopPrefs.defaults.exportPhotoStillDurationSecondsOrDefault,
+        2.5,
+      );
+      expect(
+        DesktopPrefs.defaults.exportPhotoTransition,
+        ExportPhotoTransition.crossDissolve,
+      );
+      expect(DesktopPrefs.defaults.exportPhotoTransitionSeconds, 1.0);
+      expect(
+        DesktopPrefs.defaults.exportPhotoTransitionSecondsOrDefault,
+        1.0,
+      );
+      expect(
+        DesktopPrefs.defaults.exportSequenceSize,
+        ExportSequenceSize.matchSmallest,
+      );
+      expect(
+        DesktopPrefs.defaults.exportSequenceSizeOrDefault,
+        ExportSequenceSize.matchSmallest,
+      );
       expect(DesktopPrefs.itemListBlurrySharpnessThresholdMax, 50000);
       expect(DesktopPrefs.itemListBlurrySharpnessThresholdStep, 10);
+      expect(DesktopPrefs.exportPhotoStillDurationSecondsMin, 0.5);
+      expect(DesktopPrefs.exportPhotoStillDurationSecondsMax, 10.0);
+      expect(DesktopPrefs.exportPhotoStillDurationSecondsStep, 0.5);
+      expect(DesktopPrefs.exportPhotoTransitionSecondsMin, 0.1);
+      expect(DesktopPrefs.exportPhotoTransitionSecondsMax, 2.0);
+      expect(DesktopPrefs.exportPhotoTransitionSecondsStep, 0.1);
     });
 
     test('round-trips through JSON including new prefs', () async {
@@ -168,6 +198,10 @@ void main() {
         saveFixedPhotoInFolder: true,
         hideBlurryPhotos: true,
         showSharpnessScores: false,
+        exportPhotoStillDurationSeconds: 4.0,
+        exportPhotoTransition: ExportPhotoTransition.dipToWhite,
+        exportPhotoTransitionSeconds: 1.5,
+        exportSequenceSize: ExportSequenceSize.p4k,
       );
       await store.save(prefs);
       expect(await store.load(), prefs);
@@ -217,6 +251,97 @@ void main() {
         'export.showSharpnessScores': false,
       });
       expect(prefs.showSharpnessScores, isFalse);
+    });
+
+    test('fromJson clamps export photo still duration', () {
+      expect(
+        DesktopPrefs.fromJson({
+          'export.photoStillDurationSeconds': 99,
+        }).exportPhotoStillDurationSeconds,
+        DesktopPrefs.exportPhotoStillDurationSecondsMax,
+      );
+      expect(
+        DesktopPrefs.fromJson({
+          'export.photoStillDurationSeconds': 0.1,
+        }).exportPhotoStillDurationSeconds,
+        DesktopPrefs.exportPhotoStillDurationSecondsMin,
+      );
+      expect(
+        DesktopPrefs.fromJson({}).exportPhotoStillDurationSeconds,
+        2.5,
+      );
+    });
+
+    test('fromJson clamps export photo transition duration', () {
+      expect(
+        DesktopPrefs.fromJson({
+          'export.photoTransitionSeconds': 9,
+        }).exportPhotoTransitionSeconds,
+        DesktopPrefs.exportPhotoTransitionSecondsMax,
+      );
+      expect(
+        DesktopPrefs.fromJson({
+          'export.photoTransitionSeconds': 0.01,
+        }).exportPhotoTransitionSeconds,
+        DesktopPrefs.exportPhotoTransitionSecondsMin,
+      );
+      expect(
+        DesktopPrefs.fromJson({}).exportPhotoTransitionSeconds,
+        1.0,
+      );
+      expect(
+        DesktopPrefs.fromJson({}).exportPhotoTransition,
+        ExportPhotoTransition.crossDissolve,
+      );
+      expect(
+        DesktopPrefs.fromJson({
+          'export.photoTransition': 'none',
+        }).exportPhotoTransition,
+        ExportPhotoTransition.none,
+      );
+      expect(
+        DesktopPrefs.fromJson({
+          'export.photoTransition': 'nope',
+        }).exportPhotoTransition,
+        ExportPhotoTransition.crossDissolve,
+      );
+    });
+
+    test('fromJson export sequence size defaults and parses', () {
+      expect(
+        DesktopPrefs.fromJson({}).exportSequenceSize,
+        ExportSequenceSize.matchSmallest,
+      );
+      expect(
+        DesktopPrefs.fromJson({
+          'export.sequenceSize': 'matchSmallest',
+        }).exportSequenceSize,
+        ExportSequenceSize.matchSmallest,
+      );
+      expect(
+        DesktopPrefs.fromJson({
+          'export.sequenceSize': '1080p',
+        }).exportSequenceSize,
+        ExportSequenceSize.p1080,
+      );
+      expect(
+        DesktopPrefs.fromJson({
+          'export.sequenceSize': '4k',
+        }).exportSequenceSize,
+        ExportSequenceSize.p4k,
+      );
+      expect(
+        DesktopPrefs.fromJson({
+          'export.sequenceSize': 'matchLargest',
+        }).exportSequenceSize,
+        ExportSequenceSize.matchLargest,
+      );
+      expect(
+        DesktopPrefs.fromJson({
+          'export.sequenceSize': 'nope',
+        }).exportSequenceSize,
+        ExportSequenceSize.matchSmallest,
+      );
     });
 
     test('setHideBlurryPhotos persists immediately (not gated behind Save)',

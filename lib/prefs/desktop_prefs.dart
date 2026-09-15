@@ -1,3 +1,5 @@
+import 'package:tagkin_desktop/item_lists/export_photo_transition.dart';
+import 'package:tagkin_desktop/item_lists/export_sequence_size.dart';
 import 'package:tagkin_desktop/ui/format_local_datetime.dart';
 import 'package:tagkin_desktop/where/where_place_label.dart';
 
@@ -32,6 +34,10 @@ class DesktopPrefs {
     this.saveFixedPhotoInFolder = true,
     this.hideBlurryPhotos = false,
     this.showSharpnessScores = true,
+    this.exportPhotoStillDurationSeconds = 2.5,
+    this.exportPhotoTransition = ExportPhotoTransition.crossDissolve,
+    this.exportPhotoTransitionSeconds = 1.0,
+    this.exportSequenceSize = ExportSequenceSize.matchSmallest,
   });
 
   /// When true, include country even if place country matches device locale.
@@ -120,6 +126,20 @@ class DesktopPrefs {
   /// chosen from real scores.
   final bool showSharpnessScores;
 
+  /// How long each photo still lasts on an FCP7 XML / FCPXML timeline.
+  /// JSON export is unaffected.
+  final double exportPhotoStillDurationSeconds;
+
+  /// Photo-to-photo transition on FCP7 XML / FCPXML. Hard cut into/out of
+  /// video key periods. JSON export is unaffected.
+  final ExportPhotoTransition exportPhotoTransition;
+
+  /// Overlap length for [exportPhotoTransition] when it is not None.
+  final double exportPhotoTransitionSeconds;
+
+  /// Sequence frame size for FCP7 XML / FCPXML. JSON export is unaffected.
+  final ExportSequenceSize exportSequenceSize;
+
   /// [dateTimeFormat] with a hot-reload fallback (new non-null fields read
   /// as null on instances created before the field existed).
   DateTimeDisplayFormat get dateTimeFormatOrLocal {
@@ -127,6 +147,42 @@ class DesktopPrefs {
       return dateTimeFormat;
     } on TypeError {
       return DateTimeDisplayFormat.local;
+    }
+  }
+
+  /// [exportPhotoTransition] with a hot-reload fallback.
+  ExportPhotoTransition get exportPhotoTransitionOrDefault {
+    try {
+      return exportPhotoTransition;
+    } on TypeError {
+      return ExportPhotoTransition.crossDissolve;
+    }
+  }
+
+  /// [exportPhotoStillDurationSeconds] with a hot-reload fallback.
+  double get exportPhotoStillDurationSecondsOrDefault {
+    try {
+      return exportPhotoStillDurationSeconds;
+    } on TypeError {
+      return 2.5;
+    }
+  }
+
+  /// [exportPhotoTransitionSeconds] with a hot-reload fallback.
+  double get exportPhotoTransitionSecondsOrDefault {
+    try {
+      return exportPhotoTransitionSeconds;
+    } on TypeError {
+      return 1.0;
+    }
+  }
+
+  /// [exportSequenceSize] with a hot-reload fallback.
+  ExportSequenceSize get exportSequenceSizeOrDefault {
+    try {
+      return exportSequenceSize;
+    } on TypeError {
+      return ExportSequenceSize.matchSmallest;
     }
   }
 
@@ -191,6 +247,14 @@ class DesktopPrefs {
   /// it to 100). Typical stills are in the thousands.
   static const itemListBlurrySharpnessThresholdStep = 10;
 
+  static const exportPhotoStillDurationSecondsMin = 0.5;
+  static const exportPhotoStillDurationSecondsMax = 10.0;
+  static const exportPhotoStillDurationSecondsStep = 0.5;
+
+  static const exportPhotoTransitionSecondsMin = 0.1;
+  static const exportPhotoTransitionSecondsMax = 2.0;
+  static const exportPhotoTransitionSecondsStep = 0.1;
+
   DesktopPrefs copyWith({
     bool? showCountryWhenSameCountry,
     bool? showStateWhenSameState,
@@ -217,6 +281,10 @@ class DesktopPrefs {
     bool? saveFixedPhotoInFolder,
     bool? hideBlurryPhotos,
     bool? showSharpnessScores,
+    double? exportPhotoStillDurationSeconds,
+    ExportPhotoTransition? exportPhotoTransition,
+    double? exportPhotoTransitionSeconds,
+    ExportSequenceSize? exportSequenceSize,
   }) {
     return DesktopPrefs(
       showCountryWhenSameCountry:
@@ -255,6 +323,13 @@ class DesktopPrefs {
           saveFixedPhotoInFolder ?? this.saveFixedPhotoInFolder,
       hideBlurryPhotos: hideBlurryPhotos ?? this.hideBlurryPhotos,
       showSharpnessScores: showSharpnessScores ?? this.showSharpnessScores,
+      exportPhotoStillDurationSeconds: exportPhotoStillDurationSeconds ??
+          exportPhotoStillDurationSecondsOrDefault,
+      exportPhotoTransition:
+          exportPhotoTransition ?? exportPhotoTransitionOrDefault,
+      exportPhotoTransitionSeconds: exportPhotoTransitionSeconds ??
+          exportPhotoTransitionSecondsOrDefault,
+      exportSequenceSize: exportSequenceSize ?? exportSequenceSizeOrDefault,
     );
   }
 
@@ -286,6 +361,12 @@ class DesktopPrefs {
         'export.saveFixedPhotoInFolder': saveFixedPhotoInFolder,
         'export.hideBlurryPhotos': hideBlurryPhotos,
         'export.showSharpnessScores': showSharpnessScores,
+        'export.photoStillDurationSeconds':
+            exportPhotoStillDurationSecondsOrDefault,
+        'export.photoTransition': exportPhotoTransitionOrDefault.wire,
+        'export.photoTransitionSeconds':
+            exportPhotoTransitionSecondsOrDefault,
+        'export.sequenceSize': exportSequenceSizeOrDefault.wire,
       };
 
   factory DesktopPrefs.fromJson(Map<String, dynamic> json) {
@@ -444,6 +525,24 @@ class DesktopPrefs {
         'export.showSharpnessScores',
         fallback: true,
       ),
+      exportPhotoStillDurationSeconds: doubleVal(
+        'export.photoStillDurationSeconds',
+        2.5,
+        min: exportPhotoStillDurationSecondsMin,
+        max: exportPhotoStillDurationSecondsMax,
+      ),
+      exportPhotoTransition: ExportPhotoTransition.parse(
+        json['export.photoTransition'],
+      ),
+      exportPhotoTransitionSeconds: doubleVal(
+        'export.photoTransitionSeconds',
+        1.0,
+        min: exportPhotoTransitionSecondsMin,
+        max: exportPhotoTransitionSecondsMax,
+      ),
+      exportSequenceSize: ExportSequenceSize.parse(
+        json['export.sequenceSize'],
+      ),
     );
   }
 
@@ -477,7 +576,14 @@ class DesktopPrefs {
       other.autoFixBlurryPhotos == autoFixBlurryPhotos &&
       other.saveFixedPhotoInFolder == saveFixedPhotoInFolder &&
       other.hideBlurryPhotos == hideBlurryPhotos &&
-      other.showSharpnessScores == showSharpnessScores;
+      other.showSharpnessScores == showSharpnessScores &&
+      other.exportPhotoStillDurationSecondsOrDefault ==
+          exportPhotoStillDurationSecondsOrDefault &&
+      other.exportPhotoTransitionOrDefault ==
+          exportPhotoTransitionOrDefault &&
+      other.exportPhotoTransitionSecondsOrDefault ==
+          exportPhotoTransitionSecondsOrDefault &&
+      other.exportSequenceSizeOrDefault == exportSequenceSizeOrDefault;
 
   @override
   int get hashCode => Object.hashAll([
@@ -506,5 +612,9 @@ class DesktopPrefs {
         saveFixedPhotoInFolder,
         hideBlurryPhotos,
         showSharpnessScores,
+        exportPhotoStillDurationSecondsOrDefault,
+        exportPhotoTransitionOrDefault,
+        exportPhotoTransitionSecondsOrDefault,
+        exportSequenceSizeOrDefault,
       ]);
 }
