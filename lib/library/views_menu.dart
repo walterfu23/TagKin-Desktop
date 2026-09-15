@@ -37,12 +37,29 @@ Future<void> applySavedView({
 Future<void> applyAllView({
   required LibraryTableController table,
   required DesktopPrefsController prefs,
+  CollectionsController? cols,
 }) async {
   await table.runViewCommitPaused(() async {
     await table.applyLibraryViewFilters(LibraryViewFilters.all);
     await prefs.setHideBlurryPhotos(false);
     table.setActiveView(null, LibraryViewFilters.all);
+    await cols?.setCurrentViewId(null);
   });
+}
+
+/// Restore the collection's last Folders view (All when missing or stale).
+Future<void> applyCurrentCollectionView({
+  required LibraryTableController table,
+  required DesktopPrefsController prefs,
+  required CollectionsController cols,
+}) async {
+  final id = cols.current.currentViewId;
+  final view = id == null ? null : cols.viewById(id);
+  if (view != null) {
+    await applySavedView(table: table, prefs: prefs, view: view, cols: cols);
+    return;
+  }
+  await applyAllView(table: table, prefs: prefs, cols: cols);
 }
 
 /// Persist the current Folders filters onto a View.
@@ -271,7 +288,7 @@ class ViewsMenu extends ConsumerWidget {
           prefs: prefs,
         );
         if (!ok) return;
-        await applyAllView(table: table, prefs: prefs);
+        await applyAllView(table: table, prefs: prefs, cols: cols);
       case _ViewsCmd.saveAs:
         await _saveAs(context, cols, table);
       case _ViewsCmd.update:
@@ -350,7 +367,7 @@ class ViewsMenu extends ConsumerWidget {
     if (!ok) return;
     await cols.deleteView(id);
     if (table.activeViewId == id) {
-      await applyAllView(table: table, prefs: prefs);
+      await applyAllView(table: table, prefs: prefs, cols: cols);
     }
   }
 }
@@ -594,6 +611,7 @@ class _ManageViewsDialog extends StatelessWidget {
                                       await applyAllView(
                                         table: table,
                                         prefs: prefs,
+                                        cols: cols,
                                       );
                                     }
                                   },

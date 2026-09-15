@@ -26,18 +26,21 @@ const kItemListNleHeight = 1080;
 enum ItemListExportFormat {
   json,
   fcp7Xml,
-  fcpxml;
+  fcpxml,
+  mp4WithMusic;
 
   String get label => switch (this) {
         json => 'JSON',
         fcp7Xml => 'FCP7 XML',
         fcpxml => 'FCPXML',
+        mp4WithMusic => 'MP4 (with music)',
       };
 
   String get fileExtension => switch (this) {
         json => 'json',
         fcp7Xml => 'xml',
         fcpxml => 'fcpxml',
+        mp4WithMusic => 'mp4',
       };
 }
 
@@ -353,6 +356,12 @@ ItemListNleTimeline itemListNleTimeline({
     duration: t,
     transitions: transitions,
   );
+}
+
+/// Timeline length in milliseconds (30 fps).
+int itemListNleTimelineDurationMs(ItemListNleTimeline timeline) {
+  if (timeline.duration <= 0) return 0;
+  return (timeline.duration * 1000 / kItemListNleTimebase).round();
 }
 
 /// Indenting XML writer for FCP7 / FCPXML (no extra package).

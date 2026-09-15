@@ -9,9 +9,10 @@ void main() {
     final roots = <FileSystemEntity>[
       Directory('lib/item_lists'),
       File('lib/api/item_lists_repository.dart'),
+      File('assets/music_prompt_presets.json'),
     ];
     final pattern = RegExp(
-      r'sk_test_|sk_live_|CLERK_SECRET_KEY|GEMINI_API_KEY|AIza[0-9A-Za-z_-]{20,}',
+      r'sk_test_|sk_live_|CLERK_SECRET_KEY|GEMINI_API_KEY|ELEVENLABS_API_KEY|MUBERT_API_KEY|AIza[0-9A-Za-z_-]{20,}',
     );
     final hits = <String>[];
     for (final root in roots) {
@@ -43,6 +44,9 @@ void main() {
       File('lib/item_lists/item_list_nle.dart'),
       File('lib/item_lists/item_list_fcp7_xml.dart'),
       File('lib/item_lists/item_list_fcpxml.dart'),
+      File('lib/item_lists/item_list_music.dart'),
+      File('lib/item_lists/item_list_mp4_render.dart'),
+      File('lib/item_lists/item_list_mp4_filter.dart'),
     ];
     for (final file in files) {
       final source = file.readAsStringSync();
@@ -52,6 +56,8 @@ void main() {
       expect(source.contains('decidePersonLink'), isFalse);
       expect(source.contains('TaggingProvider'), isFalse);
       expect(source.contains('GEMINI_API_KEY'), isFalse);
+      expect(source.contains('ELEVENLABS'), isFalse);
+      expect(source.contains('Mubert'), isFalse);
       expect(source.contains('prisma'), isFalse);
     }
   });
@@ -62,6 +68,7 @@ void main() {
       File('lib/item_lists/item_list_export_controller.dart'),
       File('lib/item_lists/item_list_fcp7_xml.dart'),
       File('lib/item_lists/item_list_fcpxml.dart'),
+      File('lib/item_lists/item_list_music.dart'),
     ];
     for (final file in files) {
       final source = file.readAsStringSync();
@@ -86,6 +93,7 @@ void main() {
     final combined = '$page\n$csv\n$nle';
     expect(combined.contains('Item list'), isTrue);
     expect(combined.contains('Key period'), isTrue);
+    expect(combined.contains('MP4 (with music)'), isTrue);
     expect(combined.toLowerCase().contains('annotation'), isFalse);
     expect(combined.toLowerCase().contains('chapter'), isFalse);
     expect(combined.toLowerCase().contains('playlist'), isFalse);

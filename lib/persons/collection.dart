@@ -14,6 +14,7 @@ class Collection {
     this.ui = CollectionUiState.empty,
     this.views = const [],
     this.recentViewIds = const [],
+    this.currentViewId,
   });
 
   /// Collection GUID persisted in collections.json.
@@ -32,6 +33,9 @@ class Collection {
   /// Most-recent-first saved-view ids (capped when written).
   final List<String> recentViewIds;
 
+  /// Last selected named Folders view, or null for built-in All.
+  final String? currentViewId;
+
   /// Default cap for [recentViewIds] (Settings [recentViewsLimit]).
   static const maxRecentViews = 10;
 
@@ -42,6 +46,8 @@ class Collection {
     CollectionUiState? ui,
     List<SavedView>? views,
     List<String>? recentViewIds,
+    String? currentViewId,
+    bool clearCurrentViewId = false,
   }) {
     return Collection(
       id: id ?? this.id,
@@ -50,6 +56,9 @@ class Collection {
       ui: ui ?? this.ui,
       views: views ?? this.views,
       recentViewIds: recentViewIds ?? this.recentViewIds,
+      currentViewId: clearCurrentViewId
+          ? null
+          : (currentViewId ?? this.currentViewId),
     );
   }
 
@@ -60,6 +69,8 @@ class Collection {
     if (ui != CollectionUiState.empty) 'ui': ui.toJson(),
     if (views.isNotEmpty) 'views': [for (final v in views) v.toJson()],
     if (recentViewIds.isNotEmpty) 'recentViewIds': recentViewIds,
+    if (currentViewId != null && currentViewId!.isNotEmpty)
+      'currentViewId': currentViewId,
   };
 
   factory Collection.fromJson(Map<String, dynamic> json) {
@@ -88,6 +99,7 @@ class Collection {
         }
       }
     }
+    final currentView = json['currentViewId'];
     return Collection(
       id: id is String ? id : '',
       name: name is String ? name : '',
@@ -104,6 +116,9 @@ class Collection {
           : CollectionUiState.empty,
       views: views,
       recentViewIds: recents,
+      currentViewId: currentView is String && currentView.isNotEmpty
+          ? currentView
+          : null,
     );
   }
 
@@ -115,7 +130,8 @@ class Collection {
       _listEquals(other.leafFolders, leafFolders) &&
       other.ui == ui &&
       _listEquals(other.views, views) &&
-      _listEquals(other.recentViewIds, recentViewIds);
+      _listEquals(other.recentViewIds, recentViewIds) &&
+      other.currentViewId == currentViewId;
 
   @override
   int get hashCode => Object.hash(
@@ -125,6 +141,7 @@ class Collection {
     ui,
     Object.hashAll(views),
     Object.hashAll(recentViewIds),
+    currentViewId,
   );
 }
 

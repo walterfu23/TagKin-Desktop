@@ -320,4 +320,38 @@ void main() {
     await tester.pumpAndSettle();
     expect(exported, contains('<fcpxml version="1.9">'));
   });
+
+  testWidgets('MP4 format shows generate music, not a vendor name',
+      (tester) async {
+    await _pumpPage(
+      tester,
+      overrides: _overrides(
+        items: FakeItemsRepository(
+          items: [
+            fixtureItem(id: 'photo-a', sourceRef: ''),
+          ],
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('item-list-format-menu')));
+    await tester.pumpAndSettle();
+    expect(find.text('MP4 (with music)'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('item-list-format-mp4WithMusic')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('item-list-music-prompt')), findsOneWidget);
+    expect(find.byKey(const Key('item-list-generate-music')), findsOneWidget);
+    expect(find.textContaining('Eleven'), findsNothing);
+
+    expect(find.byKey(const Key('item-list-music-prompt-preset')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('item-list-music-prompt-preset')));
+    await tester.pumpAndSettle();
+    expect(find.text('Warm family'), findsOneWidget);
+    await tester.tap(find.text('Warm family'));
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(
+      find.byKey(const Key('item-list-music-prompt')),
+    );
+    expect(field.controller?.text, contains('Instrumental only'));
+  });
 }

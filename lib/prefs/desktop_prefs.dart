@@ -38,6 +38,7 @@ class DesktopPrefs {
     this.exportPhotoTransition = ExportPhotoTransition.crossDissolve,
     this.exportPhotoTransitionSeconds = 1.0,
     this.exportSequenceSize = ExportSequenceSize.matchSmallest,
+    this.exportMusicPrompt = '',
   });
 
   /// When true, include country even if place country matches device locale.
@@ -140,6 +141,9 @@ class DesktopPrefs {
   /// Sequence frame size for FCP7 XML / FCPXML. JSON export is unaffected.
   final ExportSequenceSize exportSequenceSize;
 
+  /// Default music-style prompt for MP4 export. Free text, not a vendor id.
+  final String exportMusicPrompt;
+
   /// [dateTimeFormat] with a hot-reload fallback (new non-null fields read
   /// as null on instances created before the field existed).
   DateTimeDisplayFormat get dateTimeFormatOrLocal {
@@ -183,6 +187,15 @@ class DesktopPrefs {
       return exportSequenceSize;
     } on TypeError {
       return ExportSequenceSize.matchSmallest;
+    }
+  }
+
+  /// [exportMusicPrompt] with a hot-reload fallback.
+  String get exportMusicPromptOrDefault {
+    try {
+      return exportMusicPrompt;
+    } on TypeError {
+      return '';
     }
   }
 
@@ -285,6 +298,7 @@ class DesktopPrefs {
     ExportPhotoTransition? exportPhotoTransition,
     double? exportPhotoTransitionSeconds,
     ExportSequenceSize? exportSequenceSize,
+    String? exportMusicPrompt,
   }) {
     return DesktopPrefs(
       showCountryWhenSameCountry:
@@ -330,6 +344,7 @@ class DesktopPrefs {
       exportPhotoTransitionSeconds: exportPhotoTransitionSeconds ??
           exportPhotoTransitionSecondsOrDefault,
       exportSequenceSize: exportSequenceSize ?? exportSequenceSizeOrDefault,
+      exportMusicPrompt: exportMusicPrompt ?? exportMusicPromptOrDefault,
     );
   }
 
@@ -367,6 +382,7 @@ class DesktopPrefs {
         'export.photoTransitionSeconds':
             exportPhotoTransitionSecondsOrDefault,
         'export.sequenceSize': exportSequenceSizeOrDefault.wire,
+        'export.musicPrompt': exportMusicPromptOrDefault,
       };
 
   factory DesktopPrefs.fromJson(Map<String, dynamic> json) {
@@ -543,6 +559,10 @@ class DesktopPrefs {
       exportSequenceSize: ExportSequenceSize.parse(
         json['export.sequenceSize'],
       ),
+      exportMusicPrompt: () {
+        final v = json['export.musicPrompt'];
+        return v is String ? v : '';
+      }(),
     );
   }
 
@@ -583,7 +603,8 @@ class DesktopPrefs {
           exportPhotoTransitionOrDefault &&
       other.exportPhotoTransitionSecondsOrDefault ==
           exportPhotoTransitionSecondsOrDefault &&
-      other.exportSequenceSizeOrDefault == exportSequenceSizeOrDefault;
+      other.exportSequenceSizeOrDefault == exportSequenceSizeOrDefault &&
+      other.exportMusicPromptOrDefault == exportMusicPromptOrDefault;
 
   @override
   int get hashCode => Object.hashAll([
@@ -616,5 +637,6 @@ class DesktopPrefs {
         exportPhotoTransitionOrDefault,
         exportPhotoTransitionSecondsOrDefault,
         exportSequenceSizeOrDefault,
+        exportMusicPromptOrDefault,
       ]);
 }

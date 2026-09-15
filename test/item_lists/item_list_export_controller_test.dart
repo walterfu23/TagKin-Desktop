@@ -73,6 +73,23 @@ void main() {
     );
   });
 
+  test('export of MP4 format throws (use exportMp4)', () async {
+    final controller = _controller(
+      items: FakeItemsRepository(
+        items: [
+          fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg'),
+        ],
+      ),
+    );
+    addTearDown(controller.dispose);
+    await controller.load();
+    expect(controller.hasEntries, isTrue);
+    await expectLater(
+      controller.export(format: ItemListExportFormat.mp4WithMusic),
+      throwsA(isA<ArgumentError>()),
+    );
+  });
+
   test('load expands each video key period', () async {
     final item = fixtureItem(id: 'video-1', type: ItemType.video);
     final controller = _controller(

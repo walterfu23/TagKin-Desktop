@@ -140,12 +140,16 @@ class ApiClient {
     String path, {
     Object? body,
     Map<String, String>? query,
+    Duration? timeout,
   }) async {
     final uri = _uri(path, query);
     final encoded = body == null ? null : jsonEncode(body);
     final headers = await _headers(jsonBody: body != null);
     _record(method: 'POST', uri: uri, headers: headers, body: encoded);
-    final response = await _timed(_http.post(uri, headers: headers, body: encoded));
+    final response = await _timed(
+      _http.post(uri, headers: headers, body: encoded),
+      timeout: timeout,
+    );
     return _guard(response);
   }
 
@@ -175,9 +179,12 @@ class ApiClient {
     return _guard(response);
   }
 
-  Future<http.Response> _timed(Future<http.Response> future) async {
+  Future<http.Response> _timed(
+    Future<http.Response> future, {
+    Duration? timeout,
+  }) async {
     try {
-      return await future.timeout(timeout);
+      return await future.timeout(timeout ?? this.timeout);
     } on TimeoutException {
       throw ApiException(
         statusCode: 0,

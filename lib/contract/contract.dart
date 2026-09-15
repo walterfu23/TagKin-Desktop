@@ -889,6 +889,42 @@ class Error {
   }
 }
 
+class EstimateMusicRequest {
+  const EstimateMusicRequest({
+    required this.durationMs,
+  });
+
+  final int durationMs;
+
+  factory EstimateMusicRequest.fromJson(Map<String, dynamic> json) => EstimateMusicRequest(
+        durationMs: (json['durationMs'] as num).toInt(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['durationMs'] = durationMs;
+    return json;
+  }
+}
+
+class EstimateMusicResponse {
+  const EstimateMusicResponse({
+    required this.creditsUsed,
+  });
+
+  final int creditsUsed;
+
+  factory EstimateMusicResponse.fromJson(Map<String, dynamic> json) => EstimateMusicResponse(
+        creditsUsed: (json['creditsUsed'] as num).toInt(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['creditsUsed'] = creditsUsed;
+    return json;
+  }
+}
+
 enum FaceGroupKind {
   fa('FA'),
   fm('FM');
@@ -906,6 +942,58 @@ enum FaceGroupKind {
 
   @override
   String toString() => wire;
+}
+
+class GenerateMusicRequest {
+  const GenerateMusicRequest({
+    required this.durationMs,
+    required this.prompt,
+  });
+
+  final int durationMs;
+  final String prompt;
+
+  factory GenerateMusicRequest.fromJson(Map<String, dynamic> json) => GenerateMusicRequest(
+        durationMs: (json['durationMs'] as num).toInt(),
+        prompt: json['prompt'] as String,
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['durationMs'] = durationMs;
+    json['prompt'] = prompt;
+    return json;
+  }
+}
+
+class GenerateMusicResponse {
+  const GenerateMusicResponse({
+    required this.audioBase64,
+    required this.mimeType,
+    required this.generatedMs,
+    required this.creditsUsed,
+  });
+
+  final String audioBase64;
+  final String mimeType;
+  final int generatedMs;
+  final int creditsUsed;
+
+  factory GenerateMusicResponse.fromJson(Map<String, dynamic> json) => GenerateMusicResponse(
+        audioBase64: json['audioBase64'] as String,
+        mimeType: json['mimeType'] as String,
+        generatedMs: (json['generatedMs'] as num).toInt(),
+        creditsUsed: (json['creditsUsed'] as num).toInt(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['audioBase64'] = audioBase64;
+    json['mimeType'] = mimeType;
+    json['generatedMs'] = generatedMs;
+    json['creditsUsed'] = creditsUsed;
+    return json;
+  }
 }
 
 class Health {

@@ -65,6 +65,7 @@ void main() {
               ),
             ],
             recentViewIds: ['view_1'],
+            currentViewId: 'view_1',
           ),
         ],
         currentCollectionId: 'collection_1',
@@ -498,11 +499,12 @@ void main() {
         expect(controller.views.single.name, 'Ada');
         expect(controller.views.single.description, 'Ada only');
         expect(controller.views.single.filters.filterQuery, 'Ada');
+        expect(controller.current.currentViewId, saved!.id);
         expect(controller.dirty, isFalse);
 
         expect(
           await controller.updateView(
-            saved!.id,
+            saved.id,
             const LibraryViewFilters(filterQuery: 'Sam'),
           ),
           isTrue,
@@ -522,6 +524,7 @@ void main() {
 
         expect(await controller.deleteView(saved.id), isTrue);
         expect(controller.views, isEmpty);
+        expect(controller.current.currentViewId, isNull);
       });
 
       test('recentViews is MRU capped; all views remain', () async {
@@ -606,6 +609,50 @@ void main() {
         expect(disk.collections.single.views.single.filters.hiddenItemIds, [
           'item_a',
         ]);
+      });
+
+      test('setCurrentViewId All is not inferred from recents', () async {
+        await controller.create(name: 'Trip', seedFolders: ['/a']);
+        final saved = await controller.saveView(
+          name: 'Ada',
+          filters: const LibraryViewFilters(filterQuery: 'Ada'),
+        );
+        expect(controller.current.currentViewId, saved!.id);
+        expect(controller.current.recentViewIds.first, saved.id);
+        expect(await controller.setCurrentViewId(null), isTrue);
+        expect(controller.current.currentViewId, isNull);
+        expect(controller.current.recentViewIds.first, saved.id);
+        final disk = await CollectionsStore(supportDir: tempDir).load();
+        expect(disk.collections.single.currentViewId, isNull);
+        expect(disk.collections.single.recentViewIds.first, saved.id);
+      });
+
+      test('missing currentViewId stays All after reload', () async {
+        final store = CollectionsStore(supportDir: tempDir);
+        await store.save(
+          const CollectionsFile(
+            collections: [
+              Collection(
+                id: 'collection_1',
+                name: 'Trip',
+                leafFolders: ['/a'],
+                views: [
+                  SavedView(
+                    id: 'view_1',
+                    name: 'Ada',
+                    filters: LibraryViewFilters(filterQuery: 'Ada'),
+                  ),
+                ],
+                recentViewIds: ['view_1'],
+              ),
+            ],
+            currentCollectionId: 'collection_1',
+          ),
+        );
+        await controller.load();
+        expect(await controller.open('collection_1'), isTrue);
+        expect(controller.current.currentViewId, isNull);
+        expect(controller.current.recentViewIds, ['view_1']);
       });
     });
   });

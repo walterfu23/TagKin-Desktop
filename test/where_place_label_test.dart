@@ -202,6 +202,7 @@ void main() {
         exportPhotoTransition: ExportPhotoTransition.dipToWhite,
         exportPhotoTransitionSeconds: 1.5,
         exportSequenceSize: ExportSequenceSize.p4k,
+        exportMusicPrompt: 'quiet piano',
       );
       await store.save(prefs);
       expect(await store.load(), prefs);
@@ -305,6 +306,16 @@ void main() {
         }).exportPhotoTransition,
         ExportPhotoTransition.crossDissolve,
       );
+    });
+
+    test('fromJson keeps export music prompt', () {
+      expect(
+        DesktopPrefs.fromJson({
+          'export.musicPrompt': 'quiet piano',
+        }).exportMusicPrompt,
+        'quiet piano',
+      );
+      expect(DesktopPrefs.fromJson({}).exportMusicPrompt, '');
     });
 
     test('fromJson export sequence size defaults and parses', () {

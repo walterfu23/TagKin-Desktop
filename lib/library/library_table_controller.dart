@@ -396,13 +396,16 @@ class LibraryTableController extends ChangeNotifier {
 
   /// When true, [commitActiveView] no-ops so apply/load does not mint views.
   bool viewCommitPaused = false;
+  int _viewCommitPauseDepth = 0;
 
   Future<T> runViewCommitPaused<T>(Future<T> Function() action) async {
+    _viewCommitPauseDepth++;
     viewCommitPaused = true;
     try {
       return await action();
     } finally {
-      viewCommitPaused = false;
+      _viewCommitPauseDepth--;
+      if (_viewCommitPauseDepth == 0) viewCommitPaused = false;
     }
   }
 

@@ -1,0 +1,27 @@
+[
+  {
+    "id": "warmFamily",
+    "title": "Warm family",
+    "prompt": "Instrumental only, no vocals. Gentle acoustic guitar and soft piano, warm and nostalgic, slow tempo around 70 bpm, suitable as background music for a family photo slideshow."
+  },
+  {
+    "id": "quietPiano",
+    "title": "Quiet piano",
+    "prompt": "Instrumental solo piano, quiet and intimate, light reverb, no drums, no lyrics. Calm background for still photographs."
+  },
+  {
+    "id": "travelOutdoors",
+    "title": "Travel / outdoors",
+    "prompt": "Instrumental folk, light acoustic guitar and strings, hopeful and open, medium-slow tempo, no vocals. Background music for vacation and outdoor photos."
+  },
+  {
+    "id": "kidsPlayful",
+    "title": "Kids / playful",
+    "prompt": "Instrumental, light pizzicato strings and soft mallet percussion, cheerful but not cartoonish, moderate tempo, no vocals, no lyrics. Background for children's photos."
+  },
+  {
+    "id": "eveningSentimental",
+    "title": "Evening / sentimental",
+    "prompt": "Instrumental chamber piece, piano and cello, bittersweet and slow, no vocals. Soft background for a memorial or year-in-review slideshow."
+  }
+]

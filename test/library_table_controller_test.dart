@@ -2094,6 +2094,7 @@ void main() {
       expect(cols.views.single.filters.hiddenFolders, ['/albums/Trip']);
       expect(cols.views.single.filters.hiddenItemsFilter, 'visible');
       expect(table.activeViewId, cols.views.single.id);
+      expect(cols.current.currentViewId, cols.views.single.id);
 
       table.setFolderHidden('/albums/Other', hidden: true);
       await commitActiveView(table: table, cols: cols);
@@ -2190,6 +2191,112 @@ void main() {
       expect(cols.views, isEmpty);
       expect(table.activeViewId, isNull);
       expect(table.isActiveViewModified, isFalse);
+      table.dispose();
+    });
+
+    test('applyCurrentCollectionView restores named view; missing/stale is All',
+        () async {
+      final tempDir = await Directory.systemTemp.createTemp('tagkin_views_');
+      addTearDown(() async {
+        if (tempDir.existsSync()) await tempDir.delete(recursive: true);
+      });
+      final cols = CollectionsController(
+        store: CollectionsStore(supportDir: tempDir),
+      );
+      await cols.load();
+      await cols.create(name: 'Trip', seedFolders: ['/albums/Trip']);
+      final prefs = DesktopPrefsController(
+        store: DesktopPrefsStore(supportDir: tempDir),
+      );
+      await prefs.load();
+      final hidden = fixtureItem(
+        id: 'a',
+        sourceRef: 'file:///albums/Trip/a.jpg',
+      );
+      final shown = fixtureItem(
+        id: 'b',
+        sourceRef: 'file:///albums/Trip/b.jpg',
+      );
+      final table = LibraryTableController(
+        itemsRepository: FakeItemsRepository(items: [hidden, shown]),
+        commentsRepository: FakeCommentsRepository(),
+        thumbCache: LocalThumbCache(),
+      );
+      await table.load();
+
+      table.setItemHiddenInView('a', hidden: true);
+      await commitActiveView(table: table, cols: cols);
+      expect(table.activeViewId, cols.views.single.id);
+      expect(cols.current.currentViewId, cols.views.single.id);
+
+      await applyAllView(table: table, prefs: prefs, cols: cols);
+      expect(table.activeViewId, isNull);
+      expect(cols.current.currentViewId, isNull);
+      expect(table.filteredSorted.map((r) => r.item.id).toSet(), {'a', 'b'});
+
+      await applyCurrentCollectionView(
+        table: table,
+        prefs: prefs,
+        cols: cols,
+      );
+      expect(table.activeViewId, isNull);
+
+      await applySavedView(
+        table: table,
+        prefs: prefs,
+        view: cols.views.single,
+        cols: cols,
+      );
+      expect(table.activeViewId, cols.views.single.id);
+      expect(table.filteredSorted.map((r) => r.item.id), ['b']);
+
+      table.setActiveView(null, LibraryViewFilters.all);
+      await table.applyLibraryViewFilters(LibraryViewFilters.all);
+      await applyCurrentCollectionView(
+        table: table,
+        prefs: prefs,
+        cols: cols,
+      );
+      expect(table.activeViewId, cols.views.single.id);
+      expect(table.filteredSorted.map((r) => r.item.id), ['b']);
+
+      await cols.setCurrentViewId(null);
+      await applyCurrentCollectionView(
+        table: table,
+        prefs: prefs,
+        cols: cols,
+      );
+      expect(table.activeViewId, isNull);
+      expect(cols.current.recentViewIds.first, cols.views.single.id);
+
+      await cols.setCurrentViewId(cols.views.single.id);
+      await cols.deleteView(cols.views.single.id);
+      await applyCurrentCollectionView(
+        table: table,
+        prefs: prefs,
+        cols: cols,
+      );
+      expect(table.activeViewId, isNull);
+      expect(cols.current.currentViewId, isNull);
+
+      final id = cols.current.id;
+      await CollectionsStore(supportDir: tempDir).save(
+        CollectionsFile(
+          collections: [
+            cols.current.copyWith(currentViewId: 'missing_view'),
+          ],
+          currentCollectionId: id,
+        ),
+      );
+      await cols.load();
+      expect(await cols.open(id), isTrue);
+      await applyCurrentCollectionView(
+        table: table,
+        prefs: prefs,
+        cols: cols,
+      );
+      expect(table.activeViewId, isNull);
+      expect(cols.current.currentViewId, isNull);
       table.dispose();
     });
   });

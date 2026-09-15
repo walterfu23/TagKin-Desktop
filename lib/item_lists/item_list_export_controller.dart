@@ -12,6 +12,7 @@ import 'package:tagkin_desktop/item_lists/item_list_fcp7_xml.dart';
 import 'package:tagkin_desktop/item_lists/item_list_fcpxml.dart';
 import 'package:tagkin_desktop/item_lists/item_list_json.dart';
 import 'package:tagkin_desktop/item_lists/item_list_media_size.dart';
+import 'package:tagkin_desktop/item_lists/item_list_mp4_render.dart';
 import 'package:tagkin_desktop/item_lists/item_list_nle.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/local_thumb_cache.dart';
@@ -50,6 +51,30 @@ Future<String?> saveItemListToFile({
   return file.path;
 }
 
+typedef ItemListBytesSaver = Future<String?> Function({
+  required List<int> bytes,
+  required String fileExtension,
+});
+
+Future<String?> saveItemListBytesToFile({
+  required List<int> bytes,
+  required String fileExtension,
+}) async {
+  final ext = fileExtension;
+  final path = await FilePicker.platform.saveFile(
+    dialogTitle: 'Export item list',
+    fileName: 'item-list.$ext',
+    type: FileType.custom,
+    allowedExtensions: [ext],
+  );
+  if (path == null || path.isEmpty) return null;
+  final file = File(
+    path.toLowerCase().endsWith('.$ext') ? path : '$path.$ext',
+  );
+  await file.writeAsBytes(bytes, flush: true);
+  return file.path;
+}
+
 String itemListEntryKey(ItemListEntry entry) =>
     entry.keyPeriodId ?? 'photo-${entry.itemId}';
 
@@ -76,10 +101,12 @@ class ItemListExportController extends ChangeNotifier {
     LocalThumbCache? thumbCache,
     ItemListJsonSaver? saveJson,
     ItemListFileSaver? saveFile,
+    ItemListBytesSaver? saveBytes,
     LibraryTableController? libraryTable,
     ItemListMediaSizeProbe? probeMediaSize,
   })  : thumbCache = thumbCache ?? LocalThumbCache(),
         saveFile = _resolveItemListSaver(saveJson, saveFile),
+        saveBytes = saveBytes ?? saveItemListBytesToFile,
         probeMediaSize = probeMediaSize ?? probeItemListMediaSize,
         _ownsLibraryTable = libraryTable == null {
     this.libraryTable = libraryTable ??
@@ -95,6 +122,7 @@ class ItemListExportController extends ChangeNotifier {
   final PersonsRepository? personsRepository;
   final LocalThumbCache thumbCache;
   final ItemListFileSaver saveFile;
+  final ItemListBytesSaver saveBytes;
   final ItemListMediaSizeProbe probeMediaSize;
   late final LibraryTableController libraryTable;
   final bool _ownsLibraryTable;
@@ -244,6 +272,9 @@ class ItemListExportController extends ChangeNotifier {
     ExportSequenceSize sequenceSize = ExportSequenceSize.matchSmallest,
   }) async {
     if (entries.isEmpty) return null;
+    if (format == ItemListExportFormat.mp4WithMusic) {
+      throw ArgumentError('MP4 with music uses exportMp4');
+    }
     final trimmed = description.trim();
     var fileSizes = const <String, ItemListPixelSize>{};
     var sequenceWidth = kItemListNleWidth;
@@ -291,8 +322,66 @@ class ItemListExportController extends ChangeNotifier {
           fileSizesByItemId: fileSizes,
           scaleToFit: sequenceSize.scaleToFit,
         ),
+      ItemListExportFormat.mp4WithMusic => throw ArgumentError(
+          'MP4 with music uses exportMp4',
+        ),
     };
     return saveFileOrDefault(contents: contents, format: format);
+  }
+
+  /// NLE timeline for the current filmstrip (preview duration / MP4 render).
+  ItemListNleTimeline currentTimeline({
+    String description = '',
+    double stillDurationSeconds = kItemListNleStillDurationSeconds,
+    ExportPhotoTransition transition = ExportPhotoTransition.crossDissolve,
+    double transitionSeconds = kItemListNleTransitionSeconds,
+  }) {
+    return itemListNleTimeline(
+      entries: entries,
+      itemsById: itemsById,
+      view: selectedView,
+      description: description,
+      stillDurationSeconds: stillDurationSeconds,
+      transition: transition,
+      transitionSeconds: transitionSeconds,
+    );
+  }
+
+  /// Render a local MP4 (stills + key periods + generated music).
+  Future<String?> exportMp4({
+    required String audioPath,
+    String description = '',
+    double stillDurationSeconds = kItemListNleStillDurationSeconds,
+    ExportPhotoTransition transition = ExportPhotoTransition.crossDissolve,
+    double transitionSeconds = kItemListNleTransitionSeconds,
+    ExportSequenceSize sequenceSize = ExportSequenceSize.matchSmallest,
+  }) async {
+    if (entries.isEmpty) return null;
+    final fileSizes = await _probeFileSizes();
+    final seq = itemListNleSequencePixelSize(
+      mode: sequenceSize,
+      probed: fileSizes.values,
+    );
+    final timeline = itemListNleTimeline(
+      entries: entries,
+      itemsById: itemsById,
+      view: selectedView,
+      description: description.trim(),
+      stillDurationSeconds: stillDurationSeconds,
+      transition: transition,
+      transitionSeconds: transitionSeconds,
+    );
+    final tempOut = itemListMp4TempOutputPath();
+    await itemListRenderMp4(
+      timeline: timeline,
+      audioPath: audioPath,
+      outputPath: tempOut,
+      sequenceWidth: seq.width,
+      sequenceHeight: seq.height,
+      scaleToFit: sequenceSize.scaleToFit,
+    );
+    final bytes = await File(tempOut).readAsBytes();
+    return saveBytes(bytes: bytes, fileExtension: 'mp4');
   }
 
   Future<Map<String, ItemListPixelSize>> _probeFileSizes() async {

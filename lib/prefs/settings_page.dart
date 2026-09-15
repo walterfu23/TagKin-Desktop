@@ -59,6 +59,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   late ExportPhotoTransition _exportPhotoTransition;
   late double _exportPhotoTransitionSeconds;
   late ExportSequenceSize _exportSequenceSize;
+  late TextEditingController _exportMusicPrompt;
   final UndoController _undoStack = UndoController();
 
   @override
@@ -104,6 +105,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _exportPhotoTransitionSeconds =
         prefs.exportPhotoTransitionSecondsOrDefault;
     _exportSequenceSize = prefs.exportSequenceSizeOrDefault;
+    _exportMusicPrompt = TextEditingController(
+      text: prefs.exportMusicPromptOrDefault,
+    );
   }
 
   /// Restore draft fields without recreating text controllers (undo/redo).
@@ -139,6 +143,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _exportPhotoTransitionSeconds =
         prefs.exportPhotoTransitionSecondsOrDefault;
     _exportSequenceSize = prefs.exportSequenceSizeOrDefault;
+    _exportMusicPrompt.text = prefs.exportMusicPromptOrDefault;
   }
 
   void _mutateDraft(VoidCallback change, {String label = 'Edit setting'}) {
@@ -161,6 +166,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   void _disposeDraftControllers() {
     _familiarRegions.dispose();
+    _exportMusicPrompt.dispose();
   }
 
   @override
@@ -204,6 +210,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       'export.photoTransition': _exportPhotoTransition.wire,
       'export.photoTransitionSeconds': _exportPhotoTransitionSeconds,
       'export.sequenceSize': _exportSequenceSize.wire,
+      'export.musicPrompt': _exportMusicPrompt.text,
     });
   }
 
@@ -972,9 +979,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     key: const Key('pref-export-photo-still-duration'),
                     label: 'Export photo duration',
                     helper:
-                        'How long each photo still lasts on an FCP7 XML or '
-                        'FCPXML timeline. Default 2.5 s (0.5–10, step 0.5). '
-                        'JSON export is unaffected.',
+                        'How long each photo still lasts on an FCP7 XML, '
+                        'FCPXML, or MP4 timeline. Default 2.5 s (0.5–10, '
+                        'step 0.5). JSON export is unaffected.',
                     value: _exportPhotoStillDurationSeconds,
                     min: DesktopPrefs.exportPhotoStillDurationSecondsMin,
                     max: DesktopPrefs.exportPhotoStillDurationSecondsMax,
@@ -986,11 +993,32 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       horizontal: 16,
                       vertical: 8,
                     ),
+                    child: TextField(
+                      key: const Key('pref-export-music-prompt'),
+                      controller: _exportMusicPrompt,
+                      decoration: const InputDecoration(
+                        labelText: 'Export music prompt',
+                        helperText:
+                            'Style of generated music for MP4 export. '
+                            'Credits are shown before generate. JSON / FCP7 / '
+                            'FCPXML are unaffected.',
+                        border: OutlineInputBorder(),
+                      ),
+                      minLines: 1,
+                      maxLines: 3,
+                      onChanged: (_) => _mutateDraft(() {}),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     child: InputDecorator(
                       decoration: const InputDecoration(
                         labelText: 'Export sequence size',
                         helperText:
-                            'FCP7 XML / FCPXML sequence. Match smallest '
+                            'FCP7 XML / FCPXML / MP4 sequence. Match smallest '
                             '(default) uses the smallest width and height '
                             'among the files. 1080p, 4K, and Match smallest '
                             'scale clips to fit. Match largest uses native '
@@ -1026,8 +1054,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       decoration: const InputDecoration(
                         labelText: 'Export photo transition',
                         helperText:
-                            'Between adjacent photos on FCP7 XML / FCPXML. '
-                            'Hard cut into and out of video key periods. '
+                            'Between adjacent photos on FCP7 XML / FCPXML / '
+                            'MP4. Hard cut into and out of video key periods. '
                             'JSON export is unaffected.',
                         border: OutlineInputBorder(),
                       ),

@@ -3,9 +3,13 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/item_lists/item_list_csv.dart';
 import 'package:tagkin_desktop/item_lists/item_list_export_controller.dart';
+import 'package:tagkin_desktop/item_lists/item_list_nle.dart';
+import 'package:tagkin_desktop/item_lists/item_list_slideshow_preview.dart';
+import 'package:tagkin_desktop/item_lists/music_prompt_presets.dart';
 import 'package:tagkin_desktop/library/item_hover_preview.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/local_thumb_cache.dart';
@@ -13,12 +17,11 @@ import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prepass/sharpness_score_chip.dart';
-import 'package:tagkin_desktop/shell/app_nav_tab_buttons.dart';
 import 'package:tagkin_desktop/ui/format_local_datetime.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
 /// Filter photos and video key periods from a Folders View, reorder, and
-/// export JSON, FCP7 XML, or FCPXML.
+/// export JSON, FCP7 XML, FCPXML, or MP4 (with music).
 class ItemListExportPage extends ConsumerStatefulWidget {
   const ItemListExportPage({super.key});
 
@@ -29,11 +32,20 @@ class ItemListExportPage extends ConsumerStatefulWidget {
 class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
   final _previewScroll = ScrollController();
   final _description = TextEditingController();
+  final _musicPrompt = TextEditingController();
   ItemListExportFormat _format = ItemListExportFormat.json;
+  String? _audioPath;
+  bool _generatingMusic = false;
+  String? _musicError;
+  List<MusicPromptPreset> _musicPresets = const [];
+  String _musicPresetId = kMusicPromptCustomId;
 
   @override
   void initState() {
     super.initState();
+    _musicPrompt.text =
+        ref.read(desktopPrefsProvider).exportMusicPromptOrDefault;
+    unawaited(_loadMusicPresets());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final controller = ref.read(itemListExportControllerProvider);
@@ -52,12 +64,73 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
   void dispose() {
     _previewScroll.dispose();
     _description.dispose();
+    _musicPrompt.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadMusicPresets() async {
+    try {
+      final list = await loadMusicPromptPresets();
+      if (!mounted) return;
+      setState(() => _musicPresets = list);
+    } catch (_) {
+      // Catalog is optional; the freeform field still works.
+    }
+  }
+
+  void _applyMusicPreset(String id) {
+    if (id == kMusicPromptCustomId) {
+      setState(() => _musicPresetId = kMusicPromptCustomId);
+      return;
+    }
+    MusicPromptPreset? match;
+    for (final p in _musicPresets) {
+      if (p.id == id) {
+        match = p;
+        break;
+      }
+    }
+    if (match == null) return;
+    final picked = match;
+    _musicPrompt.text = picked.prompt;
+    setState(() => _musicPresetId = picked.id);
   }
 
   Future<void> _export() async {
     final prefs = ref.read(desktopPrefsProvider);
-    final path = await ref.read(itemListExportControllerProvider).export(
+    final controller = ref.read(itemListExportControllerProvider);
+    if (_format == ItemListExportFormat.mp4WithMusic) {
+      final audio = _audioPath;
+      if (audio == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Generate music before exporting MP4')),
+        );
+        return;
+      }
+      try {
+        final path = await controller.exportMp4(
+          audioPath: audio,
+          description: _description.text,
+          stillDurationSeconds: prefs.exportPhotoStillDurationSecondsOrDefault,
+          transition: prefs.exportPhotoTransitionOrDefault,
+          transitionSeconds: prefs.exportPhotoTransitionSecondsOrDefault,
+          sequenceSize: prefs.exportSequenceSizeOrDefault,
+        );
+        if (!mounted) return;
+        if (path == null) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Saved $path')),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$e')),
+        );
+      }
+      return;
+    }
+    final path = await controller.export(
           format: _format,
           description: _description.text,
           stillDurationSeconds:
@@ -70,6 +143,82 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
     final messenger = ScaffoldMessenger.of(context);
     if (path == null) return;
     messenger.showSnackBar(SnackBar(content: Text('Saved $path')));
+  }
+
+  Future<void> _generateMusic() async {
+    final prefs = ref.read(desktopPrefsProvider);
+    final controller = ref.read(itemListExportControllerProvider);
+    final prompt = _musicPrompt.text.trim();
+    if (prompt.isEmpty) {
+      setState(() => _musicError = 'Enter a music prompt');
+      return;
+    }
+    final timeline = controller.currentTimeline(
+      description: _description.text,
+      stillDurationSeconds: prefs.exportPhotoStillDurationSecondsOrDefault,
+      transition: prefs.exportPhotoTransitionOrDefault,
+      transitionSeconds: prefs.exportPhotoTransitionSecondsOrDefault,
+    );
+    final durationMs = itemListNleTimelineDurationMs(timeline);
+    if (durationMs < 3000) {
+      setState(
+        () => _musicError = 'Item list is too short to score with music',
+      );
+      return;
+    }
+    setState(() {
+      _generatingMusic = true;
+      _musicError = null;
+    });
+    try {
+      final music = ref.read(musicRepositoryProvider);
+      final estimate = await music.estimate(durationMs: durationMs);
+      if (!mounted) return;
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Generate music'),
+          content: Text(
+            estimate.creditsUsed == 0
+                ? 'Generate a soundtrack for this item list?'
+                : 'Generating music will use ${estimate.creditsUsed} credits.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Generate'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) {
+        setState(() => _generatingMusic = false);
+        return;
+      }
+      await ref.read(desktopPrefsControllerProvider).update(
+            prefs.copyWith(exportMusicPrompt: prompt),
+          );
+      final generated = await music.generate(
+        durationMs: durationMs,
+        prompt: prompt,
+      );
+      final file = await music.writeAudioTemp(generated);
+      if (!mounted) return;
+      setState(() {
+        _audioPath = file.path;
+        _generatingMusic = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _generatingMusic = false;
+        _musicError = '$e';
+      });
+    }
   }
 
   @override
@@ -123,6 +272,65 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
                       ),
                     ],
                   ),
+                  if (_format == ItemListExportFormat.mp4WithMusic) ...[
+                    const SizedBox(height: 12),
+                    _MusicPromptPresetDropdown(
+                      presetId: _musicPresetId,
+                      presets: _musicPresets,
+                      onSelected: _applyMusicPreset,
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      key: const Key('item-list-music-prompt'),
+                      controller: _musicPrompt,
+                      decoration: const InputDecoration(
+                        labelText: 'Music prompt',
+                        hintText:
+                            'Instrumental music for a family photo slideshow',
+                        border: OutlineInputBorder(),
+                      ),
+                      minLines: 1,
+                      maxLines: 3,
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        FilledButton.tonal(
+                          key: const Key('item-list-generate-music'),
+                          onPressed: controller.hasEntries && !_generatingMusic
+                              ? _generateMusic
+                              : null,
+                          child: Text(
+                            _generatingMusic
+                                ? 'Generating…'
+                                : 'Generate music',
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_musicError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          _musicError!,
+                          key: const Key('item-list-music-error'),
+                        ),
+                      ),
+                    if (_audioPath != null) ...[
+                      const SizedBox(height: 8),
+                      ItemListSlideshowPreview(
+                        timeline: controller.currentTimeline(
+                          description: _description.text,
+                          stillDurationSeconds:
+                              prefs.exportPhotoStillDurationSecondsOrDefault,
+                          transition: prefs.exportPhotoTransitionOrDefault,
+                          transitionSeconds:
+                              prefs.exportPhotoTransitionSecondsOrDefault,
+                        ),
+                        audioPath: _audioPath!,
+                      ),
+                    ],
+                  ],
                 ],
               ),
             ),
@@ -288,6 +496,69 @@ class _FormatDropdown extends StatelessWidget {
             const SizedBox(width: 6),
             Text(
               format.label,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const Icon(Icons.arrow_drop_down, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MusicPromptPresetDropdown extends StatelessWidget {
+  const _MusicPromptPresetDropdown({
+    required this.presetId,
+    required this.presets,
+    required this.onSelected,
+  });
+
+  final String presetId;
+  final List<MusicPromptPreset> presets;
+  final ValueChanged<String> onSelected;
+
+  String get _label {
+    if (presetId == kMusicPromptCustomId) return kMusicPromptCustomTitle;
+    for (final p in presets) {
+      if (p.id == presetId) return p.title;
+    }
+    return kMusicPromptCustomTitle;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      key: const Key('item-list-music-prompt-preset'),
+      tooltip: 'Music prompt',
+      onSelected: onSelected,
+      itemBuilder: (context) {
+        return [
+          PopupMenuItem(
+            key: const Key('item-list-music-prompt-preset-custom'),
+            value: kMusicPromptCustomId,
+            child: Text(
+              presetId == kMusicPromptCustomId
+                  ? '$kMusicPromptCustomTitle ✓'
+                  : kMusicPromptCustomTitle,
+            ),
+          ),
+          for (final p in presets)
+            PopupMenuItem(
+              key: Key('item-list-music-prompt-preset-${p.id}'),
+              value: p.id,
+              child: Text(p.id == presetId ? '${p.title} ✓' : p.title),
+            ),
+        ];
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.library_music_outlined, size: 18),
+            const SizedBox(width: 6),
+            Text(
+              _label,
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
             const Icon(Icons.arrow_drop_down, size: 20),

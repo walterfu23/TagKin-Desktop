@@ -40,6 +40,7 @@ import 'package:tagkin_desktop/prefs/settings_navigation.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_status_banner.dart';
 import 'package:tagkin_desktop/item_lists/item_list_navigation.dart';
+import 'package:tagkin_desktop/item_lists/item_list_music.dart';
 import 'package:tagkin_desktop/shell/app_nav_tab_buttons.dart';
 import 'package:tagkin_desktop/shell/quit_navigation.dart';
 import 'package:tagkin_desktop/update/client_support_providers.dart';
@@ -107,6 +108,12 @@ final jobsRepositoryProvider = Provider<JobsRepository>(
 /// Item-list filter API (D13 / S12). Override in tests with a fake.
 final itemListsRepositoryProvider = Provider<ItemListsRepository>(
   (ref) => ItemListsRepository(ref.watch(apiClientProvider)),
+  dependencies: [apiClientProvider],
+);
+
+/// Soundtrack generate/estimate (S13). Override in tests with a fake.
+final musicRepositoryProvider = Provider<MusicRepository>(
+  (ref) => MusicRepository(ref.watch(apiClientProvider)),
   dependencies: [apiClientProvider],
 );
 
@@ -982,9 +989,10 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
         if (!mounted) return;
         await table.applyCollectionLibraryUi(cols.current.ui.library);
         if (!mounted) return;
-        await applyAllView(
+        await applyCurrentCollectionView(
           table: table,
           prefs: ref.read(desktopPrefsControllerProvider),
+          cols: cols,
         );
         if (!mounted) return;
         // Auto-expand may change expandedDirs; fold into baseline, not dirty.

@@ -71,6 +71,11 @@ tags:
       (S12). AND across who/what/where/when; OR within a dimension. Deduped
       (one photo / one key period) and sorted ascending by when. Metadata
       only — never media bytes (R1). Owner is derived from the token (R10).
+  - name: music
+    description: >
+      Generate a soundtrack for a slideshow (S13). Prompt text and duration
+      only — never user media bytes (R1). Provider identity stays server-side
+      (R8). Credits reserved before spend (R9).
 
 paths:
   /health:
@@ -225,6 +230,68 @@ paths:
                 $ref: "#/components/schemas/ItemListFacets"
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /music/estimate:
+    post:
+      tags: [music]
+      operationId: estimateMusic
+      summary: Credits that generating a soundtrack of this duration would use
+      description: >
+        Server-side estimate from the routed music provider's ModelPrice rows
+        (R9). Does not call a vendor. Duration only — never user media bytes
+        (R1). Does not return provider or model identity (R8). Owner from the
+        token (R10).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EstimateMusicRequest"
+      responses:
+        "200":
+          description: Credit estimate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EstimateMusicResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/BudgetExceeded"
+
+  /music/generate:
+    post:
+      tags: [music]
+      operationId: generateMusic
+      summary: Generate a soundtrack (prompt + duration; TagKin-produced audio)
+      description: >
+        Reserves credits, calls the routed MusicProvider adapter, and returns
+        generated audio as base64. Request is prompt + durationMs only — never
+        user media bytes (R1). Response does not include provider or model
+        identity (R8). Owner from the token (R10).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateMusicRequest"
+      responses:
+        "200":
+          description: Generated soundtrack
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateMusicResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/BudgetExceeded"
+        "503":
+          $ref: "#/components/responses/AnalyzeUnavailable"
 
   /items/{itemId}:
     parameters:
@@ -699,6 +766,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/BudgetExceeded"
+        "503":
+          $ref: "#/components/responses/AnalyzeUnavailable"
 
   /items/{itemId}/jobs:
     parameters:
@@ -1998,6 +2067,17 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    AnalyzeUnavailable:
+      description: >
+        The tagging model host was busy or returned a transient error (429/5xx).
+        The item is failed; desktop retries once at the end of folder ingest.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            code: analyzeUnavailable
+            message: This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.
     TrialRejected:
       description: >
         Trial grant rejected (already granted, Radar block, fingerprint already
@@ -3808,6 +3888,68 @@ components:
           type: array
           items:
             type: string
+
+    EstimateMusicRequest:
+      type: object
+      description: >
+        Duration of the soundtrack to price. Never user media bytes (R1).
+        Owner is not a body field (R10).
+      required: [durationMs]
+      properties:
+        durationMs:
+          type: integer
+          minimum: 3000
+          maximum: 600000
+          description: Slideshow duration in milliseconds (3s–10min).
+
+    EstimateMusicResponse:
+      type: object
+      required: [creditsUsed]
+      properties:
+        creditsUsed:
+          type: integer
+          minimum: 0
+          description: Credits that generate would reserve (0 when not billable).
+
+    GenerateMusicRequest:
+      type: object
+      description: >
+        Prompt + duration only. Never user media bytes (R1). Owner is not a
+        body field (R10).
+      required: [durationMs, prompt]
+      properties:
+        durationMs:
+          type: integer
+          minimum: 3000
+          maximum: 600000
+          description: Slideshow duration in milliseconds (3s–10min).
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: Free-text music style. Not a vendor catalog id.
+
+    GenerateMusicResponse:
+      type: object
+      description: >
+        TagKin-produced soundtrack (not user media). No provider or model
+        fields (R8).
+      required: [audioBase64, mimeType, generatedMs, creditsUsed]
+      properties:
+        audioBase64:
+          type: string
+          description: Generated audio bytes, standard base64 (not user media).
+        mimeType:
+          type: string
+          description: Audio MIME type (e.g. audio/wav, audio/mpeg).
+        generatedMs:
+          type: integer
+          minimum: 1
+          description: Duration the adapter generated for, in milliseconds.
+        creditsUsed:
+          type: integer
+          minimum: 0
+          description: Credits charged for this generate.
 
 security:
   - bearerAuth: []

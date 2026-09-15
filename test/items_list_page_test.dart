@@ -1198,6 +1198,56 @@ void main() {
     expect(find.text('All*'), findsNothing);
   });
 
+  testWidgets(
+    'Views menu All writes currentViewId null; collection stays clean',
+    (tester) async {
+      final store = MemoryCollectionsStore();
+      final a = fixtureItem(
+        id: 'a',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      await _pumpLibrary(
+        tester,
+        items: FakeItemsRepository(items: [a]),
+        extraOverrides: [
+          collectionsStoreProvider.overrideWithValue(store),
+        ],
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('library-views-menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('views-menu-save-as')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('view-name-field')),
+        'View01',
+      );
+      await tester.tap(find.byKey(const Key('view-name-confirm')));
+      await tester.pumpAndSettle();
+
+      final ctx = tester.element(find.byType(ItemsListPage));
+      final cols = ProviderScope.containerOf(
+        ctx,
+      ).read(collectionsControllerProvider);
+      expect(cols.dirty, isFalse);
+      expect(cols.current.currentViewId, isNotNull);
+      expect((await store.load()).collections.single.currentViewId, isNotNull);
+
+      await tester.tap(find.byKey(const Key('library-views-menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('views-menu-all')));
+      await tester.pumpAndSettle();
+
+      expect(cols.dirty, isFalse);
+      expect(cols.current.currentViewId, isNull);
+      expect(find.text('All*'), findsNothing);
+      final disk = await store.load();
+      expect(disk.collections.single.currentViewId, isNull);
+      expect(disk.collections.single.views.single.name, 'View01');
+    },
+  );
+
   testWidgets('Hide item on View01 stars it; All still shows the item', (
     tester,
   ) async {
