@@ -127,6 +127,8 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
               transition: prefs.exportPhotoTransitionOrDefault,
               transitionSeconds: prefs.exportPhotoTransitionSecondsOrDefault,
               sequenceSize: prefs.exportSequenceSizeOrDefault,
+              soundtrackDuck:
+                  prefs.exportSoundtrackUnderVideoPercentOrDefault / 100.0,
             )
           : await controller.export(
               format: _format,

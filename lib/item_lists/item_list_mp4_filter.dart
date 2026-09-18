@@ -1,5 +1,8 @@
 import 'package:tagkin_desktop/item_lists/item_list_nle.dart';
 
+/// Default linear gain for the soundtrack under a video key period (5%).
+const kItemListMp4SoundtrackDuckDefault = 0.05;
+
 /// ffmpeg `xfade` name for a photo-to-photo transition. Empty when None.
 String itemListMp4XfadeName(ExportPhotoTransition transition) {
   return switch (transition) {
@@ -16,12 +19,14 @@ class ItemListMp4Input {
     required this.isStill,
     required this.sourceStartSeconds,
     required this.durationSeconds,
+    this.timelineStartSeconds = 0,
   });
 
   final String path;
   final bool isStill;
   final double sourceStartSeconds;
   final double durationSeconds;
+  final double timelineStartSeconds;
 }
 
 class ItemListMp4Plan {
@@ -42,6 +47,8 @@ double _framesToSeconds(int frames) => frames / kItemListNleTimebase;
 
 String _sec(double seconds) => seconds.toStringAsFixed(3);
 
+String _gain(double linear) => linear.clamp(0.0, 1.0).toStringAsFixed(3);
+
 /// Build an ffmpeg filter_complex from the NLE timeline (no process spawn).
 ItemListMp4Plan itemListMp4Plan({
   required ItemListNleTimeline timeline,
@@ -49,6 +56,7 @@ ItemListMp4Plan itemListMp4Plan({
   required int sequenceHeight,
   required bool scaleToFit,
   double audioFadeOutSeconds = 2,
+  double soundtrackDuck = kItemListMp4SoundtrackDuckDefault,
 }) {
   if (timeline.clips.isEmpty) {
     throw StateError('Cannot render an empty item list');
@@ -65,6 +73,7 @@ ItemListMp4Plan itemListMp4Plan({
         isStill: clip.isStill,
         sourceStartSeconds: _framesToSeconds(clip.sourceIn),
         durationSeconds: _framesToSeconds(clip.timelineDuration),
+        timelineStartSeconds: _framesToSeconds(clip.timelineStart),
       ),
     );
   }
@@ -127,12 +136,14 @@ ItemListMp4Plan itemListMp4Plan({
       ? 0.0
       : (audioFadeOutSeconds > total / 2 ? total / 2 : audioFadeOutSeconds);
   final fadeStart = (total - fade).clamp(0.0, total).toDouble();
-  prepared.add(
-    '[${inputs.length}:a]aresample=44100,'
-    'aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,'
-    'atrim=0:${_sec(total)},'
-    'afade=t=out:st=${_sec(fadeStart)}:d=${_sec(fade)},'
-    'asetpts=PTS-STARTPTS[aout]',
+  prepared.addAll(
+    _audioMixFilters(
+      inputs: inputs,
+      totalSeconds: total,
+      fadeStartSeconds: fadeStart,
+      fadeSeconds: fade,
+      soundtrackDuck: soundtrackDuck,
+    ),
   );
 
   return ItemListMp4Plan(
@@ -141,4 +152,63 @@ ItemListMp4Plan itemListMp4Plan({
     videoDurationSeconds: total,
     hasXfade: hasXfade,
   );
+}
+
+const _kStereo44100 =
+    'aresample=44100,'
+    'aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo';
+
+List<String> _audioMixFilters({
+  required List<ItemListMp4Input> inputs,
+  required double totalSeconds,
+  required double fadeStartSeconds,
+  required double fadeSeconds,
+  required double soundtrackDuck,
+}) {
+  final musicIn = '[${inputs.length}:a]';
+  final videoIndexes = [
+    for (var i = 0; i < inputs.length; i++)
+      if (!inputs[i].isStill) i,
+  ];
+  final fadeOut =
+      'afade=t=out:st=${_sec(fadeStartSeconds)}:d=${_sec(fadeSeconds)}';
+  if (videoIndexes.isEmpty) {
+    return [
+      '$musicIn$_kStereo44100,'
+      'atrim=0:${_sec(totalSeconds)},'
+      '$fadeOut,'
+      'asetpts=PTS-STARTPTS[aout]',
+    ];
+  }
+
+  final duckEnable = videoIndexes.map((i) {
+    final start = inputs[i].timelineStartSeconds;
+    final end = start + inputs[i].durationSeconds;
+    return 'between(t,${_sec(start)},${_sec(end)})';
+  }).join('+');
+  final out = <String>[
+    '$musicIn$_kStereo44100,'
+    'atrim=0:${_sec(totalSeconds)},asetpts=PTS-STARTPTS,'
+    'volume=${_gain(soundtrackDuck)}:enable=\'$duckEnable\'[music]',
+  ];
+  final mixPads = <String>['[music]'];
+  for (final i in videoIndexes) {
+    final d = _sec(inputs[i].durationSeconds);
+    final delayMs = (inputs[i].timelineStartSeconds * 1000).round();
+    out.add(
+      '[$i:a]$_kStereo44100,'
+      'atrim=0:$d,asetpts=PTS-STARTPTS,'
+      'adelay=$delayMs|$delayMs:all=1[ca$i]',
+    );
+    mixPads.add('[ca$i]');
+  }
+  out.add(
+    '${mixPads.join()}'
+    'amix=inputs=${mixPads.length}:duration=first:dropout_transition=0:'
+    'normalize=0,'
+    '$fadeOut,'
+    'aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,'
+    'asetpts=PTS-STARTPTS[aout]',
+  );
+  return out;
 }

@@ -482,6 +482,7 @@ void main() {
         required sequenceWidth,
         required sequenceHeight,
         required scaleToFit,
+        soundtrackDuck = 0.05,
       }) async {
         events.add('render');
       },
@@ -511,6 +512,7 @@ void main() {
         required sequenceWidth,
         required sequenceHeight,
         required scaleToFit,
+        soundtrackDuck = 0.05,
       }) async {
         events.add('render');
         renderedTo = outputPath;
@@ -553,6 +555,7 @@ void main() {
         required sequenceWidth,
         required sequenceHeight,
         required scaleToFit,
+        soundtrackDuck = 0.05,
       }) async {},
     );
     addTearDown(controller.dispose);

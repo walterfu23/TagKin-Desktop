@@ -13,6 +13,7 @@ import 'package:tagkin_desktop/item_lists/item_list_fcp7_xml.dart';
 import 'package:tagkin_desktop/item_lists/item_list_fcpxml.dart';
 import 'package:tagkin_desktop/item_lists/item_list_json.dart';
 import 'package:tagkin_desktop/item_lists/item_list_media_size.dart';
+import 'package:tagkin_desktop/item_lists/item_list_mp4_filter.dart';
 import 'package:tagkin_desktop/item_lists/item_list_mp4_render.dart';
 import 'package:tagkin_desktop/item_lists/item_list_nle.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
@@ -144,6 +145,7 @@ typedef ItemListMp4Renderer = Future<void> Function({
   required int sequenceWidth,
   required int sequenceHeight,
   required bool scaleToFit,
+  double soundtrackDuck,
 });
 
 Future<void> itemListRenderMp4Default({
@@ -153,6 +155,7 @@ Future<void> itemListRenderMp4Default({
   required int sequenceWidth,
   required int sequenceHeight,
   required bool scaleToFit,
+  double soundtrackDuck = kItemListMp4SoundtrackDuckDefault,
 }) {
   return itemListRenderMp4(
     timeline: timeline,
@@ -161,6 +164,7 @@ Future<void> itemListRenderMp4Default({
     sequenceWidth: sequenceWidth,
     sequenceHeight: sequenceHeight,
     scaleToFit: scaleToFit,
+    soundtrackDuck: soundtrackDuck,
   );
 }
 
@@ -476,6 +480,7 @@ class ItemListExportController extends ChangeNotifier {
     ExportPhotoTransition transition = ExportPhotoTransition.crossDissolve,
     double transitionSeconds = kItemListNleTransitionSeconds,
     ExportSequenceSize sequenceSize = ExportSequenceSize.matchSmallest,
+    double soundtrackDuck = kItemListMp4SoundtrackDuckDefault,
   }) async {
     if (entries.isEmpty) return null;
     final picked = await pickSavePathOrDefault(fileExtension: 'mp4');
@@ -502,6 +507,7 @@ class ItemListExportController extends ChangeNotifier {
         sequenceWidth: seq.width,
         sequenceHeight: seq.height,
         scaleToFit: sequenceSize.scaleToFit,
+        soundtrackDuck: soundtrackDuck,
       );
       if (!(_macSaveSession && SecurityScopedBookmarks.isSupported)) {
         ensureItemListExportNonEmpty(picked);

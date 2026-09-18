@@ -159,6 +159,11 @@ void main() {
         DesktopPrefs.defaults.exportSequenceSizeOrDefault,
         ExportSequenceSize.matchSmallest,
       );
+      expect(DesktopPrefs.defaults.exportSoundtrackUnderVideoPercent, 5);
+      expect(
+        DesktopPrefs.defaults.exportSoundtrackUnderVideoPercentOrDefault,
+        5,
+      );
       expect(DesktopPrefs.itemListBlurrySharpnessThresholdMax, 50000);
       expect(DesktopPrefs.itemListBlurrySharpnessThresholdStep, 10);
       expect(DesktopPrefs.exportPhotoStillDurationSecondsMin, 0.5);
@@ -167,6 +172,9 @@ void main() {
       expect(DesktopPrefs.exportPhotoTransitionSecondsMin, 0.1);
       expect(DesktopPrefs.exportPhotoTransitionSecondsMax, 2.0);
       expect(DesktopPrefs.exportPhotoTransitionSecondsStep, 0.1);
+      expect(DesktopPrefs.exportSoundtrackUnderVideoPercentMin, 0);
+      expect(DesktopPrefs.exportSoundtrackUnderVideoPercentMax, 100);
+      expect(DesktopPrefs.exportSoundtrackUnderVideoPercentStep, 1);
     });
 
     test('round-trips through JSON including new prefs', () async {
@@ -203,6 +211,7 @@ void main() {
         exportPhotoTransitionSeconds: 1.5,
         exportSequenceSize: ExportSequenceSize.p4k,
         exportMusicPrompt: 'quiet piano',
+        exportSoundtrackUnderVideoPercent: 20,
       );
       await store.save(prefs);
       expect(await store.load(), prefs);
@@ -316,6 +325,25 @@ void main() {
         'quiet piano',
       );
       expect(DesktopPrefs.fromJson({}).exportMusicPrompt, '');
+    });
+
+    test('fromJson clamps export soundtrack under video percent', () {
+      expect(
+        DesktopPrefs.fromJson({
+          'export.soundtrackUnderVideoPercent': 200,
+        }).exportSoundtrackUnderVideoPercent,
+        DesktopPrefs.exportSoundtrackUnderVideoPercentMax,
+      );
+      expect(
+        DesktopPrefs.fromJson({
+          'export.soundtrackUnderVideoPercent': -5,
+        }).exportSoundtrackUnderVideoPercent,
+        DesktopPrefs.exportSoundtrackUnderVideoPercentMin,
+      );
+      expect(
+        DesktopPrefs.fromJson({}).exportSoundtrackUnderVideoPercent,
+        5,
+      );
     });
 
     test('fromJson export sequence size defaults and parses', () {

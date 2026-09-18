@@ -60,6 +60,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   late double _exportPhotoTransitionSeconds;
   late ExportSequenceSize _exportSequenceSize;
   late TextEditingController _exportMusicPrompt;
+  late int _exportSoundtrackUnderVideoPercent;
   final UndoController _undoStack = UndoController();
 
   @override
@@ -108,6 +109,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _exportMusicPrompt = TextEditingController(
       text: prefs.exportMusicPromptOrDefault,
     );
+    _exportSoundtrackUnderVideoPercent =
+        prefs.exportSoundtrackUnderVideoPercentOrDefault;
   }
 
   /// Restore draft fields without recreating text controllers (undo/redo).
@@ -144,6 +147,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         prefs.exportPhotoTransitionSecondsOrDefault;
     _exportSequenceSize = prefs.exportSequenceSizeOrDefault;
     _exportMusicPrompt.text = prefs.exportMusicPromptOrDefault;
+    _exportSoundtrackUnderVideoPercent =
+        prefs.exportSoundtrackUnderVideoPercentOrDefault;
   }
 
   void _mutateDraft(VoidCallback change, {String label = 'Edit setting'}) {
@@ -211,6 +216,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       'export.photoTransitionSeconds': _exportPhotoTransitionSeconds,
       'export.sequenceSize': _exportSequenceSize.wire,
       'export.musicPrompt': _exportMusicPrompt.text,
+      'export.soundtrackUnderVideoPercent':
+          _exportSoundtrackUnderVideoPercent,
     });
   }
 
@@ -916,8 +923,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     'runs at ingest. Show scores on photo thumbs to choose a '
                     'bar. Auto-fix is local (0 credits) and never overwrites '
                     'the original file. Export photo duration, sequence size, '
-                    'and photo transitions are for FCP7 XML and FCPXML '
-                    'timelines only.',
+                    'photo transitions, and soundtrack under video apply to '
+                    'FCP7 XML / FCPXML / MP4 as documented on each control. '
+                    'JSON export is unaffected.',
                 children: [
                   SwitchListTile(
                     key: const Key('pref-show-sharpness-scores'),
@@ -1008,6 +1016,20 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       maxLines: 3,
                       onChanged: (_) => _mutateDraft(() {}),
                     ),
+                  ),
+                  _intSlider(
+                    key: const Key('pref-export-soundtrack-under-video'),
+                    label: 'Export soundtrack under video',
+                    helper:
+                        'How loud the soundtrack stays during a video key '
+                        'period, as a percent of full music. Default 5% '
+                        '(0–100). Clip audio stays full. Photos keep full '
+                        'music. JSON / FCP7 / FCPXML are unaffected.',
+                    value: _exportSoundtrackUnderVideoPercent,
+                    min: DesktopPrefs.exportSoundtrackUnderVideoPercentMin,
+                    max: DesktopPrefs.exportSoundtrackUnderVideoPercentMax,
+                    step: DesktopPrefs.exportSoundtrackUnderVideoPercentStep,
+                    onChanged: (v) => _exportSoundtrackUnderVideoPercent = v,
                   ),
                   Padding(
                     padding: const EdgeInsets.symmetric(

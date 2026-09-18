@@ -162,7 +162,7 @@ ItemListNleTimeline itemListMp4TimelineWithClipVideos(
           timelineDuration: timeline.clips[i].timelineDuration,
           sourceIn: 0,
           sourceOut: timeline.clips[i].timelineDuration,
-          isStill: false,
+          isStill: timeline.clips[i].isStill,
         ),
     ],
     files: [
@@ -171,7 +171,7 @@ ItemListNleTimeline itemListMp4TimelineWithClipVideos(
           id: timeline.clips[i].fileId,
           itemId: timeline.clips[i].entry.itemId,
           localPath: clipPaths[i],
-          isStill: false,
+          isStill: timeline.clips[i].isStill,
           durationFrames: timeline.clips[i].timelineDuration,
         ),
     ],
