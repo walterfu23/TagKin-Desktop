@@ -40,6 +40,8 @@ class ItemListMp4Plan {
 
 double _framesToSeconds(int frames) => frames / kItemListNleTimebase;
 
+String _sec(double seconds) => seconds.toStringAsFixed(3);
+
 /// Build an ffmpeg filter_complex from the NLE timeline (no process spawn).
 ItemListMp4Plan itemListMp4Plan({
   required ItemListNleTimeline timeline,
@@ -77,10 +79,11 @@ ItemListMp4Plan itemListMp4Plan({
 
   final prepared = <String>[];
   for (var i = 0; i < inputs.length; i++) {
-    final d = inputs[i].durationSeconds.toStringAsFixed(3);
+    final d = _sec(inputs[i].durationSeconds);
     prepared.add(
       '[$i:v]$scale,fps=$kItemListNleTimebase,format=yuv420p,'
-      'trim=duration=$d,setpts=PTS-STARTPTS[v$i]',
+      'trim=duration=$d,setpts=PTS-STARTPTS,'
+      'fps=$kItemListNleTimebase[v$i]',
     );
   }
 
@@ -92,27 +95,29 @@ ItemListMp4Plan itemListMp4Plan({
       for (final t in timeline.transitions) t.afterClipIndex: t,
     };
     var current = '[v0]';
+    var leftDuration = inputs[0].durationSeconds;
     for (var i = 0; i < inputs.length - 1; i++) {
       final join = xfadeByAfter[i];
-      final named = join == null
-          ? ''
-          : itemListMp4XfadeName(join.kind);
+      final named = join == null ? '' : itemListMp4XfadeName(join.kind);
       final useXfade = named.isNotEmpty && join != null;
-      if (useXfade) hasXfade = true;
-      final transition = useXfade ? named : 'fade';
-      final duration = useXfade
-          ? _framesToSeconds(join.durationFrames)
-          : (1 / kItemListNleTimebase);
-      final offset = useXfade
-          ? _framesToSeconds(join.timelineStart)
-          : _framesToSeconds(timeline.clips[i + 1].timelineStart);
+      final overlap = useXfade ? _framesToSeconds(join.durationFrames) : 0.0;
+      final offset = leftDuration - overlap;
       final out = i == inputs.length - 2 ? '[vout]' : '[x$i]';
-      prepared.add(
-        '$current[v${i + 1}]'
-        'xfade=transition=$transition'
-        ':duration=${duration.toStringAsFixed(3)}'
-        ':offset=${offset.toStringAsFixed(3)}$out',
-      );
+      if (useXfade) {
+        hasXfade = true;
+        prepared.add(
+          '$current[v${i + 1}]'
+          'xfade=transition=$named'
+          ':duration=${_sec(overlap)}'
+          ':offset=${_sec(offset)}$out',
+        );
+        leftDuration += inputs[i + 1].durationSeconds - overlap;
+      } else {
+        prepared.add(
+          '$current[v${i + 1}]concat=n=2:v=1:a=0$out',
+        );
+        leftDuration += inputs[i + 1].durationSeconds;
+      }
       current = out;
     }
   }
@@ -121,10 +126,12 @@ ItemListMp4Plan itemListMp4Plan({
   final fade = audioFadeOutSeconds <= 0
       ? 0.0
       : (audioFadeOutSeconds > total / 2 ? total / 2 : audioFadeOutSeconds);
-  final fadeStart = (total - fade).clamp(0, total);
+  final fadeStart = (total - fade).clamp(0.0, total).toDouble();
   prepared.add(
-    '[${inputs.length}:a]atrim=0:${total.toStringAsFixed(3)},'
-    'afade=t=out:st=${fadeStart.toStringAsFixed(3)}:d=${fade.toStringAsFixed(3)},'
+    '[${inputs.length}:a]aresample=44100,'
+    'aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,'
+    'atrim=0:${_sec(total)},'
+    'afade=t=out:st=${_sec(fadeStart)}:d=${_sec(fade)},'
     'asetpts=PTS-STARTPTS[aout]',
   );
 

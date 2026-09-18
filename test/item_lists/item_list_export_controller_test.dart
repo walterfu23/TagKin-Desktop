@@ -1,10 +1,13 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/item_lists/item_list_export_controller.dart';
 import 'package:tagkin_desktop/item_lists/item_list_media_size.dart';
+import 'package:tagkin_desktop/item_lists/item_list_mp4_render.dart';
 import 'package:tagkin_desktop/item_lists/item_list_nle.dart';
+import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/local_thumb_cache.dart';
 import 'package:tagkin_desktop/persons/collection.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
@@ -32,6 +35,8 @@ ItemListExportController _controller({
   FakeItemsRepository? items,
   LocalThumbCache? thumbCache,
   ItemListJsonSaver? saveJson,
+  ItemListSavePathPicker? pickSavePath,
+  ItemListMp4Renderer? renderMp4,
   ItemListMediaSizeProbe? probeMediaSize,
 }) {
   return ItemListExportController(
@@ -39,6 +44,8 @@ ItemListExportController _controller({
     commentsRepository: FakeCommentsRepository(),
     thumbCache: thumbCache,
     saveJson: saveJson,
+    pickSavePath: pickSavePath,
+    renderMp4: renderMp4,
     probeMediaSize: probeMediaSize,
   );
 }
@@ -217,6 +224,36 @@ void main() {
     await _waitUntil(() => controller.entries.length == 1);
     expect(controller.entries.map((e) => e.itemId), ['keep']);
     expect(controller.selectedView?.id, 'v1');
+  });
+
+  test('exportViewMatchingFolders overlays live Hide folder on current view',
+      () {
+    final folders = LibraryTableController(
+      itemsRepository: FakeItemsRepository(),
+      commentsRepository: FakeCommentsRepository(),
+      thumbCache: LocalThumbCache(),
+    );
+    addTearDown(folders.dispose);
+    folders.setActiveView('v-view01', const LibraryViewFilters());
+    folders.setFolderHidden('/albums/Trip', hidden: true);
+    const stored = SavedView(
+      id: 'v-view01',
+      name: 'View01',
+      filters: LibraryViewFilters(),
+    );
+    expect(
+      exportViewMatchingFolders(stored, folders).filters.hiddenFolders,
+      ['/albums/Trip'],
+    );
+    const other = SavedView(
+      id: 'v-other',
+      name: 'Other',
+      filters: LibraryViewFilters(),
+    );
+    expect(
+      exportViewMatchingFolders(other, folders).filters.hiddenFolders,
+      isEmpty,
+    );
   });
 
   test('load(view:) applies the Folders view before publishing entries', () async {
@@ -426,5 +463,105 @@ void main() {
     expect(saved, contains('<width>1920</width>'));
     expect(saved, contains('<width>4032</width>'));
     expect(saved, contains('<value>47.619</value>'));
+  });
+
+  test('exportMp4 cancel skips render', () async {
+    final events = <String>[];
+    final controller = _controller(
+      items: FakeItemsRepository(
+        items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg')],
+      ),
+      pickSavePath: ({required fileExtension}) async {
+        events.add('pick:$fileExtension');
+        return null;
+      },
+      renderMp4: ({
+        required timeline,
+        required audioPath,
+        required outputPath,
+        required sequenceWidth,
+        required sequenceHeight,
+        required scaleToFit,
+      }) async {
+        events.add('render');
+      },
+    );
+    addTearDown(controller.dispose);
+    await controller.load();
+    await _waitUntil(() => controller.hasEntries);
+    expect(await controller.exportMp4(audioPath: '/tmp/a.wav'), isNull);
+    expect(events, ['pick:mp4']);
+  });
+
+  test('exportMp4 picks save path before render', () async {
+    final events = <String>[];
+    String? renderedTo;
+    final controller = _controller(
+      items: FakeItemsRepository(
+        items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg')],
+      ),
+      pickSavePath: ({required fileExtension}) async {
+        events.add('pick:$fileExtension');
+        return '/tmp/out.mp4';
+      },
+      renderMp4: ({
+        required timeline,
+        required audioPath,
+        required outputPath,
+        required sequenceWidth,
+        required sequenceHeight,
+        required scaleToFit,
+      }) async {
+        events.add('render');
+        renderedTo = outputPath;
+        await File(outputPath).writeAsBytes(const [0, 1, 2, 3, 4, 5, 6, 7]);
+      },
+    );
+    addTearDown(controller.dispose);
+    await controller.load();
+    await _waitUntil(() => controller.hasEntries);
+    expect(
+      await controller.exportMp4(audioPath: '/tmp/a.wav'),
+      '/tmp/out.mp4',
+    );
+    expect(events, ['pick:mp4', 'render']);
+    expect(renderedTo, '/tmp/out.mp4');
+    addTearDown(() {
+      final f = File('/tmp/out.mp4');
+      if (f.existsSync()) f.deleteSync();
+    });
+  });
+
+  test('exportMp4 fails closed on an empty dest and deletes leftover', () async {
+    final dest = File(
+      '${Directory.systemTemp.path}/tagkin-empty-export.mp4',
+    );
+    if (dest.existsSync()) dest.deleteSync();
+    dest.createSync();
+    addTearDown(() {
+      if (dest.existsSync()) dest.deleteSync();
+    });
+    final controller = _controller(
+      items: FakeItemsRepository(
+        items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg')],
+      ),
+      pickSavePath: ({required fileExtension}) async => dest.path,
+      renderMp4: ({
+        required timeline,
+        required audioPath,
+        required outputPath,
+        required sequenceWidth,
+        required sequenceHeight,
+        required scaleToFit,
+      }) async {},
+    );
+    addTearDown(controller.dispose);
+    await controller.load();
+    await _waitUntil(() => controller.hasEntries);
+    await expectLater(
+      controller.exportMp4(audioPath: '/tmp/a.wav'),
+      throwsA(isA<ItemListMp4RenderException>()),
+    );
+    expect(dest.existsSync(), isFalse);
   });
 }

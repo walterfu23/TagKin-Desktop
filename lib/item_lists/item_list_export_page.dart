@@ -36,6 +36,7 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
   ItemListExportFormat _format = ItemListExportFormat.json;
   String? _audioPath;
   bool _generatingMusic = false;
+  bool _exporting = false;
   String? _musicError;
   List<MusicPromptPreset> _musicPresets = const [];
   String _musicPresetId = kMusicPromptCustomId;
@@ -54,8 +55,12 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
       if (cols.sessionReady && cols.current.leafFolders.isNotEmpty) {
         folders = cols.current.leafFolders.toSet();
       }
-      final viewId = ref.read(libraryTableControllerProvider).activeViewId;
-      final view = viewId == null ? null : cols.viewById(viewId);
+      final foldersTable = ref.read(libraryTableControllerProvider);
+      final viewId = foldersTable.activeViewId;
+      final stored = viewId == null ? null : cols.viewById(viewId);
+      final view = stored == null
+          ? null
+          : exportViewMatchingFolders(stored, foldersTable);
       unawaited(controller.load(collectionFolders: folders, view: view));
     });
   }
@@ -108,41 +113,73 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
         );
         return;
       }
-      try {
-        final path = await controller.exportMp4(
-          audioPath: audio,
-          description: _description.text,
-          stillDurationSeconds: prefs.exportPhotoStillDurationSecondsOrDefault,
-          transition: prefs.exportPhotoTransitionOrDefault,
-          transitionSeconds: prefs.exportPhotoTransitionSecondsOrDefault,
-          sequenceSize: prefs.exportSequenceSizeOrDefault,
-        );
-        if (!mounted) return;
-        if (path == null) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Saved $path')),
-        );
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e')),
-        );
-      }
-      return;
     }
-    final path = await controller.export(
-          format: _format,
-          description: _description.text,
-          stillDurationSeconds:
-              prefs.exportPhotoStillDurationSecondsOrDefault,
-          transition: prefs.exportPhotoTransitionOrDefault,
-          transitionSeconds: prefs.exportPhotoTransitionSecondsOrDefault,
-          sequenceSize: prefs.exportSequenceSizeOrDefault,
-        );
+    setState(() => _exporting = true);
+    String? outcomeTitle;
+    String? outcomeMessage;
+    try {
+      final path = _format == ItemListExportFormat.mp4WithMusic
+          ? await controller.exportMp4(
+              audioPath: _audioPath!,
+              description: _description.text,
+              stillDurationSeconds:
+                  prefs.exportPhotoStillDurationSecondsOrDefault,
+              transition: prefs.exportPhotoTransitionOrDefault,
+              transitionSeconds: prefs.exportPhotoTransitionSecondsOrDefault,
+              sequenceSize: prefs.exportSequenceSizeOrDefault,
+            )
+          : await controller.export(
+              format: _format,
+              description: _description.text,
+              stillDurationSeconds:
+                  prefs.exportPhotoStillDurationSecondsOrDefault,
+              transition: prefs.exportPhotoTransitionOrDefault,
+              transitionSeconds: prefs.exportPhotoTransitionSecondsOrDefault,
+              sequenceSize: prefs.exportSequenceSizeOrDefault,
+            );
+      if (path != null) {
+        outcomeTitle = 'Export';
+        outcomeMessage = 'Saved $path';
+      }
+    } catch (e) {
+      outcomeTitle = 'Export failed';
+      outcomeMessage = '$e';
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    if (path == null) return;
-    messenger.showSnackBar(SnackBar(content: Text('Saved $path')));
+    final title = outcomeTitle;
+    final message = outcomeMessage;
+    if (title == null || message == null) return;
+    await _showExportOutcome(title: title, message: message);
+  }
+
+  Future<void> _showExportOutcome({
+    required String title,
+    required String message,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              message,
+              key: const Key('item-list-export-outcome'),
+            ),
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _generateMusic() async {
@@ -267,8 +304,12 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
                       const SizedBox(width: 16),
                       FilledButton(
                         key: const Key('item-list-export'),
-                        onPressed: controller.hasEntries ? _export : null,
-                        child: const Text('Export'),
+                        onPressed: controller.hasEntries &&
+                                !_exporting &&
+                                !_generatingMusic
+                            ? _export
+                            : null,
+                        child: Text(_exporting ? 'Exporting…' : 'Export'),
                       ),
                     ],
                   ),
@@ -297,7 +338,9 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
                       children: [
                         FilledButton.tonal(
                           key: const Key('item-list-generate-music'),
-                          onPressed: controller.hasEntries && !_generatingMusic
+                          onPressed: controller.hasEntries &&
+                                  !_generatingMusic &&
+                                  !_exporting
                               ? _generateMusic
                               : null,
                           child: Text(
@@ -421,7 +464,10 @@ class _ViewsDropdown extends ConsumerWidget {
         }
         final view = cols.viewById(id);
         if (view == null) return;
-        unawaited(controller.selectView(view));
+        final foldersTable = ref.read(libraryTableControllerProvider);
+        unawaited(
+          controller.selectView(exportViewMatchingFolders(view, foldersTable)),
+        );
       },
       itemBuilder: (context) {
         return [

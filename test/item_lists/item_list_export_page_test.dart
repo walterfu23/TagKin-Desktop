@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -211,10 +213,9 @@ void main() {
     await container
         .read(collectionsControllerProvider)
         .bootstrapSession(const []);
-    container.read(libraryTableControllerProvider).setActiveView(
-          keepView.id,
-          keepView.filters,
-        );
+    final folders = container.read(libraryTableControllerProvider);
+    folders.setActiveView(keepView.id, keepView.filters);
+    await folders.applyLibraryViewFilters(keepView.filters);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -231,6 +232,72 @@ void main() {
     expect(find.byKey(const Key('item-list-drag-photo-drop')), findsNothing);
     expect(find.text('Keep'), findsWidgets);
   });
+
+  testWidgets(
+    'opens on dirty View01 Hide folder using Folders live filters',
+    (tester) async {
+      const trip = 'albums/Trip';
+      const view01 = SavedView(
+        id: 'v-view01',
+        name: 'View01',
+        filters: LibraryViewFilters(),
+      );
+      final store = MemoryCollectionsStore(
+        const CollectionsFile(
+          collections: [
+            Collection(
+              id: 'c1',
+              name: 'Trip',
+              leafFolders: [],
+              views: [view01],
+            ),
+          ],
+          currentCollectionId: 'c1',
+        ),
+      );
+      final container = ProviderContainer(
+        overrides: _overrides(
+          items: FakeItemsRepository(
+            items: [
+              fixtureItem(
+                id: 'hidden-folder',
+                sourceRef: 'albums/Trip/a.jpg',
+              ),
+              fixtureItem(id: 'keep', sourceRef: 'albums/Other/b.jpg'),
+            ],
+          ),
+          collections: store,
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await container
+          .read(collectionsControllerProvider)
+          .bootstrapSession(const []);
+      final folders = container.read(libraryTableControllerProvider);
+      folders.setActiveView(view01.id, view01.filters);
+      await folders.applyLibraryViewFilters(view01.filters);
+      folders.setFolderHidden(trip, hidden: true);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: SelectableScope(child: ItemListExportPage()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('1 item'), findsOneWidget);
+      expect(find.byKey(const Key('item-list-drag-photo-keep')), findsOneWidget);
+      expect(
+        find.byKey(const Key('item-list-drag-photo-hidden-folder')),
+        findsNothing,
+      );
+      expect(find.text('View01'), findsWidgets);
+    },
+  );
 
   testWidgets('Export tiles show stored sharpness when the pref is on',
       (tester) async {
@@ -311,6 +378,8 @@ void main() {
     await tester.tap(find.byKey(const Key('item-list-export')));
     await tester.pumpAndSettle();
     expect(exported, contains('<xmeml version="4">'));
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('item-list-format-menu')));
     await tester.pumpAndSettle();
@@ -353,5 +422,34 @@ void main() {
       find.byKey(const Key('item-list-music-prompt')),
     );
     expect(field.controller?.text, contains('Instrumental only'));
+  });
+
+  testWidgets('Export shows Exporting… until save finishes', (tester) async {
+    final gate = Completer<String?>();
+    await _pumpPage(
+      tester,
+      overrides: _overrides(
+        items: FakeItemsRepository(
+          items: [
+            fixtureItem(id: 'photo-a', sourceRef: ''),
+            fixtureItem(id: 'photo-b', sourceRef: ''),
+          ],
+        ),
+        saveJson: (json) => gate.future,
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('item-list-export')));
+    await tester.pump();
+    expect(find.text('Exporting…'), findsOneWidget);
+
+    gate.complete('/tmp/item-list.json');
+    await tester.pumpAndSettle();
+    expect(find.text('Exporting…'), findsNothing);
+    expect(find.text('Saved /tmp/item-list.json'), findsOneWidget);
+    expect(find.text('OK'), findsOneWidget);
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    expect(find.text('Saved /tmp/item-list.json'), findsNothing);
   });
 }

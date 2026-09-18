@@ -8,6 +8,7 @@ import 'package:tagkin_desktop/api/items_repository.dart';
 import 'package:tagkin_desktop/api/persons_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/ingest/folder_bookmark_store.dart';
 import 'package:tagkin_desktop/item_lists/item_list_fcp7_xml.dart';
 import 'package:tagkin_desktop/item_lists/item_list_fcpxml.dart';
 import 'package:tagkin_desktop/item_lists/item_list_json.dart';
@@ -32,47 +33,135 @@ typedef ItemListFileSaver = Future<String?> Function({
   required ItemListExportFormat format,
 });
 
+/// Native Save As. Returns the path with [fileExtension], or null if cancelled.
+typedef ItemListSavePathPicker = Future<String?> Function({
+  required String fileExtension,
+});
+
+String? _activeSaveBookmark;
+bool _macSaveSession = false;
+
+Future<void> releaseItemListSavePath() async {
+  final bookmark = _activeSaveBookmark;
+  _activeSaveBookmark = null;
+  final mac = _macSaveSession;
+  _macSaveSession = false;
+  if (mac && SecurityScopedBookmarks.isSupported) {
+    try {
+      await SecurityScopedBookmarks.releaseSaveFile();
+    } catch (_) {}
+  }
+  if (bookmark == null || bookmark.isEmpty) return;
+  if (!SecurityScopedBookmarks.isSupported) return;
+  try {
+    await SecurityScopedBookmarks.stopAccess(bookmark);
+  } catch (_) {}
+}
+
+Future<void> deleteEmptyItemListExport(String path) async {
+  try {
+    final file = File(path);
+    if (file.existsSync() && file.lengthSync() == 0) {
+      await file.delete();
+    }
+  } catch (_) {}
+}
+
+void ensureItemListExportNonEmpty(String path) {
+  final file = File(path);
+  if (!file.existsSync() || file.lengthSync() == 0) {
+    throw ItemListMp4RenderException(
+      'The exported file was empty. Save As again and keep it in a folder TagKin can write.',
+    );
+  }
+}
+
+Future<String?> pickItemListSavePath({
+  required String fileExtension,
+}) async {
+  await releaseItemListSavePath();
+  final ext = fileExtension;
+  if (SecurityScopedBookmarks.isSupported) {
+    final picked = await SecurityScopedBookmarks.pickSaveFile(
+      fileName: 'item-list.$ext',
+      fileExtension: ext,
+    );
+    if (picked == null) return null;
+    _macSaveSession = true;
+    return picked.toLowerCase().endsWith('.$ext') ? picked : '$picked.$ext';
+  }
+  final path = await FilePicker.platform.saveFile(
+    dialogTitle: 'Export item list',
+    fileName: 'item-list.$ext',
+    type: FileType.custom,
+    allowedExtensions: [ext],
+    lockParentWindow: true,
+  );
+  if (path == null || path.isEmpty) return null;
+  return path.toLowerCase().endsWith('.$ext') ? path : '$path.$ext';
+}
+
 Future<String?> saveItemListToFile({
   required String contents,
   required ItemListExportFormat format,
 }) async {
-  final ext = format.fileExtension;
-  final path = await FilePicker.platform.saveFile(
-    dialogTitle: 'Export item list',
-    fileName: 'item-list.$ext',
-    type: FileType.custom,
-    allowedExtensions: [ext],
-  );
-  if (path == null || path.isEmpty) return null;
-  final file = File(
-    path.toLowerCase().endsWith('.$ext') ? path : '$path.$ext',
-  );
-  await file.writeAsString(contents);
-  return file.path;
+  final path = await pickItemListSavePath(fileExtension: format.fileExtension);
+  if (path == null) return null;
+  try {
+    if (_macSaveSession && SecurityScopedBookmarks.isSupported) {
+      final dir = Directory.systemTemp.createTempSync('tagkin-export-');
+      try {
+        final tmp = File('${dir.path}/item-list.${format.fileExtension}');
+        await tmp.writeAsString(contents);
+        final n = await SecurityScopedBookmarks.installSaveFile(tmp.path);
+        if (contents.isNotEmpty && n <= 0) {
+          throw ItemListMp4RenderException(
+            'The exported file was empty. Save As again and keep it in a folder TagKin can write.',
+          );
+        }
+      } finally {
+        try {
+          dir.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+    } else {
+      await File(path).writeAsString(contents);
+      if (contents.isNotEmpty) ensureItemListExportNonEmpty(path);
+    }
+    return path;
+  } catch (e) {
+    await deleteEmptyItemListExport(path);
+    rethrow;
+  } finally {
+    await releaseItemListSavePath();
+  }
 }
 
-typedef ItemListBytesSaver = Future<String?> Function({
-  required List<int> bytes,
-  required String fileExtension,
+typedef ItemListMp4Renderer = Future<void> Function({
+  required ItemListNleTimeline timeline,
+  required String audioPath,
+  required String outputPath,
+  required int sequenceWidth,
+  required int sequenceHeight,
+  required bool scaleToFit,
 });
 
-Future<String?> saveItemListBytesToFile({
-  required List<int> bytes,
-  required String fileExtension,
-}) async {
-  final ext = fileExtension;
-  final path = await FilePicker.platform.saveFile(
-    dialogTitle: 'Export item list',
-    fileName: 'item-list.$ext',
-    type: FileType.custom,
-    allowedExtensions: [ext],
+Future<void> itemListRenderMp4Default({
+  required ItemListNleTimeline timeline,
+  required String audioPath,
+  required String outputPath,
+  required int sequenceWidth,
+  required int sequenceHeight,
+  required bool scaleToFit,
+}) {
+  return itemListRenderMp4(
+    timeline: timeline,
+    audioPath: audioPath,
+    outputPath: outputPath,
+    sequenceWidth: sequenceWidth,
+    sequenceHeight: sequenceHeight,
+    scaleToFit: scaleToFit,
   );
-  if (path == null || path.isEmpty) return null;
-  final file = File(
-    path.toLowerCase().endsWith('.$ext') ? path : '$path.$ext',
-  );
-  await file.writeAsBytes(bytes, flush: true);
-  return file.path;
 }
 
 String itemListEntryKey(ItemListEntry entry) =>
@@ -88,6 +177,17 @@ ItemListFileSaver _resolveItemListSaver(
   return saveFile ?? saveItemListToFile;
 }
 
+/// When [view] is Folders' current named view, overlay Folders' live
+/// persistable filters so Export matches the table (unsaved Hide folder /
+/// Hide item). Other saved views keep their last-saved snapshot.
+SavedView exportViewMatchingFolders(
+  SavedView view,
+  LibraryTableController foldersTable,
+) {
+  if (view.id != foldersTable.activeViewId) return view;
+  return view.copyWith(filters: foldersTable.persistableViewFilters());
+}
+
 /// Reorderable filmstrip of the photos and video key periods in a Folders View.
 ///
 /// Matching uses D2's client-side [LibraryViewFilters] (a separate
@@ -101,12 +201,14 @@ class ItemListExportController extends ChangeNotifier {
     LocalThumbCache? thumbCache,
     ItemListJsonSaver? saveJson,
     ItemListFileSaver? saveFile,
-    ItemListBytesSaver? saveBytes,
+    ItemListSavePathPicker? pickSavePath,
+    ItemListMp4Renderer? renderMp4,
     LibraryTableController? libraryTable,
     ItemListMediaSizeProbe? probeMediaSize,
   })  : thumbCache = thumbCache ?? LocalThumbCache(),
         saveFile = _resolveItemListSaver(saveJson, saveFile),
-        saveBytes = saveBytes ?? saveItemListBytesToFile,
+        pickSavePath = pickSavePath ?? pickItemListSavePath,
+        renderMp4 = renderMp4 ?? itemListRenderMp4Default,
         probeMediaSize = probeMediaSize ?? probeItemListMediaSize,
         _ownsLibraryTable = libraryTable == null {
     this.libraryTable = libraryTable ??
@@ -122,7 +224,8 @@ class ItemListExportController extends ChangeNotifier {
   final PersonsRepository? personsRepository;
   final LocalThumbCache thumbCache;
   final ItemListFileSaver saveFile;
-  final ItemListBytesSaver saveBytes;
+  final ItemListSavePathPicker pickSavePath;
+  final ItemListMp4Renderer renderMp4;
   final ItemListMediaSizeProbe probeMediaSize;
   late final LibraryTableController libraryTable;
   final bool _ownsLibraryTable;
@@ -134,6 +237,22 @@ class ItemListExportController extends ChangeNotifier {
       return saveFile;
     } on TypeError {
       return saveItemListToFile;
+    }
+  }
+
+  ItemListSavePathPicker get pickSavePathOrDefault {
+    try {
+      return pickSavePath;
+    } on TypeError {
+      return pickItemListSavePath;
+    }
+  }
+
+  ItemListMp4Renderer get renderMp4OrDefault {
+    try {
+      return renderMp4;
+    } on TypeError {
+      return itemListRenderMp4Default;
     }
   }
 
@@ -348,6 +467,8 @@ class ItemListExportController extends ChangeNotifier {
   }
 
   /// Render a local MP4 (stills + key periods + generated music).
+  ///
+  /// Opens Save As first, then encodes to that path.
   Future<String?> exportMp4({
     required String audioPath,
     String description = '',
@@ -357,31 +478,41 @@ class ItemListExportController extends ChangeNotifier {
     ExportSequenceSize sequenceSize = ExportSequenceSize.matchSmallest,
   }) async {
     if (entries.isEmpty) return null;
-    final fileSizes = await _probeFileSizes();
-    final seq = itemListNleSequencePixelSize(
-      mode: sequenceSize,
-      probed: fileSizes.values,
-    );
-    final timeline = itemListNleTimeline(
-      entries: entries,
-      itemsById: itemsById,
-      view: selectedView,
-      description: description.trim(),
-      stillDurationSeconds: stillDurationSeconds,
-      transition: transition,
-      transitionSeconds: transitionSeconds,
-    );
-    final tempOut = itemListMp4TempOutputPath();
-    await itemListRenderMp4(
-      timeline: timeline,
-      audioPath: audioPath,
-      outputPath: tempOut,
-      sequenceWidth: seq.width,
-      sequenceHeight: seq.height,
-      scaleToFit: sequenceSize.scaleToFit,
-    );
-    final bytes = await File(tempOut).readAsBytes();
-    return saveBytes(bytes: bytes, fileExtension: 'mp4');
+    final picked = await pickSavePathOrDefault(fileExtension: 'mp4');
+    if (picked == null || picked.isEmpty) return null;
+    try {
+      final fileSizes = await _probeFileSizes();
+      final seq = itemListNleSequencePixelSize(
+        mode: sequenceSize,
+        probed: fileSizes.values,
+      );
+      final timeline = itemListNleTimeline(
+        entries: entries,
+        itemsById: itemsById,
+        view: selectedView,
+        description: description.trim(),
+        stillDurationSeconds: stillDurationSeconds,
+        transition: transition,
+        transitionSeconds: transitionSeconds,
+      );
+      await renderMp4OrDefault(
+        timeline: timeline,
+        audioPath: audioPath,
+        outputPath: picked,
+        sequenceWidth: seq.width,
+        sequenceHeight: seq.height,
+        scaleToFit: sequenceSize.scaleToFit,
+      );
+      if (!(_macSaveSession && SecurityScopedBookmarks.isSupported)) {
+        ensureItemListExportNonEmpty(picked);
+      }
+      return picked;
+    } catch (e) {
+      await deleteEmptyItemListExport(picked);
+      rethrow;
+    } finally {
+      await releaseItemListSavePath();
+    }
   }
 
   Future<Map<String, ItemListPixelSize>> _probeFileSizes() async {
@@ -500,6 +631,14 @@ final itemListFileSaverProvider = Provider<ItemListFileSaver>(
   (ref) => saveItemListToFile,
 );
 
+final itemListSavePathPickerProvider = Provider<ItemListSavePathPicker>(
+  (ref) => pickItemListSavePath,
+);
+
+final itemListMp4RendererProvider = Provider<ItemListMp4Renderer>(
+  (ref) => itemListRenderMp4Default,
+);
+
 final itemListExportControllerProvider =
     ChangeNotifierProvider.autoDispose<ItemListExportController>(
   (ref) {
@@ -509,6 +648,8 @@ final itemListExportControllerProvider =
       personsRepository: ref.watch(personsRepositoryProvider),
       saveJson: ref.watch(itemListJsonSaverProvider),
       saveFile: ref.watch(itemListFileSaverProvider),
+      pickSavePath: ref.watch(itemListSavePathPickerProvider),
+      renderMp4: ref.watch(itemListMp4RendererProvider),
     );
   },
   dependencies: [
@@ -517,5 +658,7 @@ final itemListExportControllerProvider =
     personsRepositoryProvider,
     itemListJsonSaverProvider,
     itemListFileSaverProvider,
+    itemListSavePathPickerProvider,
+    itemListMp4RendererProvider,
   ],
 );

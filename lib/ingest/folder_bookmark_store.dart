@@ -30,6 +30,39 @@ class SecurityScopedBookmarks {
     return (path: path, bookmarkBase64: bookmark);
   }
 
+  /// Native Save As. Retains the panel URL (no bookmark). Null on cancel.
+  static Future<String?> pickSaveFile({
+    required String fileName,
+    required String fileExtension,
+  }) async {
+    if (!isSupported) return null;
+    final raw = await _channel.invokeMethod<dynamic>(
+      'pickSaveFile',
+      {
+        'fileName': fileName,
+        'fileExtension': fileExtension,
+      },
+    );
+    if (raw is! Map) return null;
+    final path = raw['path'];
+    if (path is! String || path.isEmpty) return null;
+    return path;
+  }
+
+  /// Copy [sourcePath] onto the retained Save As URL. Returns dest byte count.
+  static Future<int> installSaveFile(String sourcePath) async {
+    final n = await _channel.invokeMethod<int>('installSaveFile', sourcePath);
+    if (n == null || n <= 0) {
+      throw StateError('installSaveFile wrote no bytes');
+    }
+    return n;
+  }
+
+  static Future<void> releaseSaveFile() async {
+    if (!isSupported) return;
+    await _channel.invokeMethod<void>('releaseSaveFile');
+  }
+
   static Future<String> startAccess(String bookmarkBase64) async {
     final path = await _channel.invokeMethod<String>(
       'startAccess',
