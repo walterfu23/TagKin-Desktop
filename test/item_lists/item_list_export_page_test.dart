@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/app_shell.dart';
-import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/contract/contract.dart' hide ItemListExportFormat;
 import 'package:tagkin_desktop/item_lists/item_list_export_controller.dart';
 import 'package:tagkin_desktop/item_lists/item_list_export_page.dart';
 import 'package:tagkin_desktop/item_lists/item_list_mp4_render.dart';
@@ -26,6 +26,7 @@ import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 import '../fake_comments_repository.dart';
 import '../fake_items_repository.dart';
 import '../fake_persons_repository.dart';
+import 'fake_item_lists_repository.dart';
 
 class FakeMusicRepository extends MusicRepository {
   FakeMusicRepository()
@@ -83,6 +84,7 @@ List<Override> _overrides({
     personsRepositoryProvider.overrideWithValue(
       persons ?? FakePersonsRepository(),
     ),
+    itemListsRepositoryProvider.overrideWithValue(FakeItemListsRepository()),
     collectionsStoreProvider.overrideWithValue(
       collections ?? MemoryCollectionsStore(),
     ),

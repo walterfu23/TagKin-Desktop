@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
-import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/contract/contract.dart' hide ItemListExportFormat;
 import 'package:tagkin_desktop/ingest/folder_bookmark_store.dart';
 import 'package:tagkin_desktop/ingest/model_upload_image.dart';
 import 'package:tagkin_desktop/ingest/upload_mime.dart';

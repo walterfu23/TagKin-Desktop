@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/contract/contract.dart' hide ItemListExportFormat;
 import 'package:tagkin_desktop/item_lists/item_list_mp4_filter.dart';
 import 'package:tagkin_desktop/item_lists/item_list_mp4_materialize.dart';
 import 'package:tagkin_desktop/item_lists/item_list_mp4_render.dart';

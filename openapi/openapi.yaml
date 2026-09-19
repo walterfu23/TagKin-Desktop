@@ -69,8 +69,10 @@ tags:
     description: >
       Filter the library into an item list of photos and video key periods
       (S12). AND across who/what/where/when; OR within a dimension. Deduped
-      (one photo / one key period) and sorted ascending by when. Metadata
-      only — never media bytes (R1). Owner is derived from the token (R10).
+      (one photo / one key period) and sorted ascending by when. Successful
+      local Save As posts metadata to POST /item-list-exports (no paths or
+      bytes). Metadata only — never media bytes (R1). Owner is derived from
+      the token (R10).
   - name: music
     description: >
       Generate a soundtrack for a slideshow (S13). Prompt text and duration
@@ -228,6 +230,34 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ItemListFacets"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /item-list-exports:
+    post:
+      tags: [item-lists]
+      operationId: recordItemListExport
+      summary: Record a successful item-list Save As (metadata only)
+      description: >
+        Persists format, photo and key-period counts, timeline duration, and
+        (MP4 only) encode wall-clock. Never a file path or media bytes (R1).
+        Owner is derived from the bearer token (R10). Call after the local
+        file is fully written. Cancelled or failed encodes must not post.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordItemListExport"
+      responses:
+        "201":
+          description: Export metadata stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemListExport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -3888,6 +3918,70 @@ components:
           type: array
           items:
             type: string
+
+    ItemListExportFormat:
+      type: string
+      description: Item-list Save As format (D13).
+      enum: [json, fcp7Xml, fcpxml, mp4WithMusic]
+
+    RecordItemListExport:
+      type: object
+      description: >
+        Successful local Save As. Never a path, owner, or media bytes
+        (R1/R10). encodeWallMs is required for mp4WithMusic and forbidden
+        otherwise.
+      required: [format, photoCount, keyPeriodCount, outputDurationMs]
+      properties:
+        format:
+          $ref: "#/components/schemas/ItemListExportFormat"
+        photoCount:
+          type: integer
+          minimum: 0
+          description: Filmstrip photo entries in this export.
+        keyPeriodCount:
+          type: integer
+          minimum: 0
+          description: Filmstrip key-period entries in this export.
+        outputDurationMs:
+          type: integer
+          minimum: 0
+          description: NLE timeline duration in milliseconds.
+        encodeWallMs:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: >
+            Wall-clock from after Save As through the MP4 fully written.
+            Required for mp4WithMusic; omit otherwise.
+
+    ItemListExport:
+      type: object
+      description: Stored item-list export metadata (no path).
+      required:
+        - id
+        - format
+        - photoCount
+        - keyPeriodCount
+        - outputDurationMs
+      properties:
+        id:
+          type: string
+          format: uuid
+        format:
+          $ref: "#/components/schemas/ItemListExportFormat"
+        photoCount:
+          type: integer
+          minimum: 0
+        keyPeriodCount:
+          type: integer
+          minimum: 0
+        outputDurationMs:
+          type: integer
+          minimum: 0
+        encodeWallMs:
+          type: integer
+          minimum: 0
+          nullable: true
 
     EstimateMusicRequest:
       type: object

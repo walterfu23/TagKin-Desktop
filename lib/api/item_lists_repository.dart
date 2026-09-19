@@ -27,4 +27,15 @@ class ItemListsRepository {
     );
     return ItemList.fromJson(_client.decodeMap(response, '/item-lists'));
   }
+
+  /// `POST /item-list-exports` — metadata after a successful local Save As.
+  Future<ItemListExport> recordExport(RecordItemListExport body) async {
+    final response = await _client.post(
+      '/item-list-exports',
+      body: body.toJson(),
+    );
+    return ItemListExport.fromJson(
+      _client.decodeMap(response, '/item-list-exports'),
+    );
+  }
 }

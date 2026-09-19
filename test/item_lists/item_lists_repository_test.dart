@@ -104,5 +104,48 @@ void main() {
       );
       client.close();
     });
+
+    test('recordExport POSTs metadata and never ownerUserId (R10)', () async {
+      final mock = MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/item-list-exports');
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body.containsKey('ownerUserId'), isFalse);
+        expect(body.containsKey('accountId'), isFalse);
+        expect(body.containsKey('path'), isFalse);
+        expect(body['format'], 'mp4WithMusic');
+        expect(body['encodeWallMs'], 15000);
+        return http.Response(
+          jsonEncode({
+            'id': '11111111-1111-1111-1111-111111111111',
+            'format': 'mp4WithMusic',
+            'photoCount': 1,
+            'keyPeriodCount': 0,
+            'outputDurationMs': 30000,
+            'encodeWallMs': 15000,
+          }),
+          201,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      final client = ApiClient(
+        baseUrl: 'http://api.test',
+        tokenProvider: () => 'tok-a',
+        httpClient: mock,
+      )..recordRequests = true;
+      final row = await ItemListsRepository(client).recordExport(
+        const RecordItemListExport(
+          format: ItemListExportFormat.mp4withmusic,
+          photoCount: 1,
+          keyPeriodCount: 0,
+          outputDurationMs: 30000,
+          encodeWallMs: 15000,
+        ),
+      );
+      expect(row.format.wire, 'mp4WithMusic');
+      expect(row.encodeWallMs, 15000);
+      expect(client.recordedRequests.single.bodyContainsOwnerField, isFalse);
+      client.close();
+    });
   });
 }

@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/app_shell.dart';
-import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/contract/contract.dart' hide ItemListExportFormat;
 import 'package:tagkin_desktop/item_lists/item_list_csv.dart';
 import 'package:tagkin_desktop/item_lists/item_list_export_controller.dart';
 import 'package:tagkin_desktop/item_lists/item_list_navigation.dart';

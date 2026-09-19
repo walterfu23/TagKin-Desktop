@@ -1,13 +1,16 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/api/comments_repository.dart';
+import 'package:tagkin_desktop/api/item_lists_repository.dart';
 import 'package:tagkin_desktop/api/items_repository.dart';
 import 'package:tagkin_desktop/api/persons_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart';
-import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/contract/contract.dart' hide ItemListExportFormat;
+import 'package:tagkin_desktop/contract/contract.dart' as api show ItemListExportFormat;
 import 'package:tagkin_desktop/ingest/folder_bookmark_store.dart';
 import 'package:tagkin_desktop/item_lists/item_list_fcp7_xml.dart';
 import 'package:tagkin_desktop/item_lists/item_list_fcpxml.dart';
@@ -215,6 +218,7 @@ class ItemListExportController extends ChangeNotifier {
     ItemListMp4Renderer? renderMp4,
     LibraryTableController? libraryTable,
     ItemListMediaSizeProbe? probeMediaSize,
+    this.itemListsRepository,
   })  : thumbCache = thumbCache ?? LocalThumbCache(),
         saveFile = _resolveItemListSaver(saveJson, saveFile),
         pickSavePath = pickSavePath ?? pickItemListSavePath,
@@ -232,6 +236,7 @@ class ItemListExportController extends ChangeNotifier {
   }
 
   final PersonsRepository? personsRepository;
+  final ItemListsRepository? itemListsRepository;
   final LocalThumbCache thumbCache;
   final ItemListFileSaver saveFile;
   final ItemListSavePathPicker pickSavePath;
@@ -483,7 +488,18 @@ class ItemListExportController extends ChangeNotifier {
           'MP4 with music uses exportMp4',
         ),
     };
-    return saveFileOrDefault(contents: contents, format: format);
+    final path = await saveFileOrDefault(contents: contents, format: format);
+    if (path != null && path.isNotEmpty) {
+      unawaited(
+        _recordSuccessfulExport(
+          format: format,
+          stillDurationSeconds: stillDurationSeconds,
+          transition: transition,
+          transitionSeconds: transitionSeconds,
+        ),
+      );
+    }
+    return path;
   }
 
   /// NLE timeline for the current filmstrip (preview duration / MP4 render).
@@ -522,6 +538,7 @@ class ItemListExportController extends ChangeNotifier {
     _mp4Cancel = ItemListMp4CancelToken();
     mp4Phase = ItemListMp4Phase.staging;
     if (!_disposed) notifyListeners();
+    final wall = Stopwatch()..start();
     try {
       final fileSizes = await _probeFileSizes();
       _mp4Cancel?.throwIfCancelled();
@@ -558,6 +575,16 @@ class ItemListExportController extends ChangeNotifier {
       if (!(_macSaveSession && SecurityScopedBookmarks.isSupported)) {
         ensureItemListExportNonEmpty(picked);
       }
+      wall.stop();
+      unawaited(
+        _recordSuccessfulExport(
+          format: ItemListExportFormat.mp4WithMusic,
+          stillDurationSeconds: stillDurationSeconds,
+          transition: transition,
+          transitionSeconds: transitionSeconds,
+          encodeWallMs: wall.elapsedMilliseconds,
+        ),
+      );
       return picked;
     } catch (e) {
       await deleteEmptyItemListExport(picked);
@@ -568,6 +595,46 @@ class ItemListExportController extends ChangeNotifier {
       _clearMp4Progress();
       if (!_disposed) notifyListeners();
       await releaseItemListSavePath();
+    }
+  }
+
+  Future<void> _recordSuccessfulExport({
+    required ItemListExportFormat format,
+    required double stillDurationSeconds,
+    required ExportPhotoTransition transition,
+    required double transitionSeconds,
+    int? encodeWallMs,
+  }) async {
+    final repo = itemListsRepository;
+    if (repo == null) return;
+    try {
+      final timeline = currentTimeline(
+        stillDurationSeconds: stillDurationSeconds,
+        transition: transition,
+        transitionSeconds: transitionSeconds,
+      );
+      await repo.recordExport(
+        RecordItemListExport(
+          format: api.ItemListExportFormat.fromWire(
+            switch (format) {
+              ItemListExportFormat.json => 'json',
+              ItemListExportFormat.fcp7Xml => 'fcp7Xml',
+              ItemListExportFormat.fcpxml => 'fcpxml',
+              ItemListExportFormat.mp4WithMusic => 'mp4WithMusic',
+            },
+          ),
+          photoCount: entries
+              .where((e) => e.kind == ItemListEntryKind.photo)
+              .length,
+          keyPeriodCount: entries
+              .where((e) => e.kind == ItemListEntryKind.keyperiod)
+              .length,
+          outputDurationMs: itemListNleTimelineDurationMs(timeline),
+          encodeWallMs: encodeWallMs,
+        ),
+      );
+    } catch (e, st) {
+      debugPrint('item-list-export record failed: $e\n$st');
     }
   }
 
@@ -703,6 +770,7 @@ final itemListExportControllerProvider =
       itemsRepository: ref.watch(itemsRepositoryProvider),
       commentsRepository: ref.watch(commentsRepositoryProvider),
       personsRepository: ref.watch(personsRepositoryProvider),
+      itemListsRepository: ref.watch(itemListsRepositoryProvider),
       saveJson: ref.watch(itemListJsonSaverProvider),
       saveFile: ref.watch(itemListFileSaverProvider),
       pickSavePath: ref.watch(itemListSavePathPickerProvider),
@@ -713,6 +781,7 @@ final itemListExportControllerProvider =
     itemsRepositoryProvider,
     commentsRepositoryProvider,
     personsRepositoryProvider,
+    itemListsRepositoryProvider,
     itemListJsonSaverProvider,
     itemListFileSaverProvider,
     itemListSavePathPickerProvider,

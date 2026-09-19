@@ -11,6 +11,7 @@ class FakeItemListsRepository implements ItemListsRepository {
   ItemListFacets facets;
   ItemList list;
   ItemListFilter? lastFilter;
+  RecordItemListExport? lastExport;
   void Function(ItemListFilter filter)? onCreate;
 
   @override
@@ -21,6 +22,19 @@ class FakeItemListsRepository implements ItemListsRepository {
     lastFilter = filter;
     onCreate?.call(filter);
     return list;
+  }
+
+  @override
+  Future<ItemListExport> recordExport(RecordItemListExport body) async {
+    lastExport = body;
+    return ItemListExport(
+      id: 'export-1',
+      format: body.format,
+      photoCount: body.photoCount,
+      keyPeriodCount: body.keyPeriodCount,
+      outputDurationMs: body.outputDurationMs,
+      encodeWallMs: body.encodeWallMs,
+    );
   }
 }
 

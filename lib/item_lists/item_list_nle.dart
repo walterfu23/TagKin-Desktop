@@ -1,4 +1,4 @@
-import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/contract/contract.dart' hide ItemListExportFormat;
 import 'package:tagkin_desktop/item_lists/export_photo_transition.dart';
 import 'package:tagkin_desktop/item_lists/item_list_csv.dart';
 import 'package:tagkin_desktop/persons/collection.dart';

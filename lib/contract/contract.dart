@@ -1229,6 +1229,65 @@ enum ItemListEntryKind {
   String toString() => wire;
 }
 
+class ItemListExport {
+  const ItemListExport({
+    required this.id,
+    required this.format,
+    required this.photoCount,
+    required this.keyPeriodCount,
+    required this.outputDurationMs,
+    this.encodeWallMs,
+  });
+
+  final String id;
+  final ItemListExportFormat format;
+  final int photoCount;
+  final int keyPeriodCount;
+  final int outputDurationMs;
+  final int? encodeWallMs;
+
+  factory ItemListExport.fromJson(Map<String, dynamic> json) => ItemListExport(
+        id: json['id'] as String,
+        format: ItemListExportFormat.fromWire(json['format'] as String),
+        photoCount: (json['photoCount'] as num).toInt(),
+        keyPeriodCount: (json['keyPeriodCount'] as num).toInt(),
+        outputDurationMs: (json['outputDurationMs'] as num).toInt(),
+        encodeWallMs: json['encodeWallMs'] == null ? null : (json['encodeWallMs'] as num).toInt(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['id'] = id;
+    json['format'] = format.wire;
+    json['photoCount'] = photoCount;
+    json['keyPeriodCount'] = keyPeriodCount;
+    json['outputDurationMs'] = outputDurationMs;
+    if (encodeWallMs != null) json['encodeWallMs'] = encodeWallMs;
+    return json;
+  }
+}
+
+enum ItemListExportFormat {
+  json('json'),
+  fcp7xml('fcp7Xml'),
+  fcpxml('fcpxml'),
+  mp4withmusic('mp4WithMusic');
+
+  const ItemListExportFormat(this.wire);
+
+  final String wire;
+
+  static ItemListExportFormat fromWire(String value) {
+    for (final e in values) {
+      if (e.wire == value) return e;
+    }
+    throw FormatException('Unknown ItemListExportFormat: $value');
+  }
+
+  @override
+  String toString() => wire;
+}
+
 class ItemListFacets {
   const ItemListFacets({
     required this.who,
@@ -1982,6 +2041,40 @@ class RecordAnalysisRef {
     final json = <String, dynamic>{};
     json['analysisRef'] = analysisRef;
     if (keyPeriodRefs != null) json['keyPeriodRefs'] = keyPeriodRefs?.map((e) => e.toJson()).toList();
+    return json;
+  }
+}
+
+class RecordItemListExport {
+  const RecordItemListExport({
+    required this.format,
+    required this.photoCount,
+    required this.keyPeriodCount,
+    required this.outputDurationMs,
+    this.encodeWallMs,
+  });
+
+  final ItemListExportFormat format;
+  final int photoCount;
+  final int keyPeriodCount;
+  final int outputDurationMs;
+  final int? encodeWallMs;
+
+  factory RecordItemListExport.fromJson(Map<String, dynamic> json) => RecordItemListExport(
+        format: ItemListExportFormat.fromWire(json['format'] as String),
+        photoCount: (json['photoCount'] as num).toInt(),
+        keyPeriodCount: (json['keyPeriodCount'] as num).toInt(),
+        outputDurationMs: (json['outputDurationMs'] as num).toInt(),
+        encodeWallMs: json['encodeWallMs'] == null ? null : (json['encodeWallMs'] as num).toInt(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['format'] = format.wire;
+    json['photoCount'] = photoCount;
+    json['keyPeriodCount'] = keyPeriodCount;
+    json['outputDurationMs'] = outputDurationMs;
+    if (encodeWallMs != null) json['encodeWallMs'] = encodeWallMs;
     return json;
   }
 }

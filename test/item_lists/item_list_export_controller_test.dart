@@ -3,7 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/api/item_lists_repository.dart';
+import 'package:tagkin_desktop/contract/contract.dart' hide ItemListExportFormat;
 import 'package:tagkin_desktop/item_lists/item_list_export_controller.dart';
 import 'package:tagkin_desktop/item_lists/item_list_media_size.dart';
 import 'package:tagkin_desktop/item_lists/item_list_mp4_render.dart';
@@ -15,6 +16,7 @@ import 'package:tagkin_desktop/review/local_media_resolver.dart';
 
 import '../fake_comments_repository.dart';
 import '../fake_items_repository.dart';
+import 'fake_item_lists_repository.dart';
 
 class _RecordingThumbCache extends LocalThumbCache {
   int? lastKeyPeriodTimestampMs;
@@ -39,6 +41,7 @@ ItemListExportController _controller({
   ItemListSavePathPicker? pickSavePath,
   ItemListMp4Renderer? renderMp4,
   ItemListMediaSizeProbe? probeMediaSize,
+  ItemListsRepository? itemListsRepository,
 }) {
   return ItemListExportController(
     itemsRepository: items ?? FakeItemsRepository(),
@@ -48,6 +51,7 @@ ItemListExportController _controller({
     pickSavePath: pickSavePath,
     renderMp4: renderMp4,
     probeMediaSize: probeMediaSize,
+    itemListsRepository: itemListsRepository,
   );
 }
 
@@ -682,5 +686,90 @@ void main() {
     expect(await done, isNull);
     expect(controller.mp4Phase, isNull);
     expect(dest.existsSync(), isFalse);
+  });
+
+  test('JSON export posts metadata and never a path', () async {
+    final lists = FakeItemListsRepository();
+    final controller = _controller(
+      items: FakeItemsRepository(
+        items: [
+          fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg'),
+          fixtureItem(id: 'b', sourceRef: 'file:///albums/b.jpg'),
+        ],
+      ),
+      saveJson: (json) async => '/tmp/item-list.json',
+      itemListsRepository: lists,
+    );
+    addTearDown(controller.dispose);
+    await controller.load();
+    await _waitUntil(() => controller.entries.length >= 2);
+    expect(await controller.exportJson(), '/tmp/item-list.json');
+    await Future<void>.delayed(Duration.zero);
+    final posted = lists.lastExport;
+    expect(posted, isNotNull);
+    expect(posted!.format.wire, 'json');
+    expect(posted.photoCount, 2);
+    expect(posted.keyPeriodCount, 0);
+    expect(posted.outputDurationMs, greaterThan(0));
+    expect(posted.encodeWallMs, isNull);
+    expect(posted.toJson().containsKey('path'), isFalse);
+    expect(posted.toJson().containsKey('accountId'), isFalse);
+  });
+
+  test('MP4 export posts encode wall-clock; cancel does not', () async {
+    final lists = FakeItemListsRepository();
+    final controller = _controller(
+      items: FakeItemsRepository(
+        items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg')],
+      ),
+      pickSavePath: ({required fileExtension}) async => '/tmp/out.mp4',
+      renderMp4: ({
+        required timeline,
+        required audioPath,
+        required outputPath,
+        required sequenceWidth,
+        required sequenceHeight,
+        required scaleToFit,
+        soundtrackDuck = 0.05,
+        onProgress,
+        cancel,
+      }) async {
+        await File(outputPath).writeAsBytes(const [0, 1, 2, 3, 4, 5, 6, 7]);
+      },
+      itemListsRepository: lists,
+    );
+    addTearDown(controller.dispose);
+    addTearDown(() {
+      final f = File('/tmp/out.mp4');
+      if (f.existsSync()) f.deleteSync();
+    });
+    await controller.load();
+    await _waitUntil(() => controller.hasEntries);
+    expect(
+      await controller.exportMp4(audioPath: '/tmp/a.wav'),
+      '/tmp/out.mp4',
+    );
+    await Future<void>.delayed(Duration.zero);
+    final posted = lists.lastExport;
+    expect(posted, isNotNull);
+    expect(posted!.format.wire, 'mp4WithMusic');
+    expect(posted.photoCount, 1);
+    expect(posted.encodeWallMs, isNotNull);
+    expect(posted.encodeWallMs, greaterThanOrEqualTo(0));
+
+    lists.lastExport = null;
+    final cancelled = _controller(
+      items: FakeItemsRepository(
+        items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg')],
+      ),
+      pickSavePath: ({required fileExtension}) async => null,
+      itemListsRepository: lists,
+    );
+    addTearDown(cancelled.dispose);
+    await cancelled.load();
+    await _waitUntil(() => cancelled.hasEntries);
+    expect(await cancelled.exportMp4(audioPath: '/tmp/a.wav'), isNull);
+    await Future<void>.delayed(Duration.zero);
+    expect(lists.lastExport, isNull);
   });
 }
