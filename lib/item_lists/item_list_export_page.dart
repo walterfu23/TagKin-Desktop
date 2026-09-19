@@ -7,6 +7,7 @@ import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/item_lists/item_list_csv.dart';
 import 'package:tagkin_desktop/item_lists/item_list_export_controller.dart';
+import 'package:tagkin_desktop/item_lists/item_list_navigation.dart';
 import 'package:tagkin_desktop/item_lists/item_list_nle.dart';
 import 'package:tagkin_desktop/item_lists/item_list_slideshow_preview.dart';
 import 'package:tagkin_desktop/item_lists/music_prompt_presets.dart';
@@ -20,6 +21,59 @@ import 'package:tagkin_desktop/prepass/sharpness_score_chip.dart';
 import 'package:tagkin_desktop/ui/format_local_datetime.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
+/// Body copy for the leave-while-busy dialog. Null when leave is free.
+String? itemListLeaveBusyBody({
+  required bool encoding,
+  required bool generatingMusic,
+}) {
+  if (encoding) {
+    return 'MP4 export is still encoding. Leave and cancel the export?';
+  }
+  if (generatingMusic) {
+    return 'Music is still generating. Leave anyway? The soundtrack request '
+        'may still finish.';
+  }
+  return null;
+}
+
+/// Confirm Stay vs Leave when MP4 encode or music generate is in flight.
+Future<bool> confirmLeaveItemListBusy({
+  required BuildContext context,
+  required bool encoding,
+  required bool generatingMusic,
+  Future<void> Function()? onLeave,
+}) async {
+  final body = itemListLeaveBusyBody(
+    encoding: encoding,
+    generatingMusic: generatingMusic,
+  );
+  if (body == null) return true;
+  final leave = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) => AlertDialog(
+      key: const Key('item-list-leave-encoding-dialog'),
+      title: const Text('Leave export?'),
+      content: Text(body),
+      actions: [
+        TextButton(
+          key: const Key('item-list-leave-stay'),
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Stay'),
+        ),
+        FilledButton(
+          key: const Key('item-list-leave-leave'),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Leave'),
+        ),
+      ],
+    ),
+  );
+  if (leave != true) return false;
+  await onLeave?.call();
+  return true;
+}
+
 /// Filter photos and video key periods from a Folders View, reorder, and
 /// export JSON, FCP7 XML, FCPXML, or MP4 (with music).
 class ItemListExportPage extends ConsumerStatefulWidget {
@@ -29,14 +83,29 @@ class ItemListExportPage extends ConsumerStatefulWidget {
   ConsumerState<ItemListExportPage> createState() => _ItemListExportPageState();
 }
 
+class _MusicTake {
+  const _MusicTake({
+    required this.audioPath,
+    required this.prompt,
+    required this.soundtrackId,
+  });
+
+  final String audioPath;
+  final String prompt;
+  final String soundtrackId;
+}
+
 class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
   final _previewScroll = ScrollController();
   final _description = TextEditingController();
   final _musicPrompt = TextEditingController();
   ItemListExportFormat _format = ItemListExportFormat.json;
   String? _audioPath;
+  final List<_MusicTake> _musicTakes = [];
   bool _generatingMusic = false;
   bool _exporting = false;
+  bool _musicCancelled = false;
+  Future<void>? _exportJob;
   String? _musicError;
   List<MusicPromptPreset> _musicPresets = const [];
   String _musicPresetId = kMusicPromptCustomId;
@@ -47,6 +116,7 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
     _musicPrompt.text =
         ref.read(desktopPrefsProvider).exportMusicPromptOrDefault;
     unawaited(_loadMusicPresets());
+    itemListConfirmLeaveIfBusy = _confirmLeaveIfBusy;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final controller = ref.read(itemListExportControllerProvider);
@@ -67,6 +137,11 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
 
   @override
   void dispose() {
+    _musicCancelled = true;
+    if (itemListConfirmLeaveIfBusy == _confirmLeaveIfBusy) {
+      itemListConfirmLeaveIfBusy = null;
+    }
+    itemListExportBusy = false;
     _previewScroll.dispose();
     _description.dispose();
     _musicPrompt.dispose();
@@ -99,6 +174,27 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
     final picked = match;
     _musicPrompt.text = picked.prompt;
     setState(() => _musicPresetId = picked.id);
+  }
+
+  bool _isLeaveBusy(ItemListExportController controller) {
+    return controller.mp4Phase != null || _generatingMusic;
+  }
+
+  Future<void> _cancelInFlight() async {
+    _musicCancelled = true;
+    ref.read(itemListExportControllerProvider).cancelMp4();
+    final job = _exportJob;
+    if (job != null) await job;
+  }
+
+  Future<bool> _confirmLeaveIfBusy() {
+    final controller = ref.read(itemListExportControllerProvider);
+    return confirmLeaveItemListBusy(
+      context: context,
+      encoding: controller.mp4Phase != null,
+      generatingMusic: _generatingMusic,
+      onLeave: _cancelInFlight,
+    );
   }
 
   Future<void> _export() async {
@@ -206,7 +302,7 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
       return;
     }
     setState(() {
-      _generatingMusic = true;
+      _musicCancelled = false;
       _musicError = null;
     });
     try {
@@ -216,6 +312,7 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
       final ok = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
+          key: const Key('item-list-generate-music-dialog'),
           title: const Text('Generate music'),
           content: Text(
             estimate.creditsUsed == 0
@@ -228,31 +325,44 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
               child: const Text('Cancel'),
             ),
             FilledButton(
+              key: const Key('item-list-generate-music-confirm'),
               onPressed: () => Navigator.pop(ctx, true),
               child: const Text('Generate'),
             ),
           ],
         ),
       );
-      if (ok != true) {
-        setState(() => _generatingMusic = false);
-        return;
-      }
-      await ref.read(desktopPrefsControllerProvider).update(
-            prefs.copyWith(exportMusicPrompt: prompt),
-          );
+      if (ok != true) return;
+      setState(() => _generatingMusic = true);
       final generated = await music.generate(
         durationMs: durationMs,
         prompt: prompt,
+        avoidSoundtrackIds: [
+          for (final take in _musicTakes) take.soundtrackId,
+        ],
       );
+      if (_musicCancelled || !mounted) return;
       final file = await music.writeAudioTemp(generated);
-      if (!mounted) return;
+      if (_musicCancelled || !mounted) return;
+      final take = _MusicTake(
+        audioPath: file.path,
+        prompt: prompt,
+        soundtrackId: generated.soundtrackId,
+      );
       setState(() {
-        _audioPath = file.path;
+        _musicTakes.add(take);
+        _audioPath = take.audioPath;
         _generatingMusic = false;
       });
+      try {
+        await ref.read(desktopPrefsControllerProvider).update(
+              prefs.copyWith(exportMusicPrompt: prompt),
+            );
+      } catch (_) {
+        // Keep the take even if the prompt pref cannot be saved.
+      }
     } catch (e) {
-      if (!mounted) return;
+      if (_musicCancelled || !mounted) return;
       setState(() {
         _generatingMusic = false;
         _musicError = '$e';
@@ -266,14 +376,25 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
     final prefs = ref.watch(desktopPrefsProvider);
     final format = prefs.dateTimeFormatOrLocal;
     final visible = controller.entries;
+    final leaveBusy = _isLeaveBusy(controller);
+    itemListExportBusy = leaveBusy;
 
-    return SelectableScope(
+    return PopScope(
+      canPop: !leaveBusy,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final ok = await _confirmLeaveIfBusy();
+        if (ok && context.mounted) Navigator.of(context).pop(result);
+      },
+      child: SelectableScope(
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Item list'),
-          actions: const [
+          actions: [
             SelectionContainer.disabled(
-              child: AppNavTabButtons(),
+              child: AppNavTabButtons(
+                onBeforeNavigate: (_) => _confirmLeaveIfBusy(),
+              ),
             ),
           ],
         ),
@@ -309,12 +430,22 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
                         onPressed: controller.hasEntries &&
                                 !_exporting &&
                                 !_generatingMusic
-                            ? _export
+                            ? () {
+                                _exportJob = _export();
+                              }
                             : null,
                         child: Text(_exporting ? 'Exporting…' : 'Export'),
                       ),
                     ],
                   ),
+                  if (controller.mp4ProgressLabel != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        controller.mp4ProgressLabel!,
+                        key: const Key('item-list-mp4-phase'),
+                      ),
+                    ),
                   if (_format == ItemListExportFormat.mp4WithMusic) ...[
                     const SizedBox(height: 12),
                     _MusicPromptPresetDropdown(
@@ -348,11 +479,39 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
                           child: Text(
                             _generatingMusic
                                 ? 'Generating…'
-                                : 'Generate music',
+                                : (_musicTakes.isEmpty
+                                    ? 'Generate music'
+                                    : 'Try another'),
                           ),
                         ),
                       ],
                     ),
+                    if (_musicTakes.length > 1) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        key: const Key('item-list-music-takes'),
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (var i = 0; i < _musicTakes.length; i++)
+                            ChoiceChip(
+                              key: Key('item-list-music-take-$i'),
+                              label: Text('Take ${i + 1}'),
+                              tooltip: _musicTakes[i].prompt,
+                              selected:
+                                  _audioPath == _musicTakes[i].audioPath,
+                              onSelected: _generatingMusic || _exporting
+                                  ? null
+                                  : (_) {
+                                      setState(
+                                        () => _audioPath =
+                                            _musicTakes[i].audioPath,
+                                      );
+                                    },
+                            ),
+                        ],
+                      ),
+                    ],
                     if (_musicError != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
@@ -437,6 +596,7 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

@@ -15,6 +15,11 @@ class ItemListMp4RenderException implements Exception {
   String toString() => message;
 }
 
+/// Thrown when the user leaves Export list and cancels an in-flight encode.
+class ItemListMp4CancelledException extends ItemListMp4RenderException {
+  ItemListMp4CancelledException() : super('MP4 export was cancelled.');
+}
+
 /// Decode stills ffmpeg cannot read (HEIC/HEIF, …) to JPEG bytes.
 typedef ItemListMp4StillToJpeg = Future<Uint8List?> Function(Uint8List bytes);
 

@@ -44,6 +44,7 @@ void main() {
           'mimeType': 'audio/wav',
           'generatedMs': 4000,
           'creditsUsed': 0,
+          'soundtrackId': 'snd-1',
         }),
         200,
         headers: {'content-type': 'application/json'},
@@ -61,6 +62,40 @@ void main() {
     expect(result.mimeType, 'audio/wav');
     expect(result.generatedMs, 4000);
     expect(result.creditsUsed, 0);
+    expect(result.soundtrackId, 'snd-1');
+    client.close();
+  });
+
+  test('generate POSTs avoidSoundtrackIds from earlier takes', () async {
+    final mock = MockClient((request) async {
+      expect(request.url.path, '/music/generate');
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      expect(body.keys.toSet(), {'durationMs', 'prompt', 'avoidSoundtrackIds'});
+      expect(body['avoidSoundtrackIds'], ['snd-1', 'snd-2']);
+      expect(body.containsKey('ownerUserId'), isFalse);
+      return http.Response(
+        jsonEncode({
+          'audioBase64': base64Encode([4, 5, 6]),
+          'mimeType': 'audio/wav',
+          'generatedMs': 4000,
+          'creditsUsed': 0,
+          'soundtrackId': 'snd-3',
+        }),
+        200,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+    final client = ApiClient(
+      baseUrl: 'http://api.test',
+      tokenProvider: () => 'tok',
+      httpClient: mock,
+    );
+    final result = await MusicRepository(client).generate(
+      durationMs: 4000,
+      prompt: 'quiet piano',
+      avoidSoundtrackIds: ['snd-1', 'snd-2'],
+    );
+    expect(result.soundtrackId, 'snd-3');
     client.close();
   });
 }

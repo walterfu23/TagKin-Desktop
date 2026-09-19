@@ -1016,6 +1016,11 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
     if (existing != null) return existing;
     final future = () async {
       try {
+        final confirmExport = itemListConfirmLeaveIfBusy;
+        if (confirmExport != null) {
+          final exportOk = await confirmExport();
+          if (!exportOk) return false;
+        }
         final viewOk = await _confirmLeaveIfViewDirty();
         if (!viewOk) return false;
         final cols = ref.read(collectionsControllerProvider);
@@ -1046,7 +1051,11 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
     if (_windowCloseGateActive) {
       final cols = ref.read(collectionsControllerProvider);
       final viewDirty = _isActiveViewModified();
-      if (!cols.dirty && !viewDirty) {
+      if (appExitCanSkipLeavePrompt(
+        collectionDirty: cols.dirty,
+        viewDirty: viewDirty,
+        exportBusy: itemListExportBusy,
+      )) {
         _quitConfirmed = true;
         await _disarmWindowCloseGate();
         return AppExitResponse.exit;

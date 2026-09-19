@@ -3914,7 +3914,8 @@ components:
     GenerateMusicRequest:
       type: object
       description: >
-        Prompt + duration only. Never user media bytes (R1). Owner is not a
+        Prompt + duration, plus optional opaque ids of soundtracks already
+        heard this session. Never user media bytes (R1). Owner is not a
         body field (R10).
       required: [durationMs, prompt]
       properties:
@@ -3928,13 +3929,23 @@ components:
           minLength: 1
           maxLength: 2000
           description: Free-text music style. Not a vendor catalog id.
+        avoidSoundtrackIds:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            minLength: 1
+          description: >
+            Opaque soundtrackId values from earlier generates in this
+            session. Catalog compose skips those tracks. Not a filename
+            or vendor id (R8).
 
     GenerateMusicResponse:
       type: object
       description: >
         TagKin-produced soundtrack (not user media). No provider or model
         fields (R8).
-      required: [audioBase64, mimeType, generatedMs, creditsUsed]
+      required: [audioBase64, mimeType, generatedMs, creditsUsed, soundtrackId]
       properties:
         audioBase64:
           type: string
@@ -3950,6 +3961,12 @@ components:
           type: integer
           minimum: 0
           description: Credits charged for this generate.
+        soundtrackId:
+          type: string
+          minLength: 1
+          description: >
+            Opaque id for this soundtrack so a later generate can avoid it.
+            Not a filename or vendor id (R8).
 
 security:
   - bearerAuth: []

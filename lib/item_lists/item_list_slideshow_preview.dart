@@ -30,6 +30,17 @@ class _ItemListSlideshowPreviewState extends State<ItemListSlideshowPreview> {
   bool _playing = false;
 
   @override
+  void didUpdateWidget(ItemListSlideshowPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.audioPath == widget.audioPath) return;
+    _ticker?.cancel();
+    _player?.dispose();
+    _player = null;
+    _clipIndex = 0;
+    _playing = false;
+  }
+
+  @override
   void dispose() {
     _ticker?.cancel();
     _player?.dispose();

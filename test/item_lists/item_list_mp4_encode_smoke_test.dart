@@ -18,6 +18,47 @@ Uint8List _jpeg({required int r, required int g, required int b}) {
 }
 
 void main() {
+  test('itemListMp4ProgressLabel names each phase', () {
+    expect(
+      itemListMp4ProgressLabel(
+        const ItemListMp4Progress(phase: ItemListMp4Phase.staging),
+      ),
+      'Preparing files…',
+    );
+    expect(
+      itemListMp4ProgressLabel(
+        const ItemListMp4Progress(
+          phase: ItemListMp4Phase.encodingClips,
+          clipIndex: 0,
+          clipCount: 3,
+        ),
+      ),
+      'Encoding clip 1 of 3…',
+    );
+    expect(
+      itemListMp4ProgressLabel(
+        const ItemListMp4Progress(
+          phase: ItemListMp4Phase.encodingClips,
+          clipIndex: 2,
+          clipCount: 3,
+        ),
+      ),
+      'Encoding clip 2 of 3…',
+    );
+    expect(
+      itemListMp4ProgressLabel(
+        const ItemListMp4Progress(phase: ItemListMp4Phase.assembling),
+      ),
+      'Composing video…',
+    );
+    expect(
+      itemListMp4ProgressLabel(
+        const ItemListMp4Progress(phase: ItemListMp4Phase.writingOut),
+      ),
+      'Writing file…',
+    );
+  });
+
   test('two-still MP4 encode writes clips and a non-empty assemble', () async {
     final tools = resolveFfmpegTools();
     if (tools == null) {
@@ -64,6 +105,7 @@ void main() {
       transitionSeconds: 0.2,
     );
     final out = p.join(tmp.path, 'out.mp4');
+    final phases = <ItemListMp4Phase>[];
     await itemListRenderMp4(
       timeline: timeline,
       audioPath: wav,
@@ -72,6 +114,16 @@ void main() {
       sequenceHeight: 240,
       scaleToFit: true,
       useMacSavePanel: false,
+      onProgress: (progress) => phases.add(progress.phase),
+    );
+    expect(
+      phases,
+      containsAllInOrder([
+        ItemListMp4Phase.staging,
+        ItemListMp4Phase.encodingClips,
+        ItemListMp4Phase.assembling,
+        ItemListMp4Phase.writingOut,
+      ]),
     );
 
     final encoded = File(out);

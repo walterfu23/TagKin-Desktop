@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -483,6 +484,8 @@ void main() {
         required sequenceHeight,
         required scaleToFit,
         soundtrackDuck = 0.05,
+        onProgress,
+        cancel,
       }) async {
         events.add('render');
       },
@@ -513,6 +516,8 @@ void main() {
         required sequenceHeight,
         required scaleToFit,
         soundtrackDuck = 0.05,
+        onProgress,
+        cancel,
       }) async {
         events.add('render');
         renderedTo = outputPath;
@@ -556,6 +561,8 @@ void main() {
         required sequenceHeight,
         required scaleToFit,
         soundtrackDuck = 0.05,
+        onProgress,
+        cancel,
       }) async {},
     );
     addTearDown(controller.dispose);
@@ -565,6 +572,115 @@ void main() {
       controller.exportMp4(audioPath: '/tmp/a.wav'),
       throwsA(isA<ItemListMp4RenderException>()),
     );
+    expect(dest.existsSync(), isFalse);
+  });
+
+  test('exportMp4 reports encode phases to the controller', () async {
+    final dest = File(
+      '${Directory.systemTemp.path}/tagkin-phase-export.mp4',
+    );
+    if (dest.existsSync()) dest.deleteSync();
+    addTearDown(() {
+      if (dest.existsSync()) dest.deleteSync();
+    });
+    late final ItemListExportController controller;
+    controller = _controller(
+      items: FakeItemsRepository(
+        items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg')],
+      ),
+      pickSavePath: ({required fileExtension}) async => dest.path,
+      renderMp4: ({
+        required timeline,
+        required audioPath,
+        required outputPath,
+        required sequenceWidth,
+        required sequenceHeight,
+        required scaleToFit,
+        soundtrackDuck = 0.05,
+        onProgress,
+        cancel,
+      }) async {
+        onProgress?.call(
+          const ItemListMp4Progress(phase: ItemListMp4Phase.staging),
+        );
+        expect(controller.mp4Phase, ItemListMp4Phase.staging);
+        expect(controller.mp4ProgressLabel, 'Preparing files…');
+        onProgress?.call(
+          const ItemListMp4Progress(
+            phase: ItemListMp4Phase.encodingClips,
+            clipIndex: 1,
+            clipCount: 2,
+          ),
+        );
+        expect(controller.mp4ClipIndex, 1);
+        expect(controller.mp4ClipCount, 2);
+        expect(controller.mp4ProgressLabel, 'Encoding clip 1 of 2…');
+        onProgress?.call(
+          const ItemListMp4Progress(phase: ItemListMp4Phase.assembling),
+        );
+        expect(controller.mp4ProgressLabel, 'Composing video…');
+        onProgress?.call(
+          const ItemListMp4Progress(phase: ItemListMp4Phase.writingOut),
+        );
+        expect(controller.mp4ProgressLabel, 'Writing file…');
+        await File(outputPath).writeAsBytes(const [0, 1, 2, 3, 4, 5, 6, 7]);
+      },
+    );
+    addTearDown(controller.dispose);
+    await controller.load();
+    await _waitUntil(() => controller.hasEntries);
+    expect(
+      await controller.exportMp4(audioPath: '/tmp/a.wav'),
+      dest.path,
+    );
+    expect(controller.mp4Phase, isNull);
+    expect(controller.mp4ProgressLabel, isNull);
+  });
+
+  test('exportMp4 cancelMp4 aborts quietly and deletes leftover', () async {
+    final dest = File(
+      '${Directory.systemTemp.path}/tagkin-cancel-export.mp4',
+    );
+    if (dest.existsSync()) dest.deleteSync();
+    dest.createSync();
+    addTearDown(() {
+      if (dest.existsSync()) dest.deleteSync();
+    });
+    final gate = Completer<void>();
+    late final ItemListExportController controller;
+    controller = _controller(
+      items: FakeItemsRepository(
+        items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg')],
+      ),
+      pickSavePath: ({required fileExtension}) async => dest.path,
+      renderMp4: ({
+        required timeline,
+        required audioPath,
+        required outputPath,
+        required sequenceWidth,
+        required sequenceHeight,
+        required scaleToFit,
+        soundtrackDuck = 0.05,
+        onProgress,
+        cancel,
+      }) async {
+        onProgress?.call(
+          const ItemListMp4Progress(phase: ItemListMp4Phase.staging),
+        );
+        await gate.future;
+        cancel?.throwIfCancelled();
+        await File(outputPath).writeAsBytes(const [0, 1, 2, 3, 4, 5, 6, 7]);
+      },
+    );
+    addTearDown(controller.dispose);
+    await controller.load();
+    await _waitUntil(() => controller.hasEntries);
+    final done = controller.exportMp4(audioPath: '/tmp/a.wav');
+    await _waitUntil(() => controller.mp4Phase != null);
+    controller.cancelMp4();
+    gate.complete();
+    expect(await done, isNull);
+    expect(controller.mp4Phase, isNull);
     expect(dest.existsSync(), isFalse);
   });
 }

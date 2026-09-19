@@ -128,6 +128,47 @@ void main() {
     expect(labels, ['clip-0']);
   });
 
+  test('cancelled hardware encode does not fall back to libx264', () async {
+    final labels = <String>[];
+    final cancel = ItemListMp4CancelToken();
+    Future<({int exitCode, String stderr})> run({
+      required String ffmpeg,
+      required List<String> args,
+      required StringBuffer log,
+      required String label,
+    }) async {
+      labels.add(label);
+      cancel.cancel();
+      throw ItemListMp4CancelledException();
+    }
+
+    await expectLater(
+      itemListMp4RunEncodeWithFallback(
+        ffmpeg: 'ffmpeg',
+        args: const ['-c:v', 'h264_videotoolbox'],
+        softwareArgs: const ['-c:v', 'libx264'],
+        encoder: ItemListMp4EncoderKind.videotoolbox,
+        outputPath: '/tmp/does-not-exist-clip.mp4',
+        log: StringBuffer(),
+        label: 'clip-0',
+        run: run,
+        cancel: cancel,
+      ),
+      throwsA(isA<ItemListMp4CancelledException>()),
+    );
+    expect(labels, ['clip-0']);
+  });
+
+  test('cancel token throwIfCancelled after cancel', () {
+    final token = ItemListMp4CancelToken();
+    token.throwIfCancelled();
+    token.cancel();
+    expect(
+      token.throwIfCancelled,
+      throwsA(isA<ItemListMp4CancelledException>()),
+    );
+  });
+
   test('hardware bitrate buckets 720p / 1080p / 4K', () {
     expect(
       itemListMp4HardwareBitrateMbps(

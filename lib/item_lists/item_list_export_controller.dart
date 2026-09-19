@@ -146,6 +146,8 @@ typedef ItemListMp4Renderer = Future<void> Function({
   required int sequenceHeight,
   required bool scaleToFit,
   double soundtrackDuck,
+  ItemListMp4ProgressCallback? onProgress,
+  ItemListMp4CancelToken? cancel,
 });
 
 Future<void> itemListRenderMp4Default({
@@ -156,6 +158,8 @@ Future<void> itemListRenderMp4Default({
   required int sequenceHeight,
   required bool scaleToFit,
   double soundtrackDuck = kItemListMp4SoundtrackDuckDefault,
+  ItemListMp4ProgressCallback? onProgress,
+  ItemListMp4CancelToken? cancel,
 }) {
   return itemListRenderMp4(
     timeline: timeline,
@@ -165,6 +169,8 @@ Future<void> itemListRenderMp4Default({
     sequenceHeight: sequenceHeight,
     scaleToFit: scaleToFit,
     soundtrackDuck: soundtrackDuck,
+    onProgress: onProgress,
+    cancel: cancel,
   );
 }
 
@@ -275,8 +281,36 @@ class ItemListExportController extends ChangeNotifier {
   SavedView? selectedView;
   final Set<String> _removedKeys = <String>{};
   bool _disposed = false;
+  ItemListMp4Phase? mp4Phase;
+  int? mp4ClipIndex;
+  int? mp4ClipCount;
+  ItemListMp4CancelToken? _mp4Cancel;
 
   bool get hasEntries => entries.isNotEmpty;
+
+  /// Status line while MP4 export is encoding; null otherwise.
+  String? get mp4ProgressLabel {
+    final phase = mp4Phase;
+    if (phase == null) return null;
+    return itemListMp4ProgressLabel(
+      ItemListMp4Progress(
+        phase: phase,
+        clipIndex: mp4ClipIndex,
+        clipCount: mp4ClipCount,
+      ),
+    );
+  }
+
+  void _clearMp4Progress() {
+    mp4Phase = null;
+    mp4ClipIndex = null;
+    mp4ClipCount = null;
+  }
+
+  /// Kill in-flight ffmpeg for this export (no-op when idle).
+  void cancelMp4() {
+    _mp4Cancel?.cancel();
+  }
 
   Future<void> load({
     Set<String>? collectionFolders,
@@ -485,8 +519,12 @@ class ItemListExportController extends ChangeNotifier {
     if (entries.isEmpty) return null;
     final picked = await pickSavePathOrDefault(fileExtension: 'mp4');
     if (picked == null || picked.isEmpty) return null;
+    _mp4Cancel = ItemListMp4CancelToken();
+    mp4Phase = ItemListMp4Phase.staging;
+    if (!_disposed) notifyListeners();
     try {
       final fileSizes = await _probeFileSizes();
+      _mp4Cancel?.throwIfCancelled();
       final seq = itemListNleSequencePixelSize(
         mode: sequenceSize,
         probed: fileSizes.values,
@@ -508,6 +546,14 @@ class ItemListExportController extends ChangeNotifier {
         sequenceHeight: seq.height,
         scaleToFit: sequenceSize.scaleToFit,
         soundtrackDuck: soundtrackDuck,
+        onProgress: (progress) {
+          if (_disposed) return;
+          mp4Phase = progress.phase;
+          mp4ClipIndex = progress.clipIndex;
+          mp4ClipCount = progress.clipCount;
+          notifyListeners();
+        },
+        cancel: _mp4Cancel,
       );
       if (!(_macSaveSession && SecurityScopedBookmarks.isSupported)) {
         ensureItemListExportNonEmpty(picked);
@@ -515,8 +561,12 @@ class ItemListExportController extends ChangeNotifier {
       return picked;
     } catch (e) {
       await deleteEmptyItemListExport(picked);
+      if (e is ItemListMp4CancelledException) return null;
       rethrow;
     } finally {
+      _mp4Cancel = null;
+      _clearMp4Progress();
+      if (!_disposed) notifyListeners();
       await releaseItemListSavePath();
     }
   }
@@ -621,6 +671,7 @@ class ItemListExportController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _mp4Cancel?.cancel();
     libraryTable.removeListener(_onLibraryTableChanged);
     if (_ownsLibraryTable) {
       libraryTable.dispose();

@@ -8,9 +8,9 @@ import 'package:tagkin_desktop/contract/contract.dart';
 
 /// Client for `POST /music/estimate` and `POST /music/generate`.
 ///
-/// Prompt + duration only (R1). Never sends owner/scope (R10). Credits come
-/// from the server — this client does not estimate cents (R9). Desktop never
-/// learns which vendor ran (R8).
+/// Prompt + duration, plus optional opaque ids of earlier takes (R1). Never
+/// sends owner/scope (R10). Credits come from the server — this client does
+/// not estimate cents (R9). Desktop never learns which vendor ran (R8).
 class MusicRepository {
   MusicRepository(this._client);
 
@@ -33,12 +33,18 @@ class MusicRepository {
   Future<GenerateMusicResponse> generate({
     required int durationMs,
     required String prompt,
+    List<String>? avoidSoundtrackIds,
   }) async {
+    final avoid = avoidSoundtrackIds
+        ?.map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toList();
     final response = await _client.post(
       '/music/generate',
       body: GenerateMusicRequest(
         durationMs: durationMs,
         prompt: prompt,
+        avoidSoundtrackIds: (avoid == null || avoid.isEmpty) ? null : avoid,
       ).toJson(),
       timeout: generateTimeout,
     );

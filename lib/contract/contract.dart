@@ -948,20 +948,24 @@ class GenerateMusicRequest {
   const GenerateMusicRequest({
     required this.durationMs,
     required this.prompt,
+    this.avoidSoundtrackIds,
   });
 
   final int durationMs;
   final String prompt;
+  final List<String>? avoidSoundtrackIds;
 
   factory GenerateMusicRequest.fromJson(Map<String, dynamic> json) => GenerateMusicRequest(
         durationMs: (json['durationMs'] as num).toInt(),
         prompt: json['prompt'] as String,
+        avoidSoundtrackIds: json['avoidSoundtrackIds'] == null ? null : (json['avoidSoundtrackIds'] as List<dynamic>).map((e) => e as String).toList(),
       );
 
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{};
     json['durationMs'] = durationMs;
     json['prompt'] = prompt;
+    if (avoidSoundtrackIds != null) json['avoidSoundtrackIds'] = avoidSoundtrackIds?.map((e) => e).toList();
     return json;
   }
 }
@@ -972,18 +976,21 @@ class GenerateMusicResponse {
     required this.mimeType,
     required this.generatedMs,
     required this.creditsUsed,
+    required this.soundtrackId,
   });
 
   final String audioBase64;
   final String mimeType;
   final int generatedMs;
   final int creditsUsed;
+  final String soundtrackId;
 
   factory GenerateMusicResponse.fromJson(Map<String, dynamic> json) => GenerateMusicResponse(
         audioBase64: json['audioBase64'] as String,
         mimeType: json['mimeType'] as String,
         generatedMs: (json['generatedMs'] as num).toInt(),
         creditsUsed: (json['creditsUsed'] as num).toInt(),
+        soundtrackId: json['soundtrackId'] as String,
       );
 
   Map<String, dynamic> toJson() {
@@ -992,6 +999,7 @@ class GenerateMusicResponse {
     json['mimeType'] = mimeType;
     json['generatedMs'] = generatedMs;
     json['creditsUsed'] = creditsUsed;
+    json['soundtrackId'] = soundtrackId;
     return json;
   }
 }
