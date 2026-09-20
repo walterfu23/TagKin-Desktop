@@ -33,6 +33,7 @@ enum DateTimeDisplayFormat {
 ///
 /// Wire values stay UTC (`…Z`). Date-only `yyyy-MM-dd` is left as a calendar
 /// date (no UTC-midnight shift). Empty/null → [empty]. Unparseable → original.
+/// Instant timestamps append the OS timezone abbreviation (`PDT`, `GMT+2`, …).
 String formatLocalDateTime(
   String? iso, {
   String empty = '—',
@@ -43,7 +44,8 @@ String formatLocalDateTime(
   if (RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(trimmed)) return trimmed;
   final dt = DateTime.tryParse(trimmed);
   if (dt == null) return iso;
-  return _formatter(format).format(dt.toLocal());
+  final local = dt.toLocal();
+  return '${_formatter(format).format(local)} ${local.timeZoneName}';
 }
 
 DateFormat _formatter(DateTimeDisplayFormat format) {
