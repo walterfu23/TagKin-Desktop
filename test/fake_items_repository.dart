@@ -534,47 +534,6 @@ class FakeItemsRepository implements ItemsRepository {
     return found;
   }
 
-  final List<({String itemId, String sourceRef, String? contentHash})>
-      retargetSourceRefCalls =
-      <({String itemId, String sourceRef, String? contentHash})>[];
-
-  @override
-  Future<Item> retargetSourceRef(
-    String itemId, {
-    required String sourceRef,
-    String? contentHash,
-    String? perceptualHash,
-  }) async {
-    retargetSourceRefCalls.add(
-      (itemId: itemId, sourceRef: sourceRef, contentHash: contentHash),
-    );
-    final index = _items.indexWhere((i) => i.id == itemId);
-    if (index < 0) {
-      throw ApiException(statusCode: 404, message: 'Not found');
-    }
-    final prev = _items[index];
-    final updated = Item(
-      id: prev.id,
-      type: prev.type,
-      sourceType: prev.sourceType,
-      sourceRef: sourceRef,
-      analysisRef: prev.analysisRef,
-      analysisRefState: prev.analysisRefState,
-      contentHash: contentHash ?? prev.contentHash,
-      perceptualHash: perceptualHash ?? prev.perceptualHash,
-      dedupOfItemId: prev.dedupOfItemId,
-      capturedAt: prev.capturedAt,
-      processingStatus: prev.processingStatus,
-      processingError: prev.processingError,
-      sharpness: prev.sharpness,
-      schemaVersion: prev.schemaVersion,
-      createdAt: prev.createdAt,
-      isHidden: prev.isHidden,
-    );
-    _items[index] = updated;
-    return updated;
-  }
-
   final List<({String itemId, bool isHidden})> setItemHiddenCalls =
       <({String itemId, bool isHidden})>[];
 
@@ -599,7 +558,6 @@ class FakeItemsRepository implements ItemsRepository {
       capturedAt: prev.capturedAt,
       processingStatus: prev.processingStatus,
       processingError: prev.processingError,
-      sharpness: prev.sharpness,
       schemaVersion: prev.schemaVersion,
       createdAt: prev.createdAt,
       isHidden: isHidden,
@@ -620,7 +578,6 @@ Item fixtureItem({
   String? sourceRef,
   String? contentHash = '__default__',
   String? processingError,
-  double? sharpness,
   bool isHidden = false,
 }) {
   return Item(
@@ -634,7 +591,6 @@ Item fixtureItem({
     capturedAt: capturedAt,
     processingStatus: processingStatus,
     processingError: processingError,
-    sharpness: sharpness,
     schemaVersion: 1,
     createdAt: '2026-07-19T00:00:00.000Z',
     isHidden: isHidden,

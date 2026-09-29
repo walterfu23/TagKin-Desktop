@@ -1044,7 +1044,6 @@ class Item {
     this.capturedAt,
     required this.processingStatus,
     this.processingError,
-    this.sharpness,
     required this.schemaVersion,
     required this.createdAt,
     required this.isHidden,
@@ -1062,7 +1061,6 @@ class Item {
   final String? capturedAt;
   final ProcessingStatus processingStatus;
   final String? processingError;
-  final double? sharpness;
   final int schemaVersion;
   final String createdAt;
   final bool isHidden;
@@ -1080,7 +1078,6 @@ class Item {
         capturedAt: json['capturedAt'] == null ? null : json['capturedAt'] as String,
         processingStatus: ProcessingStatus.fromWire(json['processingStatus'] as String),
         processingError: json['processingError'] == null ? null : json['processingError'] as String,
-        sharpness: json['sharpness'] == null ? null : (json['sharpness'] as num).toDouble(),
         schemaVersion: (json['schemaVersion'] as num).toInt(),
         createdAt: json['createdAt'] as String,
         isHidden: json['isHidden'] as bool,
@@ -1100,7 +1097,6 @@ class Item {
     if (capturedAt != null) json['capturedAt'] = capturedAt;
     json['processingStatus'] = processingStatus.wire;
     if (processingError != null) json['processingError'] = processingError;
-    if (sharpness != null) json['sharpness'] = sharpness;
     json['schemaVersion'] = schemaVersion;
     json['createdAt'] = createdAt;
     json['isHidden'] = isHidden;
@@ -1705,7 +1701,6 @@ class PersonAppearance {
     this.tagId,
     this.region,
     required this.createdAt,
-    this.sharpness,
   });
 
   final String id;
@@ -1718,7 +1713,6 @@ class PersonAppearance {
   final String? tagId;
   final TagRegion? region;
   final String createdAt;
-  final double? sharpness;
 
   factory PersonAppearance.fromJson(Map<String, dynamic> json) => PersonAppearance(
         id: json['id'] as String,
@@ -1731,7 +1725,6 @@ class PersonAppearance {
         tagId: json['tagId'] == null ? null : json['tagId'] as String,
         region: json['region'] == null ? null : TagRegion.fromJson(json['region'] as Map<String, dynamic>),
         createdAt: json['createdAt'] as String,
-        sharpness: json['sharpness'] == null ? null : (json['sharpness'] as num).toDouble(),
       );
 
   Map<String, dynamic> toJson() {
@@ -1746,7 +1739,6 @@ class PersonAppearance {
     if (tagId != null) json['tagId'] = tagId;
     if (region != null) json['region'] = region?.toJson();
     json['createdAt'] = createdAt;
-    if (sharpness != null) json['sharpness'] = sharpness;
     return json;
   }
 }
@@ -1786,19 +1778,16 @@ class PrePassAppearanceInput {
     this.keyPeriodIndex,
     required this.embedding,
     required this.embeddingModelId,
-    this.sharpness,
   });
 
   final int? keyPeriodIndex;
   final List<double> embedding;
   final String embeddingModelId;
-  final double? sharpness;
 
   factory PrePassAppearanceInput.fromJson(Map<String, dynamic> json) => PrePassAppearanceInput(
         keyPeriodIndex: json['keyPeriodIndex'] == null ? null : (json['keyPeriodIndex'] as num).toInt(),
         embedding: (json['embedding'] as List<dynamic>).map((e) => (e as num).toDouble()).toList(),
         embeddingModelId: json['embeddingModelId'] as String,
-        sharpness: json['sharpness'] == null ? null : (json['sharpness'] as num).toDouble(),
       );
 
   Map<String, dynamic> toJson() {
@@ -1806,29 +1795,6 @@ class PrePassAppearanceInput {
     if (keyPeriodIndex != null) json['keyPeriodIndex'] = keyPeriodIndex;
     json['embedding'] = embedding.map((e) => e).toList();
     json['embeddingModelId'] = embeddingModelId;
-    if (sharpness != null) json['sharpness'] = sharpness;
-    return json;
-  }
-}
-
-class PrePassDeblur {
-  const PrePassDeblur({
-    required this.applied,
-    required this.methodId,
-  });
-
-  final bool applied;
-  final String methodId;
-
-  factory PrePassDeblur.fromJson(Map<String, dynamic> json) => PrePassDeblur(
-        applied: json['applied'] as bool,
-        methodId: json['methodId'] as String,
-      );
-
-  Map<String, dynamic> toJson() {
-    final json = <String, dynamic>{};
-    json['applied'] = applied;
-    json['methodId'] = methodId;
     return json;
   }
 }
@@ -1859,48 +1825,40 @@ class PrePassResult {
   const PrePassResult({
     this.contentHash,
     this.perceptualHash,
-    this.sharpness,
     this.capturedAt,
     this.where,
     this.durationMs,
     this.keyPeriods,
     this.appearances,
-    this.deblur,
   });
 
   final String? contentHash;
   final String? perceptualHash;
-  final double? sharpness;
   final String? capturedAt;
   final PrePassWhere? where;
   final int? durationMs;
   final List<PrePassKeyPeriodInput>? keyPeriods;
   final List<PrePassAppearanceInput>? appearances;
-  final PrePassDeblur? deblur;
 
   factory PrePassResult.fromJson(Map<String, dynamic> json) => PrePassResult(
         contentHash: json['contentHash'] == null ? null : json['contentHash'] as String,
         perceptualHash: json['perceptualHash'] == null ? null : json['perceptualHash'] as String,
-        sharpness: json['sharpness'] == null ? null : (json['sharpness'] as num).toDouble(),
         capturedAt: json['capturedAt'] == null ? null : json['capturedAt'] as String,
         where: json['where'] == null ? null : PrePassWhere.fromJson(json['where'] as Map<String, dynamic>),
         durationMs: json['durationMs'] == null ? null : (json['durationMs'] as num).toInt(),
         keyPeriods: json['keyPeriods'] == null ? null : (json['keyPeriods'] as List<dynamic>).map((e) => PrePassKeyPeriodInput.fromJson(e as Map<String, dynamic>)).toList(),
         appearances: json['appearances'] == null ? null : (json['appearances'] as List<dynamic>).map((e) => PrePassAppearanceInput.fromJson(e as Map<String, dynamic>)).toList(),
-        deblur: json['deblur'] == null ? null : PrePassDeblur.fromJson(json['deblur'] as Map<String, dynamic>),
       );
 
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{};
     if (contentHash != null) json['contentHash'] = contentHash;
     if (perceptualHash != null) json['perceptualHash'] = perceptualHash;
-    if (sharpness != null) json['sharpness'] = sharpness;
     if (capturedAt != null) json['capturedAt'] = capturedAt;
     if (where != null) json['where'] = where?.toJson();
     if (durationMs != null) json['durationMs'] = durationMs;
     if (keyPeriods != null) json['keyPeriods'] = keyPeriods?.map((e) => e.toJson()).toList();
     if (appearances != null) json['appearances'] = appearances?.map((e) => e.toJson()).toList();
-    if (deblur != null) json['deblur'] = deblur?.toJson();
     return json;
   }
 }
@@ -2240,32 +2198,6 @@ class RenamePerson {
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{};
     json['name'] = name;
-    return json;
-  }
-}
-
-class RetargetItemSourceRef {
-  const RetargetItemSourceRef({
-    required this.sourceRef,
-    this.contentHash,
-    this.perceptualHash,
-  });
-
-  final String sourceRef;
-  final String? contentHash;
-  final String? perceptualHash;
-
-  factory RetargetItemSourceRef.fromJson(Map<String, dynamic> json) => RetargetItemSourceRef(
-        sourceRef: json['sourceRef'] as String,
-        contentHash: json['contentHash'] == null ? null : json['contentHash'] as String,
-        perceptualHash: json['perceptualHash'] == null ? null : json['perceptualHash'] as String,
-      );
-
-  Map<String, dynamic> toJson() {
-    final json = <String, dynamic>{};
-    json['sourceRef'] = sourceRef;
-    if (contentHash != null) json['contentHash'] = contentHash;
-    if (perceptualHash != null) json['perceptualHash'] = perceptualHash;
     return json;
   }
 }
@@ -2806,19 +2738,16 @@ class WhoAppearanceInput {
     required this.tagId,
     required this.embedding,
     required this.embeddingModelId,
-    this.sharpness,
   });
 
   final String tagId;
   final List<double> embedding;
   final String embeddingModelId;
-  final double? sharpness;
 
   factory WhoAppearanceInput.fromJson(Map<String, dynamic> json) => WhoAppearanceInput(
         tagId: json['tagId'] as String,
         embedding: (json['embedding'] as List<dynamic>).map((e) => (e as num).toDouble()).toList(),
         embeddingModelId: json['embeddingModelId'] as String,
-        sharpness: json['sharpness'] == null ? null : (json['sharpness'] as num).toDouble(),
       );
 
   Map<String, dynamic> toJson() {
@@ -2826,7 +2755,6 @@ class WhoAppearanceInput {
     json['tagId'] = tagId;
     json['embedding'] = embedding.map((e) => e).toList();
     json['embeddingModelId'] = embeddingModelId;
-    if (sharpness != null) json['sharpness'] = sharpness;
     return json;
   }
 }

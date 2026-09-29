@@ -24,7 +24,6 @@ class ItemListMp4ExportRequest {
     required this.outputPath,
     this.audioPath,
     this.view,
-    this.description = '',
     this.stillDurationSeconds = kItemListNleStillDurationSeconds,
     this.transition = ExportPhotoTransition.crossDissolve,
     this.transitionSeconds = kItemListNleTransitionSeconds,
@@ -38,7 +37,6 @@ class ItemListMp4ExportRequest {
   final String outputPath;
   final String? audioPath;
   final SavedView? view;
-  final String description;
   final double stillDurationSeconds;
   final ExportPhotoTransition transition;
   final double transitionSeconds;
@@ -362,7 +360,6 @@ class ItemListExportJobManager extends ChangeNotifier {
         entries: request.entries,
         itemsById: request.itemsById,
         view: request.view,
-        description: request.description,
         stillDurationSeconds: request.stillDurationSeconds,
         transition: request.transition,
         transitionSeconds: request.transitionSeconds,

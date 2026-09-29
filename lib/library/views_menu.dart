@@ -27,7 +27,6 @@ Future<void> applySavedView({
 }) async {
   await table.runViewCommitPaused(() async {
     await table.applyLibraryViewFilters(view.filters);
-    await prefs.setHideBlurryPhotos(view.filters.hideBlurryPhotos);
     table.setActiveView(view.id, view.filters);
     await cols?.touchViewRecent(view.id);
   });
@@ -41,7 +40,6 @@ Future<void> applyAllView({
 }) async {
   await table.runViewCommitPaused(() async {
     await table.applyLibraryViewFilters(LibraryViewFilters.all);
-    await prefs.setHideBlurryPhotos(false);
     table.setActiveView(null, LibraryViewFilters.all);
     await cols?.setCurrentViewId(null);
   });
@@ -114,7 +112,6 @@ Future<void> discardActiveViewChanges({
   }
   await table.runViewCommitPaused(() async {
     await table.applyLibraryViewFilters(snap);
-    await prefs.setHideBlurryPhotos(snap.hideBlurryPhotos);
     table.setActiveView(table.activeViewId, snap);
   });
 }

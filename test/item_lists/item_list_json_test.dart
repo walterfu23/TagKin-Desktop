@@ -10,8 +10,7 @@ import '../fake_items_repository.dart';
 import 'fake_item_lists_repository.dart';
 
 void main() {
-  test('itemListToJson includes path, selected view, description, and row order',
-      () {
+  test('itemListToJson includes path, selected view, and row order', () {
     final exportedAt = DateTime.utc(2026, 9, 11, 22, 42);
     final json = itemListToJson(
       entries: [
@@ -45,17 +44,13 @@ void main() {
       view: const SavedView(
         id: 'v1',
         name: 'Beach',
-        filters: LibraryViewFilters(
-          whoNames: ['Sam'],
-          filterQuery: 'swimming',
-        ),
+        filters: LibraryViewFilters(whoNames: ['Sam'], filterQuery: 'swimming'),
       ),
-      description: 'Beach weekend with Sam',
       exportedAt: exportedAt,
     );
     final doc = jsonDecode(json) as Map<String, dynamic>;
     expect(doc['exportedAt'], '2026-09-11T22:42:00.000Z');
-    expect(doc['description'], 'Beach weekend with Sam');
+    expect(doc.containsKey('description'), isFalse);
     final view = doc['view'] as Map<String, dynamic>;
     expect(view['id'], 'v1');
     expect(view['name'], 'Beach');

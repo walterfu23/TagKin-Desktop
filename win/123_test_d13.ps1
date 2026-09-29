@@ -11,7 +11,7 @@ flutter analyze
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host '==> flutter test (unit/widget + D13 item list export)'
-flutter test test/item_lists test/d13_trust_boundary_test.dart test/local_thumb_cache_test.dart test/sharpness_test.dart test/prepass/sharpness_score_chip_test.dart
+flutter test test/item_lists test/d13_trust_boundary_test.dart test/local_thumb_cache_test.dart
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Invoke-TagKinR8SecretScan

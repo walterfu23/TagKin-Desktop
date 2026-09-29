@@ -242,9 +242,9 @@ class UploadController extends ChangeNotifier {
       return _uploadVideoFrames(item, prePass.response!, frameSamples);
     }
 
-    final rawBytes = await _read(prePass.uploadPath);
+    final rawBytes = await _read(prePass.path);
     final prepared = await prepareUpload(
-      path: prePass.uploadPath,
+      path: prePass.path,
       type: item.type,
       rawBytes: rawBytes,
     );

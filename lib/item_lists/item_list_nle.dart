@@ -99,9 +99,7 @@ int itemListNleTransitionOverlapFrames({
   return requested > maxOverlap ? maxOverlap : requested;
 }
 
-String itemListNleSequenceName({required String description, SavedView? view}) {
-  final trimmed = description.trim();
-  if (trimmed.isNotEmpty) return trimmed;
+String itemListNleSequenceName({SavedView? view}) {
   final viewName = view?.name.trim();
   if (viewName != null && viewName.isNotEmpty) return viewName;
   return 'Item list';
@@ -282,7 +280,6 @@ ItemListNleTimeline itemListNleTimeline({
   required List<ItemListEntry> entries,
   required Map<String, Item> itemsById,
   SavedView? view,
-  String description = '',
   double stillDurationSeconds = kItemListNleStillDurationSeconds,
   ExportPhotoTransition transition = ExportPhotoTransition.crossDissolve,
   double transitionSeconds = kItemListNleTransitionSeconds,
@@ -378,7 +375,7 @@ ItemListNleTimeline itemListNleTimeline({
   }
 
   return ItemListNleTimeline(
-    name: itemListNleSequenceName(description: description, view: view),
+    name: itemListNleSequenceName(view: view),
     clips: clips,
     files: files,
     duration: t,

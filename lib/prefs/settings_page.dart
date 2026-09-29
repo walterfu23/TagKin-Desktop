@@ -51,10 +51,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   late int _autoConfirmMinConfidencePercent;
   late int _jobsPollIntervalSeconds;
   late DateTimeDisplayFormat _dateTimeFormat;
-  late int _itemListBlurrySharpnessThreshold;
-  late bool _autoFixBlurryPhotos;
-  late bool _saveFixedPhotoInFolder;
-  late bool _showSharpnessScores;
   late double _exportPhotoStillDurationSeconds;
   late ExportPhotoTransition _exportPhotoTransition;
   late double _exportPhotoTransitionSeconds;
@@ -97,10 +93,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _autoConfirmMinConfidencePercent = prefs.autoConfirmMinConfidencePercent;
     _jobsPollIntervalSeconds = prefs.jobsPollIntervalSeconds;
     _dateTimeFormat = prefs.dateTimeFormatOrLocal;
-    _itemListBlurrySharpnessThreshold = prefs.itemListBlurrySharpnessThreshold;
-    _autoFixBlurryPhotos = prefs.autoFixBlurryPhotos;
-    _saveFixedPhotoInFolder = prefs.saveFixedPhotoInFolder;
-    _showSharpnessScores = prefs.showSharpnessScores;
     _exportPhotoStillDurationSeconds =
         prefs.exportPhotoStillDurationSecondsOrDefault;
     _exportPhotoTransition = prefs.exportPhotoTransitionOrDefault;
@@ -137,10 +129,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _autoConfirmMinConfidencePercent = prefs.autoConfirmMinConfidencePercent;
     _jobsPollIntervalSeconds = prefs.jobsPollIntervalSeconds;
     _dateTimeFormat = prefs.dateTimeFormatOrLocal;
-    _itemListBlurrySharpnessThreshold = prefs.itemListBlurrySharpnessThreshold;
-    _autoFixBlurryPhotos = prefs.autoFixBlurryPhotos;
-    _saveFixedPhotoInFolder = prefs.saveFixedPhotoInFolder;
-    _showSharpnessScores = prefs.showSharpnessScores;
     _exportPhotoStillDurationSeconds =
         prefs.exportPhotoStillDurationSecondsOrDefault;
     _exportPhotoTransition = prefs.exportPhotoTransitionOrDefault;
@@ -208,10 +196,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       'faces.autoConfirmMinConfidencePercent': _autoConfirmMinConfidencePercent,
       'jobs.pollIntervalSeconds': _jobsPollIntervalSeconds,
       'ui.dateTimeFormat': _dateTimeFormat.wire,
-      'export.blurrySharpnessThreshold': _itemListBlurrySharpnessThreshold,
-      'export.autoFixBlurryPhotos': _autoFixBlurryPhotos,
-      'export.saveFixedPhotoInFolder': _saveFixedPhotoInFolder,
-      'export.showSharpnessScores': _showSharpnessScores,
       'export.photoStillDurationSeconds': _exportPhotoStillDurationSeconds,
       'export.photoTransition': _exportPhotoTransition.wire,
       'export.photoTransitionSeconds': _exportPhotoTransitionSeconds,
@@ -921,71 +905,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     ],
                   ),
                   _settingsGroup(
-                    title: 'Item lists & blurry photos',
+                    title: 'Item list export',
                     subtitle:
-                        'The sharpness bar is used by Hide blurry on Folders and '
-                        'Export list (stored pre-pass score) and when auto-fix '
-                        'runs at ingest. Show scores on photo thumbs to choose a '
-                        'bar. Auto-fix is local (0 credits) and never overwrites '
-                        'the original file. Export photo duration, sequence size, '
-                        'photo transitions, and soundtrack under video apply to '
+                        'Export photo duration, sequence size, photo '
+                        'transitions, and soundtrack under video apply to '
                         'FCP7 XML / FCPXML / MP4 as documented on each control. '
                         'JSON export is unaffected.',
                     children: [
-                      SwitchListTile(
-                        key: const Key('pref-show-sharpness-scores'),
-                        title: const Text('Show sharpness scores'),
-                        subtitle: const Text(
-                          'On (default): stored pre-pass number on photo thumbs '
-                          'in Folders, Export list, and item detail. Use it to '
-                          'set the blurry bar. Off: thumbs only.',
-                        ),
-                        value: _showSharpnessScores,
-                        onChanged: (v) =>
-                            _mutateDraft(() => _showSharpnessScores = v),
-                      ),
-                      _intSlider(
-                        key: const Key('pref-blurry-sharpness-threshold'),
-                        label: 'Item list blurry bar',
-                        helper:
-                            'Variance-of-Laplacian below this counts as blurry. '
-                            'Default 80 (0–50000, step 10). Typical stills score '
-                            'in the thousands. Raise to drop more photos; lower '
-                            'to keep softer stills.',
-                        value: _itemListBlurrySharpnessThreshold,
-                        min: DesktopPrefs.itemListBlurrySharpnessThresholdMin,
-                        max: DesktopPrefs.itemListBlurrySharpnessThresholdMax,
-                        step: DesktopPrefs.itemListBlurrySharpnessThresholdStep,
-                        onChanged: (v) => _itemListBlurrySharpnessThreshold = v,
-                      ),
-                      SwitchListTile(
-                        key: const Key('pref-auto-fix-blurry-photos'),
-                        title: const Text('Auto-fix blurry photos'),
-                        subtitle: const Text(
-                          'On (default): at ingest, photos below the bar get a '
-                          'local unsharp pass. Thumbs and analyze use that JPEG. '
-                          '0 credits. Off: ingest keeps the original still.',
-                        ),
-                        value: _autoFixBlurryPhotos,
-                        onChanged: (v) =>
-                            _mutateDraft(() => _autoFixBlurryPhotos = v),
-                      ),
-                      SwitchListTile(
-                        key: const Key('pref-save-fixed-photo-in-folder'),
-                        title: const Text('Save fixed photo in folder'),
-                        subtitle: const Text(
-                          'On (default): write Stem.tagkin-fixed.jpg next to the '
-                          'original. Later folder ingest takes the sidecar and '
-                          'skips the blurry original. Never overwrites the '
-                          'original. Off: the sharpened JPEG stays in TagKin only.',
-                        ),
-                        value: _saveFixedPhotoInFolder,
-                        onChanged: _autoFixBlurryPhotos
-                            ? (v) => _mutateDraft(
-                                () => _saveFixedPhotoInFolder = v,
-                              )
-                            : null,
-                      ),
                       _doubleSlider(
                         key: const Key('pref-export-photo-still-duration'),
                         label: 'Export photo duration',

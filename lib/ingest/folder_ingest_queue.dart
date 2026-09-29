@@ -22,7 +22,6 @@ import 'package:tagkin_desktop/ingest/media_enumerator.dart';
 import 'package:tagkin_desktop/ingest/perceptual_hash.dart';
 import 'package:tagkin_desktop/ingest/physical_memory.dart';
 import 'package:tagkin_desktop/ingest/post_ingest_pipeline_controller.dart';
-import 'package:tagkin_desktop/ingest/tagkin_fixed_sidecar.dart';
 import 'package:tagkin_desktop/ingest/upload_controller.dart';
 import 'package:tagkin_desktop/library/library_membership_sync.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
@@ -265,22 +264,6 @@ class FolderIngestQueue extends ChangeNotifier {
   int get maxParallelJobs => _maxParallelJobs;
 
   static String normalizePath(String path) => normalizeLeafFolder(path);
-
-  static Item? _libraryItemForSidecarOriginal(
-    List<Item> existingItems,
-    String sidecarPath,
-  ) {
-    final originals = {
-      for (final path in originalPathsForTagkinFixedSidecar(sidecarPath))
-        normalizePath(path),
-    };
-    for (final item in existingItems) {
-      final path = localPathFromSourceRef(item.sourceRef);
-      if (path == null) continue;
-      if (originals.contains(normalizePath(path))) return item;
-    }
-    return null;
-  }
 
   /// Whether Faces should hide a folder for this job phase.
   ///
@@ -598,7 +581,7 @@ class FolderIngestQueue extends ChangeNotifier {
 
       final enumerated = await enumerateFolder(scanRoot);
       if (_disposed) return;
-      final candidates = preferTagkinFixedSidecars(enumerated);
+      final candidates = enumerated;
       if (candidates.isEmpty) {
         job.noSupportedMedia = true;
         job.phase = FolderIngestJobPhase.done;
@@ -655,31 +638,6 @@ class FolderIngestQueue extends ChangeNotifier {
         try {
           _itemsCache = null;
           _itemsCacheAt = null;
-          if (isTagkinFixedSidecar(path)) {
-            final original = _libraryItemForSidecarOriginal(
-              existingItems,
-              path,
-            );
-            if (original != null) {
-              final item = await itemsRepository.retargetSourceRef(
-                original.id,
-                sourceRef: Uri.file(path).toString(),
-                contentHash: candidate.contentHash,
-                perceptualHash: candidate.perceptualHash,
-              );
-              final idx = existingItems.indexWhere((i) => i.id == item.id);
-              if (idx >= 0) existingItems[idx] = item;
-              if (_pipelineIncomplete(item)) {
-                outcomes.add(IngestOutcome(path: path, item: item));
-                job.continuedCount++;
-              } else {
-                job.alreadyInLibraryCount++;
-              }
-              job.registerDone++;
-              _safeNotify();
-              continue;
-            }
-          }
           final item = await itemsRepository.createItem(
             CreateItem(
               type: candidate.candidate.type,

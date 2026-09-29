@@ -11,6 +11,9 @@ import 'package:tagkin_desktop/item_lists/item_list_nle.dart';
 abstract class ItemListPreviewPlayer {
   Duration get position;
 
+  /// Open media length. [Duration.zero] means it is not known yet.
+  Duration get duration;
+
   /// Video surface, or null for an audio-only player.
   Widget? get video;
 
@@ -68,6 +71,60 @@ Duration itemListPreviewSeek({
   return Duration(milliseconds: ms);
 }
 
+/// Elapsed clock for the preview bar (`m:ss`, or `h:mm:ss` past an hour).
+String itemListPreviewClock(Duration position) {
+  var seconds = position.inSeconds;
+  if (seconds < 0) seconds = 0;
+  final hours = seconds ~/ 3600;
+  final minutes = (seconds % 3600) ~/ 60;
+  final secs = seconds % 60;
+  final ss = secs.toString().padLeft(2, '0');
+  if (hours > 0) {
+    final mm = minutes.toString().padLeft(2, '0');
+    return '$hours:$mm:$ss';
+  }
+  return '$minutes:$ss';
+}
+
+/// Clip under [position] on the soundtrack timeline.
+int itemListPreviewClipIndex({
+  required List<ItemListNleClip> clips,
+  required Duration position,
+}) {
+  if (clips.isEmpty) return 0;
+  final frame = (position.inMilliseconds * kItemListNleTimebase / 1000).floor();
+  var idx = 0;
+  for (var i = 0; i < clips.length; i++) {
+    final clip = clips[i];
+    if (frame >= clip.timelineStart && frame < clip.timelineEnd) return i;
+    if (frame >= clip.timelineEnd) idx = i;
+  }
+  return idx;
+}
+
+/// Soundtrack seek. A known file shorter than the timeline stays at its end.
+Duration itemListPreviewAudioSeek({
+  required Duration position,
+  required Duration audioDuration,
+}) {
+  var ms = position.inMilliseconds;
+  if (ms < 0) ms = 0;
+  final audioMs = audioDuration.inMilliseconds;
+  if (audioMs > 0 && ms > audioMs) ms = audioMs;
+  return Duration(milliseconds: ms);
+}
+
+Duration _clampTimelinePosition(
+  ItemListNleTimeline timeline,
+  Duration position,
+) {
+  final totalMs = itemListNleTimelineDurationMs(timeline);
+  var ms = position.inMilliseconds;
+  if (ms < 0) ms = 0;
+  if (ms > totalMs) ms = totalMs;
+  return Duration(milliseconds: ms);
+}
+
 typedef ItemListPreviewPlayerFactory = ItemListPreviewPlayer Function();
 
 ItemListPreviewPlayer _mediaKitAudioPlayer() =>
@@ -86,6 +143,9 @@ class _MediaKitPreviewPlayer implements ItemListPreviewPlayer {
 
   @override
   Duration get position => _player.state.position;
+
+  @override
+  Duration get duration => _player.state.duration;
 
   @override
   Widget? get video {
@@ -145,7 +205,8 @@ class _MediaKitPreviewPlayer implements ItemListPreviewPlayer {
 /// Steps through [timeline] while playing [audioPath].
 ///
 /// Photos are stills. A key period plays that clip, with its own audio at
-/// full level and the soundtrack ducked.
+/// full level and the soundtrack ducked. The bar seeks the soundtrack, and
+/// Play preview continues from that point.
 class ItemListSlideshowPreview extends StatefulWidget {
   const ItemListSlideshowPreview({
     super.key,
@@ -171,12 +232,17 @@ class _ItemListSlideshowPreviewState extends State<ItemListSlideshowPreview> {
   ItemListPreviewPlayer? _audio;
   ItemListPreviewPlayer? _video;
   Timer? _ticker;
+  Timer? _scrubTimer;
   int _clipIndex = 0;
   int _followGen = 0;
   bool _playing = false;
+  bool _audioOpen = false;
+  bool _scrubbing = false;
+  bool _resumeAfterScrub = false;
   bool _showingVideo = false;
   bool _inEndFade = false;
   double _endFadeOpacity = 0;
+  Duration _position = Duration.zero;
   String? _videoPath;
   String? _videoError;
 
@@ -193,6 +259,7 @@ class _ItemListSlideshowPreviewState extends State<ItemListSlideshowPreview> {
   @override
   void dispose() {
     _ticker?.cancel();
+    _scrubTimer?.cancel();
     _followGen += 1;
     unawaited(_audio?.dispose());
     unawaited(_video?.dispose());
@@ -215,49 +282,87 @@ class _ItemListSlideshowPreviewState extends State<ItemListSlideshowPreview> {
   void _resetPlayback() {
     _ticker?.cancel();
     _ticker = null;
+    _scrubTimer?.cancel();
+    _scrubTimer = null;
     _followGen += 1;
     final audio = _audio;
     final video = _video;
     _audio = null;
     _video = null;
     _videoPath = null;
+    _audioOpen = false;
     _clipIndex = 0;
     _playing = false;
+    _scrubbing = false;
+    _resumeAfterScrub = false;
     _showingVideo = false;
     _inEndFade = false;
     _endFadeOpacity = 0;
+    _position = Duration.zero;
     _videoError = null;
     unawaited(audio?.dispose());
     unawaited(video?.dispose());
   }
 
-  Future<void> _toggle() async {
-    if (_playing) {
-      _ticker?.cancel();
-      _ticker = null;
-      _followGen += 1;
-      await _audio?.pause();
-      await _video?.pause();
-      if (!mounted) return;
-      setState(() => _playing = false);
-      return;
-    }
-    _audio ??= (widget.playerFactory ?? _mediaKitAudioPlayer)();
-    _clipIndex = 0;
-    await _audio!.openFile(widget.audioPath);
-    await _audio!.play();
+  void _startTicker() {
     _ticker?.cancel();
     _ticker = Timer.periodic(const Duration(milliseconds: 200), (_) {
       _syncClip();
     });
+  }
+
+  Future<void> _ensureAudio() async {
+    _audio ??= (widget.playerFactory ?? _mediaKitAudioPlayer)();
+    if (_audioOpen) return;
+    await _audio!.openFile(widget.audioPath);
+    _audioOpen = true;
+  }
+
+  Future<void> _toggle() async {
+    if (_playing) {
+      await _pausePlayback();
+      return;
+    }
+    await _playFromCurrent();
+  }
+
+  Future<void> _pausePlayback() async {
+    _resumeAfterScrub = false;
+    _ticker?.cancel();
+    _ticker = null;
+    _followGen += 1;
+    await _audio?.pause();
+    await _video?.pause();
+    if (!mounted) return;
+    setState(() => _playing = false);
+  }
+
+  Future<void> _playFromCurrent() async {
+    await _ensureAudio();
+    if (!mounted) return;
+    final audioTarget = itemListPreviewAudioSeek(
+      position: _position,
+      audioDuration: _audio?.duration ?? Duration.zero,
+    );
+    if (audioTarget != (_audio?.position ?? Duration.zero)) {
+      await _audio!.seek(audioTarget);
+      if (!mounted) return;
+    }
+    await _audio!.play();
+    _startTicker();
     if (!mounted) return;
     setState(() => _playing = true);
+    if (_inEndFade) {
+      await _video?.pause();
+      return;
+    }
     await _followClip(_clipIndex);
   }
 
-  void _syncClip() {
-    final pos = _audio?.position ?? Duration.zero;
-    final frame = (pos.inMilliseconds * kItemListNleTimebase / 1000).floor();
+  void _applyVisual(Duration position) {
+    _position = _clampTimelinePosition(widget.timeline, position);
+    final frame = (_position.inMilliseconds * kItemListNleTimebase / 1000)
+        .floor();
     final opacity = itemListPreviewEndFadeOpacity(
       frame: frame,
       endFade: widget.timeline.endFade,
@@ -272,26 +377,100 @@ class _ItemListSlideshowPreviewState extends State<ItemListSlideshowPreview> {
     } else if (!inTail) {
       _inEndFade = false;
     }
-    var idx = 0;
-    for (var i = 0; i < widget.timeline.clips.length; i++) {
-      final clip = widget.timeline.clips[i];
-      if (frame >= clip.timelineStart && frame < clip.timelineEnd) {
-        idx = i;
-        break;
-      }
-      if (frame >= clip.timelineEnd) idx = i;
-    }
-    final opacityChanged = (opacity - _endFadeOpacity).abs() > 0.02;
-    final indexChanged = idx != _clipIndex;
-    if (!indexChanged && !opacityChanged) return;
-    _clipIndex = idx;
+    _clipIndex = itemListPreviewClipIndex(
+      clips: widget.timeline.clips,
+      position: _position,
+    );
     _endFadeOpacity = opacity;
-    if (mounted) setState(() {});
-    if (indexChanged && !inTail) unawaited(_followClip(idx));
+    final clip = _clip;
+    if (clip == null || clip.isStill || clip.localPath != _videoPath) {
+      _showingVideo = false;
+    }
   }
 
-  Future<void> _followClip(int index) async {
+  void _syncClip() {
+    if (_scrubbing) return;
+    final audioPos = _audio?.position ?? _position;
+    final audioLen = _audio?.duration ?? Duration.zero;
+    // A scrub past the end of a short soundtrack keeps that picture. Playback
+    // otherwise follows the soundtrack.
+    final pos =
+        audioLen > Duration.zero && audioPos >= audioLen && _position > audioPos
+        ? _position
+        : audioPos;
+    final beforeIndex = _clipIndex;
+    final beforeOpacity = _endFadeOpacity;
+    final beforePos = _position;
+    _applyVisual(pos);
+    final opacityChanged = (_endFadeOpacity - beforeOpacity).abs() > 0.02;
+    final indexChanged = _clipIndex != beforeIndex;
+    final posChanged = _position != beforePos;
+    if (!indexChanged && !opacityChanged && !posChanged) return;
+    if (mounted) setState(() {});
+    if (indexChanged && !_inEndFade) unawaited(_followClip(_clipIndex));
+  }
+
+  void _onScrubStart(double _) {
+    _resumeAfterScrub = _playing;
+    _scrubbing = true;
+    _ticker?.cancel();
+    _ticker = null;
+    _scrubTimer?.cancel();
+    unawaited(_audio?.pause());
+    unawaited(_video?.pause());
+  }
+
+  void _onScrubChanged(double value) {
+    _applyVisual(Duration(milliseconds: value.round()));
+    if (mounted) setState(() {});
     final gen = ++_followGen;
+    _scrubTimer?.cancel();
+    _scrubTimer = Timer(const Duration(milliseconds: 120), () {
+      if (!_scrubbing || !mounted) return;
+      unawaited(_seekTransport(gen));
+    });
+  }
+
+  void _onScrubEnd(double value) {
+    unawaited(_finishScrub(value));
+  }
+
+  Future<void> _finishScrub(double value) async {
+    _scrubTimer?.cancel();
+    _scrubTimer = null;
+    _scrubbing = false;
+    _applyVisual(Duration(milliseconds: value.round()));
+    if (mounted) setState(() {});
+    final gen = ++_followGen;
+    await _seekTransport(gen);
+    if (!mounted || gen != _followGen) return;
+    if (!_resumeAfterScrub) return;
+    _resumeAfterScrub = false;
+    await _audio?.play();
+    if (!mounted) return;
+    _startTicker();
+    setState(() => _playing = true);
+  }
+
+  Future<void> _seekTransport(int gen) async {
+    await _ensureAudio();
+    if (gen != _followGen || !mounted) return;
+    final audioTarget = itemListPreviewAudioSeek(
+      position: _position,
+      audioDuration: _audio?.duration ?? Duration.zero,
+    );
+    await _audio!.seek(audioTarget);
+    if (gen != _followGen || !mounted) return;
+    if (_inEndFade) {
+      await _video?.pause();
+      return;
+    }
+    await _followClip(_clipIndex, gen: gen);
+  }
+
+  Future<void> _followClip(int index, {int? gen}) async {
+    final token = gen ?? ++_followGen;
+    if (token != _followGen) return;
     final clips = widget.timeline.clips;
     final clip = index < 0 || index >= clips.length ? null : clips[index];
     final path = clip?.localPath;
@@ -302,9 +481,9 @@ class _ItemListSlideshowPreviewState extends State<ItemListSlideshowPreview> {
           soundtrackDuck: widget.soundtrackDuck,
         ),
       );
-      if (gen != _followGen) return;
+      if (token != _followGen) return;
       await _video?.pause();
-      if (gen != _followGen || !mounted) return;
+      if (token != _followGen || !mounted) return;
       if (_showingVideo) setState(() => _showingVideo = false);
       return;
     }
@@ -314,29 +493,28 @@ class _ItemListSlideshowPreviewState extends State<ItemListSlideshowPreview> {
         soundtrackDuck: widget.soundtrackDuck,
       ),
     );
-    if (gen != _followGen) return;
+    if (token != _followGen) return;
     try {
       _video ??= (widget.videoPlayerFactory ?? _mediaKitVideoPlayer)();
       if (_videoPath != path) {
         await _video!.openFile(path);
-        if (gen != _followGen) return;
+        if (token != _followGen) return;
         _videoPath = path;
       }
       await _video!.seek(
-        itemListPreviewSeek(
-          clip: clip,
-          soundtrackPosition: _audio?.position ?? Duration.zero,
-        ),
+        itemListPreviewSeek(clip: clip, soundtrackPosition: _position),
       );
-      if (gen != _followGen || !_playing) return;
-      await _video!.play();
-      if (gen != _followGen || !mounted) return;
+      if (token != _followGen || !mounted) return;
+      if (_playing && !_scrubbing) {
+        await _video!.play();
+        if (token != _followGen || !mounted) return;
+      }
       setState(() {
         _showingVideo = true;
         _videoError = null;
       });
     } catch (_) {
-      if (gen != _followGen || !mounted) return;
+      if (token != _followGen || !mounted) return;
       setState(() {
         _showingVideo = false;
         _videoError = 'Could not play key period';
@@ -353,10 +531,42 @@ class _ItemListSlideshowPreviewState extends State<ItemListSlideshowPreview> {
       children: [
         SizedBox(height: 180, child: _picture(clip)),
         const SizedBox(height: 8),
+        _scrubBar(),
+        const SizedBox(height: 8),
         FilledButton.tonal(
           key: const Key('item-list-music-preview-play'),
           onPressed: clip == null ? null : _toggle,
           child: Text(_playing ? 'Pause preview' : 'Play preview'),
+        ),
+      ],
+    );
+  }
+
+  Widget _scrubBar() {
+    final totalMs = itemListNleTimelineDurationMs(widget.timeline);
+    final total = Duration(milliseconds: totalMs);
+    final valueMs = _position.inMilliseconds.clamp(0, totalMs);
+    final enabled = widget.timeline.clips.isNotEmpty && totalMs > 0;
+    return Row(
+      children: [
+        Expanded(
+          // The route SelectionArea steals horizontal drags from the bar.
+          child: SelectionContainer.disabled(
+            child: Slider(
+              key: const Key('item-list-preview-scrub'),
+              min: 0,
+              max: totalMs == 0 ? 1 : totalMs.toDouble(),
+              value: totalMs == 0 ? 0.0 : valueMs.toDouble(),
+              onChangeStart: enabled ? _onScrubStart : null,
+              onChanged: enabled ? _onScrubChanged : null,
+              onChangeEnd: enabled ? _onScrubEnd : null,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          '${itemListPreviewClock(_position)} / ${itemListPreviewClock(total)}',
+          key: const Key('item-list-preview-time'),
         ),
       ],
     );

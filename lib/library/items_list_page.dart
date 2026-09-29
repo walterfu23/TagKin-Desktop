@@ -20,7 +20,6 @@ import 'package:tagkin_desktop/persons/who_face_linker.dart';
 import 'package:tagkin_desktop/credits/credits_navigation.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
-import 'package:tagkin_desktop/prepass/hide_blurry_switch.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 import 'package:tagkin_desktop/ui/async_state_view.dart';
 import 'package:tagkin_desktop/usage/credits_remaining.dart';
@@ -81,19 +80,10 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     _syncFilterField();
   }
 
-  void _applyLivePrefs(DesktopPrefs next, {DesktopPrefs? previous}) {
+  void _applyLivePrefs(DesktopPrefs next) {
     if (!mounted) return;
     final table = ref.read(libraryTableControllerProvider);
     table.pageSize = next.libraryPageSize;
-    if (previous?.hideBlurryPhotos == next.hideBlurryPhotos &&
-        previous?.itemListBlurrySharpnessThreshold ==
-            next.itemListBlurrySharpnessThreshold) {
-      return;
-    }
-    table.setHideBlurryPhotos(
-      next.hideBlurryPhotos,
-      threshold: next.itemListBlurrySharpnessThreshold.toDouble(),
-    );
   }
 
   void _syncFilterField() {
@@ -427,10 +417,10 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     ref.listen<FolderRemoveQueue>(folderRemoveQueueProvider, (previous, next) {
       _bindRemoveQueue(next);
     });
-    // Shared Hide blurry / page size — reaches an already-mounted Folders
-    // page even when flipped from Export list or restored on app start.
+    // Shared page size — reaches an already-mounted Folders page even when
+    // restored on app start.
     ref.listen(desktopPrefsProvider, (previous, next) {
-      _applyLivePrefs(next, previous: previous);
+      _applyLivePrefs(next);
     });
     final usage = ref.watch(usageControllerProvider);
     final table = ref.watch(libraryTableControllerProvider);
@@ -481,8 +471,6 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
                             ),
                             const SizedBox(width: 12),
                             const ViewsMenu(),
-                            const SizedBox(width: 12),
-                            const HideBlurrySwitch(),
                             if (table.knowledgeWarming) ...[
                               const SizedBox(width: 12),
                               const SizedBox(

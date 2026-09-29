@@ -1079,7 +1079,6 @@ PersonAppearance fixtureAppearance({
   String? keyPeriodId,
   String? tagId,
   TagRegion? region,
-  double? sharpness,
 }) {
   final resolvedState =
       assignmentState ?? (personId != null ? 'confirmed' : null);
@@ -1094,7 +1093,6 @@ PersonAppearance fixtureAppearance({
     tagId: tagId,
     region: region,
     createdAt: '2026-07-20T00:00:00.000Z',
-    sharpness: sharpness,
   );
 }
 

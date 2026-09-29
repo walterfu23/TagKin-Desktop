@@ -361,41 +361,6 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /items/{itemId}/source-ref:
-    parameters:
-      - name: itemId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    patch:
-      tags: [items]
-      operationId: retargetItemSourceRef
-      summary: >
-        Retarget Item.sourceRef (and optional hashes) when a local
-        sharpened sidecar replaces the original path. Metadata only (R1).
-        Owner is token-derived (R10).
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RetargetItemSourceRef"
-      responses:
-        "200":
-          description: Item with updated sourceRef
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Item"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
   /items/{itemId}/hidden:
     parameters:
       - name: itemId
@@ -2369,12 +2334,6 @@ components:
           description: >
             Why the last analyze attempt failed (when processingStatus is
             failed). Null otherwise. Never media bytes (R1).
-        sharpness:
-          type: number
-          nullable: true
-          description: >
-            Variance-of-Laplacian of the photo still at pre-pass. Null if
-            unknown (not a video, or not yet processed). Metadata only (R1).
         schemaVersion:
           type: integer
           minimum: 1
@@ -2512,10 +2471,6 @@ components:
         embeddingModelId:
           type: string
           minLength: 1
-        sharpness:
-          type: number
-          nullable: true
-          description: Variance-of-Laplacian of this pre-pass face crop.
 
     PrePassResult:
       type: object
@@ -2530,12 +2485,6 @@ components:
           type: string
           nullable: true
           description: Hex-encoded perceptual hash (typically 16 hex chars = 64 bits).
-        sharpness:
-          type: number
-          nullable: true
-          description: >
-            Variance-of-Laplacian of the photo still (photos only). Metadata
-            only — never pixels (R1).
         capturedAt:
           type: string
           format: date-time
@@ -2557,25 +2506,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PrePassAppearanceInput"
-        deblur:
-          allOf:
-            - $ref: "#/components/schemas/PrePassDeblur"
-          nullable: true
-          description: >
-            Local or later paid deblur metadata. The client must not send a
-            dollar amount; the server records cost (0 for local unsharp).
-
-    PrePassDeblur:
-      type: object
-      required: [applied, methodId]
-      properties:
-        applied:
-          type: boolean
-        methodId:
-          type: string
-          description: >
-            Config/data method id (for example local-unsharp-v1). Not a vendor
-            name in shared callers.
 
     PrePassResultResponse:
       type: object
@@ -2685,12 +2615,6 @@ components:
         createdAt:
           type: string
           format: date-time
-        sharpness:
-          type: number
-          nullable: true
-          description: >
-            Variance-of-Laplacian of the face crop used for this appearance.
-            Null if unknown.
 
     WhoAppearanceInput:
       type: object
@@ -2711,11 +2635,6 @@ components:
         embeddingModelId:
           type: string
           minLength: 1
-        sharpness:
-          type: number
-          nullable: true
-          description: >
-            Variance-of-Laplacian of the who-tag face crop. Metadata only (R1).
 
     WhoAppearancesRequest:
       type: object
@@ -3147,22 +3066,6 @@ components:
         capturedAt:
           type: string
           format: date-time
-          nullable: true
-
-    RetargetItemSourceRef:
-      type: object
-      required: [sourceRef]
-      description: >
-        Metadata-only retarget of the local source path (R1). Used when a
-        later folder ingest prefers Stem.tagkin-fixed.jpg over the original.
-      properties:
-        sourceRef:
-          type: string
-        contentHash:
-          type: string
-          nullable: true
-        perceptualHash:
-          type: string
           nullable: true
 
     SetItemHidden:

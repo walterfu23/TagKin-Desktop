@@ -316,8 +316,8 @@ class CollectionSortKey {
 
 /// Folders filter/sort snapshot stored on a [SavedView].
 ///
-/// [all] is the built-in All view: no filters, Visible only, Hide blurry
-/// off, no sort, no hidden folders, no hidden items.
+/// [all] is the built-in All view: no filters, Visible only, no sort, no
+/// hidden folders, no hidden items.
 class LibraryViewFilters {
   const LibraryViewFilters({
     this.filterQuery = '',
@@ -325,7 +325,6 @@ class LibraryViewFilters {
     this.whoNames = const [],
     this.whoMatchAll = false,
     this.hiddenItemsFilter = 'visible',
-    this.hideBlurryPhotos = false,
     this.sortKeys = const [],
     this.hiddenFolders = const [],
     this.hiddenItemIds = const [],
@@ -345,7 +344,6 @@ class LibraryViewFilters {
   /// [HiddenItemsFilter.name]: visible / hidden / both.
   final String hiddenItemsFilter;
 
-  final bool hideBlurryPhotos;
   final List<CollectionSortKey> sortKeys;
 
   /// Folder paths hidden in this view (item [Item.isHidden] is unchanged).
@@ -363,7 +361,6 @@ class LibraryViewFilters {
     List<String>? whoNames,
     bool? whoMatchAll,
     String? hiddenItemsFilter,
-    bool? hideBlurryPhotos,
     List<CollectionSortKey>? sortKeys,
     List<String>? hiddenFolders,
     List<String>? hiddenItemIds,
@@ -376,7 +373,6 @@ class LibraryViewFilters {
       whoNames: whoNames ?? this.whoNames,
       whoMatchAll: whoMatchAll ?? this.whoMatchAll,
       hiddenItemsFilter: hiddenItemsFilter ?? this.hiddenItemsFilter,
-      hideBlurryPhotos: hideBlurryPhotos ?? this.hideBlurryPhotos,
       sortKeys: sortKeys ?? this.sortKeys,
       hiddenFolders: hiddenFolders ?? this.hiddenFolders,
       hiddenItemIds: hiddenItemIds ?? this.hiddenItemIds,
@@ -389,7 +385,6 @@ class LibraryViewFilters {
     'whoNames': whoNames,
     'whoMatchAll': whoMatchAll,
     'hiddenItemsFilter': hiddenItemsFilter,
-    'hideBlurryPhotos': hideBlurryPhotos,
     'sortKeys': [for (final k in sortKeys) k.toJson()],
     'hiddenFolders': hiddenFolders,
     'hiddenItemIds': hiddenItemIds,
@@ -407,7 +402,6 @@ class LibraryViewFilters {
     }
     final matchAll = json['whoMatchAll'];
     final hidden = json['hiddenItemsFilter'];
-    final hideBlurry = json['hideBlurryPhotos'];
     final keysRaw = json['sortKeys'];
     final keys = <CollectionSortKey>[];
     if (keysRaw is List) {
@@ -446,7 +440,6 @@ class LibraryViewFilters {
       whoNames: who,
       whoMatchAll: matchAll is bool ? matchAll : false,
       hiddenItemsFilter: hiddenName,
-      hideBlurryPhotos: hideBlurry is bool ? hideBlurry : false,
       sortKeys: keys,
       hiddenFolders: folders,
       hiddenItemIds: ids,
@@ -461,7 +454,6 @@ class LibraryViewFilters {
       _listEquals(other.whoNames, whoNames) &&
       other.whoMatchAll == whoMatchAll &&
       other.hiddenItemsFilter == hiddenItemsFilter &&
-      other.hideBlurryPhotos == hideBlurryPhotos &&
       _listEquals(other.sortKeys, sortKeys) &&
       _listEquals(other.hiddenFolders, hiddenFolders) &&
       _listEquals(other.hiddenItemIds, hiddenItemIds);
@@ -473,7 +465,6 @@ class LibraryViewFilters {
     Object.hashAll(whoNames),
     whoMatchAll,
     hiddenItemsFilter,
-    hideBlurryPhotos,
     Object.hashAll(sortKeys),
     Object.hashAll(hiddenFolders),
     Object.hashAll(hiddenItemIds),

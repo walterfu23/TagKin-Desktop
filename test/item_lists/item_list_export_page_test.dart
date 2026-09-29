@@ -232,10 +232,6 @@ void main() {
     );
     expect(find.byKey(const Key('item-hover-preview-photo-a')), findsOneWidget);
 
-    await tester.enterText(
-      find.byKey(const Key('item-list-description')),
-      'Beach weekend',
-    );
     await tester.tap(find.byKey(const Key('item-list-format-menu')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('item-list-format-json')));
@@ -245,7 +241,7 @@ void main() {
     expect(exported, isNotNull);
     expect(exported, contains('photo-a'));
     expect(exported, contains('photo-b'));
-    expect(exported, contains('Beach weekend'));
+    expect(exported, isNot(contains('"description"')));
   });
 
   testWidgets('remove drops a filmstrip tile from the list', (tester) async {
@@ -440,60 +436,6 @@ void main() {
       findsNothing,
     );
     expect(find.text('View01'), findsWidgets);
-  });
-
-  testWidgets('Export tiles show stored sharpness when the pref is on', (
-    tester,
-  ) async {
-    await _pumpPage(
-      tester,
-      overrides: _overrides(
-        items: FakeItemsRepository(
-          items: [
-            fixtureItem(id: 'sharp', sharpness: 8583, sourceRef: ''),
-            fixtureItem(id: 'blurry', sharpness: 5, sourceRef: ''),
-          ],
-        ),
-      ),
-    );
-    expect(
-      find.byKey(const Key('item-list-sharpness-photo-sharp')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const Key('item-list-sharpness-photo-blurry')),
-      findsOneWidget,
-    );
-    expect(find.text('8583'), findsOneWidget);
-    expect(find.text('5'), findsOneWidget);
-  });
-
-  testWidgets('Export tiles omit sharpness when the pref is off', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          ..._overrides(
-            items: FakeItemsRepository(
-              items: [fixtureItem(id: 'sharp', sharpness: 8583, sourceRef: '')],
-            ),
-          ),
-          desktopPrefsProvider.overrideWithValue(
-            const DesktopPrefs(showSharpnessScores: false),
-          ),
-        ],
-        child: const MaterialApp(
-          home: SelectableScope(child: ItemListExportPage()),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(const Key('item-list-sharpness-photo-sharp')),
-      findsNothing,
-    );
-    expect(find.text('8583'), findsNothing);
   });
 
   testWidgets('Format menu exports FCP7 XML and FCPXML', (tester) async {

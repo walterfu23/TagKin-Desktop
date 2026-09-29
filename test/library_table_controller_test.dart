@@ -371,161 +371,6 @@ void main() {
     expect(controller.pageRows, hasLength(1));
   });
 
-  group('hideBlurryPhotos (shared Hide blurry toggle)', () {
-    test('hides from stored sharpness immediately', () async {
-      final sharp = fixtureItem(id: 'sharp', sharpness: 400);
-      final blurry = fixtureItem(id: 'blurry', sharpness: 5);
-      final controller = LibraryTableController(
-        itemsRepository: FakeItemsRepository(items: [sharp, blurry]),
-        commentsRepository: FakeCommentsRepository(),
-        thumbCache: LocalThumbCache(),
-      );
-      await controller.load();
-      controller.setHideBlurryPhotos(true);
-      expect(controller.filteredSorted.map((r) => r.item.id), ['sharp']);
-
-      controller.setHideBlurryPhotos(false);
-      expect(controller.filteredSorted, hasLength(2));
-    });
-
-    test('stored-blurry stays hidden (no live still unhide)', () async {
-      final blurry = fixtureItem(id: 'blurry', sharpness: 5);
-      final controller = LibraryTableController(
-        itemsRepository: FakeItemsRepository(items: [blurry]),
-        commentsRepository: FakeCommentsRepository(),
-        thumbCache: LocalThumbCache(),
-      );
-      await controller.load();
-      controller.setHideBlurryPhotos(true);
-      expect(controller.filteredSorted, isEmpty);
-      await Future<void>.delayed(Duration.zero);
-      expect(controller.filteredSorted, isEmpty);
-    });
-
-    test('keeps photos with an unknown (null) score', () async {
-      final unknown = fixtureItem(id: 'unknown');
-      final controller = LibraryTableController(
-        itemsRepository: FakeItemsRepository(items: [unknown]),
-        commentsRepository: FakeCommentsRepository(),
-        thumbCache: LocalThumbCache(),
-      );
-      await controller.load();
-      controller.setHideBlurryPhotos(true);
-      expect(controller.filteredSorted, hasLength(1));
-    });
-
-    test('never hides videos', () async {
-      final video = fixtureItem(id: 'vid', type: ItemType.video, sharpness: 0);
-      final controller = LibraryTableController(
-        itemsRepository: FakeItemsRepository(items: [video]),
-        commentsRepository: FakeCommentsRepository(),
-        thumbCache: LocalThumbCache(),
-      );
-      await controller.load();
-      controller.setHideBlurryPhotos(true);
-      expect(controller.filteredSorted, hasLength(1));
-    });
-
-    test('default bar 80 keeps typical stills in the thousands', () async {
-      final still = fixtureItem(id: 'still', sharpness: 8583);
-      final controller = LibraryTableController(
-        itemsRepository: FakeItemsRepository(items: [still]),
-        commentsRepository: FakeCommentsRepository(),
-        thumbCache: LocalThumbCache(),
-      );
-      await controller.load();
-      controller.setHideBlurryPhotos(true);
-      expect(controller.filteredSorted, hasLength(1));
-      controller.setHideBlurryPhotos(true, threshold: 9000);
-      expect(controller.filteredSorted, isEmpty);
-    });
-
-    test(
-      'folder header count drops immediately from stored sharpness',
-      () async {
-        const shared = '/albums/20260516';
-        final items = [
-          fixtureItem(
-            id: 'b1',
-            sharpness: 5,
-            sourceRef: 'file://$shared/a.jpg',
-          ),
-          fixtureItem(
-            id: 'b2',
-            sharpness: 10,
-            sourceRef: 'file://$shared/b.jpg',
-          ),
-          fixtureItem(
-            id: 'ok',
-            sharpness: 400,
-            sourceRef: 'file://$shared/c.jpg',
-          ),
-        ];
-        final controller = LibraryTableController(
-          itemsRepository: FakeItemsRepository(items: items),
-          commentsRepository: FakeCommentsRepository(),
-          thumbCache: LocalThumbCache(),
-          pageSize: 10,
-        );
-        await controller.load();
-        expect(controller.filteredSorted, hasLength(3));
-        final beforeHeaders = controller.visibleEntries
-            .whereType<LibraryPathGroupHeader>()
-            .toList();
-        expect(beforeHeaders, isNotEmpty);
-        expect(beforeHeaders.first.count, 3);
-        controller.setHideBlurryPhotos(true);
-        expect(controller.filteredSorted, hasLength(1));
-        expect(controller.filteredSorted.single.item.id, 'ok');
-      },
-    );
-
-    test('folder header (N) drops while the group stays collapsed', () async {
-      const shared = '/albums/20260516';
-      final items = [
-        fixtureItem(id: 'b1', sharpness: 5, sourceRef: 'file://$shared/a.jpg'),
-        fixtureItem(
-          id: 'ok1',
-          sharpness: 400,
-          sourceRef: 'file://$shared/c.jpg',
-        ),
-        fixtureItem(
-          id: 'ok2',
-          sharpness: 350,
-          sourceRef: 'file://$shared/d.jpg',
-        ),
-      ];
-      final controller = LibraryTableController(
-        itemsRepository: FakeItemsRepository(items: items),
-        commentsRepository: FakeCommentsRepository(),
-        thumbCache: LocalThumbCache(),
-        pageSize: 10,
-      );
-      await controller.load();
-      final before = controller.visibleEntries
-          .whereType<LibraryPathGroupHeader>();
-      expect(before, isNotEmpty);
-      expect(before.first.count, 3);
-      controller.setHideBlurryPhotos(true);
-      final after = controller.visibleEntries
-          .whereType<LibraryPathGroupHeader>();
-      expect(after, isNotEmpty);
-      expect(after.first.count, 2);
-    });
-
-    test('custom blurThreshold from setHideBlurryPhotos applies', () async {
-      final mid = fixtureItem(id: 'mid', sharpness: 100);
-      final controller = LibraryTableController(
-        itemsRepository: FakeItemsRepository(items: [mid]),
-        commentsRepository: FakeCommentsRepository(),
-        thumbCache: LocalThumbCache(),
-      );
-      await controller.load();
-      controller.setHideBlurryPhotos(true, threshold: 200);
-      expect(controller.filteredSorted, isEmpty);
-    });
-  });
-
   group('hiddenItemsFilter (Hide column Visible / Hidden / Both)', () {
     test('visible (default) excludes hidden items', () async {
       final shown = fixtureItem(id: 'shown');
@@ -1933,7 +1778,6 @@ void main() {
       controller.setWhoFilter(names: {'Sam'}, matchAll: true);
       controller.setHiddenItemsFilter(HiddenItemsFilter.both);
       controller.toggleSort(LibrarySortColumn.who);
-      controller.setHideBlurryPhotos(true);
       // All is never starred.
       expect(controller.isActiveViewModified, isFalse);
       expect(controller.activeViewId, isNull);
@@ -1943,7 +1787,6 @@ void main() {
       expect(snap.whoNames, ['Sam']);
       expect(snap.whoMatchAll, isTrue);
       expect(snap.hiddenItemsFilter, 'both');
-      expect(snap.hideBlurryPhotos, isTrue);
       expect(snap.sortKeys, isNotEmpty);
       expect(snap.hiddenFolders, isEmpty);
       expect(snap.hiddenItemIds, isEmpty);

@@ -9,7 +9,6 @@ import 'package:tagkin_desktop/library/local_thumb_cache.dart';
 import 'package:tagkin_desktop/library/processing_status_view.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
-import 'package:tagkin_desktop/prepass/sharpness_score_chip.dart';
 import 'package:tagkin_desktop/review/key_period_offsets.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/where/where_label_resolver.dart';
@@ -854,9 +853,6 @@ class _DataRow extends ConsumerWidget {
                         row: row,
                         period: period,
                         controller: controller,
-                        showScore: ref
-                            .watch(desktopPrefsProvider)
-                            .showSharpnessScores,
                       ),
                     ),
                   ),
@@ -961,13 +957,11 @@ class _ThumbCell extends StatelessWidget {
   const _ThumbCell({
     required this.row,
     required this.controller,
-    required this.showScore,
     this.period,
   });
 
   final LibraryTableRow row;
   final LibraryTableController controller;
-  final bool showScore;
   final KeyPeriodKnowledge? period;
 
   @override
@@ -976,20 +970,15 @@ class _ThumbCell extends StatelessWidget {
       item: row.item,
       controller: controller,
       period: period,
-      child: _Thumb(
-        row: row,
-        showScore: showScore && period == null,
-        period: period,
-      ),
+      child: _Thumb(row: row, period: period),
     );
   }
 }
 
 class _Thumb extends StatelessWidget {
-  const _Thumb({required this.row, required this.showScore, this.period});
+  const _Thumb({required this.row, this.period});
 
   final LibraryTableRow row;
-  final bool showScore;
   final KeyPeriodKnowledge? period;
 
   @override
@@ -1017,21 +1006,7 @@ class _Thumb extends StatelessWidget {
       child: SizedBox(
         width: _kThumbSize,
         height: _kThumbSize,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            child,
-            if (showScore && row.item.type == ItemType.photo)
-              Positioned(
-                left: 2,
-                bottom: 2,
-                child: SharpnessScoreChip(
-                  key: Key('item-sharpness-${row.item.id}'),
-                  item: row.item,
-                ),
-              ),
-          ],
-        ),
+        child: child,
       ),
     );
   }

@@ -33,14 +33,13 @@ void main() {
           sourceRef: 'file:///Pictures/clip.mp4',
         ),
       },
-      description: 'Beach weekend',
     );
     expect(xml, contains('<!DOCTYPE fcpxml>'));
     expect(xml, contains('<fcpxml version="1.9">'));
     expect(xml, contains('name="FFVideoFormat1080p30"'));
     expect(xml, contains('frameDuration="1/30s"'));
     expect(xml, contains('width="1920" height="1080"'));
-    expect(xml, contains('<project name="Beach weekend">'));
+    expect(xml, contains('<project name="Item list">'));
     expect(xml, contains('src="file:///Pictures/Holiday.jpg"'));
     expect(xml, contains('src="file:///Pictures/clip.mp4"'));
     expect(xml, contains('duration="75/30s"'));
@@ -120,7 +119,7 @@ void main() {
     );
   });
 
-  test('description empty uses view name as project name', () {
+  test('view name is the project name', () {
     final xml = itemListToFcpxml(
       endFadeSeconds: 0,
       entries: [fixtureEntry(itemId: 'photo-1')],

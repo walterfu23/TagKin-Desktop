@@ -59,7 +59,6 @@ void main() {
                   whoNames: ['Ada'],
                   whoMatchAll: true,
                   hiddenItemsFilter: 'both',
-                  hideBlurryPhotos: true,
                   hiddenFolders: ['/albums/Paris'],
                 ),
               ),

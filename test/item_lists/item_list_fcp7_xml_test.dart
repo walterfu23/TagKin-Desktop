@@ -25,7 +25,6 @@ void main() {
           sourceRef: 'file:///Pictures/Holiday.jpg',
         ),
       },
-      description: 'Beach weekend',
     );
     expect(xml, contains('<!DOCTYPE xmeml>'));
     expect(xml, contains('<xmeml version="4">'));
@@ -33,7 +32,7 @@ void main() {
     expect(xml, contains('<children>'));
     expect(xml, contains('<timecode>'));
     expect(xml, contains('<displayformat>NDF</displayformat>'));
-    expect(xml, contains('<name>Beach weekend</name>'));
+    expect(xml, contains('<name>Item list</name>'));
     expect(xml, contains('<stillframe>TRUE</stillframe>'));
     expect(xml, contains('<enabled>TRUE</enabled>'));
     expect(xml, contains('<width>1920</width>'));
@@ -149,7 +148,7 @@ void main() {
     expect(xml, contains('<end>180</end>'));
   });
 
-  test('filmstrip order and view name when description is empty', () {
+  test('filmstrip order uses the view name', () {
     final xml = itemListToFcp7Xml(
       endFadeSeconds: 0,
       entries: [

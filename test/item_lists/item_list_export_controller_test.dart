@@ -169,12 +169,11 @@ void main() {
     controller.reorder(0, 1);
     expect(controller.entries.map((e) => e.itemId), ['b', 'a']);
     final path = await controller.exportJson(
-      description: 'Trip',
       exportedAt: DateTime.utc(2026, 9, 11, 12),
     );
     expect(path, '/tmp/item-list.json');
     final doc = jsonDecode(saved!) as Map<String, dynamic>;
-    expect(doc['description'], 'Trip');
+    expect(doc.containsKey('description'), isFalse);
     expect(doc['exportedAt'], '2026-09-11T12:00:00.000Z');
     expect(doc['view'], isNull);
     final entries = doc['entries'] as List<dynamic>;
@@ -366,22 +365,16 @@ void main() {
     await controller.load();
     await _waitUntil(() => controller.entries.length >= 2);
     controller.reorder(0, 1);
-    var path = await controller.export(
-      format: ItemListExportFormat.fcp7Xml,
-      description: 'Trip',
-    );
+    var path = await controller.export(format: ItemListExportFormat.fcp7Xml);
     expect(path, '/tmp/item-list.xml');
     expect(saved, contains('<xmeml version="4">'));
-    expect(saved, contains('<name>Trip</name>'));
+    expect(saved, contains('<name>Item list</name>'));
     final xml = saved!;
     expect(xml.indexOf('b.jpg'), lessThan(xml.indexOf('a.jpg')));
 
-    path = await controller.export(
-      format: ItemListExportFormat.fcpxml,
-      description: 'Trip',
-    );
+    path = await controller.export(format: ItemListExportFormat.fcpxml);
     expect(saved, contains('<fcpxml version="1.9">'));
-    expect(saved, contains('<project name="Trip">'));
+    expect(saved, contains('<project name="Item list">'));
     expect(ItemListExportFormat.fcpxml.fileExtension, 'fcpxml');
   });
 

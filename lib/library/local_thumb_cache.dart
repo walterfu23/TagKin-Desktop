@@ -5,7 +5,6 @@ import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/folder_bookmark_store.dart';
-import 'package:tagkin_desktop/prepass/auto_fix_blurry.dart';
 import 'package:tagkin_desktop/prepass/ffmpeg_resolve.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 
@@ -165,10 +164,6 @@ class LocalThumbCache {
     }
 
     if (item.type == ItemType.photo) {
-      sourcePath = await preferSharpenedStillPath(
-        sourcePath: sourcePath,
-        contentHash: item.contentHash,
-      );
       await _ensureBookmarkAccess(sourcePath);
     }
 

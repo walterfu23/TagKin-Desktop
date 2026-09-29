@@ -323,14 +323,10 @@ class ItemListExportController extends ChangeNotifier {
   }
 
   /// Apply a saved Folders view, or [LibraryViewFilters.all] when [view] is null.
-  Future<void> selectView(SavedView? view, {double? blurThreshold}) async {
+  Future<void> selectView(SavedView? view) async {
     selectedView = view;
     _removedKeys.clear();
     final filters = view?.filters ?? LibraryViewFilters.all;
-    libraryTable.setHideBlurryPhotos(
-      filters.hideBlurryPhotos,
-      threshold: blurThreshold,
-    );
     await libraryTable.applyLibraryViewFilters(filters);
     if (_disposed) return;
     loadingList = libraryTable.loading;
@@ -393,19 +389,14 @@ class ItemListExportController extends ChangeNotifier {
 
   /// Save the current filmstrip as JSON. Returns the path, or null if
   /// cancelled or nothing is visible.
-  Future<String?> exportJson({String description = '', DateTime? exportedAt}) {
-    return export(
-      format: ItemListExportFormat.json,
-      description: description,
-      exportedAt: exportedAt,
-    );
+  Future<String?> exportJson({DateTime? exportedAt}) {
+    return export(format: ItemListExportFormat.json, exportedAt: exportedAt);
   }
 
   /// Save the current filmstrip in [format]. Returns the path, or null if
   /// cancelled or nothing is visible.
   Future<String?> export({
     ItemListExportFormat format = ItemListExportFormat.json,
-    String description = '',
     DateTime? exportedAt,
     double stillDurationSeconds = kItemListNleStillDurationSeconds,
     ExportPhotoTransition transition = ExportPhotoTransition.crossDissolve,
@@ -416,7 +407,6 @@ class ItemListExportController extends ChangeNotifier {
     if (format.isMp4) {
       throw ArgumentError('MP4 uses exportMp4');
     }
-    final trimmed = description.trim();
     var fileSizes = const <String, ItemListPixelSize>{};
     var sequenceWidth = kItemListNleWidth;
     var sequenceHeight = kItemListNleHeight;
@@ -434,14 +424,12 @@ class ItemListExportController extends ChangeNotifier {
         entries: entries,
         itemsById: itemsById,
         view: selectedView,
-        description: trimmed,
         exportedAt: exportedAt ?? DateTime.now(),
       ),
       ItemListExportFormat.fcp7Xml => itemListToFcp7Xml(
         entries: entries,
         itemsById: itemsById,
         view: selectedView,
-        description: trimmed,
         stillDurationSeconds: stillDurationSeconds,
         transition: transition,
         transitionSeconds: transitionSeconds,
@@ -454,7 +442,6 @@ class ItemListExportController extends ChangeNotifier {
         entries: entries,
         itemsById: itemsById,
         view: selectedView,
-        description: trimmed,
         stillDurationSeconds: stillDurationSeconds,
         transition: transition,
         transitionSeconds: transitionSeconds,
@@ -486,7 +473,6 @@ class ItemListExportController extends ChangeNotifier {
 
   /// NLE timeline for the current filmstrip (preview duration / MP4 render).
   ItemListNleTimeline currentTimeline({
-    String description = '',
     double stillDurationSeconds = kItemListNleStillDurationSeconds,
     ExportPhotoTransition transition = ExportPhotoTransition.crossDissolve,
     double transitionSeconds = kItemListNleTransitionSeconds,
@@ -496,7 +482,6 @@ class ItemListExportController extends ChangeNotifier {
       entries: entries,
       itemsById: itemsById,
       view: selectedView,
-      description: description,
       stillDurationSeconds: stillDurationSeconds,
       transition: transition,
       transitionSeconds: transitionSeconds,
@@ -511,7 +496,6 @@ class ItemListExportController extends ChangeNotifier {
   /// empty or Save As is cancelled.
   Future<ItemListExportJob?> exportMp4({
     String? audioPath,
-    String description = '',
     double stillDurationSeconds = kItemListNleStillDurationSeconds,
     ExportPhotoTransition transition = ExportPhotoTransition.crossDissolve,
     double transitionSeconds = kItemListNleTransitionSeconds,
@@ -529,7 +513,6 @@ class ItemListExportController extends ChangeNotifier {
         entries: List<ItemListEntry>.from(entries),
         itemsById: Map<String, Item>.from(itemsById),
         view: selectedView,
-        description: description.trim(),
         stillDurationSeconds: stillDurationSeconds,
         transition: transition,
         transitionSeconds: transitionSeconds,

@@ -21,7 +21,6 @@ import 'package:tagkin_desktop/persons/collection.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
-import 'package:tagkin_desktop/prepass/sharpness_score_chip.dart';
 import 'package:tagkin_desktop/ui/format_local_datetime.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
@@ -94,7 +93,6 @@ class _MusicTake {
 
 class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
   final _previewScroll = ScrollController();
-  final _description = TextEditingController();
   final _musicPrompt = TextEditingController();
   ItemListExportFormat _format = ItemListExportFormat.mp4WithMusic;
   String? _audioPath;
@@ -142,7 +140,6 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
     }
     itemListExportBusy = false;
     _previewScroll.dispose();
-    _description.dispose();
     _musicPrompt.dispose();
     super.dispose();
   }
@@ -220,7 +217,6 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
           audioPath: _format == ItemListExportFormat.mp4WithMusic
               ? _audioPath
               : null,
-          description: _description.text,
           stillDurationSeconds: prefs.exportPhotoStillDurationSecondsOrDefault,
           transition: prefs.exportPhotoTransitionOrDefault,
           transitionSeconds: prefs.exportPhotoTransitionSecondsOrDefault,
@@ -231,7 +227,6 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
       } else {
         final path = await controller.export(
           format: _format,
-          description: _description.text,
           stillDurationSeconds: prefs.exportPhotoStillDurationSecondsOrDefault,
           transition: prefs.exportPhotoTransitionOrDefault,
           transitionSeconds: prefs.exportPhotoTransitionSecondsOrDefault,
@@ -292,7 +287,6 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
       return;
     }
     final timeline = controller.currentTimeline(
-      description: _description.text,
       stillDurationSeconds: prefs.exportPhotoStillDurationSecondsOrDefault,
       transition: prefs.exportPhotoTransitionOrDefault,
       transitionSeconds: prefs.exportPhotoTransitionSecondsOrDefault,
@@ -394,16 +388,6 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            TextField(
-                              key: const Key('item-list-description'),
-                              controller: _description,
-                              decoration: const InputDecoration(
-                                labelText: 'Description',
-                                hintText: 'Optional note saved with the export',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
                             Row(
                               children: [
                                 _ViewsDropdown(
@@ -519,7 +503,6 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
                                 const SizedBox(height: 8),
                                 ItemListSlideshowPreview(
                                   timeline: controller.currentTimeline(
-                                    description: _description.text,
                                     stillDurationSeconds: prefs
                                         .exportPhotoStillDurationSecondsOrDefault,
                                     transition:
@@ -590,8 +573,6 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
                                       controller.entries[i],
                                     ),
                                     libraryTable: controller.libraryTable,
-                                    showSharpnessScore:
-                                        prefs.showSharpnessScores,
                                     format: format,
                                     resolveThumb: () => controller.thumbFor(
                                       controller.entries[i],
@@ -825,7 +806,6 @@ class _FilmstripTile extends StatefulWidget {
     this.item,
     this.period,
     required this.libraryTable,
-    required this.showSharpnessScore,
     required this.format,
     required this.resolveThumb,
     required this.onRemove,
@@ -837,7 +817,6 @@ class _FilmstripTile extends StatefulWidget {
   final Item? item;
   final KeyPeriodKnowledge? period;
   final LibraryTableController libraryTable;
-  final bool showSharpnessScore;
   final DateTimeDisplayFormat format;
   final Future<LocalThumbResult> Function() resolveThumb;
   final VoidCallback onRemove;
@@ -936,17 +915,6 @@ class _FilmstripTileState extends State<_FilmstripTile> {
                         borderRadius: BorderRadius.circular(8),
                         child: _hoverStill(),
                       ),
-                      if (widget.showSharpnessScore &&
-                          widget.item != null &&
-                          widget.item!.type == ItemType.photo)
-                        Positioned(
-                          left: 4,
-                          bottom: 4,
-                          child: SharpnessScoreChip(
-                            key: Key('item-list-sharpness-$_id'),
-                            item: widget.item!,
-                          ),
-                        ),
                       Positioned(
                         top: 4,
                         right: 4,

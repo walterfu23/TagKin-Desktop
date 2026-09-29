@@ -15,8 +15,6 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/local_thumb_cache.dart';
 import 'package:tagkin_desktop/persons/collection.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
-import 'package:tagkin_desktop/prepass/photo_blur_score_cache.dart';
-import 'package:tagkin_desktop/prepass/sharpness.dart';
 import 'package:tagkin_desktop/review/key_period_offsets.dart';
 import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
@@ -262,15 +260,11 @@ class LibraryTableController extends ChangeNotifier {
     WhereLabelResolver? whereLabelResolver,
     int pageSize = 50,
     this.knowledgeConcurrency = 6,
-    bool hideBlurryPhotos = false,
-    this.blurThreshold = kBlurrySharpnessThreshold,
   }) : _thumbCache = thumbCache ?? LocalThumbCache(),
        _whereLabels = whereLabelResolver ?? WhereLabelResolver(),
-       // Public names pageSize / hideBlurryPhotos are the constructor API.
+       // Public name pageSize is the constructor API.
        // ignore: prefer_initializing_formals
-       _pageSize = pageSize,
-       // ignore: prefer_initializing_formals
-       _hideBlurryPhotos = hideBlurryPhotos;
+       _pageSize = pageSize;
 
   final ItemsRepository itemsRepository;
   final CommentsRepository commentsRepository;
@@ -334,15 +328,6 @@ class LibraryTableController extends ChangeNotifier {
   List<LibrarySortKey> sortKeys = const [];
   int pageIndex = 0;
 
-  bool _hideBlurryPhotos;
-
-  /// Shared Hide blurry toggle ([DesktopPrefs.hideBlurryPhotos]).
-  bool get hideBlurryPhotos => _hideBlurryPhotos;
-
-  /// Bar used with [hideBlurryPhotos]
-  /// ([DesktopPrefs.itemListBlurrySharpnessThreshold]).
-  double blurThreshold;
-
   /// Folders Hide-column filter (view-local hidden items/folders). In-memory
   /// (not a [DesktopPrefs] entry) — inspect-only, not written to a View.
   HiddenItemsFilter _hiddenItemsFilter = HiddenItemsFilter.visible;
@@ -359,7 +344,7 @@ class LibraryTableController extends ChangeNotifier {
   /// Who column header filter (person/who-tag names). In-memory, per table
   /// session (not a [DesktopPrefs] entry). Empty = no filter. Applied to
   /// whatever population the other Folders filters (collection scope, text
-  /// query, Hide blurry, Visible/Hidden/Both) are currently showing — see
+  /// query, Visible/Hidden/Both) are currently showing — see
   /// [_rowsForWhoFilter] / [availableWhoNames].
   Set<String> _whoFilterNames = const {};
 
@@ -530,7 +515,7 @@ class LibraryTableController extends ChangeNotifier {
       _hiddenItemIds.contains(r.item.id);
 
   /// Rows after every Folders filter except the Who filter and sort:
-  /// collection scope, text query, Hide blurry, Visible/Hidden/Both, and
+  /// collection scope, text query, Visible/Hidden/Both, and
   /// view-local hidden folders and hidden item ids. This is the population
   /// the Who filter's checklist ([availableWhoNames]) and predicate operate
   /// on, so e.g. switching the Hide-column dropdown to **Hidden** scopes both
@@ -558,11 +543,6 @@ class LibraryTableController extends ChangeNotifier {
           r.item.capturedAt ?? '',
         ].join(' ').toLowerCase();
         return hay.contains(q);
-      }).toList();
-    }
-    if (_hideBlurryPhotos) {
-      list = list.where((r) {
-        return !isHiddenBlurryPhoto(item: r.item, threshold: blurThreshold);
       }).toList();
     }
     switch (_hiddenItemsFilter) {
@@ -835,17 +815,6 @@ class LibraryTableController extends ChangeNotifier {
     _notifyViewMutation();
   }
 
-  /// Synced from the shared [DesktopPrefs.hideBlurryPhotos] pref (Folders
-  /// and Export list share one toggle). No-ops if unchanged.
-  void setHideBlurryPhotos(bool value, {double? threshold}) {
-    final thresholdChanged = threshold != null && threshold != blurThreshold;
-    if (value == _hideBlurryPhotos && !thresholdChanged) return;
-    _hideBlurryPhotos = value;
-    if (threshold != null) blurThreshold = threshold;
-    pageIndex = 0;
-    _notifyViewMutation();
-  }
-
   /// Snapshot of Folders look for the open collection.
   CollectionLibraryUi captureCollectionLibraryUi() {
     return CollectionLibraryUi(
@@ -885,7 +854,6 @@ class LibraryTableController extends ChangeNotifier {
       whoNames: who,
       whoMatchAll: whoFilterMatchAll,
       hiddenItemsFilter: hiddenItemsFilter.name,
-      hideBlurryPhotos: hideBlurryPhotos,
       sortKeys: [
         for (final k in sortKeys)
           CollectionSortKey(k.column.name, ascending: k.ascending),
@@ -904,9 +872,7 @@ class LibraryTableController extends ChangeNotifier {
     return current.copyWith(hiddenItemsFilter: hide);
   }
 
-  /// Restore Folders filters/sort from a View. Hide blurry is prefs-owned
-  /// — callers push [LibraryViewFilters.hideBlurryPhotos] through
-  /// [DesktopPrefsController.setHideBlurryPhotos] separately.
+  /// Restore Folders filters/sort from a View.
   Future<void> applyLibraryViewFilters(LibraryViewFilters f) async {
     filterQuery = f.filterQuery;
     pageIndex = 0;
@@ -1428,7 +1394,7 @@ class LibraryTableController extends ChangeNotifier {
 }
 
 /// Folders table. Do not depend on desktop prefs: that snapshot churns on disk
-/// load and Hide blurry, and recreating this controller orphans listeners
+/// load, and recreating this controller orphans listeners
 /// (Views auto-mint, page-look sync) bound to the prior instance. Live prefs
 /// are pushed onto the existing controller (Folders listen / Settings).
 final libraryTableControllerProvider =

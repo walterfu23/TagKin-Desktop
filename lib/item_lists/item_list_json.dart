@@ -10,19 +10,13 @@ String itemListToJson({
   required List<ItemListEntry> entries,
   required Map<String, Item> itemsById,
   SavedView? view,
-  String description = '',
   required DateTime exportedAt,
 }) {
   final doc = <String, Object?>{
     'exportedAt': exportedAt.toUtc().toIso8601String(),
-    'description': description,
     'view': view == null
         ? null
-        : {
-            'id': view.id,
-            'name': view.name,
-            'filters': view.filters.toJson(),
-          },
+        : {'id': view.id, 'name': view.name, 'filters': view.filters.toJson()},
     'entries': [
       for (final e in entries)
         {

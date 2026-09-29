@@ -29,11 +29,6 @@ class DesktopPrefs {
     this.autoConfirmMinConfidencePercent = 95,
     this.jobsPollIntervalSeconds = 2,
     this.dateTimeFormat = DateTimeDisplayFormat.local,
-    this.itemListBlurrySharpnessThreshold = 80,
-    this.autoFixBlurryPhotos = true,
-    this.saveFixedPhotoInFolder = true,
-    this.hideBlurryPhotos = false,
-    this.showSharpnessScores = true,
     this.exportPhotoStillDurationSeconds = 2.5,
     this.exportPhotoTransition = ExportPhotoTransition.crossDissolve,
     this.exportPhotoTransitionSeconds = 1.0,
@@ -105,29 +100,6 @@ class DesktopPrefs {
 
   /// How Captured / Added / When / comment timestamps are shown.
   final DateTimeDisplayFormat dateTimeFormat;
-
-  /// Variance-of-Laplacian bar for Hide blurry / ingest auto-fix (0–50000).
-  /// Default matches [kBlurrySharpnessThreshold] (80). Real photo stills
-  /// often score in the thousands; raise the bar after reading on-thumb scores.
-  final int itemListBlurrySharpnessThreshold;
-
-  /// When true, ingest locally unsharps photos below the bar (0 credits).
-  final bool autoFixBlurryPhotos;
-
-  /// When true and [autoFixBlurryPhotos] is on, write `*.tagkin-fixed.jpg`
-  /// next to the original. Never overwrites the original.
-  final bool saveFixedPhotoInFolder;
-
-  /// Hide blurry toggle (shared across Folders and Export list). When true,
-  /// photos whose stored pre-pass sharpness is below
-  /// [itemListBlurrySharpnessThreshold] are hidden from view and excluded
-  /// from Export list's JSON. Persisted; not gated behind Settings Save.
-  final bool hideBlurryPhotos;
-
-  /// When true (default), show stored pre-pass sharpness on photo thumbs
-  /// (Folders, Export list, and item detail) so the blurry bar can be
-  /// chosen from real scores.
-  final bool showSharpnessScores;
 
   /// How long each photo still lasts on an FCP7 XML / FCPXML timeline.
   /// JSON export is unaffected.
@@ -282,13 +254,6 @@ class DesktopPrefs {
   static const jobsPollIntervalSecondsMax = 30;
   static const jobsPollIntervalSecondsStep = 1;
 
-  static const itemListBlurrySharpnessThresholdMin = 0;
-  static const itemListBlurrySharpnessThresholdMax = 50000;
-
-  /// Step 10 keeps the default 80 on the slider grid (step 100 would snap
-  /// it to 100). Typical stills are in the thousands.
-  static const itemListBlurrySharpnessThresholdStep = 10;
-
   static const exportPhotoStillDurationSecondsMin = 0.5;
   static const exportPhotoStillDurationSecondsMax = 10.0;
   static const exportPhotoStillDurationSecondsStep = 0.5;
@@ -326,11 +291,6 @@ class DesktopPrefs {
     int? autoConfirmMinConfidencePercent,
     int? jobsPollIntervalSeconds,
     DateTimeDisplayFormat? dateTimeFormat,
-    int? itemListBlurrySharpnessThreshold,
-    bool? autoFixBlurryPhotos,
-    bool? saveFixedPhotoInFolder,
-    bool? hideBlurryPhotos,
-    bool? showSharpnessScores,
     double? exportPhotoStillDurationSeconds,
     ExportPhotoTransition? exportPhotoTransition,
     double? exportPhotoTransitionSeconds,
@@ -370,14 +330,6 @@ class DesktopPrefs {
       jobsPollIntervalSeconds:
           jobsPollIntervalSeconds ?? this.jobsPollIntervalSeconds,
       dateTimeFormat: dateTimeFormat ?? dateTimeFormatOrLocal,
-      itemListBlurrySharpnessThreshold:
-          itemListBlurrySharpnessThreshold ??
-          this.itemListBlurrySharpnessThreshold,
-      autoFixBlurryPhotos: autoFixBlurryPhotos ?? this.autoFixBlurryPhotos,
-      saveFixedPhotoInFolder:
-          saveFixedPhotoInFolder ?? this.saveFixedPhotoInFolder,
-      hideBlurryPhotos: hideBlurryPhotos ?? this.hideBlurryPhotos,
-      showSharpnessScores: showSharpnessScores ?? this.showSharpnessScores,
       exportPhotoStillDurationSeconds:
           exportPhotoStillDurationSeconds ??
           exportPhotoStillDurationSecondsOrDefault,
@@ -417,11 +369,6 @@ class DesktopPrefs {
     'faces.autoConfirmMinConfidencePercent': autoConfirmMinConfidencePercent,
     'jobs.pollIntervalSeconds': jobsPollIntervalSeconds,
     'ui.dateTimeFormat': dateTimeFormatOrLocal.wire,
-    'export.blurrySharpnessThreshold': itemListBlurrySharpnessThreshold,
-    'export.autoFixBlurryPhotos': autoFixBlurryPhotos,
-    'export.saveFixedPhotoInFolder': saveFixedPhotoInFolder,
-    'export.hideBlurryPhotos': hideBlurryPhotos,
-    'export.showSharpnessScores': showSharpnessScores,
     'export.photoStillDurationSeconds':
         exportPhotoStillDurationSecondsOrDefault,
     'export.photoTransition': exportPhotoTransitionOrDefault.wire,
@@ -567,19 +514,6 @@ class DesktopPrefs {
         max: jobsPollIntervalSecondsMax,
       ),
       dateTimeFormat: DateTimeDisplayFormat.parse(json['ui.dateTimeFormat']),
-      itemListBlurrySharpnessThreshold: intVal(
-        'export.blurrySharpnessThreshold',
-        80,
-        min: itemListBlurrySharpnessThresholdMin,
-        max: itemListBlurrySharpnessThresholdMax,
-      ),
-      autoFixBlurryPhotos: flag('export.autoFixBlurryPhotos', fallback: true),
-      saveFixedPhotoInFolder: flag(
-        'export.saveFixedPhotoInFolder',
-        fallback: true,
-      ),
-      hideBlurryPhotos: flag('export.hideBlurryPhotos', fallback: false),
-      showSharpnessScores: flag('export.showSharpnessScores', fallback: true),
       exportPhotoStillDurationSeconds: doubleVal(
         'export.photoStillDurationSeconds',
         2.5,
@@ -640,12 +574,6 @@ class DesktopPrefs {
           autoConfirmMinConfidencePercent &&
       other.jobsPollIntervalSeconds == jobsPollIntervalSeconds &&
       other.dateTimeFormatOrLocal == dateTimeFormatOrLocal &&
-      other.itemListBlurrySharpnessThreshold ==
-          itemListBlurrySharpnessThreshold &&
-      other.autoFixBlurryPhotos == autoFixBlurryPhotos &&
-      other.saveFixedPhotoInFolder == saveFixedPhotoInFolder &&
-      other.hideBlurryPhotos == hideBlurryPhotos &&
-      other.showSharpnessScores == showSharpnessScores &&
       other.exportPhotoStillDurationSecondsOrDefault ==
           exportPhotoStillDurationSecondsOrDefault &&
       other.exportPhotoTransitionOrDefault == exportPhotoTransitionOrDefault &&
@@ -679,11 +607,6 @@ class DesktopPrefs {
     autoConfirmMinConfidencePercent,
     jobsPollIntervalSeconds,
     dateTimeFormatOrLocal,
-    itemListBlurrySharpnessThreshold,
-    autoFixBlurryPhotos,
-    saveFixedPhotoInFolder,
-    hideBlurryPhotos,
-    showSharpnessScores,
     exportPhotoStillDurationSecondsOrDefault,
     exportPhotoTransitionOrDefault,
     exportPhotoTransitionSecondsOrDefault,

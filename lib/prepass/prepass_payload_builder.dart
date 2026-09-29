@@ -8,7 +8,6 @@ import 'package:tagkin_desktop/prepass/exif_extract.dart';
 import 'package:tagkin_desktop/prepass/face_embedder.dart';
 import 'package:tagkin_desktop/prepass/frame_sampler.dart';
 import 'package:tagkin_desktop/prepass/scene_detect.dart';
-import 'package:tagkin_desktop/prepass/sharpness.dart';
 
 /// Result of a local classic pre-pass: contract payload + optional frame
 /// samples for D5 (bytes stay local; never posted to tagkin-api).
@@ -40,7 +39,6 @@ Future<PrePassBuildResult> buildPrePassPayload({
   String? capturedAt;
   PrePassWhere? where;
   String? perceptualHash;
-  double? sharpness;
   int? durationMs;
   List<PrePassKeyPeriodInput>? keyPeriods;
   final appearances = <PrePassAppearanceInput>[];
@@ -51,17 +49,15 @@ Future<PrePassBuildResult> buildPrePassPayload({
     capturedAt = exif.capturedAt;
     where = exif.where;
     perceptualHash = computePerceptualHash(bytes);
-    sharpness = sharpnessFromJpeg(bytes);
 
     if (!skipFaces) {
       final embedder = faceEmbedder ?? getFaceEmbedder();
       final faces = await embedder.embed(bytes);
       for (final f in faces) {
         appearances.add(
-          PrePassAppearanceInput(
+            PrePassAppearanceInput(
             embedding: f.embedding,
             embeddingModelId: f.embeddingModelId,
-            sharpness: f.sharpness,
           ),
         );
       }
@@ -101,7 +97,6 @@ Future<PrePassBuildResult> buildPrePassPayload({
                   keyPeriodIndex: sample.keyPeriodIndex,
                   embedding: f.embedding,
                   embeddingModelId: f.embeddingModelId,
-                  sharpness: f.sharpness,
                 ),
               );
             }
@@ -120,7 +115,6 @@ Future<PrePassBuildResult> buildPrePassPayload({
     payload: PrePassResult(
       contentHash: contentHash,
       perceptualHash: perceptualHash,
-      sharpness: sharpness,
       capturedAt: capturedAt,
       where: where,
       durationMs: durationMs,
