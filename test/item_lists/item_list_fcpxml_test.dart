@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tagkin_desktop/contract/contract.dart' hide ItemListExportFormat;
+import 'package:tagkin_desktop/contract/contract.dart'
+    hide ItemListExportFormat;
 import 'package:tagkin_desktop/item_lists/item_list_fcpxml.dart';
 import 'package:tagkin_desktop/item_lists/item_list_nle.dart';
 import 'package:tagkin_desktop/persons/collection.dart';
@@ -10,11 +11,9 @@ import 'fake_item_lists_repository.dart';
 void main() {
   test('FCPXML 1.9 1080p30 spine matches filmstrip', () {
     final xml = itemListToFcpxml(
+      endFadeSeconds: 0,
       entries: [
-        fixtureEntry(
-          itemId: 'photo-1',
-          who: const ['Sam'],
-        ),
+        fixtureEntry(itemId: 'photo-1', who: const ['Sam']),
         fixtureEntry(
           itemId: 'video-1',
           kind: ItemListEntryKind.keyperiod,
@@ -57,6 +56,7 @@ void main() {
 
   test('two key periods of one video share an asset id', () {
     final xml = itemListToFcpxml(
+      endFadeSeconds: 0,
       entries: [
         fixtureEntry(
           itemId: 'video-1',
@@ -89,6 +89,7 @@ void main() {
 
   test('XML-escapes names and tags', () {
     final xml = itemListToFcpxml(
+      endFadeSeconds: 0,
       entries: [
         fixtureEntry(
           itemId: 'photo-1',
@@ -121,6 +122,7 @@ void main() {
 
   test('description empty uses view name as project name', () {
     final xml = itemListToFcpxml(
+      endFadeSeconds: 0,
       entries: [fixtureEntry(itemId: 'photo-1')],
       itemsById: {
         'photo-1': fixtureItem(
@@ -139,6 +141,7 @@ void main() {
 
   test('photo still duration follows stillDurationSeconds', () {
     final xml = itemListToFcpxml(
+      endFadeSeconds: 0,
       entries: [fixtureEntry(itemId: 'photo-1')],
       itemsById: {
         'photo-1': fixtureItem(
@@ -153,6 +156,7 @@ void main() {
 
   test('two photos cross-dissolve overlap 1 s', () {
     final xml = itemListToFcpxml(
+      endFadeSeconds: 0,
       entries: [
         fixtureEntry(itemId: 'photo-a'),
         fixtureEntry(itemId: 'photo-b'),
@@ -183,6 +187,7 @@ void main() {
 
   test('photo then key period is a hard cut', () {
     final xml = itemListToFcpxml(
+      endFadeSeconds: 0,
       entries: [
         fixtureEntry(itemId: 'photo-1'),
         fixtureEntry(
@@ -213,6 +218,7 @@ void main() {
 
   test('None keeps photos abutting', () {
     final xml = itemListToFcpxml(
+      endFadeSeconds: 0,
       entries: [
         fixtureEntry(itemId: 'photo-a'),
         fixtureEntry(itemId: 'photo-b'),
@@ -235,6 +241,7 @@ void main() {
 
   test('dip to black and white use Dip to Color', () {
     final black = itemListToFcpxml(
+      endFadeSeconds: 0,
       entries: [
         fixtureEntry(itemId: 'photo-a'),
         fixtureEntry(itemId: 'photo-b'),
@@ -256,6 +263,7 @@ void main() {
     expect(black, contains('value="0 0 0"'));
 
     final white = itemListToFcpxml(
+      endFadeSeconds: 0,
       entries: [
         fixtureEntry(itemId: 'photo-a'),
         fixtureEntry(itemId: 'photo-b'),
@@ -279,6 +287,7 @@ void main() {
 
   test('1080p sequence uses fit spatialConform and file format size', () {
     final xml = itemListToFcpxml(
+      endFadeSeconds: 0,
       entries: [fixtureEntry(itemId: 'photo-1')],
       itemsById: {
         'photo-1': fixtureItem(
@@ -288,9 +297,7 @@ void main() {
       },
       sequenceWidth: 1920,
       sequenceHeight: 1080,
-      fileSizesByItemId: const {
-        'photo-1': ItemListPixelSize(4032, 1816),
-      },
+      fileSizesByItemId: const {'photo-1': ItemListPixelSize(4032, 1816)},
       scaleToFit: true,
     );
     expect(xml, contains('name="FFVideoFormat1080p30"'));
@@ -300,6 +307,7 @@ void main() {
 
   test('unknown still size reuses sequence format', () {
     final xml = itemListToFcpxml(
+      endFadeSeconds: 0,
       entries: [fixtureEntry(itemId: 'photo-1')],
       itemsById: {
         'photo-1': fixtureItem(
@@ -317,6 +325,7 @@ void main() {
 
   test('match smallest sequence uses fit spatialConform', () {
     final xml = itemListToFcpxml(
+      endFadeSeconds: 0,
       entries: [fixtureEntry(itemId: 'photo-1')],
       itemsById: {
         'photo-1': fixtureItem(
@@ -326,9 +335,7 @@ void main() {
       },
       sequenceWidth: 1920,
       sequenceHeight: 1080,
-      fileSizesByItemId: const {
-        'photo-1': ItemListPixelSize(4032, 1816),
-      },
+      fileSizesByItemId: const {'photo-1': ItemListPixelSize(4032, 1816)},
       scaleToFit: true,
     );
     expect(xml, contains('name="FFVideoFormat1080p30"'));
@@ -338,6 +345,7 @@ void main() {
 
   test('match largest uses none spatialConform', () {
     final xml = itemListToFcpxml(
+      endFadeSeconds: 0,
       entries: [fixtureEntry(itemId: 'photo-1')],
       itemsById: {
         'photo-1': fixtureItem(
@@ -347,12 +355,33 @@ void main() {
       },
       sequenceWidth: 4032,
       sequenceHeight: 1816,
-      fileSizesByItemId: const {
-        'photo-1': ItemListPixelSize(4032, 1816),
-      },
+      fileSizesByItemId: const {'photo-1': ItemListPixelSize(4032, 1816)},
     );
     expect(xml, contains('width="4032" height="1816"'));
     expect(xml, isNot(contains('FFVideoFormat1080p30')));
     expect(xml, contains('spatialConform="none"'));
+  });
+
+  test('last item cross-dissolves to a 3 second white solid', () {
+    final xml = itemListToFcpxml(
+      entries: [fixtureEntry(itemId: 'photo-1')],
+      itemsById: {
+        'photo-1': fixtureItem(
+          id: 'photo-1',
+          sourceRef: 'file:///Pictures/Holiday.jpg',
+        ),
+      },
+    );
+    expect(xml, contains('duration="165/30s"'));
+    expect(xml, contains('id="r-end-white"'));
+    expect(
+      xml,
+      contains(
+        '<transition name="Cross Dissolve" offset="75/30s" duration="3s"/>',
+      ),
+    );
+    expect(xml, contains('name="White"'));
+    expect(xml, contains('offset="75/30s"'));
+    expect(xml, contains('<param name="Color" value="1 1 1"/>'));
   });
 }

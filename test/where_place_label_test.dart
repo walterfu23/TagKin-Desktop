@@ -147,10 +147,7 @@ void main() {
         ExportPhotoTransition.crossDissolve,
       );
       expect(DesktopPrefs.defaults.exportPhotoTransitionSeconds, 1.0);
-      expect(
-        DesktopPrefs.defaults.exportPhotoTransitionSecondsOrDefault,
-        1.0,
-      );
+      expect(DesktopPrefs.defaults.exportPhotoTransitionSecondsOrDefault, 1.0);
       expect(
         DesktopPrefs.defaults.exportSequenceSize,
         ExportSequenceSize.matchSmallest,
@@ -282,10 +279,7 @@ void main() {
         }).exportPhotoStillDurationSeconds,
         DesktopPrefs.exportPhotoStillDurationSecondsMin,
       );
-      expect(
-        DesktopPrefs.fromJson({}).exportPhotoStillDurationSeconds,
-        2.5,
-      );
+      expect(DesktopPrefs.fromJson({}).exportPhotoStillDurationSeconds, 2.5);
     });
 
     test('fromJson clamps export photo transition duration', () {
@@ -301,10 +295,7 @@ void main() {
         }).exportPhotoTransitionSeconds,
         DesktopPrefs.exportPhotoTransitionSecondsMin,
       );
-      expect(
-        DesktopPrefs.fromJson({}).exportPhotoTransitionSeconds,
-        1.0,
-      );
+      expect(DesktopPrefs.fromJson({}).exportPhotoTransitionSeconds, 1.0);
       expect(
         DesktopPrefs.fromJson({}).exportPhotoTransition,
         ExportPhotoTransition.crossDissolve,
@@ -346,10 +337,7 @@ void main() {
         }).exportSoundtrackUnderVideoPercent,
         DesktopPrefs.exportSoundtrackUnderVideoPercentMin,
       );
-      expect(
-        DesktopPrefs.fromJson({}).exportSoundtrackUnderVideoPercent,
-        5,
-      );
+      expect(DesktopPrefs.fromJson({}).exportSoundtrackUnderVideoPercent, 5);
     });
 
     test('fromJson clamps export music loop count', () {
@@ -386,9 +374,7 @@ void main() {
         ExportSequenceSize.p1080,
       );
       expect(
-        DesktopPrefs.fromJson({
-          'export.sequenceSize': '4k',
-        }).exportSequenceSize,
+        DesktopPrefs.fromJson({'export.sequenceSize': '4k'}).exportSequenceSize,
         ExportSequenceSize.p4k,
       );
       expect(
@@ -405,25 +391,27 @@ void main() {
       );
     });
 
-    test('setHideBlurryPhotos persists immediately (not gated behind Save)',
-        () async {
-      final dir = await Directory.systemTemp.createTemp(
-        'tagkin_prefs_hide_blurry_',
-      );
-      addTearDown(() => dir.delete(recursive: true));
-      final store = DesktopPrefsStore(supportDir: dir);
-      final controller = DesktopPrefsController(store: store);
-      await controller.load();
-      expect(controller.prefs.hideBlurryPhotos, isFalse);
+    test(
+      'setHideBlurryPhotos persists immediately (not gated behind Save)',
+      () async {
+        final dir = await Directory.systemTemp.createTemp(
+          'tagkin_prefs_hide_blurry_',
+        );
+        addTearDown(() => dir.delete(recursive: true));
+        final store = DesktopPrefsStore(supportDir: dir);
+        final controller = DesktopPrefsController(store: store);
+        await controller.load();
+        expect(controller.prefs.hideBlurryPhotos, isFalse);
 
-      await controller.setHideBlurryPhotos(true);
-      expect(controller.prefs.hideBlurryPhotos, isTrue);
-      expect((await store.load()).hideBlurryPhotos, isTrue);
+        await controller.setHideBlurryPhotos(true);
+        expect(controller.prefs.hideBlurryPhotos, isTrue);
+        expect((await store.load()).hideBlurryPhotos, isTrue);
 
-      await controller.setHideBlurryPhotos(false);
-      expect(controller.prefs.hideBlurryPhotos, isFalse);
-      expect((await store.load()).hideBlurryPhotos, isFalse);
-    });
+        await controller.setHideBlurryPhotos(false);
+        expect(controller.prefs.hideBlurryPhotos, isFalse);
+        expect((await store.load()).hideBlurryPhotos, isFalse);
+      },
+    );
 
     test('fromJson migrates where.homeState to familiarRegions', () {
       final prefs = DesktopPrefs.fromJson({'where.homeState': 'California'});

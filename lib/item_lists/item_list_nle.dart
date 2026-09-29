@@ -1,4 +1,5 @@
-import 'package:tagkin_desktop/contract/contract.dart' hide ItemListExportFormat;
+import 'package:tagkin_desktop/contract/contract.dart'
+    hide ItemListExportFormat;
 import 'package:tagkin_desktop/item_lists/export_photo_transition.dart';
 import 'package:tagkin_desktop/item_lists/item_list_csv.dart';
 import 'package:tagkin_desktop/persons/collection.dart';
@@ -23,25 +24,32 @@ const kItemListNleTransitionSeconds = 1.0;
 const kItemListNleWidth = 1920;
 const kItemListNleHeight = 1080;
 
+/// Cross dissolve to white after the last item on MP4, FCP7 XML, and FCPXML.
+const kItemListNleEndFadeSeconds = 3.0;
+
 enum ItemListExportFormat {
-  json,
+  mp4WithMusic,
+  mp4,
   fcp7Xml,
   fcpxml,
-  mp4WithMusic;
+  json;
 
   String get label => switch (this) {
-        json => 'JSON',
-        fcp7Xml => 'FCP7 XML',
-        fcpxml => 'FCPXML',
-        mp4WithMusic => 'MP4 (with music)',
-      };
+    mp4WithMusic => 'MP4 (with music)',
+    mp4 => 'MP4 (without music)',
+    fcp7Xml => 'FCP7 XML',
+    fcpxml => 'FCPXML',
+    json => 'JSON',
+  };
 
   String get fileExtension => switch (this) {
-        json => 'json',
-        fcp7Xml => 'xml',
-        fcpxml => 'fcpxml',
-        mp4WithMusic => 'mp4',
-      };
+    mp4WithMusic || mp4 => 'mp4',
+    fcp7Xml => 'xml',
+    fcpxml => 'fcpxml',
+    json => 'json',
+  };
+
+  bool get isMp4 => this == mp4WithMusic || this == mp4;
 }
 
 int itemListNleStillDurationMs({
@@ -53,13 +61,10 @@ int itemListNleStillDurationMs({
 
 int itemListNleStillDurationFrames({
   double stillDurationSeconds = kItemListNleStillDurationSeconds,
-}) =>
-    itemListNleDurationFrames(
-      startMs: 0,
-      endMs: itemListNleStillDurationMs(
-        stillDurationSeconds: stillDurationSeconds,
-      ),
-    );
+}) => itemListNleDurationFrames(
+  startMs: 0,
+  endMs: itemListNleStillDurationMs(stillDurationSeconds: stillDurationSeconds),
+);
 
 /// Timeline or source position in frames. Zero stays zero.
 int itemListNleMsToFrames(int ms) {
@@ -85,7 +90,8 @@ int itemListNleTransitionOverlapFrames({
   final requested = itemListNleStillDurationFrames(
     stillDurationSeconds: transitionSeconds,
   );
-  final maxOverlap = (leftDurationFrames < rightDurationFrames
+  final maxOverlap =
+      (leftDurationFrames < rightDurationFrames
           ? leftDurationFrames
           : rightDurationFrames) -
       1;
@@ -93,10 +99,7 @@ int itemListNleTransitionOverlapFrames({
   return requested > maxOverlap ? maxOverlap : requested;
 }
 
-String itemListNleSequenceName({
-  required String description,
-  SavedView? view,
-}) {
+String itemListNleSequenceName({required String description, SavedView? view}) {
   final trimmed = description.trim();
   if (trimmed.isNotEmpty) return trimmed;
   final viewName = view?.name.trim();
@@ -142,10 +145,7 @@ String xmlEscape(String value) {
       .replaceAll("'", '&apos;');
 }
 
-String? itemListNleLocalPath(
-  ItemListEntry entry,
-  Map<String, Item> itemsById,
-) {
+String? itemListNleLocalPath(ItemListEntry entry, Map<String, Item> itemsById) {
   return localPathFromSourceRef(itemsById[entry.itemId]?.sourceRef);
 }
 
@@ -157,12 +157,15 @@ String itemListNlePosixPath(String localPath) {
 }
 
 String itemListNleEncodePath(String posixPath) {
-  return posixPath.split('/').map((seg) {
-    if (seg.isEmpty) return '';
-    return Uri.encodeComponent(seg)
-        .replaceAll('%3A', ':')
-        .replaceAll('%3a', ':');
-  }).join('/');
+  return posixPath
+      .split('/')
+      .map((seg) {
+        if (seg.isEmpty) return '';
+        return Uri.encodeComponent(
+          seg,
+        ).replaceAll('%3A', ':').replaceAll('%3a', ':');
+      })
+      .join('/');
 }
 
 /// FCP7 `pathurl`: `file://localhost///Users/...` or `file://localhost///C:/...`.
@@ -244,6 +247,19 @@ class ItemListNleTransition {
   int get timelineEnd => timelineStart + durationFrames;
 }
 
+/// Hold of the last frame, cross-dissolved to white. Starts at the last clip's end.
+class ItemListNleEndFade {
+  const ItemListNleEndFade({
+    required this.startFrame,
+    required this.durationFrames,
+  });
+
+  final int startFrame;
+  final int durationFrames;
+
+  int get endFrame => startFrame + durationFrames;
+}
+
 class ItemListNleTimeline {
   const ItemListNleTimeline({
     required this.name,
@@ -251,6 +267,7 @@ class ItemListNleTimeline {
     required this.files,
     required this.duration,
     this.transitions = const [],
+    this.endFade,
   });
 
   final String name;
@@ -258,6 +275,7 @@ class ItemListNleTimeline {
   final List<ItemListNleFile> files;
   final int duration;
   final List<ItemListNleTransition> transitions;
+  final ItemListNleEndFade? endFade;
 }
 
 ItemListNleTimeline itemListNleTimeline({
@@ -268,6 +286,7 @@ ItemListNleTimeline itemListNleTimeline({
   double stillDurationSeconds = kItemListNleStillDurationSeconds,
   ExportPhotoTransition transition = ExportPhotoTransition.crossDissolve,
   double transitionSeconds = kItemListNleTransitionSeconds,
+  double endFadeSeconds = 0,
 }) {
   final stillFrames = itemListNleStillDurationFrames(
     stillDurationSeconds: stillDurationSeconds,
@@ -349,12 +368,22 @@ ItemListNleTimeline itemListNleTimeline({
     clipN++;
   }
 
+  ItemListNleEndFade? endFade;
+  if (clips.isNotEmpty && endFadeSeconds > 0) {
+    final frames = itemListNleStillDurationFrames(
+      stillDurationSeconds: endFadeSeconds,
+    );
+    endFade = ItemListNleEndFade(startFrame: t, durationFrames: frames);
+    t += frames;
+  }
+
   return ItemListNleTimeline(
     name: itemListNleSequenceName(description: description, view: view),
     clips: clips,
     files: files,
     duration: t,
     transitions: transitions,
+    endFade: endFade,
   );
 }
 

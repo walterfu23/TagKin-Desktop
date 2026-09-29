@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tagkin_desktop/contract/contract.dart' hide ItemListExportFormat;
+import 'package:tagkin_desktop/contract/contract.dart'
+    hide ItemListExportFormat;
 import 'package:tagkin_desktop/item_lists/item_list_mp4_filter.dart';
 import 'package:tagkin_desktop/item_lists/item_list_mp4_materialize.dart';
 import 'package:tagkin_desktop/item_lists/item_list_mp4_render.dart';
@@ -46,10 +47,7 @@ void main() {
     expect(plan.filterComplex, isNot(contains('concat=')));
     expect(plan.filterComplex, contains('[aout]'));
     expect(plan.filterComplex, contains('[vout]'));
-    expect(
-      plan.filterComplex,
-      isNot(contains('volume=')),
-    );
+    expect(plan.filterComplex, isNot(contains('volume=')));
     expect(plan.filterComplex, isNot(contains('[0:a]')));
     expect(
       plan.filterComplex,
@@ -84,12 +82,60 @@ void main() {
     );
     expect(plan.hasXfade, isFalse);
     expect(plan.filterComplex, contains('concat=n=2:v=1:a=0'));
+    expect(
+      plan.filterComplex,
+      contains(
+        'concat=n=2:v=1:a=0,fps=$kItemListNleTimebase,settb=1/$kItemListNleTimebase',
+      ),
+    );
     expect(plan.filterComplex, isNot(contains('xfade=')));
+  });
+
+  test('hard cut then dissolve keeps the sequence timebase', () {
+    final timeline = itemListNleTimeline(
+      entries: [
+        fixtureEntry(itemId: 'p1'),
+        fixtureEntry(itemId: 'p2'),
+        fixtureEntry(
+          itemId: 'v1',
+          kind: ItemListEntryKind.keyperiod,
+          keyPeriodId: 'kp1',
+          startMs: 0,
+          endMs: 1000,
+        ),
+        fixtureEntry(itemId: 'p3'),
+        fixtureEntry(itemId: 'p4'),
+      ],
+      itemsById: {
+        'p1': fixtureItem(id: 'p1', sourceRef: 'file:///a.jpg'),
+        'p2': fixtureItem(id: 'p2', sourceRef: 'file:///b.jpg'),
+        'v1': fixtureItem(
+          id: 'v1',
+          type: ItemType.video,
+          sourceRef: 'file:///c.mp4',
+        ),
+        'p3': fixtureItem(id: 'p3', sourceRef: 'file:///d.jpg'),
+        'p4': fixtureItem(id: 'p4', sourceRef: 'file:///e.jpg'),
+      },
+    );
+    final plan = itemListMp4Plan(
+      timeline: timeline,
+      sequenceWidth: 1920,
+      sequenceHeight: 1080,
+      scaleToFit: true,
+    );
+    const normalized =
+        'concat=n=2:v=1:a=0,fps=$kItemListNleTimebase,settb=1/$kItemListNleTimebase';
+    expect(plan.hasXfade, isTrue);
+    expect(normalized.allMatches(plan.filterComplex).length, 2);
+    expect(plan.filterComplex, contains('xfade=transition=fade'));
   });
 
   test('MP4 format is a local media export, not a vendor name', () {
     expect(ItemListExportFormat.mp4WithMusic.label, 'MP4 (with music)');
     expect(ItemListExportFormat.mp4WithMusic.fileExtension, 'mp4');
+    expect(ItemListExportFormat.mp4.label, 'MP4 (without music)');
+    expect(ItemListExportFormat.mp4.fileExtension, 'mp4');
   });
 
   test('clip encode holds a still with -t; assemble maps clip mp4s', () {
@@ -116,14 +162,11 @@ void main() {
 
     final timeline = itemListNleTimeline(
       entries: [fixtureEntry(itemId: 'p1')],
-      itemsById: {
-        'p1': fixtureItem(id: 'p1', sourceRef: 'file:///a.jpg'),
-      },
+      itemsById: {'p1': fixtureItem(id: 'p1', sourceRef: 'file:///a.jpg')},
     );
-    final assembled = itemListMp4TimelineWithClipVideos(
-      timeline,
-      ['/tmp/clip-0.mp4'],
-    );
+    final assembled = itemListMp4TimelineWithClipVideos(timeline, [
+      '/tmp/clip-0.mp4',
+    ]);
     final plan = itemListMp4Plan(
       timeline: assembled,
       sequenceWidth: 1920,
@@ -210,10 +253,10 @@ void main() {
         ),
       },
     );
-    final assembled = itemListMp4TimelineWithClipVideos(
-      timeline,
-      ['/tmp/clip-0.mp4', '/tmp/clip-1.mp4'],
-    );
+    final assembled = itemListMp4TimelineWithClipVideos(timeline, [
+      '/tmp/clip-0.mp4',
+      '/tmp/clip-1.mp4',
+    ]);
     expect(assembled.clips[0].isStill, isTrue);
     expect(assembled.clips[1].isStill, isFalse);
 
@@ -235,9 +278,7 @@ void main() {
     expect(plan.filterComplex, contains('adelay=2500|2500:all=1[ca1]'));
     expect(
       plan.filterComplex,
-      contains(
-        'amix=inputs=2:duration=first:dropout_transition=0:normalize=0',
-      ),
+      contains('amix=inputs=2:duration=first:dropout_transition=0:normalize=0'),
     );
     expect(plan.filterComplex, contains('[aout]'));
     expect(plan.filterComplex, isNot(contains('[0:a]')));
@@ -280,14 +321,11 @@ void main() {
 
     final timeline = itemListNleTimeline(
       entries: [fixtureEntry(itemId: 'p1')],
-      itemsById: {
-        'p1': fixtureItem(id: 'p1', sourceRef: 'file:///a.jpg'),
-      },
+      itemsById: {'p1': fixtureItem(id: 'p1', sourceRef: 'file:///a.jpg')},
     );
-    final assembled = itemListMp4TimelineWithClipVideos(
-      timeline,
-      ['/tmp/clip-0.mp4'],
-    );
+    final assembled = itemListMp4TimelineWithClipVideos(timeline, [
+      '/tmp/clip-0.mp4',
+    ]);
     final plan = itemListMp4Plan(
       timeline: assembled,
       sequenceWidth: 1920,
@@ -327,5 +365,83 @@ void main() {
     expect(clipArgs, containsAllInOrder(['-bufsize', '8M']));
     expect(clipArgs, isNot(contains('-allow_sw')));
     expect(clipArgs, isNot(contains('-preset')));
+  });
+
+  test('end fade holds the last frame and dissolves to white', () {
+    final timeline = itemListNleTimeline(
+      entries: [fixtureEntry(itemId: 'p1')],
+      itemsById: {'p1': fixtureItem(id: 'p1', sourceRef: 'file:///a.jpg')},
+      endFadeSeconds: kItemListNleEndFadeSeconds,
+    );
+    final plan = itemListMp4Plan(
+      timeline: timeline,
+      sequenceWidth: 1920,
+      sequenceHeight: 1080,
+      scaleToFit: true,
+    );
+    expect(plan.hasXfade, isTrue);
+    expect(plan.videoDurationSeconds, closeTo(5.5, 0.001));
+    expect(plan.filterComplex, contains('[v0]copy[vbody]'));
+    expect(
+      plan.filterComplex,
+      contains('tpad=stop_mode=clone:stop_duration=3.000'),
+    );
+    expect(plan.filterComplex, contains('color=c=white:s=1920x1080'));
+    expect(
+      plan.filterComplex,
+      contains('xfade=transition=fade:duration=3.000:offset=2.500[vout]'),
+    );
+  });
+
+  test('no soundtrack mixes silence and keeps key-period audio', () {
+    final stills = itemListNleTimeline(
+      entries: [fixtureEntry(itemId: 'p1')],
+      itemsById: {'p1': fixtureItem(id: 'p1', sourceRef: 'file:///a.jpg')},
+    );
+    final stillPlan = itemListMp4Plan(
+      timeline: stills,
+      sequenceWidth: 1920,
+      sequenceHeight: 1080,
+      scaleToFit: true,
+      includeSoundtrack: false,
+    );
+    expect(stillPlan.filterComplex, contains('anullsrc=r=44100:cl=stereo'));
+    expect(stillPlan.filterComplex, isNot(contains('[1:a]')));
+
+    final mixed = itemListNleTimeline(
+      entries: [
+        fixtureEntry(
+          itemId: 'v1',
+          kind: ItemListEntryKind.keyperiod,
+          keyPeriodId: 'kp1',
+          startMs: 0,
+          endMs: 1000,
+        ),
+      ],
+      itemsById: {
+        'v1': fixtureItem(
+          id: 'v1',
+          type: ItemType.video,
+          sourceRef: 'file:///c.mp4',
+        ),
+      },
+    );
+    final mixedPlan = itemListMp4Plan(
+      timeline: mixed,
+      sequenceWidth: 1920,
+      sequenceHeight: 1080,
+      scaleToFit: true,
+      includeSoundtrack: false,
+    );
+    expect(mixedPlan.filterComplex, contains('anullsrc=r=44100:cl=stereo'));
+    expect(mixedPlan.filterComplex, contains('[0:a]'));
+    expect(mixedPlan.filterComplex, isNot(contains('[1:a]')));
+    final args = itemListMp4AssembleArgs(
+      plan: mixedPlan,
+      audioPath: null,
+      outputPath: '/tmp/out.mp4',
+    );
+    expect(args, containsAllInOrder(['-i', mixedPlan.inputs.single.path]));
+    expect(args.where((arg) => arg == '-i'), hasLength(1));
   });
 }

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tagkin_desktop/contract/contract.dart' hide ItemListExportFormat;
+import 'package:tagkin_desktop/contract/contract.dart'
+    hide ItemListExportFormat;
 import 'package:tagkin_desktop/item_lists/item_list_fcp7_xml.dart';
 import 'package:tagkin_desktop/item_lists/item_list_nle.dart';
 import 'package:tagkin_desktop/persons/collection.dart';
@@ -10,6 +11,7 @@ import 'fake_item_lists_repository.dart';
 void main() {
   test('photo still defaults to 75 frames (2.5 s) at 30 fps', () {
     final xml = itemListToFcp7Xml(
+      endFadeSeconds: 0,
       entries: [
         fixtureEntry(
           itemId: 'photo-1',
@@ -54,6 +56,7 @@ void main() {
 
   test('photo still duration follows stillDurationSeconds', () {
     final xml = itemListToFcp7Xml(
+      endFadeSeconds: 0,
       entries: [fixtureEntry(itemId: 'photo-1')],
       itemsById: {
         'photo-1': fixtureItem(
@@ -70,6 +73,7 @@ void main() {
 
   test('key period in/out are frames at 30 fps', () {
     final xml = itemListToFcp7Xml(
+      endFadeSeconds: 0,
       entries: [
         fixtureEntry(
           itemId: 'video-1',
@@ -106,6 +110,7 @@ void main() {
 
   test('two key periods of one video share a file id', () {
     final xml = itemListToFcp7Xml(
+      endFadeSeconds: 0,
       entries: [
         fixtureEntry(
           itemId: 'video-1',
@@ -146,6 +151,7 @@ void main() {
 
   test('filmstrip order and view name when description is empty', () {
     final xml = itemListToFcp7Xml(
+      endFadeSeconds: 0,
       entries: [
         fixtureEntry(itemId: 'photo-b'),
         fixtureEntry(itemId: 'photo-a'),
@@ -160,7 +166,11 @@ void main() {
           sourceRef: 'file:///Pictures/b.jpg',
         ),
       },
-      view: const SavedView(id: 'v1', name: 'Ada', filters: LibraryViewFilters()),
+      view: const SavedView(
+        id: 'v1',
+        name: 'Ada',
+        filters: LibraryViewFilters(),
+      ),
     );
     expect(xml, contains('<name>Ada</name>'));
     final b = xml.indexOf('b.jpg');
@@ -170,6 +180,7 @@ void main() {
 
   test('XML-escapes names and tags', () {
     final xml = itemListToFcp7Xml(
+      endFadeSeconds: 0,
       entries: [
         fixtureEntry(
           itemId: 'photo-1',
@@ -203,6 +214,7 @@ void main() {
 
   test('default sequence name is Item list', () {
     final xml = itemListToFcp7Xml(
+      endFadeSeconds: 0,
       entries: [fixtureEntry(itemId: 'photo-1')],
       itemsById: {
         'photo-1': fixtureItem(id: 'photo-1', sourceRef: 'file:///a.jpg'),
@@ -213,6 +225,7 @@ void main() {
 
   test('two photos cross-dissolve overlap 1 s (30 frames)', () {
     final xml = itemListToFcp7Xml(
+      endFadeSeconds: 0,
       entries: [
         fixtureEntry(itemId: 'photo-a'),
         fixtureEntry(itemId: 'photo-b'),
@@ -243,6 +256,7 @@ void main() {
 
   test('photo then key period is a hard cut', () {
     final xml = itemListToFcp7Xml(
+      endFadeSeconds: 0,
       entries: [
         fixtureEntry(itemId: 'photo-1'),
         fixtureEntry(
@@ -283,6 +297,7 @@ void main() {
 
   test('None keeps photos abutting', () {
     final xml = itemListToFcp7Xml(
+      endFadeSeconds: 0,
       entries: [
         fixtureEntry(itemId: 'photo-a'),
         fixtureEntry(itemId: 'photo-b'),
@@ -310,6 +325,7 @@ void main() {
 
   test('dip to black and white use Dip to Color Dissolve', () {
     final black = itemListToFcp7Xml(
+      endFadeSeconds: 0,
       entries: [
         fixtureEntry(itemId: 'photo-a'),
         fixtureEntry(itemId: 'photo-b'),
@@ -332,6 +348,7 @@ void main() {
     expect(black, isNot(contains('<red>255</red>')));
 
     final white = itemListToFcp7Xml(
+      endFadeSeconds: 0,
       entries: [
         fixtureEntry(itemId: 'photo-a'),
         fixtureEntry(itemId: 'photo-b'),
@@ -355,6 +372,7 @@ void main() {
 
   test('transition overlap clamps to still length minus one frame', () {
     final xml = itemListToFcp7Xml(
+      endFadeSeconds: 0,
       entries: [
         fixtureEntry(itemId: 'photo-a'),
         fixtureEntry(itemId: 'photo-b'),
@@ -383,6 +401,7 @@ void main() {
 
   test('1080p sequence scales a larger still to fit', () {
     final xml = itemListToFcp7Xml(
+      endFadeSeconds: 0,
       entries: [fixtureEntry(itemId: 'photo-1')],
       itemsById: {
         'photo-1': fixtureItem(
@@ -392,9 +411,7 @@ void main() {
       },
       sequenceWidth: 1920,
       sequenceHeight: 1080,
-      fileSizesByItemId: const {
-        'photo-1': ItemListPixelSize(4032, 1816),
-      },
+      fileSizesByItemId: const {'photo-1': ItemListPixelSize(4032, 1816)},
       scaleToFit: true,
     );
     expect(xml, contains('<width>1920</width>'));
@@ -408,6 +425,7 @@ void main() {
 
   test('match smallest sequence scales a larger still to fit', () {
     final xml = itemListToFcp7Xml(
+      endFadeSeconds: 0,
       entries: [fixtureEntry(itemId: 'photo-1')],
       itemsById: {
         'photo-1': fixtureItem(
@@ -417,9 +435,7 @@ void main() {
       },
       sequenceWidth: 1920,
       sequenceHeight: 1080,
-      fileSizesByItemId: const {
-        'photo-1': ItemListPixelSize(4032, 1816),
-      },
+      fileSizesByItemId: const {'photo-1': ItemListPixelSize(4032, 1816)},
       scaleToFit: true,
     );
     expect(xml, contains('<width>1920</width>'));
@@ -432,6 +448,7 @@ void main() {
 
   test('unknown still size does not fake sequence pixels or Fit scale', () {
     final xml = itemListToFcp7Xml(
+      endFadeSeconds: 0,
       entries: [fixtureEntry(itemId: 'photo-1')],
       itemsById: {
         'photo-1': fixtureItem(
@@ -448,6 +465,7 @@ void main() {
 
   test('match largest sequence uses photo pixels and does not scale', () {
     final xml = itemListToFcp7Xml(
+      endFadeSeconds: 0,
       entries: [fixtureEntry(itemId: 'photo-1')],
       itemsById: {
         'photo-1': fixtureItem(
@@ -457,12 +475,33 @@ void main() {
       },
       sequenceWidth: 4032,
       sequenceHeight: 1816,
-      fileSizesByItemId: const {
-        'photo-1': ItemListPixelSize(4032, 1816),
-      },
+      fileSizesByItemId: const {'photo-1': ItemListPixelSize(4032, 1816)},
     );
     expect(xml, contains('<width>4032</width>'));
     expect(xml, contains('<height>1816</height>'));
     expect(xml, isNot(contains('<effectid>basic</effectid>')));
+  });
+
+  test('last item cross-dissolves to a 3 second white generator', () {
+    final xml = itemListToFcp7Xml(
+      entries: [fixtureEntry(itemId: 'photo-1')],
+      itemsById: {
+        'photo-1': fixtureItem(
+          id: 'photo-1',
+          sourceRef: 'file:///Pictures/Holiday.jpg',
+        ),
+      },
+    );
+    expect(xml, contains('<end>75</end>'));
+    expect(xml, contains('<alignment>start</alignment>'));
+    expect(xml, contains('<name>Cross Dissolve</name>'));
+    expect(xml, contains('<generatoritem id="clipitem-end-white">'));
+    expect(xml, contains('<name>White</name>'));
+    expect(xml, contains('<name>Color</name>'));
+    expect(xml, contains('<red>255</red>'));
+    expect(xml, contains('<start>75</start>'));
+    expect(xml, contains('<end>165</end>'));
+    expect(xml, contains('<duration>165</duration>'));
+    expect(xml, contains('<out>90</out>'));
   });
 }

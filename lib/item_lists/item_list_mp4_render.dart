@@ -10,7 +10,10 @@ import 'package:tagkin_desktop/item_lists/item_list_nle.dart';
 import 'package:tagkin_desktop/prepass/ffmpeg_resolve.dart';
 
 export 'item_list_mp4_materialize.dart'
-    show ItemListMp4RenderException, ItemListMp4CancelledException;
+    show
+        ItemListMp4FailureReport,
+        ItemListMp4RenderException,
+        ItemListMp4CancelledException;
 
 /// Last encode workspace (stills, clips, argv, ffmpeg.log). Overwritten each Export.
 const kItemListMp4DumpDir = '/Users/w/test/out/tagkin-mp4-last';
@@ -21,42 +24,106 @@ const kItemListMp4MaxClipConcurrency = 4;
 String get itemListMp4TempDumpDir =>
     p.join(Directory.systemTemp.path, 'tagkin-mp4-last');
 
-/// H.264 encoder used for clip and assemble phases.
-enum ItemListMp4EncoderKind {
-  libx264,
-  videotoolbox,
-  mediaFoundation,
+const kItemListMp4FailureGeneric =
+    'The video could not be created. Try exporting again. '
+    'Use Details when contacting support.';
+
+/// Drop ffmpeg chatter that appears on successful encodes too.
+String itemListMp4FailureTechnical(String stderr) {
+  final kept = <String>[];
+  for (final raw in stderr.split('\n')) {
+    final line = raw.trim();
+    if (line.isEmpty) continue;
+    if (line.contains('swscaler')) continue;
+    if (line.contains('Guessed Channel Layout')) continue;
+    if (line.contains('deprecated pixel format')) continue;
+    kept.add(line);
+  }
+  return kept.join('\n');
 }
+
+/// Plain sentence for an ffmpeg failure, plus filtered support text.
+ItemListMp4FailureReport itemListMp4FailureReport({
+  required String step,
+  required int exitCode,
+  required String stderr,
+  String? logDir,
+}) {
+  return ItemListMp4FailureReport(
+    sentence: _itemListMp4FailureSentence(
+      step: step,
+      exitCode: exitCode,
+      stderr: stderr,
+    ),
+    step: step,
+    exitCode: exitCode,
+    logDir: logDir,
+    technical: itemListMp4FailureTechnical(stderr),
+  );
+}
+
+String _itemListMp4FailureSentence({
+  required String step,
+  required int exitCode,
+  required String stderr,
+}) {
+  if (step == 'soundtrack') {
+    return 'The music for this video could not be read. Generate music again.';
+  }
+  final lower = stderr.toLowerCase();
+  if (lower.contains('no such file') || lower.contains('error opening input')) {
+    return 'A photo or video in this list could not be found. '
+        'It may have been moved or deleted. '
+        'Remove it from the list and export again.';
+  }
+  if (lower.contains('no space left') ||
+      lower.contains('enospc') ||
+      lower.contains('disk quota')) {
+    return 'Not enough free disk space to build the video. '
+        'Free some space and export again.';
+  }
+  if (lower.contains('permission denied') ||
+      lower.contains('read-only file system') ||
+      lower.contains('operation not permitted')) {
+    return 'TagKin could not save to that folder. Choose a different folder.';
+  }
+  if (exitCode == -9 ||
+      exitCode == 137 ||
+      lower.contains('cannot allocate memory') ||
+      lower.contains('out of memory') ||
+      lower.contains('killed')) {
+    return 'Your Mac ran out of resources while building this video. '
+        'Close other apps, or export fewer items, and try again.';
+  }
+  return kItemListMp4FailureGeneric;
+}
+
+/// H.264 encoder used for clip and assemble phases.
+enum ItemListMp4EncoderKind { libx264, videotoolbox, mediaFoundation }
 
 extension ItemListMp4EncoderKindX on ItemListMp4EncoderKind {
   String get codecName => switch (this) {
-        ItemListMp4EncoderKind.libx264 => 'libx264',
-        ItemListMp4EncoderKind.videotoolbox => 'h264_videotoolbox',
-        ItemListMp4EncoderKind.mediaFoundation => 'h264_mf',
-      };
+    ItemListMp4EncoderKind.libx264 => 'libx264',
+    ItemListMp4EncoderKind.videotoolbox => 'h264_videotoolbox',
+    ItemListMp4EncoderKind.mediaFoundation => 'h264_mf',
+  };
 
   bool get isHardware => this != ItemListMp4EncoderKind.libx264;
 }
 
-typedef ItemListMp4EncoderResolver = Future<ItemListMp4EncoderKind> Function(
-  String ffmpeg,
-);
+typedef ItemListMp4EncoderResolver =
+    Future<ItemListMp4EncoderKind> Function(String ffmpeg);
 
-typedef ItemListMp4FfmpegRunner = Future<({int exitCode, String stderr})>
-    Function({
-  required String ffmpeg,
-  required List<String> args,
-  required StringBuffer log,
-  required String label,
-});
+typedef ItemListMp4FfmpegRunner =
+    Future<({int exitCode, String stderr})> Function({
+      required String ffmpeg,
+      required List<String> args,
+      required StringBuffer log,
+      required String label,
+    });
 
 /// Sequential stages of `itemListRenderMp4` (clip encode, then assemble, then copy).
-enum ItemListMp4Phase {
-  staging,
-  encodingClips,
-  assembling,
-  writingOut,
-}
+enum ItemListMp4Phase { staging, encodingClips, assembling, writingOut }
 
 /// Snapshot of MP4 encode progress for the Export list UI.
 class ItemListMp4Progress {
@@ -83,7 +150,8 @@ class ItemListMp4Progress {
   int get hashCode => Object.hash(phase, clipIndex, clipCount);
 }
 
-typedef ItemListMp4ProgressCallback = void Function(ItemListMp4Progress progress);
+typedef ItemListMp4ProgressCallback =
+    void Function(ItemListMp4Progress progress);
 
 /// Pause, continue, or cancel in-flight ffmpeg processes for one MP4 export.
 ///
@@ -208,18 +276,19 @@ class ItemListMp4CancelToken {
 
 /// Renderer used by background MP4 jobs. [macSaveHandle] is the per-export
 /// macOS Save As token; null copies [outputPath] directly.
-typedef ItemListMp4Renderer = Future<void> Function({
-  required ItemListNleTimeline timeline,
-  required String audioPath,
-  required String outputPath,
-  required int sequenceWidth,
-  required int sequenceHeight,
-  required bool scaleToFit,
-  double soundtrackDuck,
-  ItemListMp4ProgressCallback? onProgress,
-  ItemListMp4CancelToken? cancel,
-  String? macSaveHandle,
-});
+typedef ItemListMp4Renderer =
+    Future<void> Function({
+      required ItemListNleTimeline timeline,
+      required String? audioPath,
+      required String outputPath,
+      required int sequenceWidth,
+      required int sequenceHeight,
+      required bool scaleToFit,
+      double soundtrackDuck,
+      ItemListMp4ProgressCallback? onProgress,
+      ItemListMp4CancelToken? cancel,
+      String? macSaveHandle,
+    });
 
 /// Delete [path] when it exists and is empty. Ignores filesystem errors.
 Future<void> deleteEmptyItemListExport(String path) async {
@@ -264,11 +333,10 @@ String itemListMp4ProgressLabel(ItemListMp4Progress progress) {
 Future<bool> itemListMp4EncodersAvailable() async {
   final tools = resolveFfmpegTools();
   if (tools == null) return false;
-  final result = await Process.run(
-    tools.ffmpeg,
-    ['-hide_banner', '-encoders'],
-    runInShell: false,
-  );
+  final result = await Process.run(tools.ffmpeg, [
+    '-hide_banner',
+    '-encoders',
+  ], runInShell: false);
   if (result.exitCode != 0) return false;
   final text = '${result.stdout}\n${result.stderr}';
   return text.contains('libx264') &&
@@ -289,8 +357,8 @@ Future<ItemListMp4EncoderKind> resolveItemListMp4VideoEncoder(
   final candidate = Platform.isMacOS
       ? ItemListMp4EncoderKind.videotoolbox
       : Platform.isWindows
-          ? ItemListMp4EncoderKind.mediaFoundation
-          : ItemListMp4EncoderKind.libx264;
+      ? ItemListMp4EncoderKind.mediaFoundation
+      : ItemListMp4EncoderKind.libx264;
   if (!candidate.isHardware ||
       !await itemListMp4ProbeHardwareEncoder(ffmpeg, candidate)) {
     _cachedEncoder = ItemListMp4EncoderKind.libx264;
@@ -394,12 +462,7 @@ Future<({int exitCode, String stderr})> itemListMp4RunEncodeWithFallback({
   ItemListMp4CancelToken? cancel,
 }) async {
   await cancel?.checkpoint();
-  var ran = await run(
-    ffmpeg: ffmpeg,
-    args: args,
-    log: log,
-    label: label,
-  );
+  var ran = await run(ffmpeg: ffmpeg, args: args, log: log, label: label);
   await cancel?.checkpoint();
   if (itemListMp4OutputOk(ran.exitCode, outputPath)) return ran;
   if (!encoder.isHardware) return ran;
@@ -433,10 +496,7 @@ List<String> itemListMp4VideoEncoderArgs({
   final args = <String>['-c:v', encoder.codecName];
   switch (encoder) {
     case ItemListMp4EncoderKind.libx264:
-      args.addAll([
-        '-preset',
-        assemble ? 'veryfast' : 'ultrafast',
-      ]);
+      args.addAll(['-preset', assemble ? 'veryfast' : 'ultrafast']);
     case ItemListMp4EncoderKind.videotoolbox:
       args.addAll(['-allow_sw', '0', '-realtime', '0']);
     case ItemListMp4EncoderKind.mediaFoundation:
@@ -478,9 +538,9 @@ String _scaleFilter({
   final h = sequenceHeight < 2 ? 2 : sequenceHeight - (sequenceHeight % 2);
   return scaleToFit
       ? 'scale=$w:$h:force_original_aspect_ratio=decrease,'
-          'pad=$w:$h:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1'
+            'pad=$w:$h:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1'
       : 'scale=$w:$h:force_original_aspect_ratio=increase,'
-          'crop=$w:$h,setsar=1';
+            'crop=$w:$h,setsar=1';
 }
 
 /// ffmpeg argv: one still or key period → finite H.264 `clip-N.mp4`.
@@ -567,7 +627,7 @@ List<String> itemListMp4ClipEncodeArgs({
 /// ffmpeg argv: assembled H.264 clips + WAV → QuickTime MP4.
 List<String> itemListMp4AssembleArgs({
   required ItemListMp4Plan plan,
-  required String audioPath,
+  required String? audioPath,
   required String outputPath,
   ItemListMp4EncoderKind encoder = ItemListMp4EncoderKind.libx264,
   int sequenceWidth = 1920,
@@ -577,7 +637,9 @@ List<String> itemListMp4AssembleArgs({
   for (final input in plan.inputs) {
     args.addAll(['-i', input.path]);
   }
-  args.addAll(['-i', audioPath]);
+  if (audioPath != null && audioPath.isNotEmpty) {
+    args.addAll(['-i', audioPath]);
+  }
   args.addAll([
     '-filter_complex',
     plan.filterComplex,
@@ -616,16 +678,23 @@ Future<void> itemListMp4DecodeSoundtrackWav({
   required String audioPath,
   required String destPath,
   ItemListMp4CancelToken? cancel,
+  String? logDir,
 }) async {
   await cancel?.checkpoint();
-  final staged =
-      p.join(p.dirname(destPath), 'soundtrack-src${p.extension(audioPath)}');
+  final staged = p.join(
+    p.dirname(destPath),
+    'soundtrack-src${p.extension(audioPath)}',
+  );
   try {
     await File(audioPath).copy(staged);
   } catch (e) {
-    throw ItemListMp4RenderException(
-      'Could not read the soundtrack for MP4 export: $e',
+    final report = itemListMp4FailureReport(
+      step: 'soundtrack',
+      exitCode: 1,
+      stderr: '$e',
+      logDir: logDir,
     );
+    throw ItemListMp4RenderException(report.sentence, failure: report);
   }
   await cancel?.checkpoint();
   final result = await _itemListMp4RunProcess(
@@ -647,10 +716,15 @@ Future<void> itemListMp4DecodeSoundtrackWav({
   );
   final wav = File(destPath);
   if (result.exitCode != 0 || !wav.existsSync() || wav.lengthSync() == 0) {
-    final err = result.stderr.trim();
-    throw ItemListMp4RenderException(
-      err.isEmpty ? 'Could not decode the soundtrack for MP4 export.' : err,
+    final report = itemListMp4FailureReport(
+      step: 'soundtrack',
+      exitCode: result.exitCode,
+      stderr: result.stderr.trim().isEmpty
+          ? 'Could not decode the soundtrack for MP4 export.'
+          : result.stderr,
+      logDir: logDir,
     );
+    throw ItemListMp4RenderException(report.sentence, failure: report);
   }
 }
 
@@ -754,7 +828,7 @@ Future<({int exitCode, String stderr})> _runFfmpegLogged({
 /// for inspection.
 Future<void> itemListRenderMp4({
   required ItemListNleTimeline timeline,
-  required String audioPath,
+  required String? audioPath,
   required String outputPath,
   required int sequenceWidth,
   required int sequenceHeight,
@@ -780,14 +854,21 @@ Future<void> itemListRenderMp4({
       'This ffmpeg build cannot encode H.264/AAC. MP4 export cannot run.',
     );
   }
-  if (!File(audioPath).existsSync()) {
-    throw ItemListMp4RenderException('Generated music file is missing.');
+  final rawAudio = audioPath;
+  String? soundtrack;
+  if (rawAudio != null && rawAudio.isNotEmpty) {
+    if (!File(rawAudio).existsSync()) {
+      throw ItemListMp4RenderException('Generated music file is missing.');
+    }
+    soundtrack = rawAudio;
   }
+  final hasSoundtrack = soundtrack != null;
 
   final tempDir = Directory.systemTemp.createTempSync('tagkin-mp4-');
   final tempOut = p.join(tempDir.path, 'item-list.mp4');
   final log = StringBuffer();
-  final run = runFfmpeg ??
+  final run =
+      runFfmpeg ??
       ({
         required String ffmpeg,
         required List<String> args,
@@ -807,8 +888,9 @@ Future<void> itemListRenderMp4({
   try {
     await cancel?.checkpoint();
     report(const ItemListMp4Progress(phase: ItemListMp4Phase.staging));
-    final encoder =
-        await (resolveEncoder ?? resolveItemListMp4VideoEncoder)(tools.ffmpeg);
+    final encoder = await (resolveEncoder ?? resolveItemListMp4VideoEncoder)(
+      tools.ffmpeg,
+    );
     await cancel?.checkpoint();
     log.writeln('encoder: ${encoder.codecName}');
     final byOriginal = await itemListMaterializeMp4Inputs(
@@ -816,7 +898,10 @@ Future<void> itemListRenderMp4({
       destDir: tempDir.path,
     );
     await cancel?.checkpoint();
-    final staged = itemListMp4TimelineWithMaterializedPaths(timeline, byOriginal);
+    final staged = itemListMp4TimelineWithMaterializedPaths(
+      timeline,
+      byOriginal,
+    );
     final sourcePlan = itemListMp4Plan(
       timeline: staged,
       sequenceWidth: sequenceWidth,
@@ -824,14 +909,19 @@ Future<void> itemListRenderMp4({
       scaleToFit: scaleToFit,
       audioFadeOutSeconds: audioFadeOutSeconds,
       soundtrackDuck: soundtrackDuck,
+      includeSoundtrack: hasSoundtrack,
     );
     final wavPath = p.join(tempDir.path, 'soundtrack.wav');
-    await itemListMp4DecodeSoundtrackWav(
-      ffmpeg: tools.ffmpeg,
-      audioPath: audioPath,
-      destPath: wavPath,
-      cancel: cancel,
-    );
+    final readySoundtrack = soundtrack;
+    if (readySoundtrack != null) {
+      await itemListMp4DecodeSoundtrackWav(
+        ffmpeg: tools.ffmpeg,
+        audioPath: readySoundtrack,
+        destPath: wavPath,
+        cancel: cancel,
+        logDir: tempDir.path,
+      );
+    }
 
     await cancel?.checkpoint();
     final hasAudioFlags = <bool>[];
@@ -891,11 +981,20 @@ Future<void> itemListRenderMp4({
           cancel: cancel,
         );
         if (!itemListMp4OutputOk(ran.exitCode, clipOut)) {
-          throw ItemListMp4RenderException(
-            ran.stderr.isEmpty
-                ? 'ffmpeg wrote an empty clip-$i.mp4. Log: $kItemListMp4DumpDir or $itemListMp4TempDumpDir'
-                : '${ran.stderr}\nLog: $kItemListMp4DumpDir or $itemListMp4TempDumpDir',
-          );
+          final report = ran.stderr.trim().isEmpty
+              ? ItemListMp4FailureReport(
+                  sentence: 'ffmpeg wrote an empty clip-$i.mp4.',
+                  step: 'clip ${i + 1}',
+                  exitCode: ran.exitCode,
+                  logDir: tempDir.path,
+                )
+              : itemListMp4FailureReport(
+                  step: 'clip ${i + 1}',
+                  exitCode: ran.exitCode,
+                  stderr: ran.stderr,
+                  logDir: tempDir.path,
+                );
+          throw ItemListMp4RenderException(report.sentence, failure: report);
         }
         clipsDone += 1;
         report(
@@ -909,7 +1008,10 @@ Future<void> itemListRenderMp4({
       },
     );
 
-    final assembleTimeline = itemListMp4TimelineWithClipVideos(staged, clipPaths);
+    final assembleTimeline = itemListMp4TimelineWithClipVideos(
+      staged,
+      clipPaths,
+    );
     final assemblePlan = itemListMp4Plan(
       timeline: assembleTimeline,
       sequenceWidth: sequenceWidth,
@@ -917,10 +1019,11 @@ Future<void> itemListRenderMp4({
       scaleToFit: scaleToFit,
       audioFadeOutSeconds: audioFadeOutSeconds,
       soundtrackDuck: soundtrackDuck,
+      includeSoundtrack: hasSoundtrack,
     );
     final args = itemListMp4AssembleArgs(
       plan: assemblePlan,
-      audioPath: wavPath,
+      audioPath: hasSoundtrack ? wavPath : null,
       outputPath: tempOut,
       encoder: encoder,
       sequenceWidth: sequenceWidth,
@@ -929,7 +1032,7 @@ Future<void> itemListRenderMp4({
     final softwareAssemble = encoder.isHardware
         ? itemListMp4AssembleArgs(
             plan: assemblePlan,
-            audioPath: wavPath,
+            audioPath: hasSoundtrack ? wavPath : null,
             outputPath: tempOut,
             sequenceWidth: sequenceWidth,
             sequenceHeight: sequenceHeight,
@@ -953,16 +1056,25 @@ Future<void> itemListRenderMp4({
       cancel: cancel,
     );
     if (ran.exitCode != 0) {
-      throw ItemListMp4RenderException(
-        ran.stderr.isEmpty
-            ? 'ffmpeg failed to render MP4. Log: $kItemListMp4DumpDir or $itemListMp4TempDumpDir'
-            : '${ran.stderr}\nLog: $kItemListMp4DumpDir or $itemListMp4TempDumpDir',
+      final report = itemListMp4FailureReport(
+        step: 'assembling',
+        exitCode: ran.exitCode,
+        stderr: ran.stderr,
+        logDir: tempDir.path,
       );
+      throw ItemListMp4RenderException(report.sentence, failure: report);
     }
     final encoded = File(tempOut);
     if (!encoded.existsSync() || encoded.lengthSync() == 0) {
+      const sentence = 'ffmpeg wrote an empty MP4.';
       throw ItemListMp4RenderException(
-        'ffmpeg wrote an empty MP4. Log: $kItemListMp4DumpDir or $itemListMp4TempDumpDir',
+        sentence,
+        failure: ItemListMp4FailureReport(
+          sentence: sentence,
+          step: 'assembling',
+          exitCode: ran.exitCode,
+          logDir: tempDir.path,
+        ),
       );
     }
     report(const ItemListMp4Progress(phase: ItemListMp4Phase.writingOut));
@@ -994,6 +1106,11 @@ Future<void> itemListRenderMp4({
     ok = true;
   } finally {
     try {
+      await File(
+        p.join(tempDir.path, 'ffmpeg.log'),
+      ).writeAsString(log.toString());
+    } catch (_) {}
+    try {
       await itemListMp4WriteDump(
         tempDir: tempDir.path,
         log: log.toString(),
@@ -1010,21 +1127,17 @@ Future<void> itemListRenderMp4({
 
 /// True when [path] has at least one audio stream.
 Future<bool> itemListMp4HasAudioStream(String ffprobe, String path) async {
-  final result = await Process.run(
-    ffprobe,
-    [
-      '-v',
-      'error',
-      '-select_streams',
-      'a:0',
-      '-show_entries',
-      'stream=codec_type',
-      '-of',
-      'csv=p=0',
-      path,
-    ],
-    runInShell: false,
-  );
+  final result = await Process.run(ffprobe, [
+    '-v',
+    'error',
+    '-select_streams',
+    'a:0',
+    '-show_entries',
+    'stream=codec_type',
+    '-of',
+    'csv=p=0',
+    path,
+  ], runInShell: false);
   if (result.exitCode != 0) return false;
   return (result.stdout as String).trim().isNotEmpty;
 }
@@ -1033,19 +1146,15 @@ Future<bool> itemListMp4HasAudioStream(String ffprobe, String path) async {
 Future<double?> itemListMp4ProbeDurationSeconds(String path) async {
   final tools = resolveFfmpegTools();
   if (tools == null) return null;
-  final result = await Process.run(
-    tools.ffprobe,
-    [
-      '-v',
-      'error',
-      '-show_entries',
-      'format=duration',
-      '-of',
-      'default=noprint_wrappers=1:nokey=1',
-      path,
-    ],
-    runInShell: false,
-  );
+  final result = await Process.run(tools.ffprobe, [
+    '-v',
+    'error',
+    '-show_entries',
+    'format=duration',
+    '-of',
+    'default=noprint_wrappers=1:nokey=1',
+    path,
+  ], runInShell: false);
   if (result.exitCode != 0) return null;
   return double.tryParse((result.stdout as String).trim());
 }

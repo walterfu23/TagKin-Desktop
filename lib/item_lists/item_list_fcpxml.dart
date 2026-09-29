@@ -1,4 +1,5 @@
-import 'package:tagkin_desktop/contract/contract.dart' hide ItemListExportFormat;
+import 'package:tagkin_desktop/contract/contract.dart'
+    hide ItemListExportFormat;
 import 'package:tagkin_desktop/item_lists/item_list_nle.dart';
 import 'package:tagkin_desktop/persons/collection.dart';
 
@@ -11,6 +12,7 @@ String itemListToFcpxml({
   double stillDurationSeconds = kItemListNleStillDurationSeconds,
   ExportPhotoTransition transition = ExportPhotoTransition.crossDissolve,
   double transitionSeconds = kItemListNleTransitionSeconds,
+  double endFadeSeconds = kItemListNleEndFadeSeconds,
   int sequenceWidth = kItemListNleWidth,
   int sequenceHeight = kItemListNleHeight,
   Map<String, ItemListPixelSize> fileSizesByItemId = const {},
@@ -24,6 +26,7 @@ String itemListToFcpxml({
     stillDurationSeconds: stillDurationSeconds,
     transition: transition,
     transitionSeconds: transitionSeconds,
+    endFadeSeconds: endFadeSeconds,
   );
   final assetIdByFileId = <String, String>{};
   var assetN = 2;
@@ -37,24 +40,30 @@ String itemListToFcpxml({
   xml.raw('<!DOCTYPE fcpxml>');
   xml.open('<fcpxml version="1.9">');
   xml.open('<resources>');
-  xml.line(_fcpxmlFormatLine(
-    id: 'r1',
-    width: sequenceWidth,
-    height: sequenceHeight,
-  ));
+  xml.line(
+    _fcpxmlFormatLine(id: 'r1', width: sequenceWidth, height: sequenceHeight),
+  );
   final formatIdByFileId = <String, String>{};
   for (final file in timeline.files) {
     final pixels = fileSizesByItemId[file.itemId];
     if (pixels != null && pixels.isValid) {
-      xml.line(_fcpxmlFormatLine(
-        id: 'fmt-${file.id}',
-        width: pixels.width,
-        height: pixels.height,
-      ));
+      xml.line(
+        _fcpxmlFormatLine(
+          id: 'fmt-${file.id}',
+          width: pixels.width,
+          height: pixels.height,
+        ),
+      );
       formatIdByFileId[file.id] = 'fmt-${file.id}';
     } else {
       formatIdByFileId[file.id] = 'r1';
     }
+  }
+  if (timeline.endFade != null) {
+    xml.line(
+      '<effect id="r-end-white" name="Custom" '
+      'uid="~/Generators.localized/Solids.localized/Custom.localized/Custom.motn"/>',
+    );
   }
   for (final file in timeline.files) {
     final assetId = assetIdByFileId[file.id]!;
@@ -103,6 +112,21 @@ String itemListToFcpxml({
     final join = transitionAfter[i];
     if (join != null) _transition(xml, join);
   }
+  final endFade = timeline.endFade;
+  if (endFade != null) {
+    final offset = fcpxmlTime(endFade.startFrame);
+    final duration = fcpxmlTime(endFade.durationFrames);
+    xml.line(
+      '<transition name="Cross Dissolve" offset="$offset" '
+      'duration="$duration"/>',
+    );
+    xml.open(
+      '<video ref="r-end-white" name="White" offset="$offset" '
+      'duration="$duration" start="0s">',
+    );
+    xml.line('<param name="Color" value="1 1 1"/>');
+    xml.close('</video>');
+  }
   xml.close('</spine>');
   xml.close('</sequence>');
   xml.close('</project>');
@@ -120,8 +144,8 @@ String _fcpxmlFormatLine({
   final name = width == 1920 && height == 1080
       ? ' name="FFVideoFormat1080p30"'
       : width == 3840 && height == 2160
-          ? ' name="FFVideoFormat2160p30"'
-          : '';
+      ? ' name="FFVideoFormat2160p30"'
+      : '';
   return '<format id="$id"$name '
       'frameDuration="1/${kItemListNleTimebase}s" '
       'width="$width" height="$height"/>';
@@ -138,8 +162,9 @@ void _transition(ItemListXmlBuf xml, ItemListNleTransition join) {
       );
     case ExportPhotoTransition.dipToBlack:
     case ExportPhotoTransition.dipToWhite:
-      final color =
-          join.kind == ExportPhotoTransition.dipToWhite ? '1 1 1' : '0 0 0';
+      final color = join.kind == ExportPhotoTransition.dipToWhite
+          ? '1 1 1'
+          : '0 0 0';
       xml.open(
         '<transition name="Dip to Color" offset="$offset" '
         'duration="$duration">',

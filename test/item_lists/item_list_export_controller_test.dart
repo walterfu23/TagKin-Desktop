@@ -4,7 +4,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/api/item_lists_repository.dart';
-import 'package:tagkin_desktop/contract/contract.dart' hide ItemListExportFormat;
+import 'package:tagkin_desktop/contract/contract.dart'
+    hide ItemListExportFormat;
 import 'package:tagkin_desktop/item_lists/item_list_export_controller.dart';
 import 'package:tagkin_desktop/item_lists/item_list_export_jobs.dart';
 import 'package:tagkin_desktop/item_lists/item_list_media_size.dart';
@@ -56,10 +57,7 @@ ItemListExportController _controller({
   );
 }
 
-Future<void> _waitUntil(
-  bool Function() done, {
-  int ticks = 80,
-}) async {
+Future<void> _waitUntil(bool Function() done, {int ticks = 80}) async {
   for (var i = 0; i < ticks; i++) {
     if (done()) return;
     await Future<void>.delayed(Duration.zero);
@@ -89,9 +87,7 @@ void main() {
   test('export of MP4 format throws (use exportMp4)', () async {
     final controller = _controller(
       items: FakeItemsRepository(
-        items: [
-          fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg'),
-        ],
+        items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg')],
       ),
     );
     addTearDown(controller.dispose);
@@ -99,6 +95,10 @@ void main() {
     expect(controller.hasEntries, isTrue);
     await expectLater(
       controller.export(format: ItemListExportFormat.mp4WithMusic),
+      throwsA(isA<ArgumentError>()),
+    );
+    await expectLater(
+      controller.export(format: ItemListExportFormat.mp4),
       throwsA(isA<ArgumentError>()),
     );
   });
@@ -136,7 +136,8 @@ void main() {
     addTearDown(controller.dispose);
     await controller.load();
     await _waitUntil(
-      () => controller.entries.length == 2 &&
+      () =>
+          controller.entries.length == 2 &&
           !controller.libraryTable.knowledgeWarming,
     );
     expect(controller.entries.map((e) => e.keyPeriodId), ['kp-1', 'kp-2']);
@@ -232,56 +233,60 @@ void main() {
     expect(controller.selectedView?.id, 'v1');
   });
 
-  test('exportViewMatchingFolders overlays live Hide folder on current view',
-      () {
-    final folders = LibraryTableController(
-      itemsRepository: FakeItemsRepository(),
-      commentsRepository: FakeCommentsRepository(),
-      thumbCache: LocalThumbCache(),
-    );
-    addTearDown(folders.dispose);
-    folders.setActiveView('v-view01', const LibraryViewFilters());
-    folders.setFolderHidden('/albums/Trip', hidden: true);
-    const stored = SavedView(
-      id: 'v-view01',
-      name: 'View01',
-      filters: LibraryViewFilters(),
-    );
-    expect(
-      exportViewMatchingFolders(stored, folders).filters.hiddenFolders,
-      ['/albums/Trip'],
-    );
-    const other = SavedView(
-      id: 'v-other',
-      name: 'Other',
-      filters: LibraryViewFilters(),
-    );
-    expect(
-      exportViewMatchingFolders(other, folders).filters.hiddenFolders,
-      isEmpty,
-    );
-  });
+  test(
+    'exportViewMatchingFolders overlays live Hide folder on current view',
+    () {
+      final folders = LibraryTableController(
+        itemsRepository: FakeItemsRepository(),
+        commentsRepository: FakeCommentsRepository(),
+        thumbCache: LocalThumbCache(),
+      );
+      addTearDown(folders.dispose);
+      folders.setActiveView('v-view01', const LibraryViewFilters());
+      folders.setFolderHidden('/albums/Trip', hidden: true);
+      const stored = SavedView(
+        id: 'v-view01',
+        name: 'View01',
+        filters: LibraryViewFilters(),
+      );
+      expect(exportViewMatchingFolders(stored, folders).filters.hiddenFolders, [
+        '/albums/Trip',
+      ]);
+      const other = SavedView(
+        id: 'v-other',
+        name: 'Other',
+        filters: LibraryViewFilters(),
+      );
+      expect(
+        exportViewMatchingFolders(other, folders).filters.hiddenFolders,
+        isEmpty,
+      );
+    },
+  );
 
-  test('load(view:) applies the Folders view before publishing entries', () async {
-    final controller = _controller(
-      items: FakeItemsRepository(
-        items: [
-          fixtureItem(id: 'keep', sourceRef: 'file:///albums/keep.jpg'),
-          fixtureItem(id: 'drop', sourceRef: 'file:///albums/other.jpg'),
-        ],
-      ),
-    );
-    addTearDown(controller.dispose);
-    await controller.load(
-      view: const SavedView(
-        id: 'v1',
-        name: 'Keep',
-        filters: LibraryViewFilters(filterQuery: 'keep'),
-      ),
-    );
-    await _waitUntil(() => controller.selectedView?.id == 'v1');
-    expect(controller.entries.map((e) => e.itemId), ['keep']);
-  });
+  test(
+    'load(view:) applies the Folders view before publishing entries',
+    () async {
+      final controller = _controller(
+        items: FakeItemsRepository(
+          items: [
+            fixtureItem(id: 'keep', sourceRef: 'file:///albums/keep.jpg'),
+            fixtureItem(id: 'drop', sourceRef: 'file:///albums/other.jpg'),
+          ],
+        ),
+      );
+      addTearDown(controller.dispose);
+      await controller.load(
+        view: const SavedView(
+          id: 'v1',
+          name: 'Keep',
+          filters: LibraryViewFilters(filterQuery: 'keep'),
+        ),
+      );
+      await _waitUntil(() => controller.selectedView?.id == 'v1');
+      expect(controller.entries.map((e) => e.itemId), ['keep']);
+    },
+  );
 
   test('thumbFor uses key-period startMs, not sampleTimestampMs', () async {
     final cache = _RecordingThumbCache();
@@ -380,48 +385,48 @@ void main() {
     expect(ItemListExportFormat.fcpxml.fileExtension, 'fcpxml');
   });
 
-  test('export FCP7 XML match smallest uses min probed size and scales',
-      () async {
-    String? saved;
-    final controller = _controller(
-      items: FakeItemsRepository(
-        items: [
-          fixtureItem(id: 'a', sourceRef: 'file:///albums/wide.jpg'),
-          fixtureItem(id: 'b', sourceRef: 'file:///albums/hd.jpg'),
-        ],
-      ),
-      saveJson: (json) async {
-        saved = json;
-        return '/tmp/item-list.xml';
-      },
-      probeMediaSize: (path, {required isStill}) async {
-        if (path.contains('wide')) {
-          return const ItemListPixelSize(4032, 1816);
-        }
-        return const ItemListPixelSize(1920, 1080);
-      },
-    );
-    addTearDown(controller.dispose);
-    await controller.load();
-    await _waitUntil(() => controller.entries.length >= 2);
-    await controller.export(
-      format: ItemListExportFormat.fcp7Xml,
-      sequenceSize: ExportSequenceSize.matchSmallest,
-    );
-    expect(saved, contains('<width>1920</width>'));
-    expect(saved, contains('<height>1080</height>'));
-    expect(saved, contains('<width>4032</width>'));
-    expect(saved, contains('<effectid>basic</effectid>'));
-    expect(saved, contains('<value>47.619</value>'));
-  });
+  test(
+    'export FCP7 XML match smallest uses min probed size and scales',
+    () async {
+      String? saved;
+      final controller = _controller(
+        items: FakeItemsRepository(
+          items: [
+            fixtureItem(id: 'a', sourceRef: 'file:///albums/wide.jpg'),
+            fixtureItem(id: 'b', sourceRef: 'file:///albums/hd.jpg'),
+          ],
+        ),
+        saveJson: (json) async {
+          saved = json;
+          return '/tmp/item-list.xml';
+        },
+        probeMediaSize: (path, {required isStill}) async {
+          if (path.contains('wide')) {
+            return const ItemListPixelSize(4032, 1816);
+          }
+          return const ItemListPixelSize(1920, 1080);
+        },
+      );
+      addTearDown(controller.dispose);
+      await controller.load();
+      await _waitUntil(() => controller.entries.length >= 2);
+      await controller.export(
+        format: ItemListExportFormat.fcp7Xml,
+        sequenceSize: ExportSequenceSize.matchSmallest,
+      );
+      expect(saved, contains('<width>1920</width>'));
+      expect(saved, contains('<height>1080</height>'));
+      expect(saved, contains('<width>4032</width>'));
+      expect(saved, contains('<effectid>basic</effectid>'));
+      expect(saved, contains('<value>47.619</value>'));
+    },
+  );
 
   test('export FCP7 XML match largest uses probed still size', () async {
     String? saved;
     final controller = _controller(
       items: FakeItemsRepository(
-        items: [
-          fixtureItem(id: 'a', sourceRef: 'file:///albums/wide.jpg'),
-        ],
+        items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/wide.jpg')],
       ),
       saveJson: (json) async {
         saved = json;
@@ -448,9 +453,7 @@ void main() {
     String? saved;
     final controller = _controller(
       items: FakeItemsRepository(
-        items: [
-          fixtureItem(id: 'a', sourceRef: 'file:///albums/wide.jpg'),
-        ],
+        items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/wide.jpg')],
       ),
       saveJson: (json) async {
         saved = json;
@@ -471,30 +474,100 @@ void main() {
     expect(saved, contains('<value>47.619</value>'));
   });
 
+  test('itemListExportFileStem uses the view name, or All', () {
+    expect(itemListExportFileStem(null), 'All');
+    expect(
+      itemListExportFileStem(
+        const SavedView(id: 'v', name: '   ', filters: LibraryViewFilters.all),
+      ),
+      'All',
+    );
+    expect(
+      itemListExportFileStem(
+        const SavedView(id: 'v', name: 'Keep', filters: LibraryViewFilters.all),
+      ),
+      'Keep',
+    );
+    expect(
+      itemListExportFileStem(
+        const SavedView(
+          id: 'v',
+          name: 'Beach weekend',
+          filters: LibraryViewFilters.all,
+        ),
+      ),
+      'Beach weekend',
+    );
+    expect(
+      itemListExportFileStem(
+        const SavedView(
+          id: 'v',
+          name: 'Beach/weekend:1',
+          filters: LibraryViewFilters.all,
+        ),
+      ),
+      'Beachweekend1',
+    );
+    expect(
+      itemListExportFileStem(
+        const SavedView(id: 'v', name: '...', filters: LibraryViewFilters.all),
+      ),
+      'All',
+    );
+  });
+
+  test('exportMp4 suggests the selected view name', () async {
+    String? stem;
+    final controller = _controller(
+      items: FakeItemsRepository(
+        items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg')],
+      ),
+      pickSavePath: ({required fileExtension, required fileStem}) async {
+        stem = fileStem;
+        return null;
+      },
+    );
+    addTearDown(controller.dispose);
+    await controller.load();
+    await _waitUntil(() => controller.hasEntries);
+    expect(await controller.exportMp4(audioPath: '/tmp/a.wav'), isNull);
+    expect(stem, 'All');
+    await controller.selectView(
+      const SavedView(
+        id: 'v-keep',
+        name: 'Keep',
+        filters: LibraryViewFilters.all,
+      ),
+    );
+    expect(await controller.exportMp4(audioPath: '/tmp/a.wav'), isNull);
+    expect(stem, 'Keep');
+  });
+
   test('exportMp4 cancel skips render', () async {
     final events = <String>[];
     final controller = _controller(
       items: FakeItemsRepository(
         items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg')],
       ),
-      pickSavePath: ({required fileExtension}) async {
+      pickSavePath: ({required fileExtension, required fileStem}) async {
         events.add('pick:$fileExtension');
         return null;
       },
-      renderMp4: ({
-        required timeline,
-        required audioPath,
-        required outputPath,
-        required sequenceWidth,
-        required sequenceHeight,
-        required scaleToFit,
-        soundtrackDuck = 0.05,
-        onProgress,
-        cancel,
-        macSaveHandle,
-      }) async {
-        events.add('render');
-      },
+      renderMp4:
+          ({
+            required timeline,
+            required audioPath,
+            required outputPath,
+            required sequenceWidth,
+            required sequenceHeight,
+            required scaleToFit,
+            soundtrackDuck = 0.05,
+            onProgress,
+            cancel,
+            macSaveHandle,
+          }) async {
+            events.add('render');
+          },
     );
     addTearDown(controller.dispose);
     await controller.load();
@@ -510,26 +583,27 @@ void main() {
       items: FakeItemsRepository(
         items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg')],
       ),
-      pickSavePath: ({required fileExtension}) async {
+      pickSavePath: ({required fileExtension, required fileStem}) async {
         events.add('pick:$fileExtension');
         return const ItemListSavePick(path: '/tmp/out.mp4');
       },
-      renderMp4: ({
-        required timeline,
-        required audioPath,
-        required outputPath,
-        required sequenceWidth,
-        required sequenceHeight,
-        required scaleToFit,
-        soundtrackDuck = 0.05,
-        onProgress,
-        cancel,
-        macSaveHandle,
-      }) async {
-        events.add('render');
-        renderedTo = outputPath;
-        await File(outputPath).writeAsBytes(const [0, 1, 2, 3, 4, 5, 6, 7]);
-      },
+      renderMp4:
+          ({
+            required timeline,
+            required audioPath,
+            required outputPath,
+            required sequenceWidth,
+            required sequenceHeight,
+            required scaleToFit,
+            soundtrackDuck = 0.05,
+            onProgress,
+            cancel,
+            macSaveHandle,
+          }) async {
+            events.add('render');
+            renderedTo = outputPath;
+            await File(outputPath).writeAsBytes(const [0, 1, 2, 3, 4, 5, 6, 7]);
+          },
     );
     addTearDown(controller.dispose);
     await controller.load();
@@ -548,48 +622,48 @@ void main() {
     });
   });
 
-  test('exportMp4 fails closed on an empty dest and deletes leftover', () async {
-    final dest = File(
-      '${Directory.systemTemp.path}/tagkin-empty-export.mp4',
-    );
-    if (dest.existsSync()) dest.deleteSync();
-    dest.createSync();
-    addTearDown(() {
+  test(
+    'exportMp4 fails closed on an empty dest and deletes leftover',
+    () async {
+      final dest = File('${Directory.systemTemp.path}/tagkin-empty-export.mp4');
       if (dest.existsSync()) dest.deleteSync();
-    });
-    final controller = _controller(
-      items: FakeItemsRepository(
-        items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg')],
-      ),
-      pickSavePath: ({required fileExtension}) async =>
-          ItemListSavePick(path: dest.path),
-      renderMp4: ({
-        required timeline,
-        required audioPath,
-        required outputPath,
-        required sequenceWidth,
-        required sequenceHeight,
-        required scaleToFit,
-        soundtrackDuck = 0.05,
-        onProgress,
-        cancel,
-        macSaveHandle,
-      }) async {},
-    );
-    addTearDown(controller.dispose);
-    await controller.load();
-    await _waitUntil(() => controller.hasEntries);
-    final job = await controller.exportMp4(audioPath: '/tmp/a.wav');
-    await job!.completed;
-    expect(job.state, ItemListExportJobState.failed);
-    expect(job.error, contains('empty'));
-    expect(dest.existsSync(), isFalse);
-  });
+      dest.createSync();
+      addTearDown(() {
+        if (dest.existsSync()) dest.deleteSync();
+      });
+      final controller = _controller(
+        items: FakeItemsRepository(
+          items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg')],
+        ),
+        pickSavePath: ({required fileExtension, required fileStem}) async =>
+            ItemListSavePick(path: dest.path),
+        renderMp4:
+            ({
+              required timeline,
+              required audioPath,
+              required outputPath,
+              required sequenceWidth,
+              required sequenceHeight,
+              required scaleToFit,
+              soundtrackDuck = 0.05,
+              onProgress,
+              cancel,
+              macSaveHandle,
+            }) async {},
+      );
+      addTearDown(controller.dispose);
+      await controller.load();
+      await _waitUntil(() => controller.hasEntries);
+      final job = await controller.exportMp4(audioPath: '/tmp/a.wav');
+      await job!.completed;
+      expect(job.state, ItemListExportJobState.failed);
+      expect(job.error, contains('empty'));
+      expect(dest.existsSync(), isFalse);
+    },
+  );
 
   test('exportMp4 reports encode phases on the job', () async {
-    final dest = File(
-      '${Directory.systemTemp.path}/tagkin-phase-export.mp4',
-    );
+    final dest = File('${Directory.systemTemp.path}/tagkin-phase-export.mp4');
     if (dest.existsSync()) dest.deleteSync();
     addTearDown(() {
       if (dest.existsSync()) dest.deleteSync();
@@ -599,46 +673,47 @@ void main() {
       items: FakeItemsRepository(
         items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg')],
       ),
-      pickSavePath: ({required fileExtension}) async =>
+      pickSavePath: ({required fileExtension, required fileStem}) async =>
           ItemListSavePick(path: dest.path),
-      renderMp4: ({
-        required timeline,
-        required audioPath,
-        required outputPath,
-        required sequenceWidth,
-        required sequenceHeight,
-        required scaleToFit,
-        soundtrackDuck = 0.05,
-        onProgress,
-        cancel,
-        macSaveHandle,
-      }) async {
-        onProgress?.call(
-          const ItemListMp4Progress(phase: ItemListMp4Phase.staging),
-        );
-        final job = controller.exportJobs.jobs.single;
-        expect(job.phase, ItemListMp4Phase.staging);
-        expect(job.progressLabel, 'Preparing files…');
-        onProgress?.call(
-          const ItemListMp4Progress(
-            phase: ItemListMp4Phase.encodingClips,
-            clipIndex: 1,
-            clipCount: 2,
-          ),
-        );
-        expect(job.clipIndex, 1);
-        expect(job.clipCount, 2);
-        expect(job.progressLabel, 'Encoding clip 1 of 2…');
-        onProgress?.call(
-          const ItemListMp4Progress(phase: ItemListMp4Phase.assembling),
-        );
-        expect(job.progressLabel, 'Composing video…');
-        onProgress?.call(
-          const ItemListMp4Progress(phase: ItemListMp4Phase.writingOut),
-        );
-        expect(job.progressLabel, 'Writing file…');
-        await File(outputPath).writeAsBytes(const [0, 1, 2, 3, 4, 5, 6, 7]);
-      },
+      renderMp4:
+          ({
+            required timeline,
+            required audioPath,
+            required outputPath,
+            required sequenceWidth,
+            required sequenceHeight,
+            required scaleToFit,
+            soundtrackDuck = 0.05,
+            onProgress,
+            cancel,
+            macSaveHandle,
+          }) async {
+            onProgress?.call(
+              const ItemListMp4Progress(phase: ItemListMp4Phase.staging),
+            );
+            final job = controller.exportJobs.jobs.single;
+            expect(job.phase, ItemListMp4Phase.staging);
+            expect(job.progressLabel, 'Preparing files…');
+            onProgress?.call(
+              const ItemListMp4Progress(
+                phase: ItemListMp4Phase.encodingClips,
+                clipIndex: 1,
+                clipCount: 2,
+              ),
+            );
+            expect(job.clipIndex, 1);
+            expect(job.clipCount, 2);
+            expect(job.progressLabel, 'Encoding clip 1 of 2…');
+            onProgress?.call(
+              const ItemListMp4Progress(phase: ItemListMp4Phase.assembling),
+            );
+            expect(job.progressLabel, 'Composing video…');
+            onProgress?.call(
+              const ItemListMp4Progress(phase: ItemListMp4Phase.writingOut),
+            );
+            expect(job.progressLabel, 'Writing file…');
+            await File(outputPath).writeAsBytes(const [0, 1, 2, 3, 4, 5, 6, 7]);
+          },
     );
     addTearDown(controller.dispose);
     await controller.load();
@@ -651,9 +726,7 @@ void main() {
   });
 
   test('exportMp4 cancelMp4 aborts quietly and deletes leftover', () async {
-    final dest = File(
-      '${Directory.systemTemp.path}/tagkin-cancel-export.mp4',
-    );
+    final dest = File('${Directory.systemTemp.path}/tagkin-cancel-export.mp4');
     if (dest.existsSync()) dest.deleteSync();
     dest.createSync();
     addTearDown(() {
@@ -665,27 +738,28 @@ void main() {
       items: FakeItemsRepository(
         items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg')],
       ),
-      pickSavePath: ({required fileExtension}) async =>
+      pickSavePath: ({required fileExtension, required fileStem}) async =>
           ItemListSavePick(path: dest.path),
-      renderMp4: ({
-        required timeline,
-        required audioPath,
-        required outputPath,
-        required sequenceWidth,
-        required sequenceHeight,
-        required scaleToFit,
-        soundtrackDuck = 0.05,
-        onProgress,
-        cancel,
-        macSaveHandle,
-      }) async {
-        onProgress?.call(
-          const ItemListMp4Progress(phase: ItemListMp4Phase.staging),
-        );
-        await gate.future;
-        cancel?.throwIfCancelled();
-        await File(outputPath).writeAsBytes(const [0, 1, 2, 3, 4, 5, 6, 7]);
-      },
+      renderMp4:
+          ({
+            required timeline,
+            required audioPath,
+            required outputPath,
+            required sequenceWidth,
+            required sequenceHeight,
+            required scaleToFit,
+            soundtrackDuck = 0.05,
+            onProgress,
+            cancel,
+            macSaveHandle,
+          }) async {
+            onProgress?.call(
+              const ItemListMp4Progress(phase: ItemListMp4Phase.staging),
+            );
+            await gate.future;
+            cancel?.throwIfCancelled();
+            await File(outputPath).writeAsBytes(const [0, 1, 2, 3, 4, 5, 6, 7]);
+          },
     );
     addTearDown(controller.dispose);
     await controller.load();
@@ -733,22 +807,23 @@ void main() {
       items: FakeItemsRepository(
         items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg')],
       ),
-      pickSavePath: ({required fileExtension}) async =>
+      pickSavePath: ({required fileExtension, required fileStem}) async =>
           const ItemListSavePick(path: '/tmp/out.mp4'),
-      renderMp4: ({
-        required timeline,
-        required audioPath,
-        required outputPath,
-        required sequenceWidth,
-        required sequenceHeight,
-        required scaleToFit,
-        soundtrackDuck = 0.05,
-        onProgress,
-        cancel,
-        macSaveHandle,
-      }) async {
-        await File(outputPath).writeAsBytes(const [0, 1, 2, 3, 4, 5, 6, 7]);
-      },
+      renderMp4:
+          ({
+            required timeline,
+            required audioPath,
+            required outputPath,
+            required sequenceWidth,
+            required sequenceHeight,
+            required scaleToFit,
+            soundtrackDuck = 0.05,
+            onProgress,
+            cancel,
+            macSaveHandle,
+          }) async {
+            await File(outputPath).writeAsBytes(const [0, 1, 2, 3, 4, 5, 6, 7]);
+          },
       itemListsRepository: lists,
     );
     addTearDown(controller.dispose);
@@ -773,7 +848,7 @@ void main() {
       items: FakeItemsRepository(
         items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg')],
       ),
-      pickSavePath: ({required fileExtension}) async => null,
+      pickSavePath: ({required fileExtension, required fileStem}) async => null,
       itemListsRepository: lists,
     );
     addTearDown(cancelled.dispose);

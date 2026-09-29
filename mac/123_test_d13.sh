@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 123_test_d13.sh — D13 Item List Export regression: Views dropdown, reorder,
-# JSON / FCP7 XML / FCPXML / MP4-with-music export, R10/R1/R5/R8 §5
+# MP4 with music / MP4 without music / FCP7 XML / FCPXML / JSON export, R10/R1/R5/R8 §5
 # mandatory assertions.
 # Naming: NNN_test_dN.sh for desktop subsystem regression mac entry points.
 set -euo pipefail

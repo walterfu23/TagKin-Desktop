@@ -57,6 +57,7 @@ ItemListMp4Plan itemListMp4Plan({
   required bool scaleToFit,
   double audioFadeOutSeconds = 2,
   double soundtrackDuck = kItemListMp4SoundtrackDuckDefault,
+  bool includeSoundtrack = true,
 }) {
   if (timeline.clips.isEmpty) {
     throw StateError('Cannot render an empty item list');
@@ -82,9 +83,9 @@ ItemListMp4Plan itemListMp4Plan({
   final h = sequenceHeight < 2 ? 2 : sequenceHeight - (sequenceHeight % 2);
   final scale = scaleToFit
       ? 'scale=$w:$h:force_original_aspect_ratio=decrease,'
-          'pad=$w:$h:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1'
+            'pad=$w:$h:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1'
       : 'scale=$w:$h:force_original_aspect_ratio=increase,'
-          'crop=$w:$h,setsar=1';
+            'crop=$w:$h,setsar=1';
 
   final prepared = <String>[];
   for (var i = 0; i < inputs.length; i++) {
@@ -96,9 +97,11 @@ ItemListMp4Plan itemListMp4Plan({
     );
   }
 
+  final endFade = timeline.endFade;
+  final bodyLabel = endFade == null ? '[vout]' : '[vbody]';
   var hasXfade = false;
   if (inputs.length == 1) {
-    prepared.add('[v0]copy[vout]');
+    prepared.add('[v0]copy$bodyLabel');
   } else {
     final xfadeByAfter = {
       for (final t in timeline.transitions) t.afterClipIndex: t,
@@ -111,7 +114,7 @@ ItemListMp4Plan itemListMp4Plan({
       final useXfade = named.isNotEmpty && join != null;
       final overlap = useXfade ? _framesToSeconds(join.durationFrames) : 0.0;
       final offset = leftDuration - overlap;
-      final out = i == inputs.length - 2 ? '[vout]' : '[x$i]';
+      final out = i == inputs.length - 2 ? bodyLabel : '[x$i]';
       if (useXfade) {
         hasXfade = true;
         prepared.add(
@@ -122,13 +125,34 @@ ItemListMp4Plan itemListMp4Plan({
         );
         leftDuration += inputs[i + 1].durationSeconds - overlap;
       } else {
+        // concat emits 1/1000000. A later xfade rejects that against a 1/30 clip.
         prepared.add(
-          '$current[v${i + 1}]concat=n=2:v=1:a=0$out',
+          '$current[v${i + 1}]concat=n=2:v=1:a=0,'
+          'fps=$kItemListNleTimebase,settb=1/$kItemListNleTimebase$out',
         );
         leftDuration += inputs[i + 1].durationSeconds;
       }
       current = out;
     }
+  }
+
+  if (endFade != null) {
+    hasXfade = true;
+    final fadeSec = _framesToSeconds(endFade.durationFrames);
+    final bodySec = _framesToSeconds(endFade.startFrame);
+    prepared.add(
+      '[vbody]tpad=stop_mode=clone:stop_duration=${_sec(fadeSec)},'
+      'fps=$kItemListNleTimebase,settb=1/$kItemListNleTimebase[vpad]',
+    );
+    prepared.add(
+      'color=c=white:s=${w}x$h:r=$kItemListNleTimebase:d=${_sec(fadeSec)},'
+      'format=yuv420p,setsar=1,settb=1/$kItemListNleTimebase[vwhite]',
+    );
+    prepared.add(
+      '[vpad][vwhite]xfade=transition=fade'
+      ':duration=${_sec(fadeSec)}'
+      ':offset=${_sec(bodySec)}[vout]',
+    );
   }
 
   final total = _framesToSeconds(timeline.duration);
@@ -143,6 +167,7 @@ ItemListMp4Plan itemListMp4Plan({
       fadeStartSeconds: fadeStart,
       fadeSeconds: fade,
       soundtrackDuck: soundtrackDuck,
+      includeSoundtrack: includeSoundtrack,
     ),
   );
 
@@ -164,8 +189,11 @@ List<String> _audioMixFilters({
   required double fadeStartSeconds,
   required double fadeSeconds,
   required double soundtrackDuck,
+  required bool includeSoundtrack,
 }) {
-  final musicIn = '[${inputs.length}:a]';
+  final musicIn = includeSoundtrack
+      ? '[${inputs.length}:a]$_kStereo44100,'
+      : 'anullsrc=r=44100:cl=stereo,';
   final videoIndexes = [
     for (var i = 0; i < inputs.length; i++)
       if (!inputs[i].isStill) i,
@@ -174,23 +202,23 @@ List<String> _audioMixFilters({
       'afade=t=out:st=${_sec(fadeStartSeconds)}:d=${_sec(fadeSeconds)}';
   if (videoIndexes.isEmpty) {
     return [
-      '$musicIn$_kStereo44100,'
-      'apad,'
-      'atrim=0:${_sec(totalSeconds)},'
-      '$fadeOut,'
-      'asetpts=PTS-STARTPTS[aout]',
+      '${musicIn}apad,'
+          'atrim=0:${_sec(totalSeconds)},'
+          '$fadeOut,'
+          'asetpts=PTS-STARTPTS[aout]',
     ];
   }
 
-  final duckEnable = videoIndexes.map((i) {
-    final start = inputs[i].timelineStartSeconds;
-    final end = start + inputs[i].durationSeconds;
-    return 'between(t,${_sec(start)},${_sec(end)})';
-  }).join('+');
+  final duckEnable = videoIndexes
+      .map((i) {
+        final start = inputs[i].timelineStartSeconds;
+        final end = start + inputs[i].durationSeconds;
+        return 'between(t,${_sec(start)},${_sec(end)})';
+      })
+      .join('+');
   final out = <String>[
-    '$musicIn$_kStereo44100,'
-    'apad,atrim=0:${_sec(totalSeconds)},asetpts=PTS-STARTPTS,'
-    'volume=${_gain(soundtrackDuck)}:enable=\'$duckEnable\'[music]',
+    '${musicIn}apad,atrim=0:${_sec(totalSeconds)},asetpts=PTS-STARTPTS,'
+        'volume=${_gain(soundtrackDuck)}:enable=\'$duckEnable\'[music]',
   ];
   final mixPads = <String>['[music]'];
   for (final i in videoIndexes) {

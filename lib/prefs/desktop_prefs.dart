@@ -284,6 +284,7 @@ class DesktopPrefs {
 
   static const itemListBlurrySharpnessThresholdMin = 0;
   static const itemListBlurrySharpnessThresholdMax = 50000;
+
   /// Step 10 keeps the default 80 on the slider grid (step 100 would snap
   /// it to 100). Typical stills are in the thousands.
   static const itemListBlurrySharpnessThresholdStep = 10;
@@ -362,74 +363,75 @@ class DesktopPrefs {
       personsListColumns: personsListColumns ?? this.personsListColumns,
       autoConfirmHighConfidencePersonMatches:
           autoConfirmHighConfidencePersonMatches ??
-              this.autoConfirmHighConfidencePersonMatches,
-      autoConfirmMinConfidencePercent: autoConfirmMinConfidencePercent ??
+          this.autoConfirmHighConfidencePersonMatches,
+      autoConfirmMinConfidencePercent:
+          autoConfirmMinConfidencePercent ??
           this.autoConfirmMinConfidencePercent,
       jobsPollIntervalSeconds:
           jobsPollIntervalSeconds ?? this.jobsPollIntervalSeconds,
       dateTimeFormat: dateTimeFormat ?? dateTimeFormatOrLocal,
-      itemListBlurrySharpnessThreshold: itemListBlurrySharpnessThreshold ??
+      itemListBlurrySharpnessThreshold:
+          itemListBlurrySharpnessThreshold ??
           this.itemListBlurrySharpnessThreshold,
       autoFixBlurryPhotos: autoFixBlurryPhotos ?? this.autoFixBlurryPhotos,
       saveFixedPhotoInFolder:
           saveFixedPhotoInFolder ?? this.saveFixedPhotoInFolder,
       hideBlurryPhotos: hideBlurryPhotos ?? this.hideBlurryPhotos,
       showSharpnessScores: showSharpnessScores ?? this.showSharpnessScores,
-      exportPhotoStillDurationSeconds: exportPhotoStillDurationSeconds ??
+      exportPhotoStillDurationSeconds:
+          exportPhotoStillDurationSeconds ??
           exportPhotoStillDurationSecondsOrDefault,
       exportPhotoTransition:
           exportPhotoTransition ?? exportPhotoTransitionOrDefault,
-      exportPhotoTransitionSeconds: exportPhotoTransitionSeconds ??
-          exportPhotoTransitionSecondsOrDefault,
+      exportPhotoTransitionSeconds:
+          exportPhotoTransitionSeconds ?? exportPhotoTransitionSecondsOrDefault,
       exportSequenceSize: exportSequenceSize ?? exportSequenceSizeOrDefault,
       exportMusicPrompt: exportMusicPrompt ?? exportMusicPromptOrDefault,
       exportSoundtrackUnderVideoPercent:
           exportSoundtrackUnderVideoPercent ??
-              exportSoundtrackUnderVideoPercentOrDefault,
+          exportSoundtrackUnderVideoPercentOrDefault,
       exportMusicLoopCount:
           exportMusicLoopCount ?? exportMusicLoopCountOrDefault,
     );
   }
 
   Map<String, Object?> toJson() => {
-        'where.showCountryWhenSameCountry': showCountryWhenSameCountry,
-        'where.showStateWhenSameState': showStateWhenSameState,
-        'ui.multiColumnSort': multiColumnSort,
-        'ui.showFaceOverlays': showFaceOverlays,
-        'where.familiarRegions': familiarRegions,
-        'ui.libraryPageSize': libraryPageSize,
-        'ui.recentCollectionsLimit': recentCollectionsLimit,
-        'ui.recentViewsLimit': recentViewsLimit,
-        'ingest.nearDuplicateThreshold': nearDuplicateThreshold,
-        'video.sampleMinIntervalMs': sampleMinIntervalMs,
-        'video.sampleMaxIntervalMs': sampleMaxIntervalMs,
-        'video.softMaxFramesPerItem': softMaxFramesPerItem,
-        'video.sceneCutThreshold': sceneCutThreshold,
-        'faces.detectScoreThreshold': facesDetectScoreThreshold,
-        'faces.trayPageLimit': facesTrayPageLimit,
-        'ui.personsListColumns': personsListColumns,
-        'faces.autoConfirmHighConfidencePersonMatches':
-            autoConfirmHighConfidencePersonMatches,
-        'faces.autoConfirmMinConfidencePercent':
-            autoConfirmMinConfidencePercent,
-        'jobs.pollIntervalSeconds': jobsPollIntervalSeconds,
-        'ui.dateTimeFormat': dateTimeFormatOrLocal.wire,
-        'export.blurrySharpnessThreshold': itemListBlurrySharpnessThreshold,
-        'export.autoFixBlurryPhotos': autoFixBlurryPhotos,
-        'export.saveFixedPhotoInFolder': saveFixedPhotoInFolder,
-        'export.hideBlurryPhotos': hideBlurryPhotos,
-        'export.showSharpnessScores': showSharpnessScores,
-        'export.photoStillDurationSeconds':
-            exportPhotoStillDurationSecondsOrDefault,
-        'export.photoTransition': exportPhotoTransitionOrDefault.wire,
-        'export.photoTransitionSeconds':
-            exportPhotoTransitionSecondsOrDefault,
-        'export.sequenceSize': exportSequenceSizeOrDefault.wire,
-        'export.musicPrompt': exportMusicPromptOrDefault,
-        'export.soundtrackUnderVideoPercent':
-            exportSoundtrackUnderVideoPercentOrDefault,
-        'export.musicLoopCount': exportMusicLoopCountOrDefault,
-      };
+    'where.showCountryWhenSameCountry': showCountryWhenSameCountry,
+    'where.showStateWhenSameState': showStateWhenSameState,
+    'ui.multiColumnSort': multiColumnSort,
+    'ui.showFaceOverlays': showFaceOverlays,
+    'where.familiarRegions': familiarRegions,
+    'ui.libraryPageSize': libraryPageSize,
+    'ui.recentCollectionsLimit': recentCollectionsLimit,
+    'ui.recentViewsLimit': recentViewsLimit,
+    'ingest.nearDuplicateThreshold': nearDuplicateThreshold,
+    'video.sampleMinIntervalMs': sampleMinIntervalMs,
+    'video.sampleMaxIntervalMs': sampleMaxIntervalMs,
+    'video.softMaxFramesPerItem': softMaxFramesPerItem,
+    'video.sceneCutThreshold': sceneCutThreshold,
+    'faces.detectScoreThreshold': facesDetectScoreThreshold,
+    'faces.trayPageLimit': facesTrayPageLimit,
+    'ui.personsListColumns': personsListColumns,
+    'faces.autoConfirmHighConfidencePersonMatches':
+        autoConfirmHighConfidencePersonMatches,
+    'faces.autoConfirmMinConfidencePercent': autoConfirmMinConfidencePercent,
+    'jobs.pollIntervalSeconds': jobsPollIntervalSeconds,
+    'ui.dateTimeFormat': dateTimeFormatOrLocal.wire,
+    'export.blurrySharpnessThreshold': itemListBlurrySharpnessThreshold,
+    'export.autoFixBlurryPhotos': autoFixBlurryPhotos,
+    'export.saveFixedPhotoInFolder': saveFixedPhotoInFolder,
+    'export.hideBlurryPhotos': hideBlurryPhotos,
+    'export.showSharpnessScores': showSharpnessScores,
+    'export.photoStillDurationSeconds':
+        exportPhotoStillDurationSecondsOrDefault,
+    'export.photoTransition': exportPhotoTransitionOrDefault.wire,
+    'export.photoTransitionSeconds': exportPhotoTransitionSecondsOrDefault,
+    'export.sequenceSize': exportSequenceSizeOrDefault.wire,
+    'export.musicPrompt': exportMusicPromptOrDefault,
+    'export.soundtrackUnderVideoPercent':
+        exportSoundtrackUnderVideoPercentOrDefault,
+    'export.musicLoopCount': exportMusicLoopCountOrDefault,
+  };
 
   factory DesktopPrefs.fromJson(Map<String, dynamic> json) {
     bool flag(String key, {required bool fallback}) {
@@ -571,22 +573,13 @@ class DesktopPrefs {
         min: itemListBlurrySharpnessThresholdMin,
         max: itemListBlurrySharpnessThresholdMax,
       ),
-      autoFixBlurryPhotos: flag(
-        'export.autoFixBlurryPhotos',
-        fallback: true,
-      ),
+      autoFixBlurryPhotos: flag('export.autoFixBlurryPhotos', fallback: true),
       saveFixedPhotoInFolder: flag(
         'export.saveFixedPhotoInFolder',
         fallback: true,
       ),
-      hideBlurryPhotos: flag(
-        'export.hideBlurryPhotos',
-        fallback: false,
-      ),
-      showSharpnessScores: flag(
-        'export.showSharpnessScores',
-        fallback: true,
-      ),
+      hideBlurryPhotos: flag('export.hideBlurryPhotos', fallback: false),
+      showSharpnessScores: flag('export.showSharpnessScores', fallback: true),
       exportPhotoStillDurationSeconds: doubleVal(
         'export.photoStillDurationSeconds',
         2.5,
@@ -602,9 +595,7 @@ class DesktopPrefs {
         min: exportPhotoTransitionSecondsMin,
         max: exportPhotoTransitionSecondsMax,
       ),
-      exportSequenceSize: ExportSequenceSize.parse(
-        json['export.sequenceSize'],
-      ),
+      exportSequenceSize: ExportSequenceSize.parse(json['export.sequenceSize']),
       exportMusicPrompt: () {
         final v = json['export.musicPrompt'];
         return v is String ? v : '';
@@ -657,8 +648,7 @@ class DesktopPrefs {
       other.showSharpnessScores == showSharpnessScores &&
       other.exportPhotoStillDurationSecondsOrDefault ==
           exportPhotoStillDurationSecondsOrDefault &&
-      other.exportPhotoTransitionOrDefault ==
-          exportPhotoTransitionOrDefault &&
+      other.exportPhotoTransitionOrDefault == exportPhotoTransitionOrDefault &&
       other.exportPhotoTransitionSecondsOrDefault ==
           exportPhotoTransitionSecondsOrDefault &&
       other.exportSequenceSizeOrDefault == exportSequenceSizeOrDefault &&
@@ -669,37 +659,37 @@ class DesktopPrefs {
 
   @override
   int get hashCode => Object.hashAll([
-        showCountryWhenSameCountry,
-        showStateWhenSameState,
-        multiColumnSort,
-        showFaceOverlays,
-        familiarRegions,
-        libraryPageSize,
-        recentCollectionsLimit,
-        recentViewsLimit,
-        nearDuplicateThreshold,
-        sampleMinIntervalMs,
-        sampleMaxIntervalMs,
-        softMaxFramesPerItem,
-        sceneCutThreshold,
-        facesDetectScoreThreshold,
-        facesTrayPageLimit,
-        personsListColumns,
-        autoConfirmHighConfidencePersonMatches,
-        autoConfirmMinConfidencePercent,
-        jobsPollIntervalSeconds,
-        dateTimeFormatOrLocal,
-        itemListBlurrySharpnessThreshold,
-        autoFixBlurryPhotos,
-        saveFixedPhotoInFolder,
-        hideBlurryPhotos,
-        showSharpnessScores,
-        exportPhotoStillDurationSecondsOrDefault,
-        exportPhotoTransitionOrDefault,
-        exportPhotoTransitionSecondsOrDefault,
-        exportSequenceSizeOrDefault,
-        exportMusicPromptOrDefault,
-        exportSoundtrackUnderVideoPercentOrDefault,
-        exportMusicLoopCountOrDefault,
-      ]);
+    showCountryWhenSameCountry,
+    showStateWhenSameState,
+    multiColumnSort,
+    showFaceOverlays,
+    familiarRegions,
+    libraryPageSize,
+    recentCollectionsLimit,
+    recentViewsLimit,
+    nearDuplicateThreshold,
+    sampleMinIntervalMs,
+    sampleMaxIntervalMs,
+    softMaxFramesPerItem,
+    sceneCutThreshold,
+    facesDetectScoreThreshold,
+    facesTrayPageLimit,
+    personsListColumns,
+    autoConfirmHighConfidencePersonMatches,
+    autoConfirmMinConfidencePercent,
+    jobsPollIntervalSeconds,
+    dateTimeFormatOrLocal,
+    itemListBlurrySharpnessThreshold,
+    autoFixBlurryPhotos,
+    saveFixedPhotoInFolder,
+    hideBlurryPhotos,
+    showSharpnessScores,
+    exportPhotoStillDurationSecondsOrDefault,
+    exportPhotoTransitionOrDefault,
+    exportPhotoTransitionSecondsOrDefault,
+    exportSequenceSizeOrDefault,
+    exportMusicPromptOrDefault,
+    exportSoundtrackUnderVideoPercentOrDefault,
+    exportMusicLoopCountOrDefault,
+  ]);
 }

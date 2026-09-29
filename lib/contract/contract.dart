@@ -1275,7 +1275,8 @@ enum ItemListExportFormat {
   json('json'),
   fcp7xml('fcp7Xml'),
   fcpxml('fcpxml'),
-  mp4withmusic('mp4WithMusic');
+  mp4withmusic('mp4WithMusic'),
+  mp4withoutmusic('mp4WithoutMusic');
 
   const ItemListExportFormat(this.wire);
 

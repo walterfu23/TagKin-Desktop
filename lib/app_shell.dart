@@ -1400,7 +1400,7 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
                   ),
                 IconButton(
                   key: const Key('nav-item-list-export'),
-                  tooltip: 'Export list',
+                  tooltip: 'Export Views',
                   onPressed: () => unawaited(_openItemListExport()),
                   icon: const Icon(Icons.ios_share_outlined),
                 ),
@@ -1470,7 +1470,7 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
                               requestOpenItemListExport(ref);
                             });
                           },
-                          child: const Text('Export list…'),
+                          child: const Text('Export Views…'),
                         ),
                       ];
                     },

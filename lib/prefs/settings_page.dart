@@ -104,8 +104,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _exportPhotoStillDurationSeconds =
         prefs.exportPhotoStillDurationSecondsOrDefault;
     _exportPhotoTransition = prefs.exportPhotoTransitionOrDefault;
-    _exportPhotoTransitionSeconds =
-        prefs.exportPhotoTransitionSecondsOrDefault;
+    _exportPhotoTransitionSeconds = prefs.exportPhotoTransitionSecondsOrDefault;
     _exportSequenceSize = prefs.exportSequenceSizeOrDefault;
     _exportMusicPrompt = TextEditingController(
       text: prefs.exportMusicPromptOrDefault,
@@ -145,8 +144,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _exportPhotoStillDurationSeconds =
         prefs.exportPhotoStillDurationSecondsOrDefault;
     _exportPhotoTransition = prefs.exportPhotoTransitionOrDefault;
-    _exportPhotoTransitionSeconds =
-        prefs.exportPhotoTransitionSecondsOrDefault;
+    _exportPhotoTransitionSeconds = prefs.exportPhotoTransitionSecondsOrDefault;
     _exportSequenceSize = prefs.exportSequenceSizeOrDefault;
     _exportMusicPrompt.text = prefs.exportMusicPromptOrDefault;
     _exportSoundtrackUnderVideoPercent =
@@ -191,8 +189,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       'where.showStateWhenSameState': _showStateWhenSameState,
       'ui.multiColumnSort': _multiColumnSort,
       'ui.showFaceOverlays': _showFaceOverlays,
-      'where.familiarRegions':
-          normalizeFamiliarRegionsCsv(_familiarRegions.text),
+      'where.familiarRegions': normalizeFamiliarRegionsCsv(
+        _familiarRegions.text,
+      ),
       'ui.libraryPageSize': _libraryPageSize,
       'ui.recentCollectionsLimit': _recentCollectionsLimit,
       'ui.recentViewsLimit': _recentViewsLimit,
@@ -206,8 +205,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       'ui.personsListColumns': _personsListColumns,
       'faces.autoConfirmHighConfidencePersonMatches':
           _autoConfirmHighConfidencePersonMatches,
-      'faces.autoConfirmMinConfidencePercent':
-          _autoConfirmMinConfidencePercent,
+      'faces.autoConfirmMinConfidencePercent': _autoConfirmMinConfidencePercent,
       'jobs.pollIntervalSeconds': _jobsPollIntervalSeconds,
       'ui.dateTimeFormat': _dateTimeFormat.wire,
       'export.blurrySharpnessThreshold': _itemListBlurrySharpnessThreshold,
@@ -219,8 +217,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       'export.photoTransitionSeconds': _exportPhotoTransitionSeconds,
       'export.sequenceSize': _exportSequenceSize.wire,
       'export.musicPrompt': _exportMusicPrompt.text,
-      'export.soundtrackUnderVideoPercent':
-          _exportSoundtrackUnderVideoPercent,
+      'export.soundtrackUnderVideoPercent': _exportSoundtrackUnderVideoPercent,
       'export.musicLoopCount': _exportMusicLoopCount,
     });
   }
@@ -330,13 +327,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       if (status == ClientSupportStatus.warn) {
         ref.read(clientWarnDismissedProvider.notifier).state = false;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('A newer version of TagKin is available.')),
+          const SnackBar(
+            content: Text('A newer version of TagKin is available.'),
+          ),
         );
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You’re up to date.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('You’re up to date.')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -355,9 +354,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       builder: (ctx) => AlertDialog(
         key: const Key('settings-dirty-dialog'),
         title: const Text('Save settings?'),
-        content: const Text(
-          'You have unsaved changes. Save before leaving?',
-        ),
+        content: const Text('You have unsaved changes. Save before leaving?'),
         actions: [
           TextButton(
             key: const Key('settings-dirty-discard'),
@@ -503,8 +500,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           Text(
             helper,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 4),
           RangeSliderControl(
@@ -542,8 +539,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           Text(
             helper,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 4),
           DoubleRangeSliderControl(
@@ -574,654 +571,668 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       child: ActiveUndoHost(
         controller: _undoStack,
         child: UndoShortcuts(
-        controller: _undoStack,
-        child: SelectableScope(
-        child: Scaffold(
-          appBar: AppBar(
-            title: Row(
-              children: [
-                const Text('Settings'),
-                const SizedBox(width: 8),
-                UndoDepthBadge(controller: _undoStack),
-              ],
+          controller: _undoStack,
+          child: SelectableScope(
+            child: Scaffold(
+              appBar: AppBar(
+                title: Row(
+                  children: [
+                    const Text('Settings'),
+                    const SizedBox(width: 8),
+                    UndoDepthBadge(controller: _undoStack),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    key: const Key('settings-restore'),
+                    onPressed: _restoreDefaults,
+                    child: const Text('Restore defaults'),
+                  ),
+                  TextButton(
+                    key: const Key('settings-save'),
+                    onPressed: () => _save(),
+                    child: const Text('Save'),
+                  ),
+                ],
+              ),
+              body: ListView(
+                padding: const EdgeInsets.all(24),
+                children: [
+                  _settingsIntro(),
+                  _settingsGroup(
+                    title: 'Display',
+                    subtitle:
+                        'How dates and times appear. Values are still stored in UTC.',
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        child: InputDecorator(
+                          decoration: InputDecoration(
+                            labelText: 'Date and time format',
+                            helperText:
+                                'Default is this computer’s locale. Example: '
+                                '${formatLocalDateTime(DateTime.now().toUtc().toIso8601String(), format: _dateTimeFormat)}',
+                            border: const OutlineInputBorder(),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<DateTimeDisplayFormat>(
+                              key: const Key('pref-date-time-format'),
+                              value: _dateTimeFormat,
+                              isExpanded: true,
+                              items: [
+                                for (final f in DateTimeDisplayFormat.values)
+                                  DropdownMenuItem(
+                                    value: f,
+                                    child: Text(f.settingsLabel),
+                                  ),
+                              ],
+                              onChanged: (v) {
+                                if (v == null) return;
+                                _mutateDraft(() => _dateTimeFormat = v);
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  _settingsGroup(
+                    title: 'Where labels',
+                    subtitle:
+                        'Shortens place text in the Folders “Where” column. '
+                        'Leave defaults if you prefer full city / state / country.',
+                    children: [
+                      SwitchListTile(
+                        key: const Key('pref-show-country-same'),
+                        title: const Text(
+                          'Show country when in the same country',
+                        ),
+                        subtitle: const Text(
+                          'Off (default): if a photo’s country matches this '
+                          'computer’s country, hide the country name to keep '
+                          'Where shorter. Turn on to always show country.',
+                        ),
+                        value: _showCountryWhenSameCountry,
+                        onChanged: (v) =>
+                            _mutateDraft(() => _showCountryWhenSameCountry = v),
+                      ),
+                      SwitchListTile(
+                        key: const Key('pref-show-state-same'),
+                        title: const Text('Show state/province when familiar'),
+                        subtitle: const Text(
+                          'Off (default): hide state/province when it matches an '
+                          'entry in Familiar state/province below. Turn on to '
+                          'always show state/province.',
+                        ),
+                        value: _showStateWhenSameState,
+                        onChanged: (v) =>
+                            _mutateDraft(() => _showStateWhenSameState = v),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        child: TextField(
+                          key: const Key('pref-familiar-regions'),
+                          controller: _familiarRegions,
+                          decoration: const InputDecoration(
+                            labelText: 'Familiar state/province',
+                            hintText: 'e.g. California, Nevada, BC',
+                            helperText:
+                                'Places you already know—used to shorten Where when '
+                                '“Show state/province when familiar” is off. '
+                                'Comma-separated. Leave blank to always show '
+                                'state/province. You can also add from the Where '
+                                'column on Folders.',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  _settingsGroup(
+                    title: 'Folders',
+                    subtitle:
+                        'How the Folders table sorts and pages, how many '
+                        'recent collections appear on Open Recent / the start gate, '
+                        'and how many recent saved views the Views menu lists.',
+                    children: [
+                      SwitchListTile(
+                        key: const Key('pref-multi-column-sort'),
+                        title: const Text('Multi-column sort'),
+                        subtitle: const Text(
+                          'Off (default): clicking a column header sorts by that '
+                          'column only. On: each click builds a priority stack '
+                          '(1, 2, …) so you can sort by several columns at once.',
+                        ),
+                        value: _multiColumnSort,
+                        onChanged: (v) =>
+                            _mutateDraft(() => _multiColumnSort = v),
+                      ),
+                      _intSlider(
+                        key: const Key('pref-library-page-size'),
+                        label: 'Rows per page',
+                        helper:
+                            'How many items the Folders table shows before you '
+                            'turn the page. Raise for fewer page flips; lower on '
+                            'small screens. Default 50 (2–200).',
+                        value: _libraryPageSize,
+                        min: DesktopPrefs.libraryPageSizeMin,
+                        max: DesktopPrefs.libraryPageSizeMax,
+                        step: DesktopPrefs.libraryPageSizeStep,
+                        onChanged: (v) => _libraryPageSize = v,
+                      ),
+                      _intSlider(
+                        key: const Key('pref-recent-collections-limit'),
+                        label: 'Recent collections limit',
+                        helper:
+                            'Max collections listed under Open Recent and on the '
+                            'start gate. Raise if you juggle many collections. '
+                            'Default 20 (1–100).',
+                        value: _recentCollectionsLimit,
+                        min: DesktopPrefs.recentCollectionsLimitMin,
+                        max: DesktopPrefs.recentCollectionsLimitMax,
+                        step: DesktopPrefs.recentCollectionsLimitStep,
+                        onChanged: (v) => _recentCollectionsLimit = v,
+                      ),
+                      _intSlider(
+                        key: const Key('pref-recent-views-limit'),
+                        label: 'Recent views limit',
+                        helper:
+                            'Max saved views listed in the Folders Views menu. '
+                            'All saved views stay until you delete them; this '
+                            'only caps the recent list. Default 10 (1–100).',
+                        value: _recentViewsLimit,
+                        min: DesktopPrefs.recentViewsLimitMin,
+                        max: DesktopPrefs.recentViewsLimitMax,
+                        step: DesktopPrefs.recentViewsLimitStep,
+                        onChanged: (v) => _recentViewsLimit = v,
+                      ),
+                    ],
+                  ),
+                  _settingsGroup(
+                    title: 'Faces',
+                    subtitle:
+                        'Boxes on the review photo plus how strict local face '
+                        'finding is. Leave defaults unless faces are missed or '
+                        'you see false detections.',
+                    children: [
+                      SwitchListTile(
+                        key: const Key('pref-show-face-overlays'),
+                        title: const Text('Show face boxes on photos'),
+                        subtitle: const Text(
+                          'On (default): on the review photo, draw a labeled '
+                          'square for each who-tag that has a face region from '
+                          'analysis. Turn off for a cleaner photo view.',
+                        ),
+                        value: _showFaceOverlays,
+                        onChanged: (v) =>
+                            _mutateDraft(() => _showFaceOverlays = v),
+                      ),
+                      _doubleSlider(
+                        key: const Key('pref-faces-detect-score'),
+                        label: 'Face detect score threshold',
+                        helper:
+                            'Minimum confidence for the local face finder to keep '
+                            'a detection. Raise if you see false boxes; lower if '
+                            'real faces are missed. Default 0.2.',
+                        value: _facesDetectScoreThreshold,
+                        min: DesktopPrefs.facesDetectScoreThresholdMin,
+                        max: DesktopPrefs.facesDetectScoreThresholdMax,
+                        step: DesktopPrefs.facesDetectScoreThresholdStep,
+                        onChanged: (v) => _facesDetectScoreThreshold = v,
+                      ),
+                      _intSlider(
+                        key: const Key('pref-faces-tray-page-limit'),
+                        label: 'Faces tray fetch limit',
+                        helper:
+                            'How many face appearances the Faces trays load per '
+                            'request. Raise only if trays feel incomplete on huge '
+                            'collections. Default 500 (50–500).',
+                        value: _facesTrayPageLimit,
+                        min: DesktopPrefs.facesTrayPageLimitMin,
+                        max: DesktopPrefs.facesTrayPageLimitMax,
+                        step: DesktopPrefs.facesTrayPageLimitStep,
+                        onChanged: (v) => _facesTrayPageLimit = v,
+                      ),
+                      _intSlider(
+                        key: const Key('pref-persons-list-columns'),
+                        label: 'Persons list columns',
+                        helper:
+                            'How many person face crops sit in each row on the '
+                            'Persons page. Default 5 (1–10).',
+                        value: _personsListColumns,
+                        min: DesktopPrefs.personsListColumnsMin,
+                        max: DesktopPrefs.personsListColumnsMax,
+                        step: DesktopPrefs.personsListColumnsStep,
+                        onChanged: (v) => _personsListColumns = v,
+                      ),
+                      SwitchListTile(
+                        key: const Key('pref-auto-confirm-high-confidence'),
+                        title: const Text(
+                          'Auto-confirm high-confidence person matches',
+                        ),
+                        subtitle: const Text(
+                          'On (default): after analyze, lookalike faces that match '
+                          'a named person are auto-confirmed when confidence is at '
+                          'or above the percent below. Off: those matches stay '
+                          'Unconfirmed until you Confirm or reject them.',
+                        ),
+                        value: _autoConfirmHighConfidencePersonMatches,
+                        onChanged: (v) => _mutateDraft(
+                          () => _autoConfirmHighConfidencePersonMatches = v,
+                        ),
+                      ),
+                      _intSlider(
+                        key: const Key('pref-auto-confirm-min-confidence'),
+                        label: 'Auto-confirm minimum confidence (%)',
+                        helper:
+                            'Likeness confidence required to auto-confirm a named '
+                            'person match. Lower auto-confirms more matches; raise '
+                            'to review more Unconfirmed faces. Default 95 (0–100).',
+                        value: _autoConfirmMinConfidencePercent,
+                        min: DesktopPrefs.autoConfirmMinConfidencePercentMin,
+                        max: DesktopPrefs.autoConfirmMinConfidencePercentMax,
+                        step: DesktopPrefs.autoConfirmMinConfidencePercentStep,
+                        enabled: _autoConfirmHighConfidencePersonMatches,
+                        onChanged: (v) => _autoConfirmMinConfidencePercent = v,
+                      ),
+                    ],
+                  ),
+                  _settingsGroup(
+                    title: 'Ingest & video',
+                    subtitle:
+                        'How near-duplicates are detected when adding from a '
+                        'folder, and how videos are sampled before analysis. '
+                        'Leave defaults unless ingest is too slow or too aggressive.',
+                    children: [
+                      _intSlider(
+                        key: const Key('pref-near-duplicate-threshold'),
+                        label: 'Near-duplicate Hamming threshold',
+                        helper:
+                            'How similar two photos must look (fingerprint '
+                            'distance) to count as near-duplicates when adding '
+                            'from a folder. Lower = stricter (fewer matches). '
+                            'Default 4.',
+                        value: _nearDuplicateThreshold,
+                        min: DesktopPrefs.nearDuplicateThresholdMin,
+                        max: DesktopPrefs.nearDuplicateThresholdMax,
+                        step: DesktopPrefs.nearDuplicateThresholdStep,
+                        onChanged: (v) => _nearDuplicateThreshold = v,
+                      ),
+                      _intSlider(
+                        key: const Key('pref-sample-min-interval'),
+                        label: 'Min sample interval (ms)',
+                        helper:
+                            'Closest spacing between video frames taken in short '
+                            'stretches. Smaller = more frames (slower, more '
+                            'thorough). Default 1000 ms.',
+                        value: _sampleMinIntervalMs,
+                        min: DesktopPrefs.sampleMinIntervalMsMin,
+                        max: DesktopPrefs.sampleMinIntervalMsMax,
+                        step: DesktopPrefs.sampleMinIntervalMsStep,
+                        onChanged: (v) => _sampleMinIntervalMs = v,
+                      ),
+                      _intSlider(
+                        key: const Key('pref-sample-max-interval'),
+                        label: 'Max sample interval (ms)',
+                        helper:
+                            'Widest spacing between frames in long, uneventful '
+                            'stretches. Smaller = denser sampling of long clips. '
+                            'Default 15000 ms (500–60000). A long clip may space '
+                            'frames wider than this when the soft max binds.',
+                        value: _sampleMaxIntervalMs,
+                        min: DesktopPrefs.sampleMaxIntervalMsMin,
+                        max: DesktopPrefs.sampleMaxIntervalMsMax,
+                        step: DesktopPrefs.sampleMaxIntervalMsStep,
+                        onChanged: (v) => _sampleMaxIntervalMs = v,
+                      ),
+                      _intSlider(
+                        key: const Key('pref-soft-max-frames'),
+                        label: 'Soft max frames per video',
+                        helper:
+                            'Soft cap on sample frames taken from one video so '
+                            'long clips stay manageable. Raise for longer '
+                            'coverage; lower to speed up pre-pass. Default 50 '
+                            '(10–50). Wins over max interval on long clips.',
+                        value: _softMaxFramesPerItem,
+                        min: DesktopPrefs.softMaxFramesPerItemMin,
+                        max: DesktopPrefs.softMaxFramesPerItemMax,
+                        step: DesktopPrefs.softMaxFramesPerItemStep,
+                        onChanged: (v) => _softMaxFramesPerItem = v,
+                      ),
+                      _doubleSlider(
+                        key: const Key('pref-scene-cut-threshold'),
+                        label: 'Scene-cut threshold',
+                        helper:
+                            'Sensitivity for detecting cuts between scenes. '
+                            'Lower finds more cuts (more samples around changes). '
+                            'Default 0.3.',
+                        value: _sceneCutThreshold,
+                        min: DesktopPrefs.sceneCutThresholdMin,
+                        max: DesktopPrefs.sceneCutThresholdMax,
+                        step: DesktopPrefs.sceneCutThresholdStep,
+                        onChanged: (v) => _sceneCutThreshold = v,
+                      ),
+                    ],
+                  ),
+                  _settingsGroup(
+                    title: 'Item lists & blurry photos',
+                    subtitle:
+                        'The sharpness bar is used by Hide blurry on Folders and '
+                        'Export list (stored pre-pass score) and when auto-fix '
+                        'runs at ingest. Show scores on photo thumbs to choose a '
+                        'bar. Auto-fix is local (0 credits) and never overwrites '
+                        'the original file. Export photo duration, sequence size, '
+                        'photo transitions, and soundtrack under video apply to '
+                        'FCP7 XML / FCPXML / MP4 as documented on each control. '
+                        'JSON export is unaffected.',
+                    children: [
+                      SwitchListTile(
+                        key: const Key('pref-show-sharpness-scores'),
+                        title: const Text('Show sharpness scores'),
+                        subtitle: const Text(
+                          'On (default): stored pre-pass number on photo thumbs '
+                          'in Folders, Export list, and item detail. Use it to '
+                          'set the blurry bar. Off: thumbs only.',
+                        ),
+                        value: _showSharpnessScores,
+                        onChanged: (v) =>
+                            _mutateDraft(() => _showSharpnessScores = v),
+                      ),
+                      _intSlider(
+                        key: const Key('pref-blurry-sharpness-threshold'),
+                        label: 'Item list blurry bar',
+                        helper:
+                            'Variance-of-Laplacian below this counts as blurry. '
+                            'Default 80 (0–50000, step 10). Typical stills score '
+                            'in the thousands. Raise to drop more photos; lower '
+                            'to keep softer stills.',
+                        value: _itemListBlurrySharpnessThreshold,
+                        min: DesktopPrefs.itemListBlurrySharpnessThresholdMin,
+                        max: DesktopPrefs.itemListBlurrySharpnessThresholdMax,
+                        step: DesktopPrefs.itemListBlurrySharpnessThresholdStep,
+                        onChanged: (v) => _itemListBlurrySharpnessThreshold = v,
+                      ),
+                      SwitchListTile(
+                        key: const Key('pref-auto-fix-blurry-photos'),
+                        title: const Text('Auto-fix blurry photos'),
+                        subtitle: const Text(
+                          'On (default): at ingest, photos below the bar get a '
+                          'local unsharp pass. Thumbs and analyze use that JPEG. '
+                          '0 credits. Off: ingest keeps the original still.',
+                        ),
+                        value: _autoFixBlurryPhotos,
+                        onChanged: (v) =>
+                            _mutateDraft(() => _autoFixBlurryPhotos = v),
+                      ),
+                      SwitchListTile(
+                        key: const Key('pref-save-fixed-photo-in-folder'),
+                        title: const Text('Save fixed photo in folder'),
+                        subtitle: const Text(
+                          'On (default): write Stem.tagkin-fixed.jpg next to the '
+                          'original. Later folder ingest takes the sidecar and '
+                          'skips the blurry original. Never overwrites the '
+                          'original. Off: the sharpened JPEG stays in TagKin only.',
+                        ),
+                        value: _saveFixedPhotoInFolder,
+                        onChanged: _autoFixBlurryPhotos
+                            ? (v) => _mutateDraft(
+                                () => _saveFixedPhotoInFolder = v,
+                              )
+                            : null,
+                      ),
+                      _doubleSlider(
+                        key: const Key('pref-export-photo-still-duration'),
+                        label: 'Export photo duration',
+                        helper:
+                            'How long each photo still lasts on an FCP7 XML, '
+                            'FCPXML, or MP4 timeline. Default 2.5 s (0.5–10, '
+                            'step 0.5). JSON export is unaffected.',
+                        value: _exportPhotoStillDurationSeconds,
+                        min: DesktopPrefs.exportPhotoStillDurationSecondsMin,
+                        max: DesktopPrefs.exportPhotoStillDurationSecondsMax,
+                        step: DesktopPrefs.exportPhotoStillDurationSecondsStep,
+                        onChanged: (v) => _exportPhotoStillDurationSeconds = v,
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        child: TextField(
+                          key: const Key('pref-export-music-prompt'),
+                          controller: _exportMusicPrompt,
+                          decoration: const InputDecoration(
+                            labelText: 'Export music prompt',
+                            helperText:
+                                'Style of generated music for MP4 export. '
+                                'Generate starts immediately; credits come from '
+                                'the server response. JSON / FCP7 / FCPXML are '
+                                'unaffected.',
+                            border: OutlineInputBorder(),
+                          ),
+                          minLines: 1,
+                          maxLines: 3,
+                          onChanged: (_) => _mutateDraft(() {}),
+                        ),
+                      ),
+                      _intSlider(
+                        key: const Key('pref-export-soundtrack-under-video'),
+                        label: 'Export soundtrack under video',
+                        helper:
+                            'How loud the soundtrack stays during a video key '
+                            'period, as a percent of full music. Default 5% '
+                            '(0–100). Clip audio stays full. Photos keep full '
+                            'music. JSON / FCP7 / FCPXML are unaffected.',
+                        value: _exportSoundtrackUnderVideoPercent,
+                        min: DesktopPrefs.exportSoundtrackUnderVideoPercentMin,
+                        max: DesktopPrefs.exportSoundtrackUnderVideoPercentMax,
+                        step:
+                            DesktopPrefs.exportSoundtrackUnderVideoPercentStep,
+                        onChanged: (v) =>
+                            _exportSoundtrackUnderVideoPercent = v,
+                      ),
+                      _intSlider(
+                        key: const Key('pref-export-music-loop-count'),
+                        label: 'Export music loop count',
+                        helper:
+                            'How many times the same soundtrack file may play, '
+                            'including the first. Default 2 (1–10). Each join is '
+                            'a cross-dissolve. 1 plays the file once. JSON / '
+                            'FCP7 / FCPXML are unaffected.',
+                        value: _exportMusicLoopCount,
+                        min: DesktopPrefs.exportMusicLoopCountMin,
+                        max: DesktopPrefs.exportMusicLoopCountMax,
+                        step: DesktopPrefs.exportMusicLoopCountStep,
+                        onChanged: (v) => _exportMusicLoopCount = v,
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'Export sequence size',
+                            helperText:
+                                'FCP7 XML / FCPXML / MP4 sequence. Match smallest '
+                                '(default) uses the smallest width and height '
+                                'among the files. 1080p, 4K, and Match smallest '
+                                'scale clips to fit. Match largest uses native '
+                                'pixels with no scale. JSON export is unaffected.',
+                            border: OutlineInputBorder(),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<ExportSequenceSize>(
+                              key: const Key('pref-export-sequence-size'),
+                              value: _exportSequenceSize,
+                              isExpanded: true,
+                              items: [
+                                for (final f in ExportSequenceSize.values)
+                                  DropdownMenuItem(
+                                    value: f,
+                                    child: Text(f.settingsLabel),
+                                  ),
+                              ],
+                              onChanged: (v) {
+                                if (v == null) return;
+                                _mutateDraft(() => _exportSequenceSize = v);
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'Export photo transition',
+                            helperText:
+                                'Between adjacent photos on FCP7 XML / FCPXML / '
+                                'MP4. Hard cut into and out of video key periods. '
+                                'JSON export is unaffected.',
+                            border: OutlineInputBorder(),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<ExportPhotoTransition>(
+                              key: const Key('pref-export-photo-transition'),
+                              value: _exportPhotoTransition,
+                              isExpanded: true,
+                              items: [
+                                for (final f in ExportPhotoTransition.values)
+                                  DropdownMenuItem(
+                                    value: f,
+                                    child: Text(f.settingsLabel),
+                                  ),
+                              ],
+                              onChanged: (v) {
+                                if (v == null) return;
+                                _mutateDraft(() => _exportPhotoTransition = v);
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                      _doubleSlider(
+                        key: const Key('pref-export-photo-transition-duration'),
+                        label: 'Export transition duration',
+                        helper:
+                            'How long the photo-to-photo transition lasts. '
+                            'Default 1 s (0.1–2, step 0.1).',
+                        value: _exportPhotoTransitionSeconds,
+                        min: DesktopPrefs.exportPhotoTransitionSecondsMin,
+                        max: DesktopPrefs.exportPhotoTransitionSecondsMax,
+                        step: DesktopPrefs.exportPhotoTransitionSecondsStep,
+                        enabled:
+                            _exportPhotoTransition !=
+                            ExportPhotoTransition.none,
+                        onChanged: (v) => _exportPhotoTransitionSeconds = v,
+                      ),
+                    ],
+                  ),
+                  _settingsGroup(
+                    title: 'Jobs',
+                    subtitle:
+                        'How often the app checks analyze / upload progress. '
+                        'Leave the default unless the network is very slow.',
+                    children: [
+                      _intSlider(
+                        key: const Key('pref-jobs-poll-interval'),
+                        label: 'Job poll interval (seconds)',
+                        helper:
+                            'Seconds between progress checks while analyze or '
+                            'upload runs. Higher = less network chatter; lower = '
+                            'snappier status. Default 2 (1–30).',
+                        value: _jobsPollIntervalSeconds,
+                        min: DesktopPrefs.jobsPollIntervalSecondsMin,
+                        max: DesktopPrefs.jobsPollIntervalSecondsMax,
+                        step: DesktopPrefs.jobsPollIntervalSecondsStep,
+                        onChanged: (v) => _jobsPollIntervalSeconds = v,
+                      ),
+                    ],
+                  ),
+                  _settingsGroup(
+                    title: 'Credits',
+                    subtitle:
+                        'Buy a credit pack, redeem a code, or add a card for the Trial pack. Credits do not expire.',
+                    children: [
+                      const CreditsRemainingTile(),
+                      ListTile(
+                        key: const Key('settings-buy-credits'),
+                        title: const Text('Buy credits'),
+                        subtitle: const Text(
+                          'Open Stripe Checkout in your browser',
+                        ),
+                        onTap: () => pushBuyCreditsPage(context),
+                      ),
+                      ListTile(
+                        key: const Key('settings-redeem-code'),
+                        title: const Text('Redeem code'),
+                        subtitle: const Text('Apply a code without Stripe'),
+                        onTap: () => pushRedeemCodePage(context),
+                      ),
+                      ListTile(
+                        key: const Key('settings-trial-card'),
+                        title: const Text('Card verification'),
+                        subtitle: const Text(
+                          'Required once before Trial credits become remaining credits',
+                        ),
+                        onTap: () => pushTrialCardPage(context),
+                      ),
+                    ],
+                  ),
+                  _settingsGroup(
+                    title: 'About',
+                    subtitle:
+                        'This computer’s TagKin version. Check for updates talks to tagkin-api; installing a new build still needs a download until auto-update is wired.',
+                    children: [
+                      ListTile(
+                        key: const Key('settings-about-version'),
+                        title: const Text('Version'),
+                        subtitle: Text(
+                          ref.watch(clientIdentityProvider).version,
+                        ),
+                      ),
+                      ListTile(
+                        key: const Key('settings-check-for-updates'),
+                        title: const Text('Check for updates'),
+                        subtitle: const Text(
+                          'Ask the server whether this version is still current',
+                        ),
+                        onTap: _checkForUpdates,
+                      ),
+                      if (ref.watch(clientSupportProvider)?.downloadUrl != null)
+                        ListTile(
+                          key: const Key('settings-download-tagkin'),
+                          title: const Text('Download TagKin'),
+                          subtitle: const Text(
+                            'Open the latest installer in your browser',
+                          ),
+                          onTap: () {
+                            final raw = ref
+                                .read(clientSupportProvider)
+                                ?.downloadUrl;
+                            final url = raw == null ? null : Uri.tryParse(raw);
+                            if (url != null) {
+                              ref.read(checkoutUrlLauncherProvider)(url);
+                            }
+                          },
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-            actions: [
-              TextButton(
-                key: const Key('settings-restore'),
-                onPressed: _restoreDefaults,
-                child: const Text('Restore defaults'),
-              ),
-              TextButton(
-                key: const Key('settings-save'),
-                onPressed: () => _save(),
-                child: const Text('Save'),
-              ),
-            ],
-          ),
-          body: ListView(
-            padding: const EdgeInsets.all(24),
-            children: [
-              _settingsIntro(),
-              _settingsGroup(
-                title: 'Display',
-                subtitle:
-                    'How dates and times appear. Values are still stored in UTC.',
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    child: InputDecorator(
-                      decoration: InputDecoration(
-                        labelText: 'Date and time format',
-                        helperText:
-                            'Default is this computer’s locale. Example: '
-                            '${formatLocalDateTime(DateTime.now().toUtc().toIso8601String(), format: _dateTimeFormat)}',
-                        border: const OutlineInputBorder(),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<DateTimeDisplayFormat>(
-                          key: const Key('pref-date-time-format'),
-                          value: _dateTimeFormat,
-                          isExpanded: true,
-                          items: [
-                            for (final f in DateTimeDisplayFormat.values)
-                              DropdownMenuItem(
-                                value: f,
-                                child: Text(f.settingsLabel),
-                              ),
-                          ],
-                          onChanged: (v) {
-                            if (v == null) return;
-                            _mutateDraft(() => _dateTimeFormat = v);
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              _settingsGroup(
-                title: 'Where labels',
-                subtitle:
-                    'Shortens place text in the Folders “Where” column. '
-                    'Leave defaults if you prefer full city / state / country.',
-                children: [
-                  SwitchListTile(
-                    key: const Key('pref-show-country-same'),
-                    title: const Text('Show country when in the same country'),
-                    subtitle: const Text(
-                      'Off (default): if a photo’s country matches this '
-                      'computer’s country, hide the country name to keep '
-                      'Where shorter. Turn on to always show country.',
-                    ),
-                    value: _showCountryWhenSameCountry,
-                    onChanged: (v) =>
-                        _mutateDraft(() => _showCountryWhenSameCountry = v),
-                  ),
-                  SwitchListTile(
-                    key: const Key('pref-show-state-same'),
-                    title: const Text('Show state/province when familiar'),
-                    subtitle: const Text(
-                      'Off (default): hide state/province when it matches an '
-                      'entry in Familiar state/province below. Turn on to '
-                      'always show state/province.',
-                    ),
-                    value: _showStateWhenSameState,
-                    onChanged: (v) =>
-                        _mutateDraft(() => _showStateWhenSameState = v),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    child: TextField(
-                      key: const Key('pref-familiar-regions'),
-                      controller: _familiarRegions,
-                      decoration: const InputDecoration(
-                        labelText: 'Familiar state/province',
-                        hintText: 'e.g. California, Nevada, BC',
-                        helperText:
-                            'Places you already know—used to shorten Where when '
-                            '“Show state/province when familiar” is off. '
-                            'Comma-separated. Leave blank to always show '
-                            'state/province. You can also add from the Where '
-                            'column on Folders.',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              _settingsGroup(
-                title: 'Folders',
-                subtitle:
-                    'How the Folders table sorts and pages, how many '
-                    'recent collections appear on Open Recent / the start gate, '
-                    'and how many recent saved views the Views menu lists.',
-                children: [
-                  SwitchListTile(
-                    key: const Key('pref-multi-column-sort'),
-                    title: const Text('Multi-column sort'),
-                    subtitle: const Text(
-                      'Off (default): clicking a column header sorts by that '
-                      'column only. On: each click builds a priority stack '
-                      '(1, 2, …) so you can sort by several columns at once.',
-                    ),
-                    value: _multiColumnSort,
-                    onChanged: (v) => _mutateDraft(() => _multiColumnSort = v),
-                  ),
-                  _intSlider(
-                    key: const Key('pref-library-page-size'),
-                    label: 'Rows per page',
-                    helper:
-                        'How many items the Folders table shows before you '
-                        'turn the page. Raise for fewer page flips; lower on '
-                        'small screens. Default 50 (2–200).',
-                    value: _libraryPageSize,
-                    min: DesktopPrefs.libraryPageSizeMin,
-                    max: DesktopPrefs.libraryPageSizeMax,
-                    step: DesktopPrefs.libraryPageSizeStep,
-                    onChanged: (v) => _libraryPageSize = v,
-                  ),
-                  _intSlider(
-                    key: const Key('pref-recent-collections-limit'),
-                    label: 'Recent collections limit',
-                    helper:
-                        'Max collections listed under Open Recent and on the '
-                        'start gate. Raise if you juggle many collections. '
-                        'Default 20 (1–100).',
-                    value: _recentCollectionsLimit,
-                    min: DesktopPrefs.recentCollectionsLimitMin,
-                    max: DesktopPrefs.recentCollectionsLimitMax,
-                    step: DesktopPrefs.recentCollectionsLimitStep,
-                    onChanged: (v) => _recentCollectionsLimit = v,
-                  ),
-                  _intSlider(
-                    key: const Key('pref-recent-views-limit'),
-                    label: 'Recent views limit',
-                    helper:
-                        'Max saved views listed in the Folders Views menu. '
-                        'All saved views stay until you delete them; this '
-                        'only caps the recent list. Default 10 (1–100).',
-                    value: _recentViewsLimit,
-                    min: DesktopPrefs.recentViewsLimitMin,
-                    max: DesktopPrefs.recentViewsLimitMax,
-                    step: DesktopPrefs.recentViewsLimitStep,
-                    onChanged: (v) => _recentViewsLimit = v,
-                  ),
-                ],
-              ),
-              _settingsGroup(
-                title: 'Faces',
-                subtitle:
-                    'Boxes on the review photo plus how strict local face '
-                    'finding is. Leave defaults unless faces are missed or '
-                    'you see false detections.',
-                children: [
-                  SwitchListTile(
-                    key: const Key('pref-show-face-overlays'),
-                    title: const Text('Show face boxes on photos'),
-                    subtitle: const Text(
-                      'On (default): on the review photo, draw a labeled '
-                      'square for each who-tag that has a face region from '
-                      'analysis. Turn off for a cleaner photo view.',
-                    ),
-                    value: _showFaceOverlays,
-                    onChanged: (v) => _mutateDraft(() => _showFaceOverlays = v),
-                  ),
-                  _doubleSlider(
-                    key: const Key('pref-faces-detect-score'),
-                    label: 'Face detect score threshold',
-                    helper:
-                        'Minimum confidence for the local face finder to keep '
-                        'a detection. Raise if you see false boxes; lower if '
-                        'real faces are missed. Default 0.2.',
-                    value: _facesDetectScoreThreshold,
-                    min: DesktopPrefs.facesDetectScoreThresholdMin,
-                    max: DesktopPrefs.facesDetectScoreThresholdMax,
-                    step: DesktopPrefs.facesDetectScoreThresholdStep,
-                    onChanged: (v) => _facesDetectScoreThreshold = v,
-                  ),
-                  _intSlider(
-                    key: const Key('pref-faces-tray-page-limit'),
-                    label: 'Faces tray fetch limit',
-                    helper:
-                        'How many face appearances the Faces trays load per '
-                        'request. Raise only if trays feel incomplete on huge '
-                        'collections. Default 500 (50–500).',
-                    value: _facesTrayPageLimit,
-                    min: DesktopPrefs.facesTrayPageLimitMin,
-                    max: DesktopPrefs.facesTrayPageLimitMax,
-                    step: DesktopPrefs.facesTrayPageLimitStep,
-                    onChanged: (v) => _facesTrayPageLimit = v,
-                  ),
-                  _intSlider(
-                    key: const Key('pref-persons-list-columns'),
-                    label: 'Persons list columns',
-                    helper:
-                        'How many person face crops sit in each row on the '
-                        'Persons page. Default 5 (1–10).',
-                    value: _personsListColumns,
-                    min: DesktopPrefs.personsListColumnsMin,
-                    max: DesktopPrefs.personsListColumnsMax,
-                    step: DesktopPrefs.personsListColumnsStep,
-                    onChanged: (v) => _personsListColumns = v,
-                  ),
-                  SwitchListTile(
-                    key: const Key('pref-auto-confirm-high-confidence'),
-                    title: const Text(
-                      'Auto-confirm high-confidence person matches',
-                    ),
-                    subtitle: const Text(
-                      'On (default): after analyze, lookalike faces that match '
-                      'a named person are auto-confirmed when confidence is at '
-                      'or above the percent below. Off: those matches stay '
-                      'Unconfirmed until you Confirm or reject them.',
-                    ),
-                    value: _autoConfirmHighConfidencePersonMatches,
-                    onChanged: (v) => _mutateDraft(
-                      () => _autoConfirmHighConfidencePersonMatches = v,
-                    ),
-                  ),
-                  _intSlider(
-                    key: const Key('pref-auto-confirm-min-confidence'),
-                    label: 'Auto-confirm minimum confidence (%)',
-                    helper:
-                        'Likeness confidence required to auto-confirm a named '
-                        'person match. Lower auto-confirms more matches; raise '
-                        'to review more Unconfirmed faces. Default 95 (0–100).',
-                    value: _autoConfirmMinConfidencePercent,
-                    min: DesktopPrefs.autoConfirmMinConfidencePercentMin,
-                    max: DesktopPrefs.autoConfirmMinConfidencePercentMax,
-                    step: DesktopPrefs.autoConfirmMinConfidencePercentStep,
-                    enabled: _autoConfirmHighConfidencePersonMatches,
-                    onChanged: (v) => _autoConfirmMinConfidencePercent = v,
-                  ),
-                ],
-              ),
-              _settingsGroup(
-                title: 'Ingest & video',
-                subtitle:
-                    'How near-duplicates are detected when adding from a '
-                    'folder, and how videos are sampled before analysis. '
-                    'Leave defaults unless ingest is too slow or too aggressive.',
-                children: [
-                  _intSlider(
-                    key: const Key('pref-near-duplicate-threshold'),
-                    label: 'Near-duplicate Hamming threshold',
-                    helper:
-                        'How similar two photos must look (fingerprint '
-                        'distance) to count as near-duplicates when adding '
-                        'from a folder. Lower = stricter (fewer matches). '
-                        'Default 4.',
-                    value: _nearDuplicateThreshold,
-                    min: DesktopPrefs.nearDuplicateThresholdMin,
-                    max: DesktopPrefs.nearDuplicateThresholdMax,
-                    step: DesktopPrefs.nearDuplicateThresholdStep,
-                    onChanged: (v) => _nearDuplicateThreshold = v,
-                  ),
-                  _intSlider(
-                    key: const Key('pref-sample-min-interval'),
-                    label: 'Min sample interval (ms)',
-                    helper:
-                        'Closest spacing between video frames taken in short '
-                        'stretches. Smaller = more frames (slower, more '
-                        'thorough). Default 1000 ms.',
-                    value: _sampleMinIntervalMs,
-                    min: DesktopPrefs.sampleMinIntervalMsMin,
-                    max: DesktopPrefs.sampleMinIntervalMsMax,
-                    step: DesktopPrefs.sampleMinIntervalMsStep,
-                    onChanged: (v) => _sampleMinIntervalMs = v,
-                  ),
-                  _intSlider(
-                    key: const Key('pref-sample-max-interval'),
-                    label: 'Max sample interval (ms)',
-                    helper:
-                        'Widest spacing between frames in long, uneventful '
-                        'stretches. Smaller = denser sampling of long clips. '
-                        'Default 15000 ms (500–60000). A long clip may space '
-                        'frames wider than this when the soft max binds.',
-                    value: _sampleMaxIntervalMs,
-                    min: DesktopPrefs.sampleMaxIntervalMsMin,
-                    max: DesktopPrefs.sampleMaxIntervalMsMax,
-                    step: DesktopPrefs.sampleMaxIntervalMsStep,
-                    onChanged: (v) => _sampleMaxIntervalMs = v,
-                  ),
-                  _intSlider(
-                    key: const Key('pref-soft-max-frames'),
-                    label: 'Soft max frames per video',
-                    helper:
-                        'Soft cap on sample frames taken from one video so '
-                        'long clips stay manageable. Raise for longer '
-                        'coverage; lower to speed up pre-pass. Default 50 '
-                        '(10–50). Wins over max interval on long clips.',
-                    value: _softMaxFramesPerItem,
-                    min: DesktopPrefs.softMaxFramesPerItemMin,
-                    max: DesktopPrefs.softMaxFramesPerItemMax,
-                    step: DesktopPrefs.softMaxFramesPerItemStep,
-                    onChanged: (v) => _softMaxFramesPerItem = v,
-                  ),
-                  _doubleSlider(
-                    key: const Key('pref-scene-cut-threshold'),
-                    label: 'Scene-cut threshold',
-                    helper:
-                        'Sensitivity for detecting cuts between scenes. '
-                        'Lower finds more cuts (more samples around changes). '
-                        'Default 0.3.',
-                    value: _sceneCutThreshold,
-                    min: DesktopPrefs.sceneCutThresholdMin,
-                    max: DesktopPrefs.sceneCutThresholdMax,
-                    step: DesktopPrefs.sceneCutThresholdStep,
-                    onChanged: (v) => _sceneCutThreshold = v,
-                  ),
-                ],
-              ),
-              _settingsGroup(
-                title: 'Item lists & blurry photos',
-                subtitle:
-                    'The sharpness bar is used by Hide blurry on Folders and '
-                    'Export list (stored pre-pass score) and when auto-fix '
-                    'runs at ingest. Show scores on photo thumbs to choose a '
-                    'bar. Auto-fix is local (0 credits) and never overwrites '
-                    'the original file. Export photo duration, sequence size, '
-                    'photo transitions, and soundtrack under video apply to '
-                    'FCP7 XML / FCPXML / MP4 as documented on each control. '
-                    'JSON export is unaffected.',
-                children: [
-                  SwitchListTile(
-                    key: const Key('pref-show-sharpness-scores'),
-                    title: const Text('Show sharpness scores'),
-                    subtitle: const Text(
-                      'On (default): stored pre-pass number on photo thumbs '
-                      'in Folders, Export list, and item detail. Use it to '
-                      'set the blurry bar. Off: thumbs only.',
-                    ),
-                    value: _showSharpnessScores,
-                    onChanged: (v) => _mutateDraft(
-                      () => _showSharpnessScores = v,
-                    ),
-                  ),
-                  _intSlider(
-                    key: const Key('pref-blurry-sharpness-threshold'),
-                    label: 'Item list blurry bar',
-                    helper:
-                        'Variance-of-Laplacian below this counts as blurry. '
-                        'Default 80 (0–50000, step 10). Typical stills score '
-                        'in the thousands. Raise to drop more photos; lower '
-                        'to keep softer stills.',
-                    value: _itemListBlurrySharpnessThreshold,
-                    min: DesktopPrefs.itemListBlurrySharpnessThresholdMin,
-                    max: DesktopPrefs.itemListBlurrySharpnessThresholdMax,
-                    step: DesktopPrefs.itemListBlurrySharpnessThresholdStep,
-                    onChanged: (v) => _itemListBlurrySharpnessThreshold = v,
-                  ),
-                  SwitchListTile(
-                    key: const Key('pref-auto-fix-blurry-photos'),
-                    title: const Text('Auto-fix blurry photos'),
-                    subtitle: const Text(
-                      'On (default): at ingest, photos below the bar get a '
-                      'local unsharp pass. Thumbs and analyze use that JPEG. '
-                      '0 credits. Off: ingest keeps the original still.',
-                    ),
-                    value: _autoFixBlurryPhotos,
-                    onChanged: (v) => _mutateDraft(
-                      () => _autoFixBlurryPhotos = v,
-                    ),
-                  ),
-                  SwitchListTile(
-                    key: const Key('pref-save-fixed-photo-in-folder'),
-                    title: const Text('Save fixed photo in folder'),
-                    subtitle: const Text(
-                      'On (default): write Stem.tagkin-fixed.jpg next to the '
-                      'original. Later folder ingest takes the sidecar and '
-                      'skips the blurry original. Never overwrites the '
-                      'original. Off: the sharpened JPEG stays in TagKin only.',
-                    ),
-                    value: _saveFixedPhotoInFolder,
-                    onChanged: _autoFixBlurryPhotos
-                        ? (v) => _mutateDraft(
-                              () => _saveFixedPhotoInFolder = v,
-                            )
-                        : null,
-                  ),
-                  _doubleSlider(
-                    key: const Key('pref-export-photo-still-duration'),
-                    label: 'Export photo duration',
-                    helper:
-                        'How long each photo still lasts on an FCP7 XML, '
-                        'FCPXML, or MP4 timeline. Default 2.5 s (0.5–10, '
-                        'step 0.5). JSON export is unaffected.',
-                    value: _exportPhotoStillDurationSeconds,
-                    min: DesktopPrefs.exportPhotoStillDurationSecondsMin,
-                    max: DesktopPrefs.exportPhotoStillDurationSecondsMax,
-                    step: DesktopPrefs.exportPhotoStillDurationSecondsStep,
-                    onChanged: (v) => _exportPhotoStillDurationSeconds = v,
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    child: TextField(
-                      key: const Key('pref-export-music-prompt'),
-                      controller: _exportMusicPrompt,
-                      decoration: const InputDecoration(
-                        labelText: 'Export music prompt',
-                        helperText:
-                            'Style of generated music for MP4 export. '
-                            'Credits are shown before generate. JSON / FCP7 / '
-                            'FCPXML are unaffected.',
-                        border: OutlineInputBorder(),
-                      ),
-                      minLines: 1,
-                      maxLines: 3,
-                      onChanged: (_) => _mutateDraft(() {}),
-                    ),
-                  ),
-                  _intSlider(
-                    key: const Key('pref-export-soundtrack-under-video'),
-                    label: 'Export soundtrack under video',
-                    helper:
-                        'How loud the soundtrack stays during a video key '
-                        'period, as a percent of full music. Default 5% '
-                        '(0–100). Clip audio stays full. Photos keep full '
-                        'music. JSON / FCP7 / FCPXML are unaffected.',
-                    value: _exportSoundtrackUnderVideoPercent,
-                    min: DesktopPrefs.exportSoundtrackUnderVideoPercentMin,
-                    max: DesktopPrefs.exportSoundtrackUnderVideoPercentMax,
-                    step: DesktopPrefs.exportSoundtrackUnderVideoPercentStep,
-                    onChanged: (v) => _exportSoundtrackUnderVideoPercent = v,
-                  ),
-                  _intSlider(
-                    key: const Key('pref-export-music-loop-count'),
-                    label: 'Export music loop count',
-                    helper:
-                        'How many times the same soundtrack file may play, '
-                        'including the first. Default 2 (1–10). Each join is '
-                        'a cross-dissolve. 1 plays the file once. JSON / '
-                        'FCP7 / FCPXML are unaffected.',
-                    value: _exportMusicLoopCount,
-                    min: DesktopPrefs.exportMusicLoopCountMin,
-                    max: DesktopPrefs.exportMusicLoopCountMax,
-                    step: DesktopPrefs.exportMusicLoopCountStep,
-                    onChanged: (v) => _exportMusicLoopCount = v,
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Export sequence size',
-                        helperText:
-                            'FCP7 XML / FCPXML / MP4 sequence. Match smallest '
-                            '(default) uses the smallest width and height '
-                            'among the files. 1080p, 4K, and Match smallest '
-                            'scale clips to fit. Match largest uses native '
-                            'pixels with no scale. JSON export is unaffected.',
-                        border: OutlineInputBorder(),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<ExportSequenceSize>(
-                          key: const Key('pref-export-sequence-size'),
-                          value: _exportSequenceSize,
-                          isExpanded: true,
-                          items: [
-                            for (final f in ExportSequenceSize.values)
-                              DropdownMenuItem(
-                                value: f,
-                                child: Text(f.settingsLabel),
-                              ),
-                          ],
-                          onChanged: (v) {
-                            if (v == null) return;
-                            _mutateDraft(() => _exportSequenceSize = v);
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Export photo transition',
-                        helperText:
-                            'Between adjacent photos on FCP7 XML / FCPXML / '
-                            'MP4. Hard cut into and out of video key periods. '
-                            'JSON export is unaffected.',
-                        border: OutlineInputBorder(),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<ExportPhotoTransition>(
-                          key: const Key('pref-export-photo-transition'),
-                          value: _exportPhotoTransition,
-                          isExpanded: true,
-                          items: [
-                            for (final f in ExportPhotoTransition.values)
-                              DropdownMenuItem(
-                                value: f,
-                                child: Text(f.settingsLabel),
-                              ),
-                          ],
-                          onChanged: (v) {
-                            if (v == null) return;
-                            _mutateDraft(() => _exportPhotoTransition = v);
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                  _doubleSlider(
-                    key: const Key('pref-export-photo-transition-duration'),
-                    label: 'Export transition duration',
-                    helper:
-                        'How long the photo-to-photo transition lasts. '
-                        'Default 1 s (0.1–2, step 0.1).',
-                    value: _exportPhotoTransitionSeconds,
-                    min: DesktopPrefs.exportPhotoTransitionSecondsMin,
-                    max: DesktopPrefs.exportPhotoTransitionSecondsMax,
-                    step: DesktopPrefs.exportPhotoTransitionSecondsStep,
-                    enabled: _exportPhotoTransition !=
-                        ExportPhotoTransition.none,
-                    onChanged: (v) => _exportPhotoTransitionSeconds = v,
-                  ),
-                ],
-              ),
-              _settingsGroup(
-                title: 'Jobs',
-                subtitle:
-                    'How often the app checks analyze / upload progress. '
-                    'Leave the default unless the network is very slow.',
-                children: [
-                  _intSlider(
-                    key: const Key('pref-jobs-poll-interval'),
-                    label: 'Job poll interval (seconds)',
-                    helper:
-                        'Seconds between progress checks while analyze or '
-                        'upload runs. Higher = less network chatter; lower = '
-                        'snappier status. Default 2 (1–30).',
-                    value: _jobsPollIntervalSeconds,
-                    min: DesktopPrefs.jobsPollIntervalSecondsMin,
-                    max: DesktopPrefs.jobsPollIntervalSecondsMax,
-                    step: DesktopPrefs.jobsPollIntervalSecondsStep,
-                    onChanged: (v) => _jobsPollIntervalSeconds = v,
-                  ),
-                ],
-              ),
-              _settingsGroup(
-                title: 'Credits',
-                subtitle:
-                    'Buy a credit pack, redeem a code, or add a card for the Trial pack. Credits do not expire.',
-                children: [
-                  const CreditsRemainingTile(),
-                  ListTile(
-                    key: const Key('settings-buy-credits'),
-                    title: const Text('Buy credits'),
-                    subtitle: const Text('Open Stripe Checkout in your browser'),
-                    onTap: () => pushBuyCreditsPage(context),
-                  ),
-                  ListTile(
-                    key: const Key('settings-redeem-code'),
-                    title: const Text('Redeem code'),
-                    subtitle: const Text('Apply a code without Stripe'),
-                    onTap: () => pushRedeemCodePage(context),
-                  ),
-                  ListTile(
-                    key: const Key('settings-trial-card'),
-                    title: const Text('Card verification'),
-                    subtitle: const Text(
-                      'Required once before Trial credits become remaining credits',
-                    ),
-                    onTap: () => pushTrialCardPage(context),
-                  ),
-                ],
-              ),
-              _settingsGroup(
-                title: 'About',
-                subtitle:
-                    'This computer’s TagKin version. Check for updates talks to tagkin-api; installing a new build still needs a download until auto-update is wired.',
-                children: [
-                  ListTile(
-                    key: const Key('settings-about-version'),
-                    title: const Text('Version'),
-                    subtitle: Text(ref.watch(clientIdentityProvider).version),
-                  ),
-                  ListTile(
-                    key: const Key('settings-check-for-updates'),
-                    title: const Text('Check for updates'),
-                    subtitle: const Text(
-                      'Ask the server whether this version is still current',
-                    ),
-                    onTap: _checkForUpdates,
-                  ),
-                  if (ref.watch(clientSupportProvider)?.downloadUrl != null)
-                    ListTile(
-                      key: const Key('settings-download-tagkin'),
-                      title: const Text('Download TagKin'),
-                      subtitle: const Text('Open the latest installer in your browser'),
-                      onTap: () {
-                        final raw = ref.read(clientSupportProvider)?.downloadUrl;
-                        final url = raw == null ? null : Uri.tryParse(raw);
-                        if (url != null) {
-                          ref.read(checkoutUrlLauncherProvider)(url);
-                        }
-                      },
-                    ),
-                ],
-              ),
-            ],
           ),
         ),
-      ),
-      ),
       ),
     );
   }

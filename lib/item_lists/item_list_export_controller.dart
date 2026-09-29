@@ -9,8 +9,11 @@ import 'package:tagkin_desktop/api/item_lists_repository.dart';
 import 'package:tagkin_desktop/api/items_repository.dart';
 import 'package:tagkin_desktop/api/persons_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart';
-import 'package:tagkin_desktop/contract/contract.dart' hide ItemListExportFormat;
-import 'package:tagkin_desktop/contract/contract.dart' as api show ItemListExportFormat;
+import 'package:tagkin_desktop/contract/contract.dart'
+    hide ItemListExportFormat;
+import 'package:tagkin_desktop/contract/contract.dart'
+    as api
+    show ItemListExportFormat;
 import 'package:tagkin_desktop/ingest/folder_bookmark_store.dart';
 import 'package:tagkin_desktop/item_lists/item_list_fcp7_xml.dart';
 import 'package:tagkin_desktop/item_lists/item_list_fcpxml.dart';
@@ -33,15 +36,20 @@ typedef ItemListJsonSaver = Future<String?> Function(String json);
 
 /// Writes export [contents] via a native save dialog. Returns the path, or
 /// null if cancelled.
-typedef ItemListFileSaver = Future<String?> Function({
-  required String contents,
-  required ItemListExportFormat format,
-});
+typedef ItemListFileSaver =
+    Future<String?> Function({
+      required String contents,
+      required ItemListExportFormat format,
+      required String fileStem,
+    });
 
 /// Native Save As. Returns the path (and macOS handle), or null if cancelled.
-typedef ItemListSavePathPicker = Future<ItemListSavePick?> Function({
-  required String fileExtension,
-});
+/// [fileStem] is the suggested name without an extension.
+typedef ItemListSavePathPicker =
+    Future<ItemListSavePick?> Function({
+      required String fileExtension,
+      required String fileStem,
+    });
 
 /// Path from Save As. [macSaveHandle] is set on macOS so each export keeps
 /// its own panel URL.
@@ -52,13 +60,28 @@ class ItemListSavePick {
   final String? macSaveHandle;
 }
 
+/// Save As name without an extension. A named view uses its name. Built-in
+/// All, a blank name, or a name with no legal characters uses `All`.
+String itemListExportFileStem(SavedView? view) {
+  final raw = view?.name.trim() ?? '';
+  final stem = raw.isEmpty ? 'All' : raw;
+  final cleaned = stem
+      .replaceAll(RegExp(r'[\x00-\x1f\\/:*?"<>|]'), '')
+      .trim()
+      .replaceAll(RegExp(r'\.+$'), '')
+      .trim();
+  return cleaned.isEmpty ? 'All' : cleaned;
+}
+
 Future<ItemListSavePick?> pickItemListSavePath({
   required String fileExtension,
+  required String fileStem,
 }) async {
   final ext = fileExtension;
+  final name = '$fileStem.$ext';
   if (SecurityScopedBookmarks.isSupported) {
     final picked = await SecurityScopedBookmarks.pickSaveFile(
-      fileName: 'item-list.$ext',
+      fileName: name,
       fileExtension: ext,
     );
     if (picked == null) return null;
@@ -69,7 +92,7 @@ Future<ItemListSavePick?> pickItemListSavePath({
   }
   final path = await FilePicker.platform.saveFile(
     dialogTitle: 'Export item list',
-    fileName: 'item-list.$ext',
+    fileName: name,
     type: FileType.custom,
     allowedExtensions: [ext],
     lockParentWindow: true,
@@ -82,8 +105,12 @@ Future<ItemListSavePick?> pickItemListSavePath({
 Future<String?> saveItemListToFile({
   required String contents,
   required ItemListExportFormat format,
+  required String fileStem,
 }) async {
-  final picked = await pickItemListSavePath(fileExtension: format.fileExtension);
+  final picked = await pickItemListSavePath(
+    fileExtension: format.fileExtension,
+    fileStem: fileStem,
+  );
   if (picked == null) return null;
   final path = picked.path;
   final handle = picked.macSaveHandle;
@@ -126,7 +153,7 @@ Future<String?> saveItemListToFile({
 
 Future<void> itemListRenderMp4Default({
   required ItemListNleTimeline timeline,
-  required String audioPath,
+  required String? audioPath,
   required String outputPath,
   required int sequenceWidth,
   required int sequenceHeight,
@@ -158,7 +185,8 @@ ItemListFileSaver _resolveItemListSaver(
   ItemListFileSaver? saveFile,
 ) {
   if (saveJson != null) {
-    return ({required contents, required format}) => saveJson(contents);
+    return ({required contents, required format, required fileStem}) =>
+        saveJson(contents);
   }
   return saveFile ?? saveItemListToFile;
 }
@@ -193,20 +221,22 @@ class ItemListExportController extends ChangeNotifier {
     ItemListMediaSizeProbe? probeMediaSize,
     this.itemListsRepository,
     ItemListExportJobManager? jobs,
-  })  : thumbCache = thumbCache ?? LocalThumbCache(),
-        saveFile = _resolveItemListSaver(saveJson, saveFile),
-        pickSavePath = pickSavePath ?? pickItemListSavePath,
-        renderMp4 = renderMp4 ?? itemListRenderMp4Default,
-        probeMediaSize = probeMediaSize ?? probeItemListMediaSize,
-        _ownsExportJobs = jobs == null,
-        exportJobs = jobs ??
-            ItemListExportJobManager(
-              renderMp4: renderMp4 ?? itemListRenderMp4Default,
-              probeMediaSize: probeMediaSize ?? probeItemListMediaSize,
-              itemListsRepository: itemListsRepository,
-            ),
-        _ownsLibraryTable = libraryTable == null {
-    this.libraryTable = libraryTable ??
+  }) : thumbCache = thumbCache ?? LocalThumbCache(),
+       saveFile = _resolveItemListSaver(saveJson, saveFile),
+       pickSavePath = pickSavePath ?? pickItemListSavePath,
+       renderMp4 = renderMp4 ?? itemListRenderMp4Default,
+       probeMediaSize = probeMediaSize ?? probeItemListMediaSize,
+       _ownsExportJobs = jobs == null,
+       exportJobs =
+           jobs ??
+           ItemListExportJobManager(
+             renderMp4: renderMp4 ?? itemListRenderMp4Default,
+             probeMediaSize: probeMediaSize ?? probeItemListMediaSize,
+             itemListsRepository: itemListsRepository,
+           ),
+       _ownsLibraryTable = libraryTable == null {
+    this.libraryTable =
+        libraryTable ??
         LibraryTableController(
           itemsRepository: itemsRepository,
           commentsRepository: commentsRepository,
@@ -272,10 +302,7 @@ class ItemListExportController extends ChangeNotifier {
 
   bool get hasEntries => entries.isNotEmpty;
 
-  Future<void> load({
-    Set<String>? collectionFolders,
-    SavedView? view,
-  }) async {
+  Future<void> load({Set<String>? collectionFolders, SavedView? view}) async {
     if (collectionFolders != null) {
       libraryTable.setCollectionLeafFolders(collectionFolders);
     }
@@ -366,10 +393,7 @@ class ItemListExportController extends ChangeNotifier {
 
   /// Save the current filmstrip as JSON. Returns the path, or null if
   /// cancelled or nothing is visible.
-  Future<String?> exportJson({
-    String description = '',
-    DateTime? exportedAt,
-  }) {
+  Future<String?> exportJson({String description = '', DateTime? exportedAt}) {
     return export(
       format: ItemListExportFormat.json,
       description: description,
@@ -389,8 +413,8 @@ class ItemListExportController extends ChangeNotifier {
     ExportSequenceSize sequenceSize = ExportSequenceSize.matchSmallest,
   }) async {
     if (entries.isEmpty) return null;
-    if (format == ItemListExportFormat.mp4WithMusic) {
-      throw ArgumentError('MP4 with music uses exportMp4');
+    if (format.isMp4) {
+      throw ArgumentError('MP4 uses exportMp4');
     }
     final trimmed = description.trim();
     var fileSizes = const <String, ItemListPixelSize>{};
@@ -407,43 +431,46 @@ class ItemListExportController extends ChangeNotifier {
     }
     final contents = switch (format) {
       ItemListExportFormat.json => itemListToJson(
-          entries: entries,
-          itemsById: itemsById,
-          view: selectedView,
-          description: trimmed,
-          exportedAt: exportedAt ?? DateTime.now(),
-        ),
+        entries: entries,
+        itemsById: itemsById,
+        view: selectedView,
+        description: trimmed,
+        exportedAt: exportedAt ?? DateTime.now(),
+      ),
       ItemListExportFormat.fcp7Xml => itemListToFcp7Xml(
-          entries: entries,
-          itemsById: itemsById,
-          view: selectedView,
-          description: trimmed,
-          stillDurationSeconds: stillDurationSeconds,
-          transition: transition,
-          transitionSeconds: transitionSeconds,
-          sequenceWidth: sequenceWidth,
-          sequenceHeight: sequenceHeight,
-          fileSizesByItemId: fileSizes,
-          scaleToFit: sequenceSize.scaleToFit,
-        ),
+        entries: entries,
+        itemsById: itemsById,
+        view: selectedView,
+        description: trimmed,
+        stillDurationSeconds: stillDurationSeconds,
+        transition: transition,
+        transitionSeconds: transitionSeconds,
+        sequenceWidth: sequenceWidth,
+        sequenceHeight: sequenceHeight,
+        fileSizesByItemId: fileSizes,
+        scaleToFit: sequenceSize.scaleToFit,
+      ),
       ItemListExportFormat.fcpxml => itemListToFcpxml(
-          entries: entries,
-          itemsById: itemsById,
-          view: selectedView,
-          description: trimmed,
-          stillDurationSeconds: stillDurationSeconds,
-          transition: transition,
-          transitionSeconds: transitionSeconds,
-          sequenceWidth: sequenceWidth,
-          sequenceHeight: sequenceHeight,
-          fileSizesByItemId: fileSizes,
-          scaleToFit: sequenceSize.scaleToFit,
-        ),
-      ItemListExportFormat.mp4WithMusic => throw ArgumentError(
-          'MP4 with music uses exportMp4',
-        ),
+        entries: entries,
+        itemsById: itemsById,
+        view: selectedView,
+        description: trimmed,
+        stillDurationSeconds: stillDurationSeconds,
+        transition: transition,
+        transitionSeconds: transitionSeconds,
+        sequenceWidth: sequenceWidth,
+        sequenceHeight: sequenceHeight,
+        fileSizesByItemId: fileSizes,
+        scaleToFit: sequenceSize.scaleToFit,
+      ),
+      ItemListExportFormat.mp4WithMusic ||
+      ItemListExportFormat.mp4 => throw ArgumentError('MP4 uses exportMp4'),
     };
-    final path = await saveFileOrDefault(contents: contents, format: format);
+    final path = await saveFileOrDefault(
+      contents: contents,
+      format: format,
+      fileStem: itemListExportFileStem(selectedView),
+    );
     if (path != null && path.isNotEmpty) {
       unawaited(
         _recordSuccessfulExport(
@@ -463,6 +490,7 @@ class ItemListExportController extends ChangeNotifier {
     double stillDurationSeconds = kItemListNleStillDurationSeconds,
     ExportPhotoTransition transition = ExportPhotoTransition.crossDissolve,
     double transitionSeconds = kItemListNleTransitionSeconds,
+    double endFadeSeconds = kItemListNleEndFadeSeconds,
   }) {
     return itemListNleTimeline(
       entries: entries,
@@ -472,6 +500,7 @@ class ItemListExportController extends ChangeNotifier {
       stillDurationSeconds: stillDurationSeconds,
       transition: transition,
       transitionSeconds: transitionSeconds,
+      endFadeSeconds: endFadeSeconds,
     );
   }
 
@@ -481,7 +510,7 @@ class ItemListExportController extends ChangeNotifier {
   /// Encoding continues after this future completes. Null when the list is
   /// empty or Save As is cancelled.
   Future<ItemListExportJob?> exportMp4({
-    required String audioPath,
+    String? audioPath,
     String description = '',
     double stillDurationSeconds = kItemListNleStillDurationSeconds,
     ExportPhotoTransition transition = ExportPhotoTransition.crossDissolve,
@@ -490,7 +519,10 @@ class ItemListExportController extends ChangeNotifier {
     double soundtrackDuck = kItemListMp4SoundtrackDuckDefault,
   }) async {
     if (entries.isEmpty) return null;
-    final picked = await pickSavePathOrDefault(fileExtension: 'mp4');
+    final picked = await pickSavePathOrDefault(
+      fileExtension: 'mp4',
+      fileStem: itemListExportFileStem(selectedView),
+    );
     if (picked == null || picked.path.isEmpty) return null;
     return exportJobs.start(
       ItemListMp4ExportRequest(
@@ -524,17 +556,19 @@ class ItemListExportController extends ChangeNotifier {
         stillDurationSeconds: stillDurationSeconds,
         transition: transition,
         transitionSeconds: transitionSeconds,
+        endFadeSeconds: format == ItemListExportFormat.json
+            ? 0
+            : kItemListNleEndFadeSeconds,
       );
       await repo.recordExport(
         RecordItemListExport(
-          format: api.ItemListExportFormat.fromWire(
-            switch (format) {
-              ItemListExportFormat.json => 'json',
-              ItemListExportFormat.fcp7Xml => 'fcp7Xml',
-              ItemListExportFormat.fcpxml => 'fcpxml',
-              ItemListExportFormat.mp4WithMusic => 'mp4WithMusic',
-            },
-          ),
+          format: api.ItemListExportFormat.fromWire(switch (format) {
+            ItemListExportFormat.json => 'json',
+            ItemListExportFormat.fcp7Xml => 'fcp7Xml',
+            ItemListExportFormat.fcpxml => 'fcpxml',
+            ItemListExportFormat.mp4WithMusic => 'mp4WithMusic',
+            ItemListExportFormat.mp4 => 'mp4WithoutMusic',
+          }),
           photoCount: entries
               .where((e) => e.kind == ItemListEntryKind.photo)
               .length,
@@ -577,9 +611,7 @@ class ItemListExportController extends ChangeNotifier {
   }
 
   void _syncItemsById() {
-    itemsById = {
-      for (final row in libraryTable.allRows) row.item.id: row.item,
-    };
+    itemsById = {for (final row in libraryTable.allRows) row.item.id: row.item};
   }
 
   List<ItemListEntry> _entriesFromTable() {
@@ -626,9 +658,7 @@ class ItemListExportController extends ChangeNotifier {
     List<ItemListEntry> current,
     List<ItemListEntry> incoming,
   ) {
-    final incomingByKey = {
-      for (final e in incoming) itemListEntryKey(e): e,
-    };
+    final incomingByKey = {for (final e in incoming) itemListEntryKey(e): e};
     final seen = <String>{};
     final out = <ItemListEntry>[];
     for (final e in current) {
@@ -659,9 +689,7 @@ class ItemListExportController extends ChangeNotifier {
   }
 }
 
-final itemListJsonSaverProvider = Provider<ItemListJsonSaver?>(
-  (ref) => null,
-);
+final itemListJsonSaverProvider = Provider<ItemListJsonSaver?>((ref) => null);
 
 final itemListFileSaverProvider = Provider<ItemListFileSaver>(
   (ref) => saveItemListToFile,
@@ -677,42 +705,42 @@ final itemListMp4RendererProvider = Provider<ItemListMp4Renderer>(
 
 final itemListExportJobManagerProvider =
     ChangeNotifierProvider<ItemListExportJobManager>(
-  (ref) {
-    return ItemListExportJobManager(
-      renderMp4: ref.watch(itemListMp4RendererProvider),
-      itemListsRepository: ref.watch(itemListsRepositoryProvider),
+      (ref) {
+        return ItemListExportJobManager(
+          renderMp4: ref.watch(itemListMp4RendererProvider),
+          itemListsRepository: ref.watch(itemListsRepositoryProvider),
+        );
+      },
+      dependencies: [itemListMp4RendererProvider, itemListsRepositoryProvider],
     );
-  },
-  dependencies: [
-    itemListMp4RendererProvider,
-    itemListsRepositoryProvider,
-  ],
-);
 
 final itemListExportControllerProvider =
     ChangeNotifierProvider.autoDispose<ItemListExportController>(
-  (ref) {
-    return ItemListExportController(
-      itemsRepository: ref.watch(itemsRepositoryProvider),
-      commentsRepository: ref.watch(commentsRepositoryProvider),
-      personsRepository: ref.watch(personsRepositoryProvider),
-      itemListsRepository: ref.watch(itemListsRepositoryProvider),
-      saveJson: ref.watch(itemListJsonSaverProvider),
-      saveFile: ref.watch(itemListFileSaverProvider),
-      pickSavePath: ref.watch(itemListSavePathPickerProvider),
-      renderMp4: ref.watch(itemListMp4RendererProvider),
-      jobs: ref.watch(itemListExportJobManagerProvider),
+      (ref) {
+        return ItemListExportController(
+          itemsRepository: ref.watch(itemsRepositoryProvider),
+          commentsRepository: ref.watch(commentsRepositoryProvider),
+          personsRepository: ref.watch(personsRepositoryProvider),
+          itemListsRepository: ref.watch(itemListsRepositoryProvider),
+          saveJson: ref.watch(itemListJsonSaverProvider),
+          saveFile: ref.watch(itemListFileSaverProvider),
+          pickSavePath: ref.watch(itemListSavePathPickerProvider),
+          renderMp4: ref.watch(itemListMp4RendererProvider),
+          // read, not watch: each encode progress tick notifies the job manager.
+          // Watching it rebuilds this controller and drops the filmstrip, which
+          // disables Export while a job is running.
+          jobs: ref.read(itemListExportJobManagerProvider),
+        );
+      },
+      dependencies: [
+        itemsRepositoryProvider,
+        commentsRepositoryProvider,
+        personsRepositoryProvider,
+        itemListsRepositoryProvider,
+        itemListJsonSaverProvider,
+        itemListFileSaverProvider,
+        itemListSavePathPickerProvider,
+        itemListMp4RendererProvider,
+        itemListExportJobManagerProvider,
+      ],
     );
-  },
-  dependencies: [
-    itemsRepositoryProvider,
-    commentsRepositoryProvider,
-    personsRepositoryProvider,
-    itemListsRepositoryProvider,
-    itemListJsonSaverProvider,
-    itemListFileSaverProvider,
-    itemListSavePathPickerProvider,
-    itemListMp4RendererProvider,
-    itemListExportJobManagerProvider,
-  ],
-);

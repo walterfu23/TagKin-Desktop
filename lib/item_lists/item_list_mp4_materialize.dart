@@ -2,15 +2,34 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
-import 'package:tagkin_desktop/contract/contract.dart' hide ItemListExportFormat;
+import 'package:tagkin_desktop/contract/contract.dart'
+    hide ItemListExportFormat;
 import 'package:tagkin_desktop/ingest/folder_bookmark_store.dart';
 import 'package:tagkin_desktop/ingest/model_upload_image.dart';
 import 'package:tagkin_desktop/ingest/upload_mime.dart';
 import 'package:tagkin_desktop/item_lists/item_list_nle.dart';
 
+/// What a failed export shows, plus the support details behind it.
+class ItemListMp4FailureReport {
+  const ItemListMp4FailureReport({
+    required this.sentence,
+    required this.step,
+    this.exitCode,
+    this.logDir,
+    this.technical = '',
+  });
+
+  final String sentence;
+  final String step;
+  final int? exitCode;
+  final String? logDir;
+  final String technical;
+}
+
 class ItemListMp4RenderException implements Exception {
-  ItemListMp4RenderException(this.message);
+  ItemListMp4RenderException(this.message, {this.failure});
   final String message;
+  final ItemListMp4FailureReport? failure;
   @override
   String toString() => message;
 }
@@ -115,6 +134,7 @@ ItemListNleTimeline itemListMp4TimelineWithMaterializedPaths(
     name: timeline.name,
     duration: timeline.duration,
     transitions: timeline.transitions,
+    endFade: timeline.endFade,
     clips: [
       for (final c in timeline.clips)
         ItemListNleClip(
@@ -156,6 +176,7 @@ ItemListNleTimeline itemListMp4TimelineWithClipVideos(
     name: timeline.name,
     duration: timeline.duration,
     transitions: timeline.transitions,
+    endFade: timeline.endFade,
     clips: [
       for (var i = 0; i < timeline.clips.length; i++)
         ItemListNleClip(

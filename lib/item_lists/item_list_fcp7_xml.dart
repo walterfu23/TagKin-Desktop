@@ -1,4 +1,5 @@
-import 'package:tagkin_desktop/contract/contract.dart' hide ItemListExportFormat;
+import 'package:tagkin_desktop/contract/contract.dart'
+    hide ItemListExportFormat;
 import 'package:tagkin_desktop/item_lists/item_list_nle.dart';
 import 'package:tagkin_desktop/persons/collection.dart';
 
@@ -11,6 +12,7 @@ String itemListToFcp7Xml({
   double stillDurationSeconds = kItemListNleStillDurationSeconds,
   ExportPhotoTransition transition = ExportPhotoTransition.crossDissolve,
   double transitionSeconds = kItemListNleTransitionSeconds,
+  double endFadeSeconds = kItemListNleEndFadeSeconds,
   int sequenceWidth = kItemListNleWidth,
   int sequenceHeight = kItemListNleHeight,
   Map<String, ItemListPixelSize> fileSizesByItemId = const {},
@@ -24,6 +26,7 @@ String itemListToFcp7Xml({
     stillDurationSeconds: stillDurationSeconds,
     transition: transition,
     transitionSeconds: transitionSeconds,
+    endFadeSeconds: endFadeSeconds,
   );
   final fileById = {for (final f in timeline.files) f.id: f};
   final writtenFiles = <String>{};
@@ -88,9 +91,14 @@ String itemListToFcp7Xml({
     );
     if (joinAfter != null) _transitionItem(xml, joinAfter);
   }
+  final endFade = timeline.endFade;
+  if (endFade != null) _endWhite(xml, endFade);
   xml.close('</track>');
   xml.close('</video>');
-  final audioClips = [for (final c in timeline.clips) if (!c.isStill) c];
+  final audioClips = [
+    for (final c in timeline.clips)
+      if (!c.isStill) c,
+  ];
   if (audioClips.isNotEmpty) {
     xml.open('<audio>');
     xml.open('<format>');
@@ -289,6 +297,44 @@ void _avLink(
   xml.line('<trackindex>1</trackindex>');
   xml.line('<clipindex>$audioClipIndex</clipindex>');
   xml.close('</link>');
+}
+
+void _endWhite(ItemListXmlBuf xml, ItemListNleEndFade fade) {
+  xml.open('<transitionitem>');
+  xml.line('<start>${fade.startFrame}</start>');
+  xml.line('<end>${fade.endFrame}</end>');
+  xml.line('<alignment>start</alignment>');
+  _rate(xml);
+  xml.open('<effect>');
+  xml.line('<name>Cross Dissolve</name>');
+  xml.line('<effectid>Cross Dissolve</effectid>');
+  xml.line('<effectcategory>Dissolve</effectcategory>');
+  xml.line('<effecttype>transition</effecttype>');
+  xml.line('<mediatype>video</mediatype>');
+  xml.close('</effect>');
+  xml.close('</transitionitem>');
+  xml.open('<generatoritem id="clipitem-end-white">');
+  xml.line('<name>White</name>');
+  xml.line('<duration>${fade.durationFrames}</duration>');
+  _rate(xml);
+  xml.line('<start>${fade.startFrame}</start>');
+  xml.line('<end>${fade.endFrame}</end>');
+  xml.line('<in>0</in>');
+  xml.line('<out>${fade.durationFrames}</out>');
+  xml.line('<enabled>TRUE</enabled>');
+  xml.open('<effect>');
+  xml.line('<name>Color</name>');
+  xml.line('<effectid>Color</effectid>');
+  xml.line('<effectcategory>Matte</effectcategory>');
+  xml.line('<effecttype>generator</effecttype>');
+  xml.line('<mediatype>video</mediatype>');
+  xml.open('<parameter>');
+  xml.line('<parameterid>color</parameterid>');
+  xml.line('<name>Color</name>');
+  _fcp7Color(xml, 255);
+  xml.close('</parameter>');
+  xml.close('</effect>');
+  xml.close('</generatoritem>');
 }
 
 void _transitionItem(ItemListXmlBuf xml, ItemListNleTransition join) {

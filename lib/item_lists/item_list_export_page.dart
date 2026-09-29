@@ -4,7 +4,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/app_shell.dart';
-import 'package:tagkin_desktop/contract/contract.dart' hide ItemListExportFormat;
+import 'package:tagkin_desktop/contract/contract.dart'
+    hide ItemListExportFormat;
 import 'package:tagkin_desktop/item_lists/item_list_csv.dart';
 import 'package:tagkin_desktop/item_lists/item_list_export_controller.dart';
 import 'package:tagkin_desktop/item_lists/item_list_export_jobs.dart';
@@ -16,6 +17,7 @@ import 'package:tagkin_desktop/item_lists/music_prompt_presets.dart';
 import 'package:tagkin_desktop/library/item_hover_preview.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/local_thumb_cache.dart';
+import 'package:tagkin_desktop/persons/collection.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
@@ -27,9 +29,7 @@ import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 ///
 /// MP4 exports keep running in the background, so leaving Export list does
 /// not ask about them.
-String? itemListLeaveBusyBody({
-  required bool generatingMusic,
-}) {
+String? itemListLeaveBusyBody({required bool generatingMusic}) {
   if (generatingMusic) {
     return 'Music is still generating. Leave anyway? The soundtrack request '
         'may still finish.';
@@ -96,12 +96,13 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
   final _previewScroll = ScrollController();
   final _description = TextEditingController();
   final _musicPrompt = TextEditingController();
-  ItemListExportFormat _format = ItemListExportFormat.json;
+  ItemListExportFormat _format = ItemListExportFormat.mp4WithMusic;
   String? _audioPath;
   final List<_MusicTake> _musicTakes = [];
   bool _generatingMusic = false;
   bool _exporting = false;
   bool _musicCancelled = false;
+  int _musicEpoch = 0;
   Future<void>? _exportJob;
   String? _musicError;
   List<MusicPromptPreset> _musicPresets = const [];
@@ -110,8 +111,9 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
   @override
   void initState() {
     super.initState();
-    _musicPrompt.text =
-        ref.read(desktopPrefsProvider).exportMusicPromptOrDefault;
+    _musicPrompt.text = ref
+        .read(desktopPrefsProvider)
+        .exportMusicPromptOrDefault;
     unawaited(_loadMusicPresets());
     itemListConfirmLeaveIfBusy = _confirmLeaveIfBusy;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -173,6 +175,16 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
     setState(() => _musicPresetId = picked.id);
   }
 
+  void _clearMusicForNewView() {
+    _musicEpoch += 1;
+    setState(() {
+      _audioPath = null;
+      _musicTakes.clear();
+      _musicError = null;
+      _generatingMusic = false;
+    });
+  }
+
   bool _isLeaveBusy() => _generatingMusic;
 
   Future<void> _cancelInFlight() async {
@@ -192,23 +204,22 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
   Future<void> _export() async {
     final prefs = ref.read(desktopPrefsProvider);
     final controller = ref.read(itemListExportControllerProvider);
-    if (_format == ItemListExportFormat.mp4WithMusic) {
-      final audio = _audioPath;
-      if (audio == null) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Generate music before exporting MP4')),
-        );
-        return;
-      }
+    if (_format == ItemListExportFormat.mp4WithMusic && _audioPath == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Generate music before exporting MP4')),
+      );
+      return;
     }
     setState(() => _exporting = true);
     String? outcomeTitle;
     String? outcomeMessage;
     try {
-      if (_format == ItemListExportFormat.mp4WithMusic) {
+      if (_format.isMp4) {
         await controller.exportMp4(
-          audioPath: _audioPath!,
+          audioPath: _format == ItemListExportFormat.mp4WithMusic
+              ? _audioPath
+              : null,
           description: _description.text,
           stillDurationSeconds: prefs.exportPhotoStillDurationSecondsOrDefault,
           transition: prefs.exportPhotoTransitionOrDefault,
@@ -219,14 +230,13 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
         );
       } else {
         final path = await controller.export(
-              format: _format,
-              description: _description.text,
-              stillDurationSeconds:
-                  prefs.exportPhotoStillDurationSecondsOrDefault,
-              transition: prefs.exportPhotoTransitionOrDefault,
-              transitionSeconds: prefs.exportPhotoTransitionSecondsOrDefault,
-              sequenceSize: prefs.exportSequenceSizeOrDefault,
-            );
+          format: _format,
+          description: _description.text,
+          stillDurationSeconds: prefs.exportPhotoStillDurationSecondsOrDefault,
+          transition: prefs.exportPhotoTransitionOrDefault,
+          transitionSeconds: prefs.exportPhotoTransitionSecondsOrDefault,
+          sequenceSize: prefs.exportSequenceSizeOrDefault,
+        );
         if (path != null) {
           outcomeTitle = 'Export';
           outcomeMessage = 'Saved $path';
@@ -294,50 +304,24 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
       );
       return;
     }
+    final epoch = _musicEpoch;
     setState(() {
       _musicCancelled = false;
       _musicError = null;
     });
     try {
       final music = ref.read(musicRepositoryProvider);
-      final estimate = await music.estimate(durationMs: durationMs);
-      if (!mounted) return;
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          key: const Key('item-list-generate-music-dialog'),
-          title: const Text('Generate music'),
-          content: Text(
-            estimate.creditsUsed == 0
-                ? 'Generate a soundtrack for this item list?'
-                : 'Generating music will use ${estimate.creditsUsed} credits.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              key: const Key('item-list-generate-music-confirm'),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Generate'),
-            ),
-          ],
-        ),
-      );
-      if (ok != true) return;
+      if (epoch != _musicEpoch || !mounted) return;
       setState(() => _generatingMusic = true);
       final generated = await music.generate(
         durationMs: durationMs,
         prompt: prompt,
-        avoidSoundtrackIds: [
-          for (final take in _musicTakes) take.soundtrackId,
-        ],
+        avoidSoundtrackIds: [for (final take in _musicTakes) take.soundtrackId],
         maxLoops: prefs.exportMusicLoopCountOrDefault,
       );
-      if (_musicCancelled || !mounted) return;
+      if (epoch != _musicEpoch || _musicCancelled || !mounted) return;
       final file = await music.writeAudioTemp(generated);
-      if (_musicCancelled || !mounted) return;
+      if (epoch != _musicEpoch || _musicCancelled || !mounted) return;
       final take = _MusicTake(
         audioPath: file.path,
         prompt: prompt,
@@ -349,14 +333,14 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
         _generatingMusic = false;
       });
       try {
-        await ref.read(desktopPrefsControllerProvider).update(
-              prefs.copyWith(exportMusicPrompt: prompt),
-            );
+        await ref
+            .read(desktopPrefsControllerProvider)
+            .update(prefs.copyWith(exportMusicPrompt: prompt));
       } catch (_) {
         // Keep the take even if the prompt pref cannot be saved.
       }
     } catch (e) {
-      if (_musicCancelled || !mounted) return;
+      if (epoch != _musicEpoch || _musicCancelled || !mounted) return;
       setState(() {
         _generatingMusic = false;
         _musicError = '$e';
@@ -382,212 +366,251 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
         if (ok && context.mounted) Navigator.of(context).pop(result);
       },
       child: SelectableScope(
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Item list'),
-          actions: [
-            SelectionContainer.disabled(
-              child: AppNavTabButtons(
-                onBeforeNavigate: (_) => _confirmLeaveIfBusy(),
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text('Export Views'),
+            actions: [
+              SelectionContainer.disabled(
+                child: AppNavTabButtons(
+                  onBeforeNavigate: (_) => _confirmLeaveIfBusy(),
+                ),
               ),
-            ),
-          ],
-        ),
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            ],
+          ),
+          body: LayoutBuilder(
+            builder: (context, constraints) {
+              final maxControls = _exportControlsMaxHeight(
+                constraints.maxHeight,
+              );
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  TextField(
-                    key: const Key('item-list-description'),
-                    controller: _description,
-                    decoration: const InputDecoration(
-                      labelText: 'Description',
-                      hintText: 'Optional note saved with the export',
-                      border: OutlineInputBorder(),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxHeight: maxControls),
+                    child: SingleChildScrollView(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            TextField(
+                              key: const Key('item-list-description'),
+                              controller: _description,
+                              decoration: const InputDecoration(
+                                labelText: 'Description',
+                                hintText: 'Optional note saved with the export',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                _ViewsDropdown(
+                                  controller: controller,
+                                  onViewChanged: _clearMusicForNewView,
+                                ),
+                                const SizedBox(width: 16),
+                                _FormatDropdown(
+                                  format: _format,
+                                  onSelected: (next) =>
+                                      setState(() => _format = next),
+                                ),
+                                const SizedBox(width: 16),
+                                FilledButton(
+                                  key: const Key('item-list-export'),
+                                  onPressed:
+                                      controller.hasEntries &&
+                                          !_exporting &&
+                                          !_generatingMusic
+                                      ? () {
+                                          _exportJob = _export();
+                                        }
+                                      : null,
+                                  child: Text(
+                                    _exporting ? 'Exporting…' : 'Export',
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (jobs.jobs.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              _ExportJobsPanel(manager: jobs),
+                            ],
+                            if (_format ==
+                                ItemListExportFormat.mp4WithMusic) ...[
+                              const SizedBox(height: 12),
+                              _MusicPromptPresetDropdown(
+                                presetId: _musicPresetId,
+                                presets: _musicPresets,
+                                onSelected: _applyMusicPreset,
+                              ),
+                              const SizedBox(height: 12),
+                              TextField(
+                                key: const Key('item-list-music-prompt'),
+                                controller: _musicPrompt,
+                                decoration: const InputDecoration(
+                                  labelText: 'Music prompt',
+                                  hintText:
+                                      'Instrumental music for a family photo slideshow',
+                                  border: OutlineInputBorder(),
+                                ),
+                                minLines: 1,
+                                maxLines: 3,
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  FilledButton.tonal(
+                                    key: const Key('item-list-generate-music'),
+                                    onPressed:
+                                        controller.hasEntries &&
+                                            !_generatingMusic &&
+                                            !_exporting
+                                        ? _generateMusic
+                                        : null,
+                                    child: Text(
+                                      _generatingMusic
+                                          ? 'Generating…'
+                                          : (_musicTakes.isEmpty
+                                                ? 'Generate music'
+                                                : 'Try another'),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (_musicTakes.length > 1) ...[
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  key: const Key('item-list-music-takes'),
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    for (var i = 0; i < _musicTakes.length; i++)
+                                      ChoiceChip(
+                                        key: Key('item-list-music-take-$i'),
+                                        label: Text('Take ${i + 1}'),
+                                        tooltip: _musicTakes[i].prompt,
+                                        selected:
+                                            _audioPath ==
+                                            _musicTakes[i].audioPath,
+                                        onSelected:
+                                            _generatingMusic || _exporting
+                                            ? null
+                                            : (_) {
+                                                setState(
+                                                  () => _audioPath =
+                                                      _musicTakes[i].audioPath,
+                                                );
+                                              },
+                                      ),
+                                  ],
+                                ),
+                              ],
+                              if (_musicError != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: Text(
+                                    _musicError!,
+                                    key: const Key('item-list-music-error'),
+                                  ),
+                                ),
+                              if (_audioPath != null) ...[
+                                const SizedBox(height: 8),
+                                ItemListSlideshowPreview(
+                                  timeline: controller.currentTimeline(
+                                    description: _description.text,
+                                    stillDurationSeconds: prefs
+                                        .exportPhotoStillDurationSecondsOrDefault,
+                                    transition:
+                                        prefs.exportPhotoTransitionOrDefault,
+                                    transitionSeconds: prefs
+                                        .exportPhotoTransitionSecondsOrDefault,
+                                  ),
+                                  audioPath: _audioPath!,
+                                  soundtrackDuck:
+                                      prefs
+                                          .exportSoundtrackUnderVideoPercentOrDefault /
+                                      100.0,
+                                ),
+                              ],
+                            ],
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      _ViewsDropdown(controller: controller),
-                      const SizedBox(width: 16),
-                      _FormatDropdown(
-                        format: _format,
-                        onSelected: (next) => setState(() => _format = next),
+                  if (controller.error != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        controller.error!,
+                        key: const Key('item-list-error'),
                       ),
-                      const SizedBox(width: 16),
-                      FilledButton(
-                        key: const Key('item-list-export'),
-                        onPressed: controller.hasEntries &&
-                                !_exporting &&
-                                !_generatingMusic
-                            ? () {
-                                _exportJob = _export();
-                              }
-                            : null,
-                        child: Text(_exporting ? 'Exporting…' : 'Export'),
-                      ),
-                    ],
+                    ),
+                  if (controller.loadingList) const LinearProgressIndicator(),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                    child: Text(
+                      '${visible.length} '
+                      '${visible.length == 1 ? 'item' : 'items'}',
+                      key: const Key('item-list-count'),
+                    ),
                   ),
-                  if (jobs.jobs.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    _ExportJobsPanel(manager: jobs),
-                  ],
-                  if (_format == ItemListExportFormat.mp4WithMusic) ...[
-                    const SizedBox(height: 12),
-                    _MusicPromptPresetDropdown(
-                      presetId: _musicPresetId,
-                      presets: _musicPresets,
-                      onSelected: _applyMusicPreset,
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      key: const Key('item-list-music-prompt'),
-                      controller: _musicPrompt,
-                      decoration: const InputDecoration(
-                        labelText: 'Music prompt',
-                        hintText:
-                            'Instrumental music for a family photo slideshow',
-                        border: OutlineInputBorder(),
-                      ),
-                      minLines: 1,
-                      maxLines: 3,
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        FilledButton.tonal(
-                          key: const Key('item-list-generate-music'),
-                          onPressed: controller.hasEntries &&
-                                  !_generatingMusic &&
-                                  !_exporting
-                              ? _generateMusic
-                              : null,
-                          child: Text(
-                            _generatingMusic
-                                ? 'Generating…'
-                                : (_musicTakes.isEmpty
-                                    ? 'Generate music'
-                                    : 'Try another'),
+                  Expanded(
+                    child: SelectionContainer.disabled(
+                      child: ItemHoverPreviewScope(
+                        child: Scrollbar(
+                          controller: _previewScroll,
+                          thumbVisibility: true,
+                          child: SingleChildScrollView(
+                            key: const Key('item-list-filmstrip'),
+                            controller: _previewScroll,
+                            padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 12,
+                              children: [
+                                for (
+                                  var i = 0;
+                                  i < controller.entries.length;
+                                  i++
+                                )
+                                  _FilmstripTile(
+                                    key: ValueKey(
+                                      itemListEntryKey(controller.entries[i]),
+                                    ),
+                                    index: i,
+                                    entry: controller.entries[i],
+                                    item:
+                                        controller.itemsById[controller
+                                            .entries[i]
+                                            .itemId],
+                                    period: controller.periodFor(
+                                      controller.entries[i],
+                                    ),
+                                    libraryTable: controller.libraryTable,
+                                    showSharpnessScore:
+                                        prefs.showSharpnessScores,
+                                    format: format,
+                                    resolveThumb: () => controller.thumbFor(
+                                      controller.entries[i],
+                                    ),
+                                    onRemove: () => controller.removeAt(i),
+                                    onReorder: controller.reorder,
+                                  ),
+                              ],
+                            ),
                           ),
                         ),
-                      ],
-                    ),
-                    if (_musicTakes.length > 1) ...[
-                      const SizedBox(height: 8),
-                      Wrap(
-                        key: const Key('item-list-music-takes'),
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          for (var i = 0; i < _musicTakes.length; i++)
-                            ChoiceChip(
-                              key: Key('item-list-music-take-$i'),
-                              label: Text('Take ${i + 1}'),
-                              tooltip: _musicTakes[i].prompt,
-                              selected:
-                                  _audioPath == _musicTakes[i].audioPath,
-                              onSelected: _generatingMusic || _exporting
-                                  ? null
-                                  : (_) {
-                                      setState(
-                                        () => _audioPath =
-                                            _musicTakes[i].audioPath,
-                                      );
-                                    },
-                            ),
-                        ],
-                      ),
-                    ],
-                    if (_musicError != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          _musicError!,
-                          key: const Key('item-list-music-error'),
-                        ),
-                      ),
-                    if (_audioPath != null) ...[
-                      const SizedBox(height: 8),
-                      ItemListSlideshowPreview(
-                        timeline: controller.currentTimeline(
-                          description: _description.text,
-                          stillDurationSeconds:
-                              prefs.exportPhotoStillDurationSecondsOrDefault,
-                          transition: prefs.exportPhotoTransitionOrDefault,
-                          transitionSeconds:
-                              prefs.exportPhotoTransitionSecondsOrDefault,
-                        ),
-                        audioPath: _audioPath!,
-                      ),
-                    ],
-                  ],
-                ],
-              ),
-            ),
-            if (controller.error != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  controller.error!,
-                  key: const Key('item-list-error'),
-                ),
-              ),
-            if (controller.loadingList) const LinearProgressIndicator(),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-              child: Text(
-                '${visible.length} '
-                '${visible.length == 1 ? 'item' : 'items'}',
-                key: const Key('item-list-count'),
-              ),
-            ),
-            Expanded(
-              child: SelectionContainer.disabled(
-                child: ItemHoverPreviewScope(
-                  child: Scrollbar(
-                    controller: _previewScroll,
-                    thumbVisibility: true,
-                    child: SingleChildScrollView(
-                      controller: _previewScroll,
-                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 12,
-                        children: [
-                          for (var i = 0; i < controller.entries.length; i++)
-                            _FilmstripTile(
-                              key: ValueKey(
-                                itemListEntryKey(controller.entries[i]),
-                              ),
-                              index: i,
-                              entry: controller.entries[i],
-                              item: controller.itemsById[
-                                  controller.entries[i].itemId],
-                              period: controller
-                                  .periodFor(controller.entries[i]),
-                              libraryTable: controller.libraryTable,
-                              showSharpnessScore: prefs.showSharpnessScores,
-                              format: format,
-                              resolveThumb: () =>
-                                  controller.thumbFor(controller.entries[i]),
-                              onRemove: () => controller.removeAt(i),
-                              onReorder: controller.reorder,
-                            ),
-                        ],
                       ),
                     ),
                   ),
-                ),
-              ),
-            ),
-          ],
+                ],
+              );
+            },
+          ),
         ),
-      ),
       ),
     );
   }
@@ -595,10 +618,33 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
 
 const double _kFilmstripStill = 180;
 
+/// Room kept for the item-count line under the scrolling controls.
+const double _kExportControlsChrome = 56;
+
+/// Photo grid keeps at least this much height when the controls are tall.
+const double _kExportControlsFilmstripMin = 220;
+
+/// Controls stay usable in a short window before the filmstrip takes a share.
+const double _kExportControlsFloor = 160;
+
+/// Exports rows scroll inside this cap so many jobs cannot eat the controls.
+const double _kExportJobsListMax = 168;
+
+double _exportControlsMaxHeight(double bodyHeight) {
+  if (!bodyHeight.isFinite || bodyHeight <= 0) return _kExportControlsFloor;
+  final room =
+      bodyHeight - _kExportControlsChrome - _kExportControlsFilmstripMin;
+  if (room >= _kExportControlsFloor) return room;
+  final share = bodyHeight * 0.45;
+  if (share < 80) return bodyHeight < 80 ? bodyHeight : 80;
+  return share > bodyHeight ? bodyHeight : share;
+}
+
 class _ViewsDropdown extends ConsumerWidget {
-  const _ViewsDropdown({required this.controller});
+  const _ViewsDropdown({required this.controller, required this.onViewChanged});
 
   final ItemListExportController controller;
+  final VoidCallback onViewChanged;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -611,15 +657,21 @@ class _ViewsDropdown extends ConsumerWidget {
       key: const Key('item-list-views-menu'),
       tooltip: 'Views',
       onSelected: (id) {
-        if (id.isEmpty) {
+        SavedView? next;
+        if (id.isNotEmpty) {
+          next = cols.viewById(id);
+          if (next == null) return;
+        }
+        if (controller.selectedView?.id != next?.id) {
+          onViewChanged();
+        }
+        if (next == null) {
           unawaited(controller.selectView(null));
           return;
         }
-        final view = cols.viewById(id);
-        if (view == null) return;
         final foldersTable = ref.read(libraryTableControllerProvider);
         unawaited(
-          controller.selectView(exportViewMatchingFolders(view, foldersTable)),
+          controller.selectView(exportViewMatchingFolders(next, foldersTable)),
         );
       },
       itemBuilder: (context) {
@@ -756,10 +808,7 @@ class _MusicPromptPresetDropdown extends StatelessWidget {
           children: [
             const Icon(Icons.library_music_outlined, size: 18),
             const SizedBox(width: 6),
-            Text(
-              _label,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
+            Text(_label, style: const TextStyle(fontWeight: FontWeight.w600)),
             const Icon(Icons.arrow_drop_down, size: 20),
           ],
         ),
@@ -983,7 +1032,8 @@ class _FilmstripTileState extends State<_FilmstripTile> {
 
   Widget _placeholder(LocalMediaStatus? status) {
     final video = widget.entry.kind == ItemListEntryKind.keyperiod;
-    final missing = status == LocalMediaStatus.missing ||
+    final missing =
+        status == LocalMediaStatus.missing ||
         status == LocalMediaStatus.accessDenied;
     return ColoredBox(
       color: Colors.black12,
@@ -1006,11 +1056,84 @@ class _ExportJobsPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       key: const Key('item-list-export-jobs'),
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Text('Exports'),
         const SizedBox(height: 8),
-        for (final job in manager.jobs) _ExportJobRow(manager: manager, job: job),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: _kExportJobsListMax),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final job in manager.jobs)
+                  _ExportJobRow(manager: manager, job: job),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ExportFailureStatus extends StatefulWidget {
+  const _ExportFailureStatus({required this.job});
+
+  final ItemListExportJob job;
+
+  @override
+  State<_ExportFailureStatus> createState() => _ExportFailureStatusState();
+}
+
+class _ExportFailureStatusState extends State<_ExportFailureStatus> {
+  var _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final job = widget.job;
+    final failure = job.failure;
+    final technical = failure?.technical.trim() ?? '';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(job.progressLabel, key: Key('item-list-job-status-${job.id}')),
+        if (failure != null) ...[
+          TextButton(
+            key: Key('item-list-job-details-${job.id}'),
+            style: TextButton.styleFrom(
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(0, 32),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            onPressed: () => setState(() => _open = !_open),
+            child: Text(_open ? 'Hide details' : 'Details'),
+          ),
+          if (_open)
+            Column(
+              key: Key('item-list-job-details-body-${job.id}'),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SelectableText(
+                  [
+                    if (failure.exitCode != null) 'Exit ${failure.exitCode}',
+                    failure.step,
+                  ].join(' · '),
+                ),
+                if (failure.logDir != null && failure.logDir!.isNotEmpty)
+                  SelectableText(failure.logDir!),
+                if (technical.isNotEmpty)
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 96),
+                    child: SingleChildScrollView(
+                      child: SelectableText(technical),
+                    ),
+                  ),
+              ],
+            ),
+        ],
       ],
     );
   }
@@ -1033,20 +1156,13 @@ class _ExportJobRow extends StatelessWidget {
         children: [
           Expanded(
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(job.label, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 2),
                 failed
-                    ? ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 96),
-                        child: SingleChildScrollView(
-                          child: Text(
-                            job.progressLabel,
-                            key: Key('item-list-job-status-${job.id}'),
-                          ),
-                        ),
-                      )
+                    ? _ExportFailureStatus(job: job)
                     : Text(
                         job.progressLabel,
                         key: Key('item-list-job-status-${job.id}'),

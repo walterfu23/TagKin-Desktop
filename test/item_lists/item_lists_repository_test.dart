@@ -9,55 +9,54 @@ import 'package:tagkin_desktop/contract/contract.dart';
 
 void main() {
   group('ItemListsRepository', () {
-    test('createItemList POSTs filter and never sends ownerUserId (R10)',
-        () async {
-      final mock = MockClient((request) async {
-        expect(request.method, 'POST');
-        expect(request.url.path, '/item-lists');
-        expect(request.headers['Authorization'], 'Bearer tok-a');
-        final body = jsonDecode(request.body) as Map<String, dynamic>;
-        expect(body.containsKey('ownerUserId'), isFalse);
-        expect(body.containsKey('accountId'), isFalse);
-        expect(body['who'], ['Sam']);
-        return http.Response(
-          jsonEncode({
-            'entries': [
-              {
-                'kind': 'photo',
-                'itemId': '11111111-1111-1111-1111-111111111111',
-                'keyPeriodId': null,
-                'startMs': null,
-                'endMs': null,
-                'when': '2020-01-01T00:00:00.000Z',
-                'who': ['Sam'],
-                'what': <String>[],
-                'where': <String>[],
-              },
-            ],
-          }),
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      });
+    test(
+      'createItemList POSTs filter and never sends ownerUserId (R10)',
+      () async {
+        final mock = MockClient((request) async {
+          expect(request.method, 'POST');
+          expect(request.url.path, '/item-lists');
+          expect(request.headers['Authorization'], 'Bearer tok-a');
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          expect(body.containsKey('ownerUserId'), isFalse);
+          expect(body.containsKey('accountId'), isFalse);
+          expect(body['who'], ['Sam']);
+          return http.Response(
+            jsonEncode({
+              'entries': [
+                {
+                  'kind': 'photo',
+                  'itemId': '11111111-1111-1111-1111-111111111111',
+                  'keyPeriodId': null,
+                  'startMs': null,
+                  'endMs': null,
+                  'when': '2020-01-01T00:00:00.000Z',
+                  'who': ['Sam'],
+                  'what': <String>[],
+                  'where': <String>[],
+                },
+              ],
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        });
 
-      final client = ApiClient(
-        baseUrl: 'http://api.test',
-        tokenProvider: () => 'tok-a',
-        httpClient: mock,
-      )..recordRequests = true;
+        final client = ApiClient(
+          baseUrl: 'http://api.test',
+          tokenProvider: () => 'tok-a',
+          httpClient: mock,
+        )..recordRequests = true;
 
-      final list = await ItemListsRepository(client).createItemList(
-        const ItemListFilter(who: ['Sam']),
-      );
-      expect(list.entries, hasLength(1));
-      expect(list.entries.single.kind, ItemListEntryKind.photo);
-      expect(list.entries.single.who, ['Sam']);
-      expect(
-        client.recordedRequests.single.bodyContainsOwnerField,
-        isFalse,
-      );
-      client.close();
-    });
+        final list = await ItemListsRepository(
+          client,
+        ).createItemList(const ItemListFilter(who: ['Sam']));
+        expect(list.entries, hasLength(1));
+        expect(list.entries.single.kind, ItemListEntryKind.photo);
+        expect(list.entries.single.who, ['Sam']);
+        expect(client.recordedRequests.single.bodyContainsOwnerField, isFalse);
+        client.close();
+      },
+    );
 
     test('listFacets GETs /item-lists/facets with no body (R1)', () async {
       final mock = MockClient((request) async {
@@ -145,6 +144,42 @@ void main() {
       expect(row.format.wire, 'mp4WithMusic');
       expect(row.encodeWallMs, 15000);
       expect(client.recordedRequests.single.bodyContainsOwnerField, isFalse);
+      client.close();
+    });
+
+    test('recordExport posts mp4WithoutMusic', () async {
+      final mock = MockClient((request) async {
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['format'], 'mp4WithoutMusic');
+        expect(body['encodeWallMs'], 12000);
+        return http.Response(
+          jsonEncode({
+            'id': '22222222-2222-2222-2222-222222222222',
+            'format': 'mp4WithoutMusic',
+            'photoCount': 4,
+            'keyPeriodCount': 1,
+            'outputDurationMs': 60000,
+            'encodeWallMs': 12000,
+          }),
+          201,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      final client = ApiClient(
+        baseUrl: 'http://api.test',
+        tokenProvider: () => 'tok-a',
+        httpClient: mock,
+      );
+      final row = await ItemListsRepository(client).recordExport(
+        const RecordItemListExport(
+          format: ItemListExportFormat.mp4withoutmusic,
+          photoCount: 4,
+          keyPeriodCount: 1,
+          outputDurationMs: 60000,
+          encodeWallMs: 12000,
+        ),
+      );
+      expect(row.format.wire, 'mp4WithoutMusic');
       client.close();
     });
   });

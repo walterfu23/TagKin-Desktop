@@ -186,7 +186,7 @@ class TagKinPlatformMenu extends ConsumerWidget {
       PlatformMenuItemGroup(
         members: [
           PlatformMenuItem(
-            label: 'Export list…',
+            label: 'Export Views…',
             onSelected: sessionReady
                 ? () => requestOpenItemListExport(ref)
                 : null,

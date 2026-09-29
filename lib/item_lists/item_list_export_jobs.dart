@@ -14,14 +14,7 @@ import 'package:tagkin_desktop/persons/collection.dart';
 /// How many MP4 exports encode at once. Further exports wait.
 const kItemListExportMaxConcurrent = 2;
 
-enum ItemListExportJobState {
-  queued,
-  running,
-  paused,
-  done,
-  failed,
-  cancelled,
-}
+enum ItemListExportJobState { queued, running, paused, done, failed, cancelled }
 
 /// Immutable inputs for one MP4 export. Later filmstrip edits do not apply.
 class ItemListMp4ExportRequest {
@@ -29,7 +22,7 @@ class ItemListMp4ExportRequest {
     required this.entries,
     required this.itemsById,
     required this.outputPath,
-    required this.audioPath,
+    this.audioPath,
     this.view,
     this.description = '',
     this.stillDurationSeconds = kItemListNleStillDurationSeconds,
@@ -43,7 +36,7 @@ class ItemListMp4ExportRequest {
   final List<api.ItemListEntry> entries;
   final Map<String, api.Item> itemsById;
   final String outputPath;
-  final String audioPath;
+  final String? audioPath;
   final SavedView? view;
   final String description;
   final double stillDurationSeconds;
@@ -58,10 +51,8 @@ class ItemListMp4ExportRequest {
 
 /// One background MP4 export.
 class ItemListExportJob extends ChangeNotifier {
-  ItemListExportJob({
-    required this.id,
-    required this.request,
-  }) : control = ItemListMp4CancelToken();
+  ItemListExportJob({required this.id, required this.request})
+    : control = ItemListMp4CancelToken();
 
   ItemListExportJob.staged({
     required this.id,
@@ -71,15 +62,15 @@ class ItemListExportJob extends ChangeNotifier {
     this.clipIndex,
     this.clipCount,
     this.error,
-  })  : request = ItemListMp4ExportRequest(
-          entries: const [],
-          itemsById: const {},
-          outputPath: outputPath,
-          audioPath: '',
-        ),
-        control = ItemListMp4CancelToken(),
-        manual = true,
-        started = state != ItemListExportJobState.queued;
+    this.failure,
+  }) : request = ItemListMp4ExportRequest(
+         entries: const [],
+         itemsById: const {},
+         outputPath: outputPath,
+       ),
+       control = ItemListMp4CancelToken(),
+       manual = true,
+       started = state != ItemListExportJobState.queued;
 
   final String id;
   final ItemListMp4ExportRequest request;
@@ -88,8 +79,8 @@ class ItemListExportJob extends ChangeNotifier {
   /// Inserted for the jobs panel. The queue does not launch it.
   bool manual = false;
 
-  /// True once [_run] has been scheduled. Pause/continue then signals ffmpeg
-  /// instead of returning the job to the queue.
+  /// True once [_run] has been scheduled. Continue waits for a free encode
+  /// slot, then signals the same encoder.
   bool started = false;
 
   ItemListExportJobState state = ItemListExportJobState.queued;
@@ -97,6 +88,7 @@ class ItemListExportJob extends ChangeNotifier {
   int? clipIndex;
   int? clipCount;
   String? error;
+  ItemListMp4FailureReport? failure;
 
   Future<void>? _run;
   final Completer<void> _done = Completer<void>();
@@ -118,6 +110,10 @@ class ItemListExportJob extends ChangeNotifier {
   String get progressLabel {
     switch (state) {
       case ItemListExportJobState.queued:
+        if (started) {
+          final phaseLabel = _phaseLabel();
+          if (phaseLabel != null) return 'Waiting · $phaseLabel';
+        }
         return 'Waiting…';
       case ItemListExportJobState.paused:
         final phaseLabel = _phaseLabel();
@@ -152,9 +148,14 @@ class ItemListExportJob extends ChangeNotifier {
     notifyListeners();
   }
 
-  void markState(ItemListExportJobState next, {String? errorText}) {
+  void markState(
+    ItemListExportJobState next, {
+    String? errorText,
+    ItemListMp4FailureReport? failure,
+  }) {
     state = next;
     if (errorText != null) error = errorText;
+    if (failure != null) this.failure = failure;
     notifyListeners();
   }
 
@@ -176,8 +177,8 @@ class ItemListExportJobManager extends ChangeNotifier {
     ItemListMediaSizeProbe? probeMediaSize,
     this.itemListsRepository,
     int maxConcurrentJobs = kItemListExportMaxConcurrent,
-  })  : _probeMediaSize = probeMediaSize ?? probeItemListMediaSize,
-        maxConcurrent = maxConcurrentJobs < 1 ? 1 : maxConcurrentJobs;
+  }) : _probeMediaSize = probeMediaSize ?? probeItemListMediaSize,
+       maxConcurrent = maxConcurrentJobs < 1 ? 1 : maxConcurrentJobs;
 
   final ItemListMp4Renderer renderMp4;
   final ItemListMediaSizeProbe _probeMediaSize;
@@ -203,10 +204,7 @@ class ItemListExportJobManager extends ChangeNotifier {
   }
 
   ItemListExportJob start(ItemListMp4ExportRequest request) {
-    final job = ItemListExportJob(
-      id: 'export-$_nextId',
-      request: request,
-    );
+    final job = ItemListExportJob(id: 'export-$_nextId', request: request);
     _nextId += 1;
     _jobs.add(job);
     job.addListener(_onJob);
@@ -223,6 +221,7 @@ class ItemListExportJobManager extends ChangeNotifier {
     int? clipIndex,
     int? clipCount,
     String? error,
+    ItemListMp4FailureReport? failure,
   }) {
     final job = ItemListExportJob.staged(
       id: 'export-$_nextId',
@@ -232,6 +231,7 @@ class ItemListExportJobManager extends ChangeNotifier {
       clipIndex: clipIndex,
       clipCount: clipCount,
       error: error,
+      failure: failure,
     );
     _nextId += 1;
     _jobs.add(job);
@@ -249,15 +249,19 @@ class ItemListExportJobManager extends ChangeNotifier {
     }
     job.control.pause();
     job.markState(ItemListExportJobState.paused);
+    _pump();
   }
 
   void resume(String id) {
     final job = jobById(id);
     if (job == null || job.state != ItemListExportJobState.paused) return;
-    job.control.resume();
-    if (job.started) {
+    if (job.manual) {
+      job.control.resume();
       job.markState(ItemListExportJobState.running);
       return;
+    }
+    if (!job.started) {
+      job.control.resume();
     }
     job.markState(ItemListExportJobState.queued);
     _pump();
@@ -294,7 +298,10 @@ class ItemListExportJobManager extends ChangeNotifier {
   }
 
   void clearFinished() {
-    final done = [for (final job in _jobs) if (job.isTerminal) job];
+    final done = [
+      for (final job in _jobs)
+        if (job.isTerminal) job,
+    ];
     if (done.isEmpty) return;
     for (final job in done) {
       job.removeListener(_onJob);
@@ -306,23 +313,32 @@ class ItemListExportJobManager extends ChangeNotifier {
   void _pump() {
     if (_disposed) return;
     while (_occupying < maxConcurrent) {
-      ItemListExportJob? next;
-      for (final job in _jobs) {
-        if (job.manual || job.started) continue;
-        if (job.state != ItemListExportJobState.queued) continue;
-        next = job;
-        break;
+      final continued = _nextQueued(started: true);
+      if (continued != null) {
+        continued.control.resume();
+        continued.markState(ItemListExportJobState.running);
+        continue;
       }
-      if (next == null) return;
-      _launch(next);
+      final fresh = _nextQueued(started: false);
+      if (fresh == null) return;
+      _launch(fresh);
     }
   }
 
+  /// Oldest queued job that has [started] matching [started].
+  ItemListExportJob? _nextQueued({required bool started}) {
+    for (final job in _jobs) {
+      if (job.manual || job.started != started) continue;
+      if (job.state != ItemListExportJobState.queued) continue;
+      return job;
+    }
+    return null;
+  }
+
   int get _occupying => _jobs.where((job) {
-        if (!job.started || job.manual) return false;
-        return job.state == ItemListExportJobState.running ||
-            job.state == ItemListExportJobState.paused;
-      }).length;
+    if (!job.started || job.manual) return false;
+    return job.state == ItemListExportJobState.running;
+  }).length;
 
   void _launch(ItemListExportJob job) {
     job.started = true;
@@ -350,6 +366,7 @@ class ItemListExportJobManager extends ChangeNotifier {
         stillDurationSeconds: request.stillDurationSeconds,
         transition: request.transition,
         transitionSeconds: request.transitionSeconds,
+        endFadeSeconds: kItemListNleEndFadeSeconds,
       );
       await renderMp4(
         timeline: timeline,
@@ -380,6 +397,15 @@ class ItemListExportJobManager extends ChangeNotifier {
     } on ItemListMp4CancelledException {
       await deleteEmptyItemListExport(request.outputPath);
       if (!job.isTerminal) job.markState(ItemListExportJobState.cancelled);
+    } on ItemListMp4RenderException catch (e) {
+      await deleteEmptyItemListExport(request.outputPath);
+      if (!job.isTerminal) {
+        job.markState(
+          ItemListExportJobState.failed,
+          errorText: e.message,
+          failure: e.failure,
+        );
+      }
     } catch (e) {
       await deleteEmptyItemListExport(request.outputPath);
       if (!job.isTerminal) {
@@ -430,7 +456,11 @@ class ItemListExportJobManager extends ChangeNotifier {
     try {
       await repo.recordExport(
         api.RecordItemListExport(
-          format: api.ItemListExportFormat.fromWire('mp4WithMusic'),
+          format: api.ItemListExportFormat.fromWire(
+            request.audioPath != null && request.audioPath!.isNotEmpty
+                ? 'mp4WithMusic'
+                : 'mp4WithoutMusic',
+          ),
           photoCount: request.entries
               .where((e) => e.kind == api.ItemListEntryKind.photo)
               .length,

@@ -3922,14 +3922,14 @@ components:
     ItemListExportFormat:
       type: string
       description: Item-list Save As format (D13).
-      enum: [json, fcp7Xml, fcpxml, mp4WithMusic]
+      enum: [json, fcp7Xml, fcpxml, mp4WithMusic, mp4WithoutMusic]
 
     RecordItemListExport:
       type: object
       description: >
         Successful local Save As. Never a path, owner, or media bytes
-        (R1/R10). encodeWallMs is required for mp4WithMusic and forbidden
-        otherwise.
+        (R1/R10). encodeWallMs is required for mp4WithMusic and
+        mp4WithoutMusic, and forbidden otherwise.
       required: [format, photoCount, keyPeriodCount, outputDurationMs]
       properties:
         format:
@@ -3952,7 +3952,7 @@ components:
           nullable: true
           description: >
             Wall-clock from after Save As through the MP4 fully written.
-            Required for mp4WithMusic; omit otherwise.
+            Required for mp4WithMusic and mp4WithoutMusic; omit otherwise.
 
     ItemListExport:
       type: object
