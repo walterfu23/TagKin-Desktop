@@ -30,8 +30,9 @@ class SecurityScopedBookmarks {
     return (path: path, bookmarkBase64: bookmark);
   }
 
-  /// Native Save As. Retains the panel URL (no bookmark). Null on cancel.
-  static Future<String?> pickSaveFile({
+  /// Native Save As. Retains the panel URL under [handle] (no bookmark).
+  /// Null on cancel. Each call keeps its own destination until [releaseSaveFile].
+  static Future<({String path, String handle})?> pickSaveFile({
     required String fileName,
     required String fileExtension,
   }) async {
@@ -45,22 +46,30 @@ class SecurityScopedBookmarks {
     );
     if (raw is! Map) return null;
     final path = raw['path'];
+    final handle = raw['handle'];
     if (path is! String || path.isEmpty) return null;
-    return path;
+    if (handle is! String || handle.isEmpty) return null;
+    return (path: path, handle: handle);
   }
 
-  /// Copy [sourcePath] onto the retained Save As URL. Returns dest byte count.
-  static Future<int> installSaveFile(String sourcePath) async {
-    final n = await _channel.invokeMethod<int>('installSaveFile', sourcePath);
+  /// Copy [sourcePath] onto the Save As URL for [handle]. Returns dest byte count.
+  static Future<int> installSaveFile({
+    required String handle,
+    required String sourcePath,
+  }) async {
+    final n = await _channel.invokeMethod<int>('installSaveFile', {
+      'handle': handle,
+      'sourcePath': sourcePath,
+    });
     if (n == null || n <= 0) {
       throw StateError('installSaveFile wrote no bytes');
     }
     return n;
   }
 
-  static Future<void> releaseSaveFile() async {
+  static Future<void> releaseSaveFile(String handle) async {
     if (!isSupported) return;
-    await _channel.invokeMethod<void>('releaseSaveFile');
+    await _channel.invokeMethod<void>('releaseSaveFile', handle);
   }
 
   static Future<String> startAccess(String bookmarkBase64) async {

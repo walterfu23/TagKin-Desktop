@@ -34,6 +34,7 @@ class MusicRepository {
     required int durationMs,
     required String prompt,
     List<String>? avoidSoundtrackIds,
+    int? maxLoops,
   }) async {
     final avoid = avoidSoundtrackIds
         ?.map((id) => id.trim())
@@ -45,6 +46,7 @@ class MusicRepository {
         durationMs: durationMs,
         prompt: prompt,
         avoidSoundtrackIds: (avoid == null || avoid.isEmpty) ? null : avoid,
+        maxLoops: maxLoops,
       ).toJson(),
       timeout: generateTimeout,
     );

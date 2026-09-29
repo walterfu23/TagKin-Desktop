@@ -7,9 +7,9 @@ import UniformTypeIdentifiers
 /// Channel: `tagkin_desktop/security_scoped_bookmarks`
 /// Methods:
 /// - pickFolder → { path, bookmarkBase64 } | null (cancel)
-/// - pickSaveFile → { path } | null (cancel); retains the panel URL
-/// - installSaveFile(sourcePath) → byte count
-/// - releaseSaveFile → null
+/// - pickSaveFile → { path, handle } | null (cancel); retains the panel URL
+/// - installSaveFile({ handle, sourcePath }) → byte count
+/// - releaseSaveFile(handle) → null
 /// - startAccess(bookmarkBase64) → resolved path
 /// - stopAccess(bookmarkBase64) → null
 enum SecurityScopedBookmarksPlugin {
@@ -17,8 +17,8 @@ enum SecurityScopedBookmarksPlugin {
 
   /// Retains URLs with an active startAccessingSecurityScopedResource call.
   private static var active: [String: URL] = [:]
-  /// One-shot NSSavePanel destination (not bookmarkable until the file exists).
-  private static var pendingSave: URL?
+  /// NSSavePanel destinations keyed by handle (not bookmarkable until the file exists).
+  private static var pendingSaves: [String: URL] = [:]
 
   static func register(with messenger: FlutterBinaryMessenger) {
     let channel = FlutterMethodChannel(name: channelName, binaryMessenger: messenger)
@@ -34,13 +34,23 @@ enum SecurityScopedBookmarksPlugin {
           result: result
         )
       case "installSaveFile":
-        guard let source = call.arguments as? String else {
-          result(FlutterError(code: "bad_args", message: "sourcePath required", details: nil))
+        let args = call.arguments as? [String: Any]
+        guard let handle = args?["handle"] as? String,
+              let source = args?["sourcePath"] as? String else {
+          result(FlutterError(
+            code: "bad_args",
+            message: "handle and sourcePath required",
+            details: nil
+          ))
           return
         }
-        installSaveFile(sourcePath: source, result: result)
+        installSaveFile(handle: handle, sourcePath: source, result: result)
       case "releaseSaveFile":
-        releaseSaveFile(result: result)
+        guard let handle = call.arguments as? String else {
+          result(FlutterError(code: "bad_args", message: "handle required", details: nil))
+          return
+        }
+        releaseSaveFile(handle: handle, result: result)
       case "startAccess":
         guard let bookmark = call.arguments as? String else {
           result(FlutterError(code: "bad_args", message: "bookmarkBase64 required", details: nil))
@@ -101,7 +111,6 @@ enum SecurityScopedBookmarksPlugin {
     fileExtension: String,
     result: @escaping FlutterResult
   ) {
-    releasePendingSave()
     let panel = NSSavePanel()
     panel.title = "Export item list"
     panel.canCreateDirectories = true
@@ -118,15 +127,17 @@ enum SecurityScopedBookmarksPlugin {
     }
 
     _ = url.startAccessingSecurityScopedResource()
-    pendingSave = url
-    result(["path": url.path])
+    let handle = UUID().uuidString
+    pendingSaves[handle] = url
+    result(["path": url.path, "handle": handle])
   }
 
   private static func installSaveFile(
+    handle: String,
     sourcePath: String,
     result: @escaping FlutterResult
   ) {
-    guard let dest = pendingSave else {
+    guard let dest = pendingSaves[handle] else {
       result(FlutterError(
         code: "no_save",
         message: "Save As is not open",
@@ -161,16 +172,11 @@ enum SecurityScopedBookmarksPlugin {
     }
   }
 
-  private static func releaseSaveFile(result: @escaping FlutterResult) {
-    releasePendingSave()
-    result(nil)
-  }
-
-  private static func releasePendingSave() {
-    if let url = pendingSave {
+  private static func releaseSaveFile(handle: String, result: @escaping FlutterResult) {
+    if let url = pendingSaves.removeValue(forKey: handle) {
       url.stopAccessingSecurityScopedResource()
     }
-    pendingSave = nil
+    result(nil)
   }
 
   private static func createBookmark(path: String, result: @escaping FlutterResult) {

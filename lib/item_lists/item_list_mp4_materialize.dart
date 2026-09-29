@@ -15,7 +15,7 @@ class ItemListMp4RenderException implements Exception {
   String toString() => message;
 }
 
-/// Thrown when the user leaves Export list and cancels an in-flight encode.
+/// Thrown when the user cancels an in-flight MP4 export.
 class ItemListMp4CancelledException extends ItemListMp4RenderException {
   ItemListMp4CancelledException() : super('MP4 export was cancelled.');
 }

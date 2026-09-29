@@ -159,6 +159,8 @@ void main() {
         DesktopPrefs.defaults.exportSequenceSizeOrDefault,
         ExportSequenceSize.matchSmallest,
       );
+      expect(DesktopPrefs.defaults.exportMusicLoopCount, 2);
+      expect(DesktopPrefs.defaults.exportMusicLoopCountOrDefault, 2);
       expect(DesktopPrefs.defaults.exportSoundtrackUnderVideoPercent, 5);
       expect(
         DesktopPrefs.defaults.exportSoundtrackUnderVideoPercentOrDefault,
@@ -175,6 +177,9 @@ void main() {
       expect(DesktopPrefs.exportSoundtrackUnderVideoPercentMin, 0);
       expect(DesktopPrefs.exportSoundtrackUnderVideoPercentMax, 100);
       expect(DesktopPrefs.exportSoundtrackUnderVideoPercentStep, 1);
+      expect(DesktopPrefs.exportMusicLoopCountMin, 1);
+      expect(DesktopPrefs.exportMusicLoopCountMax, 10);
+      expect(DesktopPrefs.exportMusicLoopCountStep, 1);
     });
 
     test('round-trips through JSON including new prefs', () async {
@@ -212,6 +217,7 @@ void main() {
         exportSequenceSize: ExportSequenceSize.p4k,
         exportMusicPrompt: 'quiet piano',
         exportSoundtrackUnderVideoPercent: 20,
+        exportMusicLoopCount: 4,
       );
       await store.save(prefs);
       expect(await store.load(), prefs);
@@ -344,6 +350,22 @@ void main() {
         DesktopPrefs.fromJson({}).exportSoundtrackUnderVideoPercent,
         5,
       );
+    });
+
+    test('fromJson clamps export music loop count', () {
+      expect(
+        DesktopPrefs.fromJson({
+          'export.musicLoopCount': 40,
+        }).exportMusicLoopCount,
+        DesktopPrefs.exportMusicLoopCountMax,
+      );
+      expect(
+        DesktopPrefs.fromJson({
+          'export.musicLoopCount': 0,
+        }).exportMusicLoopCount,
+        DesktopPrefs.exportMusicLoopCountMin,
+      );
+      expect(DesktopPrefs.fromJson({}).exportMusicLoopCount, 2);
     });
 
     test('fromJson export sequence size defaults and parses', () {

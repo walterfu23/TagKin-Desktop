@@ -175,6 +175,7 @@ List<String> _audioMixFilters({
   if (videoIndexes.isEmpty) {
     return [
       '$musicIn$_kStereo44100,'
+      'apad,'
       'atrim=0:${_sec(totalSeconds)},'
       '$fadeOut,'
       'asetpts=PTS-STARTPTS[aout]',
@@ -188,7 +189,7 @@ List<String> _audioMixFilters({
   }).join('+');
   final out = <String>[
     '$musicIn$_kStereo44100,'
-    'atrim=0:${_sec(totalSeconds)},asetpts=PTS-STARTPTS,'
+    'apad,atrim=0:${_sec(totalSeconds)},asetpts=PTS-STARTPTS,'
     'volume=${_gain(soundtrackDuck)}:enable=\'$duckEnable\'[music]',
   ];
   final mixPads = <String>['[music]'];

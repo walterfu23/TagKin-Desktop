@@ -40,6 +40,7 @@ class DesktopPrefs {
     this.exportSequenceSize = ExportSequenceSize.matchSmallest,
     this.exportMusicPrompt = '',
     this.exportSoundtrackUnderVideoPercent = 5,
+    this.exportMusicLoopCount = 2,
   });
 
   /// When true, include country even if place country matches device locale.
@@ -149,6 +150,10 @@ class DesktopPrefs {
   /// (0 = mute under video, 100 = no duck). Photos stay at full music.
   final int exportSoundtrackUnderVideoPercent;
 
+  /// Maximum times the same soundtrack file may play, including the first.
+  /// 2 means two instances joined by a cross-dissolve. Matches API `maxLoops`.
+  final int exportMusicLoopCount;
+
   /// [dateTimeFormat] with a hot-reload fallback (new non-null fields read
   /// as null on instances created before the field existed).
   DateTimeDisplayFormat get dateTimeFormatOrLocal {
@@ -210,6 +215,15 @@ class DesktopPrefs {
       return exportSoundtrackUnderVideoPercent;
     } on TypeError {
       return 5;
+    }
+  }
+
+  /// [exportMusicLoopCount] with a hot-reload fallback.
+  int get exportMusicLoopCountOrDefault {
+    try {
+      return exportMusicLoopCount;
+    } on TypeError {
+      return 2;
     }
   }
 
@@ -286,6 +300,10 @@ class DesktopPrefs {
   static const exportSoundtrackUnderVideoPercentMax = 100;
   static const exportSoundtrackUnderVideoPercentStep = 1;
 
+  static const exportMusicLoopCountMin = 1;
+  static const exportMusicLoopCountMax = 10;
+  static const exportMusicLoopCountStep = 1;
+
   DesktopPrefs copyWith({
     bool? showCountryWhenSameCountry,
     bool? showStateWhenSameState,
@@ -318,6 +336,7 @@ class DesktopPrefs {
     ExportSequenceSize? exportSequenceSize,
     String? exportMusicPrompt,
     int? exportSoundtrackUnderVideoPercent,
+    int? exportMusicLoopCount,
   }) {
     return DesktopPrefs(
       showCountryWhenSameCountry:
@@ -367,6 +386,8 @@ class DesktopPrefs {
       exportSoundtrackUnderVideoPercent:
           exportSoundtrackUnderVideoPercent ??
               exportSoundtrackUnderVideoPercentOrDefault,
+      exportMusicLoopCount:
+          exportMusicLoopCount ?? exportMusicLoopCountOrDefault,
     );
   }
 
@@ -407,6 +428,7 @@ class DesktopPrefs {
         'export.musicPrompt': exportMusicPromptOrDefault,
         'export.soundtrackUnderVideoPercent':
             exportSoundtrackUnderVideoPercentOrDefault,
+        'export.musicLoopCount': exportMusicLoopCountOrDefault,
       };
 
   factory DesktopPrefs.fromJson(Map<String, dynamic> json) {
@@ -593,6 +615,12 @@ class DesktopPrefs {
         min: exportSoundtrackUnderVideoPercentMin,
         max: exportSoundtrackUnderVideoPercentMax,
       ),
+      exportMusicLoopCount: intVal(
+        'export.musicLoopCount',
+        2,
+        min: exportMusicLoopCountMin,
+        max: exportMusicLoopCountMax,
+      ),
     );
   }
 
@@ -636,7 +664,8 @@ class DesktopPrefs {
       other.exportSequenceSizeOrDefault == exportSequenceSizeOrDefault &&
       other.exportMusicPromptOrDefault == exportMusicPromptOrDefault &&
       other.exportSoundtrackUnderVideoPercentOrDefault ==
-          exportSoundtrackUnderVideoPercentOrDefault;
+          exportSoundtrackUnderVideoPercentOrDefault &&
+      other.exportMusicLoopCountOrDefault == exportMusicLoopCountOrDefault;
 
   @override
   int get hashCode => Object.hashAll([
@@ -671,5 +700,6 @@ class DesktopPrefs {
         exportSequenceSizeOrDefault,
         exportMusicPromptOrDefault,
         exportSoundtrackUnderVideoPercentOrDefault,
+        exportMusicLoopCountOrDefault,
       ]);
 }

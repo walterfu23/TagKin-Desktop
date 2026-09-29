@@ -61,6 +61,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   late ExportSequenceSize _exportSequenceSize;
   late TextEditingController _exportMusicPrompt;
   late int _exportSoundtrackUnderVideoPercent;
+  late int _exportMusicLoopCount;
   final UndoController _undoStack = UndoController();
 
   @override
@@ -111,6 +112,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     );
     _exportSoundtrackUnderVideoPercent =
         prefs.exportSoundtrackUnderVideoPercentOrDefault;
+    _exportMusicLoopCount = prefs.exportMusicLoopCountOrDefault;
   }
 
   /// Restore draft fields without recreating text controllers (undo/redo).
@@ -149,6 +151,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _exportMusicPrompt.text = prefs.exportMusicPromptOrDefault;
     _exportSoundtrackUnderVideoPercent =
         prefs.exportSoundtrackUnderVideoPercentOrDefault;
+    _exportMusicLoopCount = prefs.exportMusicLoopCountOrDefault;
   }
 
   void _mutateDraft(VoidCallback change, {String label = 'Edit setting'}) {
@@ -218,6 +221,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       'export.musicPrompt': _exportMusicPrompt.text,
       'export.soundtrackUnderVideoPercent':
           _exportSoundtrackUnderVideoPercent,
+      'export.musicLoopCount': _exportMusicLoopCount,
     });
   }
 
@@ -1030,6 +1034,20 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     max: DesktopPrefs.exportSoundtrackUnderVideoPercentMax,
                     step: DesktopPrefs.exportSoundtrackUnderVideoPercentStep,
                     onChanged: (v) => _exportSoundtrackUnderVideoPercent = v,
+                  ),
+                  _intSlider(
+                    key: const Key('pref-export-music-loop-count'),
+                    label: 'Export music loop count',
+                    helper:
+                        'How many times the same soundtrack file may play, '
+                        'including the first. Default 2 (1–10). Each join is '
+                        'a cross-dissolve. 1 plays the file once. JSON / '
+                        'FCP7 / FCPXML are unaffected.',
+                    value: _exportMusicLoopCount,
+                    min: DesktopPrefs.exportMusicLoopCountMin,
+                    max: DesktopPrefs.exportMusicLoopCountMax,
+                    step: DesktopPrefs.exportMusicLoopCountStep,
+                    onChanged: (v) => _exportMusicLoopCount = v,
                   ),
                   Padding(
                     padding: const EdgeInsets.symmetric(

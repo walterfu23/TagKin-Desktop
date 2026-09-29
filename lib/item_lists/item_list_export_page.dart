@@ -7,6 +7,8 @@ import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart' hide ItemListExportFormat;
 import 'package:tagkin_desktop/item_lists/item_list_csv.dart';
 import 'package:tagkin_desktop/item_lists/item_list_export_controller.dart';
+import 'package:tagkin_desktop/item_lists/item_list_export_jobs.dart';
+import 'package:tagkin_desktop/library/source_reveal.dart';
 import 'package:tagkin_desktop/item_lists/item_list_navigation.dart';
 import 'package:tagkin_desktop/item_lists/item_list_nle.dart';
 import 'package:tagkin_desktop/item_lists/item_list_slideshow_preview.dart';
@@ -21,14 +23,13 @@ import 'package:tagkin_desktop/prepass/sharpness_score_chip.dart';
 import 'package:tagkin_desktop/ui/format_local_datetime.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
-/// Body copy for the leave-while-busy dialog. Null when leave is free.
+/// Body copy for the leave-while-music dialog. Null when leave is free.
+///
+/// MP4 exports keep running in the background, so leaving Export list does
+/// not ask about them.
 String? itemListLeaveBusyBody({
-  required bool encoding,
   required bool generatingMusic,
 }) {
-  if (encoding) {
-    return 'MP4 export is still encoding. Leave and cancel the export?';
-  }
   if (generatingMusic) {
     return 'Music is still generating. Leave anyway? The soundtrack request '
         'may still finish.';
@@ -36,17 +37,13 @@ String? itemListLeaveBusyBody({
   return null;
 }
 
-/// Confirm Stay vs Leave when MP4 encode or music generate is in flight.
+/// Confirm Stay vs Leave while music generate is in flight.
 Future<bool> confirmLeaveItemListBusy({
   required BuildContext context,
-  required bool encoding,
   required bool generatingMusic,
   Future<void> Function()? onLeave,
 }) async {
-  final body = itemListLeaveBusyBody(
-    encoding: encoding,
-    generatingMusic: generatingMusic,
-  );
+  final body = itemListLeaveBusyBody(generatingMusic: generatingMusic);
   if (body == null) return true;
   final leave = await showDialog<bool>(
     context: context,
@@ -176,22 +173,17 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
     setState(() => _musicPresetId = picked.id);
   }
 
-  bool _isLeaveBusy(ItemListExportController controller) {
-    return controller.mp4Phase != null || _generatingMusic;
-  }
+  bool _isLeaveBusy() => _generatingMusic;
 
   Future<void> _cancelInFlight() async {
     _musicCancelled = true;
-    ref.read(itemListExportControllerProvider).cancelMp4();
     final job = _exportJob;
     if (job != null) await job;
   }
 
   Future<bool> _confirmLeaveIfBusy() {
-    final controller = ref.read(itemListExportControllerProvider);
     return confirmLeaveItemListBusy(
       context: context,
-      encoding: controller.mp4Phase != null,
       generatingMusic: _generatingMusic,
       onLeave: _cancelInFlight,
     );
@@ -214,19 +206,19 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
     String? outcomeTitle;
     String? outcomeMessage;
     try {
-      final path = _format == ItemListExportFormat.mp4WithMusic
-          ? await controller.exportMp4(
-              audioPath: _audioPath!,
-              description: _description.text,
-              stillDurationSeconds:
-                  prefs.exportPhotoStillDurationSecondsOrDefault,
-              transition: prefs.exportPhotoTransitionOrDefault,
-              transitionSeconds: prefs.exportPhotoTransitionSecondsOrDefault,
-              sequenceSize: prefs.exportSequenceSizeOrDefault,
-              soundtrackDuck:
-                  prefs.exportSoundtrackUnderVideoPercentOrDefault / 100.0,
-            )
-          : await controller.export(
+      if (_format == ItemListExportFormat.mp4WithMusic) {
+        await controller.exportMp4(
+          audioPath: _audioPath!,
+          description: _description.text,
+          stillDurationSeconds: prefs.exportPhotoStillDurationSecondsOrDefault,
+          transition: prefs.exportPhotoTransitionOrDefault,
+          transitionSeconds: prefs.exportPhotoTransitionSecondsOrDefault,
+          sequenceSize: prefs.exportSequenceSizeOrDefault,
+          soundtrackDuck:
+              prefs.exportSoundtrackUnderVideoPercentOrDefault / 100.0,
+        );
+      } else {
+        final path = await controller.export(
               format: _format,
               description: _description.text,
               stillDurationSeconds:
@@ -235,9 +227,10 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
               transitionSeconds: prefs.exportPhotoTransitionSecondsOrDefault,
               sequenceSize: prefs.exportSequenceSizeOrDefault,
             );
-      if (path != null) {
-        outcomeTitle = 'Export';
-        outcomeMessage = 'Saved $path';
+        if (path != null) {
+          outcomeTitle = 'Export';
+          outcomeMessage = 'Saved $path';
+        }
       }
     } catch (e) {
       outcomeTitle = 'Export failed';
@@ -340,6 +333,7 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
         avoidSoundtrackIds: [
           for (final take in _musicTakes) take.soundtrackId,
         ],
+        maxLoops: prefs.exportMusicLoopCountOrDefault,
       );
       if (_musicCancelled || !mounted) return;
       final file = await music.writeAudioTemp(generated);
@@ -373,10 +367,11 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
   @override
   Widget build(BuildContext context) {
     final controller = ref.watch(itemListExportControllerProvider);
+    final jobs = ref.watch(itemListExportJobManagerProvider);
     final prefs = ref.watch(desktopPrefsProvider);
     final format = prefs.dateTimeFormatOrLocal;
     final visible = controller.entries;
-    final leaveBusy = _isLeaveBusy(controller);
+    final leaveBusy = _isLeaveBusy();
     itemListExportBusy = leaveBusy;
 
     return PopScope(
@@ -438,14 +433,10 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
                       ),
                     ],
                   ),
-                  if (controller.mp4ProgressLabel != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        controller.mp4ProgressLabel!,
-                        key: const Key('item-list-mp4-phase'),
-                      ),
-                    ),
+                  if (jobs.jobs.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _ExportJobsPanel(manager: jobs),
+                  ],
                   if (_format == ItemListExportFormat.mp4WithMusic) ...[
                     const SizedBox(height: 12),
                     _MusicPromptPresetDropdown(
@@ -1001,6 +992,102 @@ class _FilmstripTileState extends State<_FilmstripTile> {
             ? Icons.broken_image_outlined
             : (video ? Icons.videocam_outlined : Icons.image_outlined),
         key: Key('item-list-still-placeholder-$_id'),
+      ),
+    );
+  }
+}
+
+class _ExportJobsPanel extends StatelessWidget {
+  const _ExportJobsPanel({required this.manager});
+
+  final ItemListExportJobManager manager;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      key: const Key('item-list-export-jobs'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text('Exports'),
+        const SizedBox(height: 8),
+        for (final job in manager.jobs) _ExportJobRow(manager: manager, job: job),
+      ],
+    );
+  }
+}
+
+class _ExportJobRow extends StatelessWidget {
+  const _ExportJobRow({required this.manager, required this.job});
+
+  final ItemListExportJobManager manager;
+  final ItemListExportJob job;
+
+  @override
+  Widget build(BuildContext context) {
+    final failed = job.state == ItemListExportJobState.failed;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        key: Key('item-list-export-job-${job.id}'),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(job.label, overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 2),
+                failed
+                    ? ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 96),
+                        child: SingleChildScrollView(
+                          child: Text(
+                            job.progressLabel,
+                            key: Key('item-list-job-status-${job.id}'),
+                          ),
+                        ),
+                      )
+                    : Text(
+                        job.progressLabel,
+                        key: Key('item-list-job-status-${job.id}'),
+                      ),
+              ],
+            ),
+          ),
+          if (job.isActive) ...[
+            if (job.state == ItemListExportJobState.paused)
+              TextButton(
+                key: Key('item-list-job-continue-${job.id}'),
+                onPressed: () => manager.resume(job.id),
+                child: const Text('Continue'),
+              )
+            else
+              TextButton(
+                key: Key('item-list-job-pause-${job.id}'),
+                onPressed: () => manager.pause(job.id),
+                child: const Text('Pause'),
+              ),
+            TextButton(
+              key: Key('item-list-job-cancel-${job.id}'),
+              onPressed: () => manager.cancel(job.id),
+              child: const Text('Cancel'),
+            ),
+          ] else ...[
+            if (job.state == ItemListExportJobState.done)
+              TextButton(
+                key: Key('item-list-job-reveal-${job.id}'),
+                onPressed: () {
+                  unawaited(revealLocalPath(job.outputPath));
+                },
+                child: const Text('Show in folder'),
+              ),
+            TextButton(
+              key: Key('item-list-job-dismiss-${job.id}'),
+              onPressed: () => manager.dismiss(job.id),
+              child: const Text('Dismiss'),
+            ),
+          ],
+        ],
       ),
     );
   }

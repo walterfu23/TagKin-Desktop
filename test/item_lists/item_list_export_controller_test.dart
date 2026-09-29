@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/api/item_lists_repository.dart';
 import 'package:tagkin_desktop/contract/contract.dart' hide ItemListExportFormat;
 import 'package:tagkin_desktop/item_lists/item_list_export_controller.dart';
+import 'package:tagkin_desktop/item_lists/item_list_export_jobs.dart';
 import 'package:tagkin_desktop/item_lists/item_list_media_size.dart';
 import 'package:tagkin_desktop/item_lists/item_list_mp4_render.dart';
 import 'package:tagkin_desktop/item_lists/item_list_nle.dart';
@@ -490,6 +491,7 @@ void main() {
         soundtrackDuck = 0.05,
         onProgress,
         cancel,
+        macSaveHandle,
       }) async {
         events.add('render');
       },
@@ -510,7 +512,7 @@ void main() {
       ),
       pickSavePath: ({required fileExtension}) async {
         events.add('pick:$fileExtension');
-        return '/tmp/out.mp4';
+        return const ItemListSavePick(path: '/tmp/out.mp4');
       },
       renderMp4: ({
         required timeline,
@@ -522,6 +524,7 @@ void main() {
         soundtrackDuck = 0.05,
         onProgress,
         cancel,
+        macSaveHandle,
       }) async {
         events.add('render');
         renderedTo = outputPath;
@@ -531,10 +534,12 @@ void main() {
     addTearDown(controller.dispose);
     await controller.load();
     await _waitUntil(() => controller.hasEntries);
-    expect(
-      await controller.exportMp4(audioPath: '/tmp/a.wav'),
-      '/tmp/out.mp4',
-    );
+    final job = await controller.exportMp4(audioPath: '/tmp/a.wav');
+    expect(job, isNotNull);
+    expect(events.first, 'pick:mp4');
+    await job!.completed;
+    expect(job.outputPath, '/tmp/out.mp4');
+    expect(job.state, ItemListExportJobState.done);
     expect(events, ['pick:mp4', 'render']);
     expect(renderedTo, '/tmp/out.mp4');
     addTearDown(() {
@@ -556,7 +561,8 @@ void main() {
       items: FakeItemsRepository(
         items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg')],
       ),
-      pickSavePath: ({required fileExtension}) async => dest.path,
+      pickSavePath: ({required fileExtension}) async =>
+          ItemListSavePick(path: dest.path),
       renderMp4: ({
         required timeline,
         required audioPath,
@@ -567,19 +573,20 @@ void main() {
         soundtrackDuck = 0.05,
         onProgress,
         cancel,
+        macSaveHandle,
       }) async {},
     );
     addTearDown(controller.dispose);
     await controller.load();
     await _waitUntil(() => controller.hasEntries);
-    await expectLater(
-      controller.exportMp4(audioPath: '/tmp/a.wav'),
-      throwsA(isA<ItemListMp4RenderException>()),
-    );
+    final job = await controller.exportMp4(audioPath: '/tmp/a.wav');
+    await job!.completed;
+    expect(job.state, ItemListExportJobState.failed);
+    expect(job.error, contains('empty'));
     expect(dest.existsSync(), isFalse);
   });
 
-  test('exportMp4 reports encode phases to the controller', () async {
+  test('exportMp4 reports encode phases on the job', () async {
     final dest = File(
       '${Directory.systemTemp.path}/tagkin-phase-export.mp4',
     );
@@ -592,7 +599,8 @@ void main() {
       items: FakeItemsRepository(
         items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg')],
       ),
-      pickSavePath: ({required fileExtension}) async => dest.path,
+      pickSavePath: ({required fileExtension}) async =>
+          ItemListSavePick(path: dest.path),
       renderMp4: ({
         required timeline,
         required audioPath,
@@ -603,12 +611,14 @@ void main() {
         soundtrackDuck = 0.05,
         onProgress,
         cancel,
+        macSaveHandle,
       }) async {
         onProgress?.call(
           const ItemListMp4Progress(phase: ItemListMp4Phase.staging),
         );
-        expect(controller.mp4Phase, ItemListMp4Phase.staging);
-        expect(controller.mp4ProgressLabel, 'Preparing files…');
+        final job = controller.exportJobs.jobs.single;
+        expect(job.phase, ItemListMp4Phase.staging);
+        expect(job.progressLabel, 'Preparing files…');
         onProgress?.call(
           const ItemListMp4Progress(
             phase: ItemListMp4Phase.encodingClips,
@@ -616,29 +626,28 @@ void main() {
             clipCount: 2,
           ),
         );
-        expect(controller.mp4ClipIndex, 1);
-        expect(controller.mp4ClipCount, 2);
-        expect(controller.mp4ProgressLabel, 'Encoding clip 1 of 2…');
+        expect(job.clipIndex, 1);
+        expect(job.clipCount, 2);
+        expect(job.progressLabel, 'Encoding clip 1 of 2…');
         onProgress?.call(
           const ItemListMp4Progress(phase: ItemListMp4Phase.assembling),
         );
-        expect(controller.mp4ProgressLabel, 'Composing video…');
+        expect(job.progressLabel, 'Composing video…');
         onProgress?.call(
           const ItemListMp4Progress(phase: ItemListMp4Phase.writingOut),
         );
-        expect(controller.mp4ProgressLabel, 'Writing file…');
+        expect(job.progressLabel, 'Writing file…');
         await File(outputPath).writeAsBytes(const [0, 1, 2, 3, 4, 5, 6, 7]);
       },
     );
     addTearDown(controller.dispose);
     await controller.load();
     await _waitUntil(() => controller.hasEntries);
-    expect(
-      await controller.exportMp4(audioPath: '/tmp/a.wav'),
-      dest.path,
-    );
-    expect(controller.mp4Phase, isNull);
-    expect(controller.mp4ProgressLabel, isNull);
+    final job = await controller.exportMp4(audioPath: '/tmp/a.wav');
+    await job!.completed;
+    expect(job.outputPath, dest.path);
+    expect(job.state, ItemListExportJobState.done);
+    expect(job.progressLabel, 'Saved');
   });
 
   test('exportMp4 cancelMp4 aborts quietly and deletes leftover', () async {
@@ -656,7 +665,8 @@ void main() {
       items: FakeItemsRepository(
         items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg')],
       ),
-      pickSavePath: ({required fileExtension}) async => dest.path,
+      pickSavePath: ({required fileExtension}) async =>
+          ItemListSavePick(path: dest.path),
       renderMp4: ({
         required timeline,
         required audioPath,
@@ -667,6 +677,7 @@ void main() {
         soundtrackDuck = 0.05,
         onProgress,
         cancel,
+        macSaveHandle,
       }) async {
         onProgress?.call(
           const ItemListMp4Progress(phase: ItemListMp4Phase.staging),
@@ -679,12 +690,12 @@ void main() {
     addTearDown(controller.dispose);
     await controller.load();
     await _waitUntil(() => controller.hasEntries);
-    final done = controller.exportMp4(audioPath: '/tmp/a.wav');
-    await _waitUntil(() => controller.mp4Phase != null);
-    controller.cancelMp4();
+    final job = await controller.exportMp4(audioPath: '/tmp/a.wav');
+    await _waitUntil(() => job!.phase != null);
+    controller.exportJobs.cancel(job!.id);
     gate.complete();
-    expect(await done, isNull);
-    expect(controller.mp4Phase, isNull);
+    await job.completed;
+    expect(job.state, ItemListExportJobState.cancelled);
     expect(dest.existsSync(), isFalse);
   });
 
@@ -722,7 +733,8 @@ void main() {
       items: FakeItemsRepository(
         items: [fixtureItem(id: 'a', sourceRef: 'file:///albums/a.jpg')],
       ),
-      pickSavePath: ({required fileExtension}) async => '/tmp/out.mp4',
+      pickSavePath: ({required fileExtension}) async =>
+          const ItemListSavePick(path: '/tmp/out.mp4'),
       renderMp4: ({
         required timeline,
         required audioPath,
@@ -733,6 +745,7 @@ void main() {
         soundtrackDuck = 0.05,
         onProgress,
         cancel,
+        macSaveHandle,
       }) async {
         await File(outputPath).writeAsBytes(const [0, 1, 2, 3, 4, 5, 6, 7]);
       },
@@ -745,11 +758,9 @@ void main() {
     });
     await controller.load();
     await _waitUntil(() => controller.hasEntries);
-    expect(
-      await controller.exportMp4(audioPath: '/tmp/a.wav'),
-      '/tmp/out.mp4',
-    );
-    await Future<void>.delayed(Duration.zero);
+    final job = await controller.exportMp4(audioPath: '/tmp/a.wav');
+    await job!.completed;
+    expect(job.outputPath, '/tmp/out.mp4');
     final posted = lists.lastExport;
     expect(posted, isNotNull);
     expect(posted!.format.wire, 'mp4WithMusic');

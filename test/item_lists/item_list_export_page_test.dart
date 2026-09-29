@@ -9,6 +9,7 @@ import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart' hide ItemListExportFormat;
 import 'package:tagkin_desktop/item_lists/item_list_export_controller.dart';
+import 'package:tagkin_desktop/item_lists/item_list_export_jobs.dart';
 import 'package:tagkin_desktop/item_lists/item_list_export_page.dart';
 import 'package:tagkin_desktop/item_lists/item_list_mp4_render.dart';
 import 'package:tagkin_desktop/item_lists/item_list_music.dart';
@@ -40,6 +41,7 @@ class FakeMusicRepository extends MusicRepository {
   int generateCount = 0;
   final List<String> writtenPaths = [];
   final List<List<String>?> avoidHistory = [];
+  final List<int?> loopCounts = [];
 
   @override
   Future<EstimateMusicResponse> estimate({required int durationMs}) async {
@@ -51,9 +53,11 @@ class FakeMusicRepository extends MusicRepository {
     required int durationMs,
     required String prompt,
     List<String>? avoidSoundtrackIds,
+    int? maxLoops,
   }) async {
     generateCount++;
     avoidHistory.add(avoidSoundtrackIds);
+    loopCounts.add(maxLoops);
     return GenerateMusicResponse(
       audioBase64: base64Encode([generateCount]),
       mimeType: 'audio/wav',
@@ -173,19 +177,20 @@ void main() {
     );
   });
 
-  test('itemListLeaveBusyBody names encode and music generate', () {
+  test('itemListLeaveBusyBody names music generate only', () {
+    expect(itemListLeaveBusyBody(generatingMusic: false), isNull);
     expect(
-      itemListLeaveBusyBody(encoding: false, generatingMusic: false),
-      isNull,
-    );
-    expect(
-      itemListLeaveBusyBody(encoding: true, generatingMusic: false),
-      contains('still encoding'),
-    );
-    expect(
-      itemListLeaveBusyBody(encoding: false, generatingMusic: true),
+      itemListLeaveBusyBody(generatingMusic: true),
       contains('still generating'),
     );
+  });
+
+  test('itemListQuitExportsBody names the in-flight count', () {
+    expect(itemListQuitExportsBody(0), isEmpty);
+    expect(itemListQuitExportsBody(1), contains('1 export'));
+    expect(itemListQuitExportsBody(1), contains('cancel it'));
+    expect(itemListQuitExportsBody(3), contains('3 exports'));
+    expect(itemListQuitExportsBody(3), contains('cancel them'));
   });
 
   testWidgets('views dropdown, stills, and export use the current row order',
@@ -701,7 +706,7 @@ void main() {
     expect(find.text('Saved /tmp/item-list.json'), findsNothing);
   });
 
-  testWidgets('MP4 export shows encode phase status', (tester) async {
+  testWidgets('MP4 job row shows encode phase, pause, and cancel', (tester) async {
     await _pumpPage(
       tester,
       overrides: _overrides(
@@ -712,41 +717,57 @@ void main() {
     );
 
     final ctx = tester.element(find.byType(ItemListExportPage));
-    final controller = ProviderScope.containerOf(ctx)
-        .read(itemListExportControllerProvider);
-
-    controller.mp4Phase = ItemListMp4Phase.staging;
-    controller.notifyListeners();
+    final jobs = ProviderScope.containerOf(ctx)
+        .read(itemListExportJobManagerProvider);
+    final job = jobs.stageJob(
+      outputPath: '/tmp/tagkin-d13-widget-job.mp4',
+      phase: ItemListMp4Phase.staging,
+    );
     await tester.pump();
-    expect(find.byKey(const Key('item-list-mp4-phase')), findsOneWidget);
+    expect(find.byKey(const Key('item-list-export-jobs')), findsOneWidget);
     expect(find.text('Preparing files…'), findsOneWidget);
+    expect(find.byKey(Key('item-list-job-pause-${job.id}')), findsOneWidget);
+    expect(find.byKey(Key('item-list-job-cancel-${job.id}')), findsOneWidget);
 
-    controller.mp4Phase = ItemListMp4Phase.encodingClips;
-    controller.mp4ClipIndex = 1;
-    controller.mp4ClipCount = 2;
-    controller.notifyListeners();
+    job.setProgress(
+      const ItemListMp4Progress(
+        phase: ItemListMp4Phase.encodingClips,
+        clipIndex: 1,
+        clipCount: 2,
+      ),
+    );
     await tester.pump();
     expect(find.text('Encoding clip 1 of 2…'), findsOneWidget);
 
-    controller.mp4Phase = ItemListMp4Phase.assembling;
-    controller.mp4ClipIndex = null;
-    controller.mp4ClipCount = null;
-    controller.notifyListeners();
+    await tester.tap(find.byKey(Key('item-list-job-pause-${job.id}')));
+    await tester.pump();
+    expect(find.textContaining('Paused'), findsOneWidget);
+    expect(find.byKey(Key('item-list-job-continue-${job.id}')), findsOneWidget);
+
+    await tester.tap(find.byKey(Key('item-list-job-continue-${job.id}')));
+    await tester.pump();
+    expect(find.text('Encoding clip 1 of 2…'), findsOneWidget);
+
+    job.setProgress(
+      const ItemListMp4Progress(phase: ItemListMp4Phase.assembling),
+    );
     await tester.pump();
     expect(find.text('Composing video…'), findsOneWidget);
 
-    controller.mp4Phase = ItemListMp4Phase.writingOut;
-    controller.notifyListeners();
+    job.setProgress(
+      const ItemListMp4Progress(phase: ItemListMp4Phase.writingOut),
+    );
     await tester.pump();
     expect(find.text('Writing file…'), findsOneWidget);
 
-    controller.mp4Phase = null;
-    controller.notifyListeners();
+    await tester.tap(find.byKey(Key('item-list-job-cancel-${job.id}')));
     await tester.pump();
-    expect(find.byKey(const Key('item-list-mp4-phase')), findsNothing);
+    expect(job.state, ItemListExportJobState.cancelled);
+    expect(find.text('Cancelled'), findsOneWidget);
   });
 
-  testWidgets('Stay keeps Export list while encoding', (tester) async {
+  testWidgets('Back leaves Export list while an MP4 job keeps running',
+      (tester) async {
     await _pumpExportOnStack(
       tester,
       overrides: _overrides(
@@ -756,22 +777,25 @@ void main() {
       ),
     );
     final ctx = tester.element(find.byType(ItemListExportPage));
-    final controller = ProviderScope.containerOf(ctx)
-        .read(itemListExportControllerProvider);
-    controller.mp4Phase = ItemListMp4Phase.encodingClips;
-    controller.notifyListeners();
+    final jobs =
+        ProviderScope.containerOf(ctx).read(itemListExportJobManagerProvider);
+    final job = jobs.stageJob(
+      outputPath: '/tmp/tagkin-d13-widget-job.mp4',
+      phase: ItemListMp4Phase.encodingClips,
+      clipIndex: 1,
+      clipCount: 2,
+    );
     await tester.pump();
 
     await tester.pageBack();
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('item-list-leave-encoding-dialog')), findsOneWidget);
-    expect(find.textContaining('still encoding'), findsOneWidget);
-    await tester.tap(find.byKey(const Key('item-list-leave-stay')));
-    await tester.pumpAndSettle();
-    expect(find.byType(ItemListExportPage), findsOneWidget);
+    expect(find.byKey(const Key('item-list-leave-encoding-dialog')), findsNothing);
+    expect(find.byType(ItemListExportPage), findsNothing);
+    expect(job.state, ItemListExportJobState.running);
   });
 
-  testWidgets('Leave pops Export list while encoding', (tester) async {
+  testWidgets('Folders leaves Export list without cancelling an MP4 job',
+      (tester) async {
     await _pumpExportOnStack(
       tester,
       overrides: _overrides(
@@ -781,19 +805,20 @@ void main() {
       ),
     );
     final ctx = tester.element(find.byType(ItemListExportPage));
-    final controller = ProviderScope.containerOf(ctx)
-        .read(itemListExportControllerProvider);
-    controller.mp4Phase = ItemListMp4Phase.assembling;
-    controller.notifyListeners();
+    final jobs =
+        ProviderScope.containerOf(ctx).read(itemListExportJobManagerProvider);
+    final job = jobs.stageJob(
+      outputPath: '/tmp/tagkin-d13-widget-job.mp4',
+      phase: ItemListMp4Phase.assembling,
+    );
     await tester.pump();
 
     await tester.tap(find.byKey(const Key('nav-folders')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('item-list-leave-encoding-dialog')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('item-list-leave-leave')));
-    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('item-list-leave-encoding-dialog')), findsNothing);
     expect(find.byType(ItemListExportPage), findsNothing);
     expect(find.byKey(const Key('open-export')), findsOneWidget);
+    expect(job.state, ItemListExportJobState.running);
   });
 
   testWidgets('leave dialog uses music copy when generating', (tester) async {
@@ -805,7 +830,6 @@ void main() {
               unawaited(
                 confirmLeaveItemListBusy(
                   context: ctx,
-                  encoding: false,
                   generatingMusic: true,
                 ),
               );
@@ -823,7 +847,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('Export page registers quit-gate busy while encoding',
+  testWidgets('an MP4 job does not mark the page leave-busy flag',
       (tester) async {
     await _pumpPage(
       tester,
@@ -837,12 +861,41 @@ void main() {
     expect(itemListExportBusy, isFalse);
 
     final ctx = tester.element(find.byType(ItemListExportPage));
-    final controller = ProviderScope.containerOf(ctx)
-        .read(itemListExportControllerProvider);
-    controller.mp4Phase = ItemListMp4Phase.encodingClips;
-    controller.notifyListeners();
+    final jobs =
+        ProviderScope.containerOf(ctx).read(itemListExportJobManagerProvider);
+    jobs.stageJob(
+      outputPath: '/tmp/tagkin-d13-widget-job.mp4',
+      phase: ItemListMp4Phase.encodingClips,
+      clipIndex: 1,
+      clipCount: 2,
+    );
     await tester.pump();
-    expect(itemListExportBusy, isTrue);
+    expect(itemListExportBusy, isFalse);
+    expect(jobs.hasActive, isTrue);
+  });
+
+  testWidgets('quit dialog offers Stay and Quit for in-flight exports',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (ctx) => TextButton(
+            onPressed: () {
+              unawaited(
+                confirmQuitItemListExports(context: ctx, activeCount: 2),
+              );
+            },
+            child: const Text('go'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('go'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('item-list-quit-exports-dialog')), findsOneWidget);
+    expect(find.textContaining('2 exports'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('item-list-quit-exports-stay')));
+    await tester.pumpAndSettle();
   });
 }
 

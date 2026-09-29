@@ -4009,8 +4009,9 @@ components:
       type: object
       description: >
         Prompt + duration, plus optional opaque ids of soundtracks already
-        heard this session. Never user media bytes (R1). Owner is not a
-        body field (R10).
+        heard this session, and an optional cap on how many times a short
+        catalog file may be joined to itself. Never user media bytes (R1).
+        Owner is not a body field (R10).
       required: [durationMs, prompt]
       properties:
         durationMs:
@@ -4033,6 +4034,14 @@ components:
             Opaque soundtrackId values from earlier generates in this
             session. Catalog compose skips those tracks. Not a filename
             or vendor id (R8).
+        maxLoops:
+          type: integer
+          minimum: 1
+          maximum: 10
+          description: >
+            Maximum times the same catalog file may play, counting the
+            first. 2 means two instances joined by a cross-dissolve.
+            Omitted uses the server default (2). Not a vendor id (R8).
 
     GenerateMusicResponse:
       type: object

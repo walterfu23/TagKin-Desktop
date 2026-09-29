@@ -98,4 +98,34 @@ void main() {
     expect(result.soundtrackId, 'snd-3');
     client.close();
   });
+
+  test('generate POSTs maxLoops when a loop count is set', () async {
+    final mock = MockClient((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      expect(body['maxLoops'], 2);
+      expect(body.containsKey('provider'), isFalse);
+      return http.Response(
+        jsonEncode({
+          'audioBase64': base64Encode([1]),
+          'mimeType': 'audio/wav',
+          'generatedMs': 4000,
+          'creditsUsed': 0,
+          'soundtrackId': 'snd-4',
+        }),
+        200,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+    final client = ApiClient(
+      baseUrl: 'http://api.test',
+      tokenProvider: () => 'tok',
+      httpClient: mock,
+    );
+    await MusicRepository(client).generate(
+      durationMs: 4000,
+      prompt: 'quiet piano',
+      maxLoops: 2,
+    );
+    client.close();
+  });
 }

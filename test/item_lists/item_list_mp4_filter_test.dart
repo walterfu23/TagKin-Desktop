@@ -137,6 +137,8 @@ void main() {
     );
     expect(args, containsAllInOrder(['-i', '/tmp/clip-0.mp4']));
     expect(args, isNot(contains('-loop')));
+    expect(args, isNot(contains('-stream_loop')));
+    expect(plan.filterComplex, contains('apad'));
     expect(args, containsAllInOrder(['-c:v', 'libx264']));
     expect(args, containsAllInOrder(['-preset', 'veryfast']));
     expect(args, containsAllInOrder(['-movflags', '+faststart']));

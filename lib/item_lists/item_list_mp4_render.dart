@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -84,37 +85,158 @@ class ItemListMp4Progress {
 
 typedef ItemListMp4ProgressCallback = void Function(ItemListMp4Progress progress);
 
-/// Kill switch for in-flight ffmpeg processes (leave Export list mid-encode).
+/// Pause, continue, or cancel in-flight ffmpeg processes for one MP4 export.
+///
+/// On macOS and Linux, pause sends SIGSTOP and continue sends SIGCONT.
+/// On Windows those signals are unavailable: pause blocks the next clip, and
+/// the clip already running finishes first. Cancel while paused continues a
+/// stopped process and then kills it, so a pending SIGTERM is not stuck.
 class ItemListMp4CancelToken {
   final _processes = <Process>{};
+  final _testSignals = <void Function(ProcessSignal signal)>[];
+  Completer<void>? _resume;
   bool isCancelled = false;
+  bool isPaused = false;
 
   void throwIfCancelled() {
     if (isCancelled) throw ItemListMp4CancelledException();
   }
 
+  /// Wait here while paused, then throw if cancelled.
+  Future<void> checkpoint() async {
+    throwIfCancelled();
+    while (isPaused) {
+      final gate = _resume;
+      if (gate == null) break;
+      await gate.future;
+      throwIfCancelled();
+    }
+  }
+
   void attach(Process process) {
     if (isCancelled) {
-      try {
-        process.kill();
-      } catch (_) {}
+      _terminate(process);
       return;
     }
     _processes.add(process);
+    if (isPaused) _signal(process, ProcessSignal.sigstop);
+  }
+
+  /// Records [signal] instead of a live [Process]. Tests only.
+  void attachSignalForTest(void Function(ProcessSignal signal) signal) {
+    if (isCancelled) {
+      signal(ProcessSignal.sigkill);
+      return;
+    }
+    _testSignals.add(signal);
+    if (isPaused && !Platform.isWindows) signal(ProcessSignal.sigstop);
   }
 
   void detach(Process process) {
     _processes.remove(process);
   }
 
-  void cancel() {
-    isCancelled = true;
+  void pause() {
+    if (isCancelled || isPaused) return;
+    isPaused = true;
+    _resume ??= Completer<void>();
     for (final process in List<Process>.from(_processes)) {
-      try {
-        process.kill();
-      } catch (_) {}
+      _signal(process, ProcessSignal.sigstop);
+    }
+    if (!Platform.isWindows) {
+      for (final signal in List.of(_testSignals)) {
+        signal(ProcessSignal.sigstop);
+      }
+    }
+  }
+
+  void resume() {
+    if (!isPaused || isCancelled) return;
+    isPaused = false;
+    for (final process in List<Process>.from(_processes)) {
+      _signal(process, ProcessSignal.sigcont);
+    }
+    if (!Platform.isWindows) {
+      for (final signal in List.of(_testSignals)) {
+        signal(ProcessSignal.sigcont);
+      }
+    }
+    final gate = _resume;
+    _resume = null;
+    if (gate != null && !gate.isCompleted) gate.complete();
+  }
+
+  void cancel() {
+    final wasPaused = isPaused;
+    isCancelled = true;
+    isPaused = false;
+    final gate = _resume;
+    _resume = null;
+    if (gate != null && !gate.isCompleted) gate.complete();
+    for (final process in List<Process>.from(_processes)) {
+      if (wasPaused) _signal(process, ProcessSignal.sigcont);
+      _terminate(process);
+    }
+    for (final signal in List.of(_testSignals)) {
+      if (wasPaused && !Platform.isWindows) signal(ProcessSignal.sigcont);
+      signal(ProcessSignal.sigkill);
     }
     _processes.clear();
+    _testSignals.clear();
+  }
+
+  void _signal(Process process, ProcessSignal signal) {
+    if (Platform.isWindows &&
+        (signal == ProcessSignal.sigstop || signal == ProcessSignal.sigcont)) {
+      return;
+    }
+    try {
+      process.kill(signal);
+    } catch (_) {}
+  }
+
+  void _terminate(Process process) {
+    try {
+      if (Platform.isWindows) {
+        process.kill();
+      } else {
+        process.kill(ProcessSignal.sigkill);
+      }
+    } catch (_) {}
+  }
+}
+
+/// Renderer used by background MP4 jobs. [macSaveHandle] is the per-export
+/// macOS Save As token; null copies [outputPath] directly.
+typedef ItemListMp4Renderer = Future<void> Function({
+  required ItemListNleTimeline timeline,
+  required String audioPath,
+  required String outputPath,
+  required int sequenceWidth,
+  required int sequenceHeight,
+  required bool scaleToFit,
+  double soundtrackDuck,
+  ItemListMp4ProgressCallback? onProgress,
+  ItemListMp4CancelToken? cancel,
+  String? macSaveHandle,
+});
+
+/// Delete [path] when it exists and is empty. Ignores filesystem errors.
+Future<void> deleteEmptyItemListExport(String path) async {
+  try {
+    final file = File(path);
+    if (file.existsSync() && file.lengthSync() == 0) {
+      await file.delete();
+    }
+  } catch (_) {}
+}
+
+void ensureItemListExportNonEmpty(String path) {
+  final file = File(path);
+  if (!file.existsSync() || file.lengthSync() == 0) {
+    throw ItemListMp4RenderException(
+      'The exported file was empty. Save As again and keep it in a folder TagKin can write.',
+    );
   }
 }
 
@@ -271,14 +393,14 @@ Future<({int exitCode, String stderr})> itemListMp4RunEncodeWithFallback({
   required ItemListMp4FfmpegRunner run,
   ItemListMp4CancelToken? cancel,
 }) async {
-  cancel?.throwIfCancelled();
+  await cancel?.checkpoint();
   var ran = await run(
     ffmpeg: ffmpeg,
     args: args,
     log: log,
     label: label,
   );
-  cancel?.throwIfCancelled();
+  await cancel?.checkpoint();
   if (itemListMp4OutputOk(ran.exitCode, outputPath)) return ran;
   if (!encoder.isHardware) return ran;
   return run(
@@ -455,7 +577,7 @@ List<String> itemListMp4AssembleArgs({
   for (final input in plan.inputs) {
     args.addAll(['-i', input.path]);
   }
-  args.addAll(['-stream_loop', '-1', '-i', audioPath]);
+  args.addAll(['-i', audioPath]);
   args.addAll([
     '-filter_complex',
     plan.filterComplex,
@@ -488,14 +610,14 @@ List<String> itemListMp4AssembleArgs({
   return args;
 }
 
-/// Decode [audioPath] to stereo 44.1 kHz PCM WAV so `-stream_loop` is reliable.
+/// Decode [audioPath] to stereo 44.1 kHz PCM WAV for the assemble mix.
 Future<void> itemListMp4DecodeSoundtrackWav({
   required String ffmpeg,
   required String audioPath,
   required String destPath,
   ItemListMp4CancelToken? cancel,
 }) async {
-  cancel?.throwIfCancelled();
+  await cancel?.checkpoint();
   final staged =
       p.join(p.dirname(destPath), 'soundtrack-src${p.extension(audioPath)}');
   try {
@@ -505,7 +627,7 @@ Future<void> itemListMp4DecodeSoundtrackWav({
       'Could not read the soundtrack for MP4 export: $e',
     );
   }
-  cancel?.throwIfCancelled();
+  await cancel?.checkpoint();
   final result = await _itemListMp4RunProcess(
     executable: ffmpeg,
     args: [
@@ -571,7 +693,7 @@ Future<({int exitCode, String stderr, String stdout})> _itemListMp4RunProcess({
   required List<String> args,
   ItemListMp4CancelToken? cancel,
 }) async {
-  cancel?.throwIfCancelled();
+  await cancel?.checkpoint();
   final process = await Process.start(executable, args, runInShell: false);
   cancel?.attach(process);
   try {
@@ -585,7 +707,7 @@ Future<({int exitCode, String stderr, String stdout})> _itemListMp4RunProcess({
         .forEach(outBuf.write);
     final exitCode = await process.exitCode;
     await Future.wait([errDone, outDone]);
-    cancel?.throwIfCancelled();
+    await cancel?.checkpoint();
     return (
       exitCode: exitCode,
       stderr: errBuf.toString(),
@@ -645,6 +767,7 @@ Future<void> itemListRenderMp4({
   ItemListMp4FfmpegRunner? runFfmpeg,
   ItemListMp4ProgressCallback? onProgress,
   ItemListMp4CancelToken? cancel,
+  String? macSaveHandle,
 }) async {
   final tools = resolveFfmpegTools();
   if (tools == null) {
@@ -682,17 +805,17 @@ Future<void> itemListRenderMp4({
   var ok = false;
   void report(ItemListMp4Progress progress) => onProgress?.call(progress);
   try {
-    cancel?.throwIfCancelled();
+    await cancel?.checkpoint();
     report(const ItemListMp4Progress(phase: ItemListMp4Phase.staging));
     final encoder =
         await (resolveEncoder ?? resolveItemListMp4VideoEncoder)(tools.ffmpeg);
-    cancel?.throwIfCancelled();
+    await cancel?.checkpoint();
     log.writeln('encoder: ${encoder.codecName}');
     final byOriginal = await itemListMaterializeMp4Inputs(
       clips: timeline.clips,
       destDir: tempDir.path,
     );
-    cancel?.throwIfCancelled();
+    await cancel?.checkpoint();
     final staged = itemListMp4TimelineWithMaterializedPaths(timeline, byOriginal);
     final sourcePlan = itemListMp4Plan(
       timeline: staged,
@@ -710,7 +833,7 @@ Future<void> itemListRenderMp4({
       cancel: cancel,
     );
 
-    cancel?.throwIfCancelled();
+    await cancel?.checkpoint();
     final hasAudioFlags = <bool>[];
     for (final input in sourcePlan.inputs) {
       hasAudioFlags.add(
@@ -735,7 +858,7 @@ Future<void> itemListRenderMp4({
       count: clipCount,
       maxConcurrent: itemListMp4ClipConcurrency(encoder: encoder),
       run: (i) async {
-        cancel?.throwIfCancelled();
+        await cancel?.checkpoint();
         final clipOut = clipPaths[i];
         final clipArgs = itemListMp4ClipEncodeArgs(
           input: sourcePlan.inputs[i],
@@ -817,7 +940,7 @@ Future<void> itemListRenderMp4({
       'filter_complex:\n${assemblePlan.filterComplex}\n',
     );
     report(const ItemListMp4Progress(phase: ItemListMp4Phase.assembling));
-    cancel?.throwIfCancelled();
+    await cancel?.checkpoint();
     final ran = await itemListMp4RunEncodeWithFallback(
       ffmpeg: tools.ffmpeg,
       args: args,
@@ -843,16 +966,22 @@ Future<void> itemListRenderMp4({
       );
     }
     report(const ItemListMp4Progress(phase: ItemListMp4Phase.writingOut));
-    cancel?.throwIfCancelled();
-    final macSave =
-        useMacSavePanel && SecurityScopedBookmarks.isSupported;
-    if (macSave) {
-      final n = await SecurityScopedBookmarks.installSaveFile(tempOut);
+    await cancel?.checkpoint();
+    final handle = macSaveHandle;
+    if (handle != null && handle.isNotEmpty) {
+      final n = await SecurityScopedBookmarks.installSaveFile(
+        handle: handle,
+        sourcePath: tempOut,
+      );
       if (n <= 0) {
         throw ItemListMp4RenderException(
           'The exported MP4 was empty. Save As again and keep it in a folder TagKin can write.',
         );
       }
+    } else if (useMacSavePanel && SecurityScopedBookmarks.isSupported) {
+      throw ItemListMp4RenderException(
+        'MP4 export lost its Save As destination. Export again.',
+      );
     } else {
       await encoded.copy(outputPath);
       final dest = File(outputPath);

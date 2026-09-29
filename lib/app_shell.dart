@@ -39,6 +39,7 @@ import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prefs/settings_navigation.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_status_banner.dart';
+import 'package:tagkin_desktop/item_lists/item_list_export_controller.dart';
 import 'package:tagkin_desktop/item_lists/item_list_navigation.dart';
 import 'package:tagkin_desktop/item_lists/item_list_music.dart';
 import 'package:tagkin_desktop/shell/app_nav_tab_buttons.dart';
@@ -1021,6 +1022,16 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
           final exportOk = await confirmExport();
           if (!exportOk) return false;
         }
+        final exports = ref.read(itemListExportJobManagerProvider);
+        if (exports.hasActive) {
+          if (!mounted) return false;
+          final quitExports = await confirmQuitItemListExports(
+            context: context,
+            activeCount: exports.activeCount,
+          );
+          if (!quitExports) return false;
+          await exports.cancelAll();
+        }
         final viewOk = await _confirmLeaveIfViewDirty();
         if (!viewOk) return false;
         final cols = ref.read(collectionsControllerProvider);
@@ -1054,7 +1065,8 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
       if (appExitCanSkipLeavePrompt(
         collectionDirty: cols.dirty,
         viewDirty: viewDirty,
-        exportBusy: itemListExportBusy,
+        exportBusy: itemListExportBusy ||
+            ref.read(itemListExportJobManagerProvider).hasActive,
       )) {
         _quitConfirmed = true;
         await _disarmWindowCloseGate();

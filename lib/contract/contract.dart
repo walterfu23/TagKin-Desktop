@@ -949,16 +949,19 @@ class GenerateMusicRequest {
     required this.durationMs,
     required this.prompt,
     this.avoidSoundtrackIds,
+    this.maxLoops,
   });
 
   final int durationMs;
   final String prompt;
   final List<String>? avoidSoundtrackIds;
+  final int? maxLoops;
 
   factory GenerateMusicRequest.fromJson(Map<String, dynamic> json) => GenerateMusicRequest(
         durationMs: (json['durationMs'] as num).toInt(),
         prompt: json['prompt'] as String,
         avoidSoundtrackIds: json['avoidSoundtrackIds'] == null ? null : (json['avoidSoundtrackIds'] as List<dynamic>).map((e) => e as String).toList(),
+        maxLoops: json['maxLoops'] == null ? null : (json['maxLoops'] as num).toInt(),
       );
 
   Map<String, dynamic> toJson() {
@@ -966,6 +969,7 @@ class GenerateMusicRequest {
     json['durationMs'] = durationMs;
     json['prompt'] = prompt;
     if (avoidSoundtrackIds != null) json['avoidSoundtrackIds'] = avoidSoundtrackIds?.map((e) => e).toList();
+    if (maxLoops != null) json['maxLoops'] = maxLoops;
     return json;
   }
 }
