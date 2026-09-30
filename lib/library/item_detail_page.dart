@@ -50,9 +50,16 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
 
   @override
   void dispose() {
-    _refreshFoldersRow();
+    final table = _libraryTable;
+    final itemId = widget.itemId;
     _edits.dispose();
     super.dispose();
+    // refreshRowSummaries notifies before its first await. Doing that here
+    // runs during unmount, while Folders is still listening.
+    if (table == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(table.refreshRowSummaries(itemId));
+    });
   }
 
   void _cacheLibraryTable() {

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:tagkin_desktop/api/comments_repository.dart';
@@ -288,9 +289,23 @@ class LibraryTableController extends ChangeNotifier {
   }
 
   bool _disposed = false;
+  bool _notifyQueued = false;
 
+  /// Notifies listeners. A call during build, layout, or unmount is delivered
+  /// after this frame so listeners do not [markNeedsBuild] while the tree is
+  /// locked.
   void _notify() {
     if (_disposed) return;
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      if (_notifyQueued) return;
+      _notifyQueued = true;
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        _notifyQueued = false;
+        if (!_disposed) notifyListeners();
+      });
+      return;
+    }
     notifyListeners();
   }
 

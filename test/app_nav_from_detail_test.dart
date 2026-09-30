@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
+import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/persons/person_detail_page.dart';
 
 import 'fake_comments_repository.dart';
@@ -35,8 +36,9 @@ List<Override> _itemOverrides({
 }
 
 void main() {
-  testWidgets('item detail AppBar has Folders / Faces / Persons nav',
-      (tester) async {
+  testWidgets('item detail AppBar has Folders / Faces / Persons nav', (
+    tester,
+  ) async {
     final item = fixtureItem(id: 'item_1');
     final items = FakeItemsRepository(
       items: [item],
@@ -50,9 +52,7 @@ void main() {
           comments: FakeCommentsRepository(),
           item: item,
         ),
-        child: const MaterialApp(
-          home: ItemDetailPage(itemId: 'item_1'),
-        ),
+        child: const MaterialApp(home: ItemDetailPage(itemId: 'item_1')),
       ),
     );
     await tester.pumpAndSettle();
@@ -63,8 +63,9 @@ void main() {
     expect(find.byKey(const Key('nav-persons')), findsOneWidget);
   });
 
-  testWidgets('item detail nav pops to first route and selects that tab',
-      (tester) async {
+  testWidgets('item detail nav pops to first route and selects that tab', (
+    tester,
+  ) async {
     final item = fixtureItem(id: 'item_1');
     final items = FakeItemsRepository(
       items: [item],
@@ -110,91 +111,143 @@ void main() {
     final container = ProviderScope.containerOf(
       tester.element(find.byKey(const Key('open-item'))),
     );
-    expect(
-      container.read(activeTopLevelTabProvider),
-      TopLevelTab.persons,
-    );
+    expect(container.read(activeTopLevelTabProvider), TopLevelTab.persons);
   });
 
-  testWidgets(
-      'unsaved item edits prompt Save/Discard/Cancel when tapping app nav',
-      (tester) async {
-    final item = fixtureItem(
-      id: 'item_1',
-      processingStatus: ProcessingStatus.tagged,
-    );
-    final knowledge = fixtureKnowledge(item: item);
+  testWidgets('popping item detail does not notify Folders while unmounting', (
+    tester,
+  ) async {
+    final item = fixtureItem(id: 'item_1');
     final items = FakeItemsRepository(
       items: [item],
-      knowledgeByItemId: {'item_1': knowledge},
+      knowledgeByItemId: {'item_1': fixtureKnowledge(item: item)},
     );
-    final comments = FakeCommentsRepository();
 
     await tester.pumpWidget(
       ProviderScope(
         overrides: _itemOverrides(
           items: items,
-          comments: comments,
+          comments: FakeCommentsRepository(),
           item: item,
         ),
         child: MaterialApp(
-          home: Builder(
-            builder: (context) => Scaffold(
-              body: TextButton(
-                key: const Key('open-item'),
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const ItemDetailPage(itemId: 'item_1'),
-                    ),
-                  );
-                },
-                child: const Text('Open'),
-              ),
-            ),
+          home: Consumer(
+            builder: (context, ref, _) {
+              ref.watch(libraryTableControllerProvider);
+              return Scaffold(
+                body: TextButton(
+                  key: const Key('open-item'),
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const ItemDetailPage(itemId: 'item_1'),
+                      ),
+                    );
+                  },
+                  child: const Text('Open'),
+                ),
+              );
+            },
           ),
         ),
       ),
     );
 
-    await tester.tap(find.byKey(const Key('open-item')));
-    await tester.pumpAndSettle();
-
-    await tester.enterText(
-      find.byKey(const Key('item-comment-field')),
-      'draft note',
-    );
+    final table = ProviderScope.containerOf(
+      tester.element(find.byKey(const Key('open-item'))),
+    ).read(libraryTableControllerProvider);
+    await table.load();
     await tester.pump();
 
-    await tester.tap(find.byKey(const Key('nav-folders')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('item-detail-dirty-dialog')), findsOneWidget);
-    expect(find.byKey(const Key('item-detail')), findsOneWidget);
-
-    await tester.tap(find.byKey(const Key('item-detail-dirty-cancel')));
+    await tester.tap(find.byKey(const Key('open-item')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('item-detail')), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('nav-face-crops')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('item-detail-dirty-dialog')), findsOneWidget);
-
-    await tester.tap(find.byKey(const Key('item-detail-dirty-discard')));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(ItemDetailPage), findsNothing);
-    expect(comments.createItemCalls, isEmpty);
-    final container = ProviderScope.containerOf(
-      tester.element(find.byKey(const Key('open-item'))),
-    );
-    expect(
-      container.read(activeTopLevelTabProvider),
-      TopLevelTab.faces,
-    );
+    Navigator.of(tester.element(find.byKey(const Key('item-detail')))).pop();
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    await tester.pump();
+    expect(tester.takeException(), isNull);
   });
 
-  testWidgets('person detail AppBar has Folders / Faces / Persons nav',
-      (tester) async {
+  testWidgets(
+    'unsaved item edits prompt Save/Discard/Cancel when tapping app nav',
+    (tester) async {
+      final item = fixtureItem(
+        id: 'item_1',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final knowledge = fixtureKnowledge(item: item);
+      final items = FakeItemsRepository(
+        items: [item],
+        knowledgeByItemId: {'item_1': knowledge},
+      );
+      final comments = FakeCommentsRepository();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: _itemOverrides(
+            items: items,
+            comments: comments,
+            item: item,
+          ),
+          child: MaterialApp(
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: TextButton(
+                  key: const Key('open-item'),
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const ItemDetailPage(itemId: 'item_1'),
+                      ),
+                    );
+                  },
+                  child: const Text('Open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byKey(const Key('open-item')));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('item-comment-field')),
+        'draft note',
+      );
+      await tester.pump();
+
+      await tester.tap(find.byKey(const Key('nav-folders')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('item-detail-dirty-dialog')), findsOneWidget);
+      expect(find.byKey(const Key('item-detail')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('item-detail-dirty-cancel')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('item-detail')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('nav-face-crops')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('item-detail-dirty-dialog')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('item-detail-dirty-discard')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ItemDetailPage), findsNothing);
+      expect(comments.createItemCalls, isEmpty);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byKey(const Key('open-item'))),
+      );
+      expect(container.read(activeTopLevelTabProvider), TopLevelTab.faces);
+    },
+  );
+
+  testWidgets('person detail AppBar has Folders / Faces / Persons nav', (
+    tester,
+  ) async {
     final persons = FakePersonsRepository(
       persons: [fixturePersonDetail(id: 'person_1', name: 'Sam')],
     );
@@ -202,9 +255,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [personsRepositoryProvider.overrideWithValue(persons)],
-        child: const MaterialApp(
-          home: PersonDetailPage(personId: 'person_1'),
-        ),
+        child: const MaterialApp(home: PersonDetailPage(personId: 'person_1')),
       ),
     );
     await tester.pumpAndSettle();
@@ -215,8 +266,9 @@ void main() {
     expect(find.byKey(const Key('nav-persons')), findsOneWidget);
   });
 
-  testWidgets('person detail nav pops to first route and selects that tab',
-      (tester) async {
+  testWidgets('person detail nav pops to first route and selects that tab', (
+    tester,
+  ) async {
     final persons = FakePersonsRepository(
       persons: [fixturePersonDetail(id: 'person_1', name: 'Sam')],
     );
@@ -257,9 +309,6 @@ void main() {
     final container = ProviderScope.containerOf(
       tester.element(find.byKey(const Key('open-person'))),
     );
-    expect(
-      container.read(activeTopLevelTabProvider),
-      TopLevelTab.faces,
-    );
+    expect(container.read(activeTopLevelTabProvider), TopLevelTab.faces);
   });
 }
