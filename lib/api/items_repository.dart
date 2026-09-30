@@ -115,11 +115,15 @@ class ItemsRepository {
 
   /// `POST /items/{id}/assign-person` — assign a face crop (`tagId`) or, when
   /// the item has no crops, the whole item to an existing or new named person.
-  Future<PersonAppearance> assignPersonToItem(
+  ///
+  /// A crop assign also sweeps alike faces onto that person as unconfirmed
+  /// unless [propagateAlike] is false (undo).
+  Future<AssignPersonResponse> assignPersonToItem(
     String itemId, {
     String? personId,
     String? name,
     String? tagId,
+    bool? propagateAlike,
   }) async {
     assert(
       personId != null || name != null,
@@ -131,9 +135,10 @@ class ItemsRepository {
         personId: personId,
         name: name,
         tagId: tagId,
+        propagateAlike: propagateAlike,
       ).toJson(),
     );
-    return PersonAppearance.fromJson(
+    return AssignPersonResponse.fromJson(
       _client.decodeMap(response, 'assign-person'),
     );
   }

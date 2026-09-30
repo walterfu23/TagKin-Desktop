@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/folders_undo_recorder.dart';
 import 'package:tagkin_desktop/library/item_hover_preview.dart';
+import 'package:tagkin_desktop/library/library_inline_editors.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/library/local_thumb_cache.dart';
@@ -60,6 +61,7 @@ class LibraryItemsTable extends ConsumerWidget {
     this.isFolderRemoving,
     this.isFolderRetrying,
     this.retryEnabled = true,
+    this.editMode = false,
   });
 
   final LibraryTableController controller;
@@ -72,6 +74,7 @@ class LibraryItemsTable extends ConsumerWidget {
   final bool Function(String dir)? isFolderRemoving;
   final bool Function(String dir)? isFolderRetrying;
   final bool retryEnabled;
+  final bool editMode;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -206,6 +209,7 @@ class LibraryItemsTable extends ConsumerWidget {
                                               row: row,
                                               period: period,
                                               controller: controller,
+                                              editMode: editMode,
                                               onOpenDetail: onOpenDetail,
                                               onHideToggle: onHideToggle,
                                               onRevealSource: onRevealSource,
@@ -868,6 +872,7 @@ class _DataRow extends ConsumerWidget {
     required this.onHideToggle,
     required this.onRevealSource,
     this.period,
+    this.editMode = false,
   });
 
   final int index;
@@ -877,6 +882,7 @@ class _DataRow extends ConsumerWidget {
   final void Function(Item item) onOpenDetail;
   final void Function(Item item) onHideToggle;
   final void Function(Item item) onRevealSource;
+  final bool editMode;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -892,19 +898,20 @@ class _DataRow extends ConsumerWidget {
         controller.expandedWho.contains(scopeId) ||
         controller.expandedWhere.contains(scopeId) ||
         controller.expandedComments.contains(scopeId);
+    final grow = expanded || editMode;
     return Material(
       color: zebra ? _kZebraRow : Colors.transparent,
       child: InkWell(
         key: Key('item-row-$scopeId'),
-        onTap: () => onOpenDetail(item),
+        onTap: editMode ? null : () => onOpenDetail(item),
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 72),
           child: SizedBox(
-            height: expanded ? null : 72,
+            height: grow ? null : 72,
             child: Padding(
-              padding: EdgeInsets.symmetric(vertical: expanded ? 8 : 0),
+              padding: EdgeInsets.symmetric(vertical: grow ? 8 : 0),
               child: Row(
-                crossAxisAlignment: expanded
+                crossAxisAlignment: grow
                     ? CrossAxisAlignment.start
                     : CrossAxisAlignment.center,
                 children: [
@@ -948,6 +955,8 @@ class _DataRow extends ConsumerWidget {
                         row: row,
                         period: period,
                         controller: controller,
+                        editMode: editMode,
+                        onOpen: editMode ? () => onOpenDetail(item) : null,
                       ),
                     ),
                   ),
@@ -955,70 +964,98 @@ class _DataRow extends ConsumerWidget {
                     width: _kColWho,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: _WhoValues(
-                        itemId: scopeId,
-                        values: who,
-                        expanded: controller.expandedWho.contains(scopeId),
-                        loading: !row.knowledgeLoaded,
-                        onToggle: () => controller.toggleExpandWho(scopeId),
-                      ),
+                      child: editMode
+                          ? FolderInlineWho(
+                              row: row,
+                              scopeId: scopeId,
+                              period: period,
+                            )
+                          : _WhoValues(
+                              itemId: scopeId,
+                              values: who,
+                              expanded: controller.expandedWho.contains(scopeId),
+                              loading: !row.knowledgeLoaded,
+                              onToggle: () =>
+                                  controller.toggleExpandWho(scopeId),
+                            ),
                     ),
                   ),
                   SizedBox(
                     width: _kColWhat,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: _WhatCell(
-                        item: item,
-                        scopeId: scopeId,
-                        values: what,
-                        loading: !row.knowledgeLoaded,
-                        onOpenDetail: onOpenDetail,
-                      ),
+                      child: editMode
+                          ? FolderInlineTags(
+                              row: row,
+                              scopeId: scopeId,
+                              dimension: 'what',
+                              period: period,
+                            )
+                          : _WhatCell(
+                              item: item,
+                              scopeId: scopeId,
+                              values: what,
+                              loading: !row.knowledgeLoaded,
+                            ),
                     ),
                   ),
                   SizedBox(
                     width: _kColWhere,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: _WhereValues(
-                        itemId: scopeId,
-                        entries: whereEntries,
-                        expanded: controller.expandedWhere.contains(scopeId),
-                        loading: !row.knowledgeLoaded,
-                        onToggle: () => controller.toggleExpandWhere(scopeId),
-                        onAddFamiliar: (region) async {
-                          final added = await ref
-                              .read(desktopPrefsControllerProvider)
-                              .addFamiliarRegion(region);
-                          if (!added) return;
-                          ref.read(whereLabelResolverProvider).clearCache();
-                          await controller.refreshWhereLabels();
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Added “$region” to Familiar state/province',
+                      child: editMode
+                          ? FolderInlineTags(
+                              row: row,
+                              scopeId: scopeId,
+                              dimension: 'where',
+                              period: period,
+                            )
+                          : _WhereValues(
+                          itemId: scopeId,
+                          entries: whereEntries,
+                          expanded: controller.expandedWhere.contains(scopeId),
+                          loading: !row.knowledgeLoaded,
+                          onToggle: () => controller.toggleExpandWhere(scopeId),
+                          onAddFamiliar: (region) async {
+                            final added = await ref
+                                .read(desktopPrefsControllerProvider)
+                                .addFamiliarRegion(region);
+                            if (!added) return;
+                            ref.read(whereLabelResolverProvider).clearCache();
+                            await controller.refreshWhereLabels();
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Added “$region” to Familiar state/province',
+                                ),
                               ),
-                            ),
-                          );
-                        },
-                      ),
+                            );
+                          },
+                        ),
                     ),
                   ),
                   SizedBox(
                     width: _kColComment,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: _ExpandableValues(
-                        keyPrefix: 'comment',
-                        itemId: scopeId,
-                        values: comments,
-                        expanded: controller.expandedComments.contains(scopeId),
-                        loading: !row.commentsLoaded,
-                        onToggle: () =>
-                            controller.toggleExpandComments(scopeId),
-                      ),
+                      child: editMode
+                          ? FolderInlineComment(
+                              row: row,
+                              scopeId: scopeId,
+                              period: period,
+                            )
+                          : _ExpandableValues(
+                              keyPrefix: 'comment',
+                              itemId: scopeId,
+                              values: comments,
+                              expanded: controller.expandedComments.contains(
+                                scopeId,
+                              ),
+                              loading: !row.commentsLoaded,
+                              onToggle: () =>
+                                  controller.toggleExpandComments(scopeId),
+                            ),
                     ),
                   ),
                   SizedBox(
@@ -1049,20 +1086,38 @@ class _DataRow extends ConsumerWidget {
 }
 
 class _ThumbCell extends StatelessWidget {
-  const _ThumbCell({required this.row, required this.controller, this.period});
+  const _ThumbCell({
+    required this.row,
+    required this.controller,
+    this.period,
+    this.editMode = false,
+    this.onOpen,
+  });
 
   final LibraryTableRow row;
   final LibraryTableController controller;
   final KeyPeriodKnowledge? period;
+  final bool editMode;
+  final VoidCallback? onOpen;
 
   @override
   Widget build(BuildContext context) {
-    return ItemHoverPreview(
+    final preview = ItemHoverPreview(
       item: row.item,
       controller: controller,
       period: period,
+      faces: editMode
+          ? folderHoverFaces(
+              row: row,
+              period: period,
+              personName: controller.personName,
+            )
+          : const [],
       child: _Thumb(row: row, period: period),
     );
+    final open = onOpen;
+    if (open == null) return preview;
+    return GestureDetector(onTap: open, child: preview);
   }
 }
 
@@ -1489,7 +1544,6 @@ class _WhatCell extends StatelessWidget {
     required this.item,
     required this.values,
     required this.loading,
-    required this.onOpenDetail,
     this.scopeId,
   });
 
@@ -1497,7 +1551,6 @@ class _WhatCell extends StatelessWidget {
   final String? scopeId;
   final List<String> values;
   final bool loading;
-  final void Function(Item item) onOpenDetail;
 
   @override
   Widget build(BuildContext context) {
@@ -1509,22 +1562,13 @@ class _WhatCell extends StatelessWidget {
         style: Theme.of(context).textTheme.bodySmall,
       );
     }
-    final label = values.isEmpty ? 'Details…' : values.join(', ');
-    return TextButton(
+    final label = values.isEmpty ? '—' : values.join(', ');
+    return Text(
+      label,
       key: Key('item-what-$id'),
-      style: TextButton.styleFrom(
-        padding: EdgeInsets.zero,
-        alignment: Alignment.centerLeft,
-        minimumSize: Size.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-      onPressed: () => onOpenDetail(item),
-      child: Text(
-        label,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        textAlign: TextAlign.left,
-      ),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      textAlign: TextAlign.left,
     );
   }
 }

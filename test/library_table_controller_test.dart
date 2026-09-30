@@ -38,6 +38,8 @@ class _ThrowingWhereLabelResolver extends WhereLabelResolver {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('load fills who/what/where and item-level comments', () async {
     final a = fixtureItem(id: 'a', processingStatus: ProcessingStatus.tagged);
     final b = fixtureItem(id: 'b', processingStatus: ProcessingStatus.tagged);
@@ -101,6 +103,51 @@ void main() {
     expect(rowA.keyPeriods, isEmpty);
     expect(rowA.knowledgeLoaded, isTrue);
     expect(rowA.commentsLoaded, isTrue);
+  });
+
+  test('refreshRowCellsQuiet swaps values without blanking the row', () async {
+    final a = fixtureItem(id: 'a', processingStatus: ProcessingStatus.tagged);
+    final items = FakeItemsRepository(
+      items: [a],
+      knowledgeByItemId: {
+        'a': fixtureKnowledge(
+          item: a,
+          tags: [
+            fixtureTag(id: 't1', itemId: 'a', dimension: 'what', value: 'swim'),
+          ],
+        ),
+      },
+    );
+    final controller = LibraryTableController(
+      itemsRepository: items,
+      commentsRepository: FakeCommentsRepository(),
+      thumbCache: LocalThumbCache(),
+      knowledgeConcurrency: 2,
+    );
+    await controller.load();
+    await _awaitKnowledge(controller);
+    expect(controller.rowById('a')!.what, ['swim']);
+    expect(controller.rowById('a')!.knowledgeLoaded, isTrue);
+
+    items.setKnowledge(
+      'a',
+      fixtureKnowledge(
+        item: a,
+        tags: [
+          fixtureTag(id: 't2', itemId: 'a', dimension: 'what', value: 'hike'),
+        ],
+      ),
+    );
+    var sawBlank = false;
+    controller.addListener(() {
+      final row = controller.rowById('a');
+      if (row != null && !row.knowledgeLoaded) sawBlank = true;
+    });
+    await controller.refreshRowCellsQuiet(['a', 'missing']);
+    expect(sawBlank, isFalse);
+    expect(controller.rowById('a')!.knowledgeLoaded, isTrue);
+    expect(controller.rowById('a')!.what, ['hike']);
+    controller.dispose();
   });
 
   test('GPS where tags become city/state labels', () async {

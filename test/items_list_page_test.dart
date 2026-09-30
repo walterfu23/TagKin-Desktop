@@ -42,6 +42,9 @@ List<Override> _sessionOverrides({
   String token = 'tok',
   FakeUsageRepository? usage,
   FakeJobsRepository? jobs,
+  FakeCorrectionsRepository? corrections,
+  FakePersonsRepository? persons,
+  FakeCommentsRepository? comments,
 }) {
   return [
     testSessionProvider.overrideWithValue(
@@ -49,9 +52,11 @@ List<Override> _sessionOverrides({
     ),
     itemsRepositoryProvider.overrideWithValue(items),
     correctionsRepositoryProvider.overrideWithValue(
-      FakeCorrectionsRepository(items: items),
+      corrections ?? FakeCorrectionsRepository(items: items),
     ),
-    commentsRepositoryProvider.overrideWithValue(FakeCommentsRepository()),
+    commentsRepositoryProvider.overrideWithValue(
+      comments ?? FakeCommentsRepository(),
+    ),
     usageRepositoryProvider.overrideWithValue(usage ?? FakeUsageRepository()),
     jobsRepositoryProvider.overrideWithValue(jobs ?? FakeJobsRepository()),
     folderRemoveQueueProvider.overrideWith((ref) {
@@ -67,7 +72,9 @@ List<Override> _sessionOverrides({
         },
       );
     }),
-    personsRepositoryProvider.overrideWithValue(FakePersonsRepository()),
+    personsRepositoryProvider.overrideWithValue(
+      persons ?? FakePersonsRepository(),
+    ),
     collectionsStoreProvider.overrideWithValue(MemoryCollectionsStore()),
   ];
 }
@@ -77,6 +84,9 @@ Future<void> _pumpLibrary(
   required FakeItemsRepository items,
   FakeJobsRepository? jobs,
   FakeUsageRepository? usage,
+  FakeCorrectionsRepository? corrections,
+  FakePersonsRepository? persons,
+  FakeCommentsRepository? comments,
   List<Override> extraOverrides = const [],
 }) async {
   // Match the wide library window so fixed table columns fit.
@@ -88,7 +98,14 @@ Future<void> _pumpLibrary(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        ..._sessionOverrides(items: items, jobs: jobs, usage: usage),
+        ..._sessionOverrides(
+          items: items,
+          jobs: jobs,
+          usage: usage,
+          corrections: corrections,
+          persons: persons,
+          comments: comments,
+        ),
         ...extraOverrides,
       ],
       child: const TagKinDesktopApp(),
@@ -149,6 +166,336 @@ FolderIngestQueue _continueQueue({
 }
 
 void main() {
+  testWidgets('Folders edit mode edits What in place and undoes', (
+    tester,
+  ) async {
+    final item = fixtureItem(
+      id: 'item_edit',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {
+        'item_edit': fixtureKnowledge(
+          item: item,
+          tags: [
+            fixtureTag(
+              id: 'what_1',
+              itemId: 'item_edit',
+              dimension: 'what',
+              value: 'swim',
+            ),
+          ],
+        ),
+      },
+    );
+    final corrections = FakeCorrectionsRepository(items: items);
+    await _pumpLibrary(tester, items: items, corrections: corrections);
+
+    expect(find.byKey(const Key('item-edit-what-item_edit')), findsNothing);
+    await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+    await tester.pumpAndSettle();
+    expect(find.text('Done'), findsOneWidget);
+    expect(find.byKey(const Key('folders-edit-undo')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('item-row-item_edit')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('item-detail')), findsNothing);
+
+    await tester.enterText(
+      find.byKey(const Key('item-inline-what-add-field-item_edit')),
+      'hike',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(find.text('hike'), findsWidgets);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.control);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.control);
+    await tester.pumpAndSettle();
+    expect(find.text('hike'), findsNothing);
+    expect(
+      find.byKey(const Key('item-inline-what-field-what_1')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('Folders edit mode saves a comment and a where tag', (
+    tester,
+  ) async {
+    final item = fixtureItem(
+      id: 'item_edit',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {
+        'item_edit': fixtureKnowledge(
+          item: item,
+          tags: [
+            fixtureTag(
+              id: 'where_1',
+              itemId: 'item_edit',
+              dimension: 'where',
+              value: 'park',
+            ),
+          ],
+        ),
+      },
+    );
+    await _pumpLibrary(
+      tester,
+      items: items,
+      corrections: FakeCorrectionsRepository(items: items),
+    );
+    await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('item-inline-comment-field-item_edit')),
+      'nice day',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(find.text('nice day'), findsWidgets);
+
+    final comment = find.byKey(
+      const Key('item-inline-comment-field-item_edit'),
+    );
+    await tester.tap(comment);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.enterText(comment, 'nice day extra');
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.control);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.control);
+    await tester.pump();
+    expect(tester.widget<TextField>(comment).controller?.text, 'nice day');
+
+    await tester.enterText(
+      find.byKey(const Key('item-inline-where-field-where_1')),
+      'lake',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(find.text('lake'), findsWidgets);
+  });
+
+  testWidgets('Folders edit mode assigns a face to an existing person', (
+    tester,
+  ) async {
+    final item = fixtureItem(
+      id: 'item_face',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final persons = FakePersonsRepository(
+      persons: [fixturePersonDetail(id: 'p_maya', name: 'Maya')],
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      linkedPersons: persons,
+      knowledgeByItemId: {
+        'item_face': fixtureKnowledge(
+          item: item,
+          tags: [
+            fixtureTag(
+              id: 'face_1',
+              itemId: 'item_face',
+              dimension: 'who',
+              value: 'person',
+              region: const TagRegion(
+                yMin: 0.1,
+                xMin: 0.2,
+                yMax: 0.4,
+                xMax: 0.5,
+              ),
+            ),
+          ],
+        ),
+      },
+    );
+    await _pumpLibrary(tester, items: items, persons: persons);
+    await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('item-inline-who-badge-item_face-1')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const Key('item-inline-who-field-item_face-0')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('item-inline-who-option-item_face-0-new')),
+      findsWidgets,
+    );
+    expect(
+      find.byKey(const Key('item-inline-who-option-item_face-0-unassigned')),
+      findsNothing,
+    );
+    await tester.tap(find.text('Maya').last);
+    await tester.pumpAndSettle();
+    expect(items.assignPersonCalls, hasLength(1));
+    expect(items.assignPersonCalls.single.personId, 'p_maya');
+    expect(items.assignPersonCalls.single.tagId, 'face_1');
+    expect(items.assignPersonCalls.single.name, isNull);
+  });
+
+  testWidgets('Folders edit mode creates a person and can unassign', (
+    tester,
+  ) async {
+    final item = fixtureItem(
+      id: 'item_face',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final persons = FakePersonsRepository(
+      persons: [fixturePersonDetail(id: 'p_maya', name: 'Maya')],
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      linkedPersons: persons,
+      knowledgeByItemId: {
+        'item_face': fixtureKnowledge(
+          item: item,
+          tags: [
+            fixtureTag(
+              id: 'face_1',
+              itemId: 'item_face',
+              dimension: 'who',
+              value: 'person',
+              region: const TagRegion(
+                yMin: 0.1,
+                xMin: 0.2,
+                yMax: 0.4,
+                xMax: 0.5,
+              ),
+            ),
+          ],
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_face',
+              personId: 'p_maya',
+              itemId: 'item_face',
+              tagId: 'face_1',
+            ),
+          ],
+        ),
+      },
+    );
+    await _pumpLibrary(tester, items: items, persons: persons);
+    await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+    await tester.pumpAndSettle();
+
+    final field = find.byKey(
+      const Key('item-inline-who-field-item_face-0'),
+    );
+    expect(
+      find.descendant(of: field, matching: find.text('Maya')),
+      findsWidgets,
+    );
+
+    await tester.tap(field);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find
+          .byKey(const Key('item-inline-who-option-item_face-0-unassigned'))
+          .last,
+    );
+    await tester.pumpAndSettle();
+    expect(persons.unlinkCalls, ['ap_face']);
+
+    await tester.tap(field);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const Key('item-inline-who-option-item_face-0-new')).last,
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('person-name-field')), 'Rio');
+    await tester.tap(find.byKey(const Key('person-name-save')));
+    await tester.pumpAndSettle();
+    expect(items.assignPersonCalls.single.name, 'Rio');
+    expect(items.assignPersonCalls.single.personId, isNull);
+  });
+
+  testWidgets('period row edit carries keyPeriodId; empty period Who is read-only', (
+    tester,
+  ) async {
+    final item = fixtureItem(
+      id: 'vid_edit',
+      type: ItemType.video,
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {
+        'vid_edit': fixtureKnowledge(
+          item: item,
+          tags: const [],
+          keyPeriods: [
+            KeyPeriodKnowledge(
+              id: 'kp-face',
+              itemId: 'vid_edit',
+              startMs: 0,
+              endMs: 1000,
+              tags: [
+                fixtureTag(
+                  id: 'face_p',
+                  itemId: 'vid_edit',
+                  keyPeriodId: 'kp-face',
+                  dimension: 'who',
+                  value: 'person',
+                  region: const TagRegion(
+                    yMin: 0.1,
+                    xMin: 0.1,
+                    yMax: 0.3,
+                    xMax: 0.3,
+                  ),
+                ),
+              ],
+            ),
+            KeyPeriodKnowledge(
+              id: 'kp-plain',
+              itemId: 'vid_edit',
+              startMs: 2000,
+              endMs: 3000,
+              tags: [
+                fixtureTag(
+                  id: 'what_p',
+                  itemId: 'vid_edit',
+                  keyPeriodId: 'kp-plain',
+                  dimension: 'what',
+                  value: 'swim',
+                ),
+              ],
+            ),
+          ],
+        ),
+      },
+    );
+    final corrections = FakeCorrectionsRepository(items: items);
+    await _pumpLibrary(tester, items: items, corrections: corrections);
+    await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('item-inline-who-readonly-vid_edit-kp-kp-plain')),
+      findsOneWidget,
+    );
+    await tester.enterText(
+      find.byKey(
+        const Key('item-inline-what-add-field-vid_edit-kp-kp-plain'),
+      ),
+      'hike',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(corrections.addTagCalls, isNotEmpty);
+    expect(corrections.addTagCalls.last.input.keyPeriodId, 'kp-plain');
+    expect(corrections.addTagCalls.last.input.dimension, 'what');
+    expect(corrections.addTagCalls.last.input.value, 'hike');
+  });
+
   testWidgets('library table renders fixture items with processingStatus', (
     tester,
   ) async {

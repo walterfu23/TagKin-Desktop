@@ -280,6 +280,59 @@ void main() {
     expect(find.byKey(const Key('item-hover-preview-card')), findsNothing);
   });
 
+  testWidgets('edit-mode hover lists each face with its Who value', (
+    tester,
+  ) async {
+    final item = fixtureItem(id: 'p1', type: ItemType.photo);
+    final controller = _controller(FakeItemsRepository(items: [item]));
+    addTearDown(controller.dispose);
+    final dummy = File('/tmp/unused.jpg');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: ItemHoverPreview(
+              item: item,
+              controller: controller,
+              hoverDelay: Duration.zero,
+              faces: const [
+                HoverPreviewFace(
+                  number: 1,
+                  region: TagRegion(
+                    yMin: 0.1,
+                    xMin: 0.2,
+                    yMax: 0.5,
+                    xMax: 0.6,
+                  ),
+                  personName: 'Maya',
+                ),
+              ],
+              resolveMedia: (_) async => LocalMediaResolution(
+                status: LocalMediaStatus.available,
+                file: dummy,
+                path: dummy.path,
+              ),
+              buildPhoto: (file) => const SizedBox(
+                key: Key('item-hover-preview-photo'),
+                width: 400,
+                height: 300,
+              ),
+              child: const SizedBox(width: 56, height: 56),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final hover = await _hoverThumb(tester, 'p1');
+    await tester.pump();
+    expect(find.byKey(const Key('hover-face-label-1')), findsOneWidget);
+    expect(find.text('1 Maya'), findsOneWidget);
+    await hover.moveTo(const Offset(-80, -80));
+    await tester.pump(kHoverPreviewHideDelay);
+  });
+
   testWidgets('video hover plays until the first key period end', (
     tester,
   ) async {

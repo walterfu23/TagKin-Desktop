@@ -372,6 +372,27 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
                 kp,
           ];
         }
+      } else if (correction.previousValue == null &&
+          correction.targetType == 'tag') {
+        bool drop(Tag tag) => tag.id == correction.targetId;
+        restoredTags = [
+          for (final tag in knowledge.tags)
+            if (!drop(tag)) tag,
+        ];
+        restoredKeyPeriods = [
+          for (final period in knowledge.keyPeriods)
+            KeyPeriodKnowledge(
+              id: period.id,
+              itemId: period.itemId,
+              startMs: period.startMs,
+              endMs: period.endMs,
+              sampleTimestampMs: period.sampleTimestampMs,
+              tags: [
+                for (final tag in period.tags)
+                  if (!drop(tag)) tag,
+              ],
+            ),
+        ];
       } else if (correction.previousValue is String) {
         // Restore tag value on matching active tag / re-add if removed.
         final prevValue = correction.previousValue as String;

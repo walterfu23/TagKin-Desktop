@@ -6,7 +6,9 @@ import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/persons/face_crop_trays_page.dart';
+import 'package:tagkin_desktop/undo/undo_controller.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
+import 'package:tagkin_desktop/undo/undoable_action.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
 import 'fake_items_repository.dart';
@@ -118,6 +120,78 @@ void main() {
   tearDown(() {
     debugFaceCropMetaPressed = null;
     debugFaceCropShiftPressed = null;
+  });
+
+  testWidgets('focused field undoes its text before the screen stack', (
+    tester,
+  ) async {
+    final stack = UndoController();
+    var screenUndos = 0;
+    var screenRedos = 0;
+    stack.push(
+      CallbackUndoableAction(
+        label: 'screen',
+        onUndo: () async => screenUndos++,
+        onRedo: () async => screenRedos++,
+      ),
+    );
+    final field = TextEditingController(text: 'base');
+    addTearDown(field.dispose);
+    addTearDown(stack.dispose);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: ActiveUndoShortcuts(
+            child: ActiveUndoHost(
+              controller: stack,
+              child: Scaffold(
+                body: TextField(
+                  key: const Key('undo-field'),
+                  controller: field,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('undo-field')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.enterText(find.byKey(const Key('undo-field')), 'base more');
+    await tester.pump(const Duration(milliseconds: 500));
+
+    Future<void> ctrlZ() async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.control);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.control);
+      await tester.pump();
+    }
+
+    Future<void> ctrlShiftZ() async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.control);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shift);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shift);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.control);
+      await tester.pump();
+    }
+
+    await ctrlZ();
+    expect(field.text, 'base');
+    expect(screenUndos, 0);
+
+    await ctrlShiftZ();
+    expect(field.text, 'base more');
+    expect(screenRedos, 0);
+
+    await ctrlZ();
+    expect(field.text, 'base');
+    await ctrlZ();
+    await tester.pumpAndSettle();
+    expect(screenUndos, 1);
   });
 
   testWidgets(

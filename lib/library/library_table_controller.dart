@@ -137,6 +137,8 @@ class LibraryTableRow {
     this.periodThumbs = const {},
     this.periodSummaries = const [],
     this.periodComments = const {},
+    this.knowledge,
+    this.commentRecords = const [],
     this.knowledgeLoaded = false,
     this.commentsLoaded = false,
     this.heldBadgeStatus,
@@ -168,6 +170,13 @@ class LibraryTableRow {
 
   /// Key-period comment bodies, keyed by period id (filled from comments GET).
   final Map<String, List<String>> periodComments;
+
+  /// Full knowledge for this row once `/knowledge` has been applied.
+  /// Inline Folders editors and the edit-mode hover labels read it.
+  final ItemKnowledge? knowledge;
+
+  /// Comments from the item comments GET, including key-period comments.
+  final List<Comment> commentRecords;
   final bool knowledgeLoaded;
   final bool commentsLoaded;
 
@@ -227,6 +236,8 @@ class LibraryTableRow {
     Map<String, LocalThumbResult>? periodThumbs,
     List<PeriodFolderSummary>? periodSummaries,
     Map<String, List<String>>? periodComments,
+    ItemKnowledge? knowledge,
+    List<Comment>? commentRecords,
     bool? knowledgeLoaded,
     bool? commentsLoaded,
     ProcessingStatus? heldBadgeStatus,
@@ -243,6 +254,8 @@ class LibraryTableRow {
       periodThumbs: periodThumbs ?? this.periodThumbs,
       periodSummaries: periodSummaries ?? this.periodSummaries,
       periodComments: periodComments ?? this.periodComments,
+      knowledge: knowledge ?? this.knowledge,
+      commentRecords: commentRecords ?? this.commentRecords,
       knowledgeLoaded: knowledgeLoaded ?? this.knowledgeLoaded,
       commentsLoaded: commentsLoaded ?? this.commentsLoaded,
       heldBadgeStatus: heldBadgeStatus ?? this.heldBadgeStatus,
@@ -293,20 +306,30 @@ class LibraryTableController extends ChangeNotifier {
 
   /// Notifies listeners. A call during build, layout, or unmount is delivered
   /// after this frame so listeners do not [markNeedsBuild] while the tree is
-  /// locked.
+  /// locked. Unit tests that drive the controller without a binding notify
+  /// immediately.
   void _notify() {
     if (_disposed) return;
-    if (SchedulerBinding.instance.schedulerPhase ==
-        SchedulerPhase.persistentCallbacks) {
+    final SchedulerBinding? binding = _schedulerBindingOrNull();
+    if (binding != null &&
+        binding.schedulerPhase == SchedulerPhase.persistentCallbacks) {
       if (_notifyQueued) return;
       _notifyQueued = true;
-      SchedulerBinding.instance.addPostFrameCallback((_) {
+      binding.addPostFrameCallback((_) {
         _notifyQueued = false;
         if (!_disposed) notifyListeners();
       });
       return;
     }
     notifyListeners();
+  }
+
+  static SchedulerBinding? _schedulerBindingOrNull() {
+    try {
+      return SchedulerBinding.instance;
+    } on FlutterError {
+      return null;
+    }
   }
 
   @override
@@ -763,6 +786,103 @@ class LibraryTableController extends ChangeNotifier {
     }
   }
 
+  /// Drop in-flight knowledge/comment fetches and show [knowledge] / [comments]
+  /// on the row immediately. A later [refreshRowCellsQuiet] confirms them.
+  void adoptRowDetails(
+    String itemId, {
+    ItemKnowledge? knowledge,
+    List<Comment>? comments,
+  }) {
+    if (_disposed) return;
+    if (!_rows.any((r) => r.item.id == itemId)) return;
+    if (knowledge != null) _bumpSeq(_knowledgeSeq, itemId);
+    if (comments != null) _bumpSeq(_commentsSeq, itemId);
+    final grouped = knowledge == null
+        ? null
+        : groupDisplayTagsByDimension(knowledge);
+    final itemWhere = knowledge == null
+        ? const <String>[]
+        : groupItemLevelTagsByDimension(knowledge.tags)['where']!
+              .map((tag) => tag.value)
+              .toList();
+    _replaceRow(itemId, (r) {
+      if (knowledge == null && comments == null) return r;
+      final periodComments = comments == null
+          ? r.periodComments
+          : _commentBodiesByPeriod(comments);
+      return r.copyWith(
+        knowledge: knowledge,
+        who: knowledge == null
+            ? null
+            : whoColumnValues(knowledge, _personNamesById),
+        what: grouped == null
+            ? null
+            : grouped['what']!.map((tag) => tag.value).toList(),
+        whereRaw: grouped == null
+            ? null
+            : grouped['where']!.map((tag) => tag.value).toList(),
+        keyPeriods: knowledge?.keyPeriods,
+        periodSummaries: knowledge == null
+            ? null
+            : _folderPeriodSummaries(
+                knowledge: knowledge,
+                itemWhereRaw: itemWhere,
+                periodComments: periodComments,
+              ),
+        comments: comments == null
+            ? null
+            : [
+                for (final comment in comments)
+                  if (comment.keyPeriodId == null && comment.deletedAt == null)
+                    comment.body,
+              ],
+        periodComments: comments == null ? null : periodComments,
+        commentRecords: comments,
+        knowledgeLoaded: knowledge == null ? null : true,
+        commentsLoaded: comments == null ? null : true,
+      );
+    });
+  }
+
+  Map<String, List<String>> _commentBodiesByPeriod(List<Comment> comments) {
+    final byPeriod = <String, List<String>>{};
+    for (final comment in comments) {
+      if (comment.deletedAt != null) continue;
+      final periodId = comment.keyPeriodId;
+      if (periodId == null) continue;
+      byPeriod.putIfAbsent(periodId, () => []).add(comment.body);
+    }
+    return byPeriod;
+  }
+
+  /// Re-fetch who/what/where/comments without blanking the row to "…".
+  ///
+  /// Inline cell edits use this so the table stays readable while the new
+  /// values land. Ids that are not loaded are skipped.
+  Future<void> refreshRowCellsQuiet(Iterable<String> itemIds) async {
+    if (_disposed) return;
+    final ids = <String>[];
+    final seen = <String>{};
+    for (final id in itemIds) {
+      if (!seen.add(id)) continue;
+      if (!_rows.any((r) => r.item.id == id)) continue;
+      ids.add(id);
+    }
+    if (ids.isEmpty) return;
+    await _refreshPersonNames();
+    for (final itemId in ids) {
+      if (_disposed || !_rows.any((r) => r.item.id == itemId)) continue;
+      await _fetchAndApplyKnowledge(itemId);
+      if (_disposed || !_rows.any((r) => r.item.id == itemId)) continue;
+      await _fetchAndApplyComments(itemId);
+    }
+  }
+
+  /// Drop cached place labels so an edited where tag resolves again.
+  void clearWhereLabelCache() {
+    _whereLabels.clearCache();
+  }
+
   static int _processingRank(ProcessingStatus status) {
     switch (status) {
       case ProcessingStatus.pending:
@@ -1188,6 +1308,14 @@ class LibraryTableController extends ChangeNotifier {
     return out;
   }
 
+  /// Display name for an assigned person, once the persons list has loaded.
+  String? personName(String? personId) {
+    if (personId == null || personId.isEmpty) return null;
+    final name = _personNamesById[personId]?.trim();
+    if (name == null || name.isEmpty) return null;
+    return name;
+  }
+
   Future<void> _refreshPersonNames() async {
     if (_disposed) return;
     final repo = personsRepository;
@@ -1299,6 +1427,7 @@ class LibraryTableController extends ChangeNotifier {
             itemWhereRaw: itemWhereRaw,
             periodComments: r.periodComments,
           ),
+          knowledge: knowledge,
           knowledgeLoaded: true,
         ),
       );
@@ -1346,6 +1475,7 @@ class LibraryTableController extends ChangeNotifier {
         }
         return r.copyWith(
           keyPeriods: knowledge.keyPeriods,
+          knowledge: knowledge,
           knowledgeLoaded: true,
         );
       });
@@ -1373,6 +1503,7 @@ class LibraryTableController extends ChangeNotifier {
         (r) => r.copyWith(
           comments: bodies,
           periodComments: byPeriod,
+          commentRecords: list,
           commentsLoaded: true,
           periodSummaries: [
             for (final summary in r.periodSummaries)

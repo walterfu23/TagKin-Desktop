@@ -472,7 +472,16 @@ void main() {
           expect(body['tagId'], 'tag_who');
           expect(body.containsKey('ownerUserId'), isFalse);
           return http.Response(
-            jsonEncode(_appearanceJson(id: 'ap_1', personId: 'person_1')),
+            jsonEncode({
+              'appearance': _appearanceJson(id: 'ap_1', personId: 'person_1'),
+              'alsoMoved': [
+                _appearanceJson(
+                  id: 'ap_2',
+                  personId: 'person_1',
+                  itemId: 'item_2',
+                ),
+              ],
+            }),
             200,
             headers: {'content-type': 'application/json'},
           );
@@ -485,7 +494,9 @@ void main() {
         final result = await ItemsRepository(
           client,
         ).assignPersonToItem('item_1', personId: 'person_1', tagId: 'tag_who');
-        expect(result.id, 'ap_1');
+        expect(result.appearance.id, 'ap_1');
+        expect(result.alsoMoved.single.id, 'ap_2');
+        expect(result.alsoMoved.single.itemId, 'item_2');
         for (final r in client.recordedRequests) {
           expect(r.bodyContainsOwnerField, isFalse);
         }

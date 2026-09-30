@@ -991,11 +991,13 @@ paths:
               $ref: "#/components/schemas/AssignPerson"
       responses:
         "200":
-          description: Appearance assigned (created if needed)
+          description: >
+            Appearance assigned (created if needed). alsoMoved lists alike
+            faces swept onto the same person as unconfirmed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PersonAppearance"
+                $ref: "#/components/schemas/AssignPersonResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -2740,6 +2742,27 @@ components:
           description: >
             Active who tag with a face region. Omit only when the item has
             no face crops (whole-item assignment).
+        propagateAlike:
+          type: boolean
+          description: >
+            When false, do not sweep alike faces onto the target person.
+            Default true. A first-time crop assign sweeps unassigned
+            lookalikes; reassigning an already-assigned crop sweeps alike
+            faces still on the previous person. Desktop undo sends false.
+
+    AssignPersonResponse:
+      type: object
+      required: [appearance, alsoMoved]
+      properties:
+        appearance:
+          $ref: "#/components/schemas/PersonAppearance"
+        alsoMoved:
+          type: array
+          description: >
+            Alike faces swept onto the target person as unconfirmed.
+            Empty when the assign did not sweep.
+          items:
+            $ref: "#/components/schemas/PersonAppearance"
 
     ReassignAppearance:
       type: object

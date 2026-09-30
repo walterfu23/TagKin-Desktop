@@ -342,6 +342,26 @@ class ItemHoverPreviewScopeState extends State<ItemHoverPreviewScope> {
   Widget build(BuildContext context) => widget.child;
 }
 
+/// One face on the enlarged preview while Folders is in edit mode.
+class HoverPreviewFace {
+  const HoverPreviewFace({
+    required this.number,
+    required this.region,
+    this.personName,
+  });
+
+  /// 1-based index, matching the Who field badge on that row.
+  final int number;
+  final TagRegion region;
+  final String? personName;
+
+  String get label {
+    final name = personName?.trim();
+    if (name == null || name.isEmpty) return '$number Unassigned';
+    return '$number $name';
+  }
+}
+
 /// Enlarged photo / key-period video preview on Folders thumb hover.
 class ItemHoverPreview extends StatefulWidget {
   const ItemHoverPreview({
@@ -350,6 +370,7 @@ class ItemHoverPreview extends StatefulWidget {
     required this.controller,
     required this.child,
     this.period,
+    this.faces = const [],
     this.hoverDelay = kHoverPreviewDelay,
     this.hideDelay = kHoverPreviewHideDelay,
     this.fallbackVideoWindow = kHoverPreviewFallbackVideoWindow,
@@ -363,6 +384,9 @@ class ItemHoverPreview extends StatefulWidget {
 
   /// When set, video hover plays this period's `[startMs, endMs)` (player loop).
   final KeyPeriodKnowledge? period;
+
+  /// Face boxes drawn on a photo, or listed under a video, in edit mode.
+  final List<HoverPreviewFace> faces;
   final Widget child;
   final Duration hoverDelay;
   final Duration hideDelay;
@@ -444,6 +468,7 @@ class _ItemHoverPreviewState extends State<ItemHoverPreview> {
               item: widget.item,
               controller: widget.controller,
               period: widget.period,
+              faces: widget.faces,
               fallbackVideoWindow: widget.fallbackVideoWindow,
               resolveMedia: _resolve,
               openVideo: _openVideo,
@@ -475,12 +500,14 @@ class _HoverPreviewCard extends StatelessWidget {
     required this.resolveMedia,
     required this.openVideo,
     this.period,
+    this.faces = const [],
     this.buildPhoto,
   });
 
   final Item item;
   final LibraryTableController controller;
   final KeyPeriodKnowledge? period;
+  final List<HoverPreviewFace> faces;
   final Duration fallbackVideoWindow;
   final Future<LocalMediaResolution> Function(Item item) resolveMedia;
   final Future<HoverPreviewVideoSession> Function(File file) openVideo;
@@ -497,6 +524,7 @@ class _HoverPreviewCard extends StatelessWidget {
         item: item,
         controller: controller,
         period: period,
+        faces: faces,
         fallbackVideoWindow: fallbackVideoWindow,
         resolveMedia: resolveMedia,
         openVideo: openVideo,
@@ -514,12 +542,14 @@ class _HoverPreviewBody extends StatefulWidget {
     required this.resolveMedia,
     required this.openVideo,
     this.period,
+    this.faces = const [],
     this.buildPhoto,
   });
 
   final Item item;
   final LibraryTableController controller;
   final KeyPeriodKnowledge? period;
+  final List<HoverPreviewFace> faces;
   final Duration fallbackVideoWindow;
   final Future<LocalMediaResolution> Function(Item item) resolveMedia;
   final Future<HoverPreviewVideoSession> Function(File file) openVideo;
@@ -672,20 +702,29 @@ class _HoverPreviewBodyState extends State<_HoverPreviewBody> {
     final photo = _photo;
     if (photo != null) {
       final custom = widget.buildPhoto;
-      if (custom != null) return custom(photo);
+      if (custom != null) {
+        return _HoverPreviewFaces(
+          faces: widget.faces,
+          child: custom(photo),
+        );
+      }
       final fitted = _fitted;
       if (fitted == null) {
         return const _HoverPreviewSpinner();
       }
-      return Image.file(
-        photo,
-        key: const Key('item-hover-preview-photo'),
-        width: fitted.width,
-        height: fitted.height,
-        fit: BoxFit.fill,
-        cacheWidth: (fitted.width * 2).round(),
-        errorBuilder: (_, _, _) => const _HoverPreviewMessage(
-          message: 'Could not decode local photo.',
+      return _HoverPreviewFaces(
+        faces: widget.faces,
+        size: fitted,
+        child: Image.file(
+          photo,
+          key: const Key('item-hover-preview-photo'),
+          width: fitted.width,
+          height: fitted.height,
+          fit: BoxFit.fill,
+          cacheWidth: (fitted.width * 2).round(),
+          errorBuilder: (_, _, _) => const _HoverPreviewMessage(
+            message: 'Could not decode local photo.',
+          ),
         ),
       );
     }
@@ -695,14 +734,100 @@ class _HoverPreviewBodyState extends State<_HoverPreviewBody> {
       if (fitted == null) {
         return const _HoverPreviewSpinner();
       }
-      return SizedBox(
-        key: const Key('item-hover-preview-video'),
-        width: fitted.width,
-        height: fitted.height,
-        child: session.view,
+      return _HoverPreviewFaces(
+        faces: widget.faces,
+        child: SizedBox(
+          key: const Key('item-hover-preview-video'),
+          width: fitted.width,
+          height: fitted.height,
+          child: session.view,
+        ),
       );
     }
     return const _HoverPreviewSpinner();
+  }
+}
+
+/// Numbered face boxes on a sized photo, or a name strip under other media.
+class _HoverPreviewFaces extends StatelessWidget {
+  const _HoverPreviewFaces({
+    required this.faces,
+    required this.child,
+    this.size,
+  });
+
+  final List<HoverPreviewFace> faces;
+  final Widget child;
+  final Size? size;
+
+  @override
+  Widget build(BuildContext context) {
+    if (faces.isEmpty) return child;
+    final fitted = size;
+    if (fitted == null) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          child,
+          _HoverFaceStrip(faces: faces),
+        ],
+      );
+    }
+    return SizedBox(
+      width: fitted.width,
+      height: fitted.height,
+      child: Stack(
+        children: [
+          child,
+          for (final face in faces)
+            Positioned(
+              left: face.region.xMin * fitted.width,
+              top: face.region.yMin * fitted.height,
+              width: (face.region.xMax - face.region.xMin) * fitted.width,
+              height: (face.region.yMax - face.region.yMin) * fitted.height,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  child: ColoredBox(
+                    color: const Color(0xCC000000),
+                    child: Text(
+                      face.label,
+                      key: Key('hover-face-label-${face.number}'),
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HoverFaceStrip extends StatelessWidget {
+  const _HoverFaceStrip({required this.faces});
+
+  final List<HoverPreviewFace> faces;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(8),
+      child: Wrap(
+        spacing: 8,
+        children: [
+          for (final face in faces)
+            Text(
+              face.label,
+              key: Key('hover-face-label-${face.number}'),
+            ),
+        ],
+      ),
+    );
   }
 }
 

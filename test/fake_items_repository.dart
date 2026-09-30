@@ -287,23 +287,47 @@ class FakeItemsRepository implements ItemsRepository {
     return LinkPeopleResponse(appearances: List.from(linkPeopleResult));
   }
 
-  final List<({String itemId, String? personId, String? name, String? tagId})>
-      assignPersonCalls =
-      <({String itemId, String? personId, String? name, String? tagId})>[];
+  final List<
+    ({
+      String itemId,
+      String? personId,
+      String? name,
+      String? tagId,
+      bool? propagateAlike,
+    })
+  >
+  assignPersonCalls =
+      <
+        ({
+          String itemId,
+          String? personId,
+          String? name,
+          String? tagId,
+          bool? propagateAlike,
+        })
+      >[];
 
   Object? assignPersonError;
 
+  /// Extra appearances returned as [AssignPersonResponse.alsoMoved].
+  List<PersonAppearance> assignPersonAlsoMoved = const [];
+
   @override
-  Future<PersonAppearance> assignPersonToItem(
+  Future<AssignPersonResponse> assignPersonToItem(
     String itemId, {
     String? personId,
     String? name,
     String? tagId,
+    bool? propagateAlike,
   }) async {
     await getItem(itemId);
-    assignPersonCalls.add(
-      (itemId: itemId, personId: personId, name: name, tagId: tagId),
-    );
+    assignPersonCalls.add((
+      itemId: itemId,
+      personId: personId,
+      name: name,
+      tagId: tagId,
+      propagateAlike: propagateAlike,
+    ));
     if (assignPersonError != null) throw assignPersonError!;
     final existing = _knowledgeByItemId[itemId];
     if (tagId == null && existing != null) {
@@ -370,7 +394,12 @@ class FakeItemsRepository implements ItemsRepository {
         whoExclusions: existing.whoExclusions,
       );
     }
-    return appearance;
+    return AssignPersonResponse(
+      appearance: appearance,
+      alsoMoved: propagateAlike == false
+          ? const []
+          : List<PersonAppearance>.from(assignPersonAlsoMoved),
+    );
   }
 
   final List<WhoAppearancesRequest> whoAppearancesRecorded =

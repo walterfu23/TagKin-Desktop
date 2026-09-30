@@ -196,7 +196,8 @@ class TagKinPlatformMenu extends ConsumerWidget {
     ];
 
     // Always set onSelected so macOS claims Cmd+Z (no system beep) even
-    // when the screen stack is empty. Skip D12 while typing in a field.
+    // when the screen stack is empty. A focused text field undoes its own
+    // typing first.
     ref.watch(activeScreenUndoControllerProvider);
     final editMenus = <PlatformMenuItem>[
       PlatformMenuItem(
@@ -229,7 +230,7 @@ class TagKinPlatformMenu extends ConsumerWidget {
 }
 
 void _invokeScreenUndo(BuildContext context, WidgetRef ref) {
-  if (focusIsInEditableText(context)) return;
+  if (undoTextInFocusedField(redo: false)) return;
   final controller = ref.read(activeScreenUndoControllerProvider);
   if (controller == null || !controller.canUndo) return;
   final messenger = ScaffoldMessenger.maybeOf(context);
@@ -239,7 +240,7 @@ void _invokeScreenUndo(BuildContext context, WidgetRef ref) {
 }
 
 void _invokeScreenRedo(BuildContext context, WidgetRef ref) {
-  if (focusIsInEditableText(context)) return;
+  if (undoTextInFocusedField(redo: true)) return;
   final controller = ref.read(activeScreenUndoControllerProvider);
   if (controller == null || !controller.canRedo) return;
   final messenger = ScaffoldMessenger.maybeOf(context);

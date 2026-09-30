@@ -586,12 +586,19 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
           ));
           await items.undoWhoExclusion(widget.itemId, e.key);
           if (e.value.hasTarget && exclusion?.createdFromTagId != null) {
-            await items.assignPersonToItem(
+            final assigned = await items.assignPersonToItem(
               widget.itemId,
               personId: e.value.personId,
               name: e.value.name,
               tagId: exclusion!.createdFromTagId,
             );
+            for (final moved in assigned.alsoMoved) {
+              alsoMovedIds.add(moved.id);
+              final movedItem = moved.itemId;
+              if (movedItem != null && movedItem.isNotEmpty) {
+                alsoMovedItemIds.add(movedItem);
+              }
+            }
           }
         }
       }
@@ -715,12 +722,19 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
                 if (exclusion == null) continue;
                 await items.undoWhoExclusion(widget.itemId, exclusion.id);
                 if (e.value.hasTarget && exclusion.createdFromTagId != null) {
-                  await items.assignPersonToItem(
+                  final assigned = await items.assignPersonToItem(
                     widget.itemId,
                     personId: e.value.personId,
                     name: e.value.name,
                     tagId: exclusion.createdFromTagId,
                   );
+                  for (final moved in assigned.alsoMoved) {
+                    alsoMovedIds.add(moved.id);
+                    final movedItem = moved.itemId;
+                    if (movedItem != null && movedItem.isNotEmpty) {
+                      alsoMovedItemIds.add(movedItem);
+                    }
+                  }
                 }
               }
             }
@@ -789,11 +803,12 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     String? alsoMovedDestName;
 
     void noteAlsoMoved(
-      ReassignAppearanceResponse result,
-      PersonAssignIntent intent,
-    ) {
-      if (result.alsoMoved.isEmpty) return;
-      for (final a in result.alsoMoved) {
+      List<PersonAppearance> moved,
+      PersonAssignIntent intent, {
+      String? appearancePersonId,
+    }) {
+      if (moved.isEmpty) return;
+      for (final a in moved) {
         alsoMovedIds.add(a.id);
         final itemId = a.itemId;
         if (itemId != null && itemId.isNotEmpty) {
@@ -806,7 +821,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
         alsoMovedDestName = named;
         return;
       }
-      final id = result.appearance.personId ?? intent.personId;
+      final id = appearancePersonId ?? intent.personId;
       alsoMovedDestName = id != null ? _personNamesById[id]?.trim() : null;
     }
 
@@ -835,13 +850,23 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
           name: intent.name,
           propagateAlike: propagateAlike,
         );
-        noteAlsoMoved(result, intent);
+        noteAlsoMoved(
+          result.alsoMoved,
+          intent,
+          appearancePersonId: result.appearance.personId,
+        );
       } else {
-        await items.assignPersonToItem(
+        final assigned = await items.assignPersonToItem(
           widget.itemId,
           personId: intent.personId,
           name: intent.name,
           tagId: e.key,
+          propagateAlike: propagateAlike,
+        );
+        noteAlsoMoved(
+          assigned.alsoMoved,
+          intent,
+          appearancePersonId: assigned.appearance.personId,
         );
       }
     }
@@ -860,14 +885,24 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
         name: intent.name,
         propagateAlike: propagateAlike,
       );
-      noteAlsoMoved(result, intent);
+      noteAlsoMoved(
+        result.alsoMoved,
+        intent,
+        appearancePersonId: result.appearance.personId,
+      );
     }
     for (final intent in pendingItemAssigns) {
       if (!intent.hasTarget) continue;
-      await items.assignPersonToItem(
+      final assigned = await items.assignPersonToItem(
         widget.itemId,
         personId: intent.personId,
         name: intent.name,
+        propagateAlike: propagateAlike,
+      );
+      noteAlsoMoved(
+        assigned.alsoMoved,
+        intent,
+        appearancePersonId: assigned.appearance.personId,
       );
     }
     return (

@@ -16,12 +16,31 @@ class ScreenRedoIntent extends Intent {
 }
 
 bool focusIsInEditableText(BuildContext context) {
-  final primary = FocusManager.instance.primaryFocus;
-  if (primary == null) return false;
-  final ctx = primary.context;
-  if (ctx == null) return false;
-  return ctx.widget is EditableText ||
-      ctx.findAncestorWidgetOfExactType<EditableText>() != null;
+  return _focusedEditableText() != null;
+}
+
+EditableText? _focusedEditableText() {
+  final ctx = FocusManager.instance.primaryFocus?.context;
+  if (ctx == null || !ctx.mounted) return null;
+  final widget = ctx.widget;
+  if (widget is EditableText) return widget;
+  return ctx.findAncestorWidgetOfExactType<EditableText>();
+}
+
+/// Undo or redo the focused text field. True when that field's value changed,
+/// so the caller should not also run the screen stack.
+bool undoTextInFocusedField({required bool redo}) {
+  final editable = _focusedEditableText();
+  final ctx = FocusManager.instance.primaryFocus?.context;
+  if (editable == null || ctx == null) return false;
+  final before = editable.controller.value;
+  Actions.maybeInvoke(
+    ctx,
+    redo
+        ? const RedoTextIntent(SelectionChangedCause.keyboard)
+        : const UndoTextIntent(SelectionChangedCause.keyboard),
+  );
+  return editable.controller.value != before;
 }
 
 const Map<ShortcutActivator, Intent> kScreenUndoShortcuts = {
@@ -40,8 +59,9 @@ const Map<ShortcutActivator, Intent> kScreenUndoShortcuts = {
 /// shortcuts still fire when primary focus is on the app-wide SelectionArea.
 ///
 /// Dispatches to [activeScreenUndoControllerProvider]. Consumes the shortcut
-/// (no macOS beep) even when the stack is empty; does not steal EditableText
-/// undo. Does not install its own autofocus [Focus].
+/// (no macOS beep) even when the stack is empty. A focused text field undoes
+/// its own typing first; the next press undoes the screen stack. Does not
+/// install its own autofocus [Focus].
 class ActiveUndoShortcuts extends ConsumerWidget {
   const ActiveUndoShortcuts({super.key, required this.child});
 
@@ -56,7 +76,7 @@ class ActiveUndoShortcuts extends ConsumerWidget {
         actions: {
           ScreenUndoIntent: CallbackAction<ScreenUndoIntent>(
             onInvoke: (_) {
-              if (focusIsInEditableText(context)) return null;
+              if (undoTextInFocusedField(redo: false)) return null;
               final c = ref.read(activeScreenUndoControllerProvider);
               if (c == null || !c.canUndo) return null;
               final messenger = ScaffoldMessenger.maybeOf(context);
@@ -68,7 +88,7 @@ class ActiveUndoShortcuts extends ConsumerWidget {
           ),
           ScreenRedoIntent: CallbackAction<ScreenRedoIntent>(
             onInvoke: (_) {
-              if (focusIsInEditableText(context)) return null;
+              if (undoTextInFocusedField(redo: true)) return null;
               final c = ref.read(activeScreenUndoControllerProvider);
               if (c == null || !c.canRedo) return null;
               final messenger = ScaffoldMessenger.maybeOf(context);
@@ -170,8 +190,8 @@ class _ActiveUndoHostState extends ConsumerState<ActiveUndoHost> {
 /// Local-screen Cmd/Ctrl+Z wrapper (routes pushed under Overlay).
 ///
 /// Prefer pairing with [ActiveUndoHost] so the app-level [ActiveUndoShortcuts]
-/// also reaches this stack when SelectionArea holds focus. Does not steal
-/// shortcuts when focus is inside an [EditableText].
+/// also reaches this stack when SelectionArea holds focus. A focused text
+/// field undoes its own typing first.
 class UndoShortcuts extends StatelessWidget {
   const UndoShortcuts({
     super.key,
@@ -195,7 +215,7 @@ class UndoShortcuts extends StatelessWidget {
             actions: {
               ScreenUndoIntent: CallbackAction<ScreenUndoIntent>(
                 onInvoke: (_) {
-                  if (focusIsInEditableText(context)) return null;
+                  if (undoTextInFocusedField(redo: false)) return null;
                   if (!controller.canUndo) return null;
                   controller.undo().catchError((Object e) {
                     onError?.call(e);
@@ -205,7 +225,7 @@ class UndoShortcuts extends StatelessWidget {
               ),
               ScreenRedoIntent: CallbackAction<ScreenRedoIntent>(
                 onInvoke: (_) {
-                  if (focusIsInEditableText(context)) return null;
+                  if (undoTextInFocusedField(redo: true)) return null;
                   if (!controller.canRedo) return null;
                   controller.redo().catchError((Object e) {
                     onError?.call(e);

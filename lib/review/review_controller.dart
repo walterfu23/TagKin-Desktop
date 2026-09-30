@@ -43,6 +43,10 @@ class ReviewController extends ChangeNotifier {
   /// Per-screen undo/redo stack (owned by the Review page).
   UndoController? undoStack;
 
+  /// Runs after a successful mutation, including undo/redo of one.
+  /// Folders uses this to refresh the edited row without blanking cells.
+  Future<void> Function()? afterCommit;
+
   ReviewPhase phase = ReviewPhase.idle;
   ItemKnowledge? knowledge;
   LocalMediaResolution? media;
@@ -493,6 +497,7 @@ class ReviewController extends ChangeNotifier {
       phase = ReviewPhase.ready;
       notifyListeners();
       _recordCommentAdd(created.id, trimmed);
+      await _finishCommit();
     } catch (e) {
       if (_disposed) return;
       comments = snapshot;
@@ -534,6 +539,7 @@ class ReviewController extends ChangeNotifier {
       phase = ReviewPhase.ready;
       notifyListeners();
       _recordCommentAdd(created.id, trimmed);
+      await _finishCommit();
     } catch (e) {
       if (_disposed) return;
       comments = snapshot;
@@ -585,6 +591,7 @@ class ReviewController extends ChangeNotifier {
       if (prior != null) {
         _recordCommentEdit(commentId, prior, trimmed);
       }
+      await _finishCommit();
     } catch (e) {
       if (_disposed) return;
       comments = snapshot;
@@ -613,6 +620,7 @@ class ReviewController extends ChangeNotifier {
       phase = ReviewPhase.ready;
       notifyListeners();
       if (prior != null) _recordCommentDelete(prior);
+      await _finishCommit();
     } catch (e) {
       if (_disposed) return;
       comments = snapshot;
@@ -670,6 +678,13 @@ class ReviewController extends ChangeNotifier {
     media ??= await resolveMedia(result.item);
     phase = ReviewPhase.ready;
     notifyListeners();
+    await _finishCommit();
+  }
+
+  Future<void> _finishCommit() async {
+    final hook = afterCommit;
+    if (hook == null || _disposed) return;
+    await hook();
   }
 
   static ItemKnowledge _withTagAdded(

@@ -48,6 +48,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
   FolderRemoveQueue? _removeQueue;
   LibraryTableController? _table;
   final Set<String> _retryingFolders = {};
+  bool _editMode = false;
   late final TextEditingController _filterController = TextEditingController();
   late final FocusNode _filterFocus = FocusNode();
 
@@ -540,6 +541,24 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
                               const CreditsRemainingChip(),
                               const SizedBox(width: 12),
                               FilledButton.icon(
+                                key: const Key('folders-edit-toggle'),
+                                style: FilledButton.styleFrom(
+                                  visualDensity: VisualDensity.compact,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                onPressed: () => setState(() {
+                                  _editMode = !_editMode;
+                                }),
+                                icon: Icon(
+                                  _editMode
+                                      ? Icons.check
+                                      : Icons.edit_outlined,
+                                ),
+                                label: Text(_editMode ? 'Done' : 'Edit'),
+                              ),
+                              const SizedBox(width: 12),
+                              FilledButton.icon(
                                 key: const Key('add-from-folder'),
                                 style: FilledButton.styleFrom(
                                   visualDensity: VisualDensity.compact,
@@ -619,6 +638,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
           isFolderRemoving: removeQueue.isRemoving,
           isFolderRetrying: _retryingFolders.contains,
           retryEnabled: retryEnabled,
+          editMode: _editMode,
         );
       },
     );
