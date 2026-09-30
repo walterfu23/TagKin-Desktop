@@ -4,6 +4,8 @@ import 'package:tagkin_desktop/persons/collection_dialogs.dart';
 import 'package:tagkin_desktop/persons/collection_navigation.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
+import 'package:tagkin_desktop/undo/active_undo_controller.dart';
+import 'package:tagkin_desktop/undo/undoable_action.dart';
 import 'package:tagkin_desktop/ui/alpha_order.dart';
 
 /// Blocking start gate when the catalog has collections but none was resumed
@@ -194,13 +196,30 @@ Future<void> runCollectionMenuCommand({
         confirmLabel: 'Rename',
       );
       if (name == null || !context.mounted) return;
+      final prior = cols.current.name;
       if (!cols.rename(name)) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Could not rename (empty or duplicate name).'),
           ),
         );
+        return;
       }
+      if (!context.mounted) return;
+      _pushCollectionUndo(
+        context,
+        label: 'Rename collection',
+        onUndo: () async {
+          if (!cols.rename(prior)) {
+            throw StateError('Could not undo rename');
+          }
+        },
+        onRedo: () async {
+          if (!cols.rename(name)) {
+            throw StateError('Could not redo rename');
+          }
+        },
+      );
     case CollectionMenuCommand.delete:
       if (!cols.hasCurrent) return;
       await cols.delete(
@@ -246,8 +265,22 @@ Future<void> runCollectionMenuCommand({
           ],
         ),
       );
-      if (picked == null) return;
-      cols.addFolder(picked);
+      if (picked == null || !context.mounted) return;
+      if (!cols.addFolder(picked)) return;
+      _pushCollectionUndo(
+        context,
+        label: 'Add folder',
+        onUndo: () async {
+          if (!cols.removeFolder(picked)) {
+            throw StateError('Could not undo add folder');
+          }
+        },
+        onRedo: () async {
+          if (!cols.addFolder(picked)) {
+            throw StateError('Could not redo add folder');
+          }
+        },
+      );
     case CollectionMenuCommand.removeFolder:
       if (!cols.hasCurrent) return;
       final members = sortedAlphaBy(cols.current.leafFolders, leafFolderLabel);
@@ -267,7 +300,36 @@ Future<void> runCollectionMenuCommand({
           ],
         ),
       );
-      if (picked == null) return;
-      cols.removeFolder(picked);
+      if (picked == null || !context.mounted) return;
+      if (!cols.removeFolder(picked)) return;
+      _pushCollectionUndo(
+        context,
+        label: 'Remove folder',
+        onUndo: () async {
+          if (!cols.addFolder(picked)) {
+            throw StateError('Could not undo remove folder');
+          }
+        },
+        onRedo: () async {
+          if (!cols.removeFolder(picked)) {
+            throw StateError('Could not redo remove folder');
+          }
+        },
+      );
   }
+}
+
+void _pushCollectionUndo(
+  BuildContext context, {
+  required String label,
+  required Future<void> Function() onUndo,
+  required Future<void> Function() onRedo,
+}) {
+  if (!context.mounted) return;
+  final stack = ProviderScope.containerOf(
+    context,
+  ).read(activeScreenUndoControllerProvider);
+  stack?.push(
+    CallbackUndoableAction(label: label, onUndo: onUndo, onRedo: onRedo),
+  );
 }

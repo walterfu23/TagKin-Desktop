@@ -8,6 +8,7 @@ import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/ingest/folder_picker.dart';
 import 'package:tagkin_desktop/library/folder_remove_queue.dart';
+import 'package:tagkin_desktop/library/folders_undo_recorder.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/library/library_items_table.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
@@ -48,10 +49,12 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
   LibraryTableController? _table;
   final Set<String> _retryingFolders = {};
   late final TextEditingController _filterController = TextEditingController();
+  late final FocusNode _filterFocus = FocusNode();
 
   @override
   void initState() {
     super.initState();
+    _filterFocus.addListener(_onFilterFocusChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(usageControllerProvider).load();
       // ensureLoaded (not load) dedupes with the shell's own initial
@@ -99,6 +102,8 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
   @override
   void dispose() {
     _table?.removeListener(_onTableChanged);
+    _filterFocus.removeListener(_onFilterFocusChanged);
+    _filterFocus.dispose();
     _filterController.dispose();
     _ingestQueue?.removeListener(_onIngestQueueChanged);
     _removeQueue?.removeListener(_onRemoveQueueChanged);
@@ -173,16 +178,49 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     _retry();
   }
 
+  void _onFilterFocusChanged() {
+    final table = _table;
+    if (table == null || !mounted) return;
+    final cols = ref.read(collectionsControllerProvider);
+    final undo = ref.read(foldersUndoProvider);
+    if (_filterFocus.hasFocus) {
+      undo.beginFilterEdit(table, cols);
+    } else {
+      unawaited(undo.endFilterEdit(table: table, cols: cols));
+    }
+  }
+
   void _toggleHiddenItem(Item item) {
     final table = ref.read(libraryTableControllerProvider);
-    table.setItemHiddenInView(
-      item.id,
-      hidden: !table.isItemHiddenInView(item.id),
+    final hidden = table.isItemHiddenInView(item.id);
+    unawaited(
+      ref
+          .read(foldersUndoProvider)
+          .record(
+            table: table,
+            cols: ref.read(collectionsControllerProvider),
+            label: hidden ? 'Unhide item' : 'Hide item',
+            mutate: () async {
+              table.setItemHiddenInView(item.id, hidden: !hidden);
+            },
+          ),
     );
   }
 
   void _setFolderHidden(String dir, {required bool hide}) {
-    ref.read(libraryTableControllerProvider).setFolderHidden(dir, hidden: hide);
+    final table = ref.read(libraryTableControllerProvider);
+    unawaited(
+      ref
+          .read(foldersUndoProvider)
+          .record(
+            table: table,
+            cols: ref.read(collectionsControllerProvider),
+            label: hide ? 'Hide folder' : 'Unhide folder',
+            mutate: () async {
+              table.setFolderHidden(dir, hidden: hide);
+            },
+          ),
+    );
   }
 
   Future<void> _removeFolderFromList(String dir, int count) async {
@@ -422,90 +460,109 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     ref.listen(desktopPrefsProvider, (previous, next) {
       _applyLivePrefs(next);
     });
+    ref.listen(collectionsControllerProvider, (previous, next) {
+      final prevId = previous != null && previous.sessionReady
+          ? previous.current.id
+          : null;
+      final nextId = next.sessionReady ? next.current.id : null;
+      if (prevId != nextId) {
+        ref.read(foldersUndoProvider).clear();
+      }
+    });
+    final undo = ref.watch(foldersUndoProvider);
+    final foldersActive =
+        ref.watch(activeTopLevelTabProvider) == TopLevelTab.folders;
     final usage = ref.watch(usageControllerProvider);
     final table = ref.watch(libraryTableControllerProvider);
     _ensureTableListener(table);
-    return ListenableBuilder(
-      listenable: Listenable.merge([usage, table]),
-      builder: (context, _) {
-        final blocked = usage.gate.blocked;
-        return Scaffold(
-          primary: false,
-          body: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              UsageBanner(
-                gate: usage.gate,
-                analyzeRejectCode: usage.analyzeRejectCode,
-                analyzeRejectMessage: usage.analyzeRejectMessage,
-                onBuyCredits: () => pushBuyCreditsPage(context),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    const minToolbar = 1100.0;
-                    final width = constraints.maxWidth < minToolbar
-                        ? minToolbar
-                        : constraints.maxWidth;
-                    return FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: SizedBox(
-                        width: width,
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                key: const Key('library-filter'),
-                                controller: _filterController,
-                                decoration: const InputDecoration(
-                                  isDense: true,
-                                  prefixIcon: Icon(Icons.search, size: 20),
-                                  hintText:
-                                      'Filter who, what, where, source, comment…',
-                                  border: OutlineInputBorder(),
+    return ActiveUndoHost(
+      controller: undo.stack,
+      active: foldersActive,
+      child: ListenableBuilder(
+        listenable: Listenable.merge([usage, table]),
+        builder: (context, _) {
+          final blocked = usage.gate.blocked;
+          return Scaffold(
+            primary: false,
+            body: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                UsageBanner(
+                  gate: usage.gate,
+                  analyzeRejectCode: usage.analyzeRejectCode,
+                  analyzeRejectMessage: usage.analyzeRejectMessage,
+                  onBuyCredits: () => pushBuyCreditsPage(context),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      const minToolbar = 1100.0;
+                      final width = constraints.maxWidth < minToolbar
+                          ? minToolbar
+                          : constraints.maxWidth;
+                      return FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: SizedBox(
+                          width: width,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  key: const Key('library-filter'),
+                                  controller: _filterController,
+                                  focusNode: _filterFocus,
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    prefixIcon: Icon(Icons.search, size: 20),
+                                    hintText:
+                                        'Filter who, what, where, source, comment…',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  onChanged: table.setFilterQuery,
+                                  onSubmitted: (_) => _filterFocus.unfocus(),
                                 ),
-                                onChanged: table.setFilterQuery,
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            const ViewsMenu(),
-                            if (table.knowledgeWarming) ...[
                               const SizedBox(width: 12),
-                              const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
+                              const ViewsMenu(),
+                              if (table.knowledgeWarming) ...[
+                                const SizedBox(width: 12),
+                                const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 ),
+                              ],
+                              const SizedBox(width: 12),
+                              const CreditsRemainingChip(),
+                              const SizedBox(width: 12),
+                              FilledButton.icon(
+                                key: const Key('add-from-folder'),
+                                style: FilledButton.styleFrom(
+                                  visualDensity: VisualDensity.compact,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                onPressed: blocked ? null : _openFolderIngest,
+                                icon: const Icon(Icons.drive_folder_upload),
+                                label: const Text('Add from folder'),
                               ),
                             ],
-                            const SizedBox(width: 12),
-                            const CreditsRemainingChip(),
-                            const SizedBox(width: 12),
-                            FilledButton.icon(
-                              key: const Key('add-from-folder'),
-                              style: FilledButton.styleFrom(
-                                visualDensity: VisualDensity.compact,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              onPressed: blocked ? null : _openFolderIngest,
-                              icon: const Icon(Icons.drive_folder_upload),
-                              label: const Text('Add from folder'),
-                            ),
-                          ],
+                          ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
-              ),
-              Expanded(child: _buildBody(table, retryEnabled: !blocked)),
-            ],
-          ),
-        );
-      },
+                Expanded(child: _buildBody(table, retryEnabled: !blocked)),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 

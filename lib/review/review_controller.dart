@@ -145,8 +145,10 @@ class ReviewController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final result =
-          await correctionsRepository.editTag(tagId, EditTag(value: value));
+      final result = await correctionsRepository.editTag(
+        tagId,
+        EditTag(value: value),
+      );
       if (_disposed) return;
       await _reconcileKnowledge();
       _recordCorrectionUndo('Edit tag', result.correction.id);
@@ -192,14 +194,10 @@ class ReviewController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final exclusion =
-          await itemsRepository.createWhoExclusion(itemId, tagId);
+      final exclusion = await itemsRepository.createWhoExclusion(itemId, tagId);
       if (_disposed) return;
       await _reconcileKnowledge();
-      _recordWhoExcludeUndo(
-        tagId: tagId,
-        exclusionId: exclusion.exclusion.id,
-      );
+      _recordWhoExcludeUndo(tagId: tagId, exclusionId: exclusion.exclusion.id);
     } catch (e) {
       if (_disposed) return;
       knowledge = snapshot;
@@ -599,6 +597,10 @@ class ReviewController extends ChangeNotifier {
   /// Soft-delete a comment; optimistic drop then confirm via server.
   Future<void> deleteComment(String commentId) async {
     if (!canMutate) return;
+    Comment? prior;
+    for (final c in comments) {
+      if (c.id == commentId) prior = c;
+    }
     final snapshot = List<Comment>.from(comments);
     comments = comments.where((c) => c.id != commentId).toList();
     phase = ReviewPhase.busy;
@@ -610,6 +612,7 @@ class ReviewController extends ChangeNotifier {
       if (_disposed) return;
       phase = ReviewPhase.ready;
       notifyListeners();
+      if (prior != null) _recordCommentDelete(prior);
     } catch (e) {
       if (_disposed) return;
       comments = snapshot;
@@ -619,9 +622,40 @@ class ReviewController extends ChangeNotifier {
     }
   }
 
+  /// Soft-delete has no restore route. Undo adds the same body again.
+  void _recordCommentDelete(Comment prior) {
+    final stack = undoStack;
+    if (stack == null || !_recordUndo) return;
+    var restoredId = prior.id;
+    stack.push(
+      CallbackUndoableAction(
+        label: 'Delete comment',
+        onUndo: () => _withoutRecording(() async {
+          final keyPeriodId = prior.keyPeriodId;
+          if (keyPeriodId != null && keyPeriodId.isNotEmpty) {
+            await addKeyPeriodComment(keyPeriodId, prior.body);
+          } else {
+            await addItemComment(prior.body);
+          }
+          Comment? match;
+          for (final c in comments) {
+            if (c.deletedAt != null) continue;
+            if (c.body != prior.body) continue;
+            if (c.keyPeriodId != prior.keyPeriodId) continue;
+            match = c;
+          }
+          if (match == null) throw StateError('Comment is gone');
+          restoredId = match.id;
+        }),
+        onRedo: () => _withoutRecording(() => deleteComment(restoredId)),
+      ),
+    );
+  }
+
   /// Active item-level comments (no keyPeriodId).
-  List<Comment> get itemComments =>
-      comments.where((c) => c.keyPeriodId == null && c.deletedAt == null).toList();
+  List<Comment> get itemComments => comments
+      .where((c) => c.keyPeriodId == null && c.deletedAt == null)
+      .toList();
 
   /// Active comments for a key period.
   List<Comment> commentsForKeyPeriod(String keyPeriodId) => comments
@@ -762,21 +796,21 @@ class ReviewController extends ChangeNotifier {
   }
 }
 
-final reviewControllerProvider =
-    Provider.autoDispose.family<ReviewController, String>(
-  (ref, itemId) {
-    final controller = ReviewController(
-      itemId: itemId,
-      itemsRepository: ref.watch(itemsRepositoryProvider),
-      correctionsRepository: ref.watch(correctionsRepositoryProvider),
-      commentsRepository: ref.watch(commentsRepositoryProvider),
+final reviewControllerProvider = Provider.autoDispose
+    .family<ReviewController, String>(
+      (ref, itemId) {
+        final controller = ReviewController(
+          itemId: itemId,
+          itemsRepository: ref.watch(itemsRepositoryProvider),
+          correctionsRepository: ref.watch(correctionsRepositoryProvider),
+          commentsRepository: ref.watch(commentsRepositoryProvider),
+        );
+        ref.onDispose(controller.dispose);
+        return controller;
+      },
+      dependencies: [
+        itemsRepositoryProvider,
+        correctionsRepositoryProvider,
+        commentsRepositoryProvider,
+      ],
     );
-    ref.onDispose(controller.dispose);
-    return controller;
-  },
-  dependencies: [
-    itemsRepositoryProvider,
-    correctionsRepositoryProvider,
-    commentsRepositoryProvider,
-  ],
-);

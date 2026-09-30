@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
@@ -1169,16 +1170,11 @@ void main() {
     'Views menu All writes currentViewId null; collection stays clean',
     (tester) async {
       final store = MemoryCollectionsStore();
-      final a = fixtureItem(
-        id: 'a',
-        processingStatus: ProcessingStatus.tagged,
-      );
+      final a = fixtureItem(id: 'a', processingStatus: ProcessingStatus.tagged);
       await _pumpLibrary(
         tester,
         items: FakeItemsRepository(items: [a]),
-        extraOverrides: [
-          collectionsStoreProvider.overrideWithValue(store),
-        ],
+        extraOverrides: [collectionsStoreProvider.overrideWithValue(store)],
       );
       await tester.pumpAndSettle();
 
@@ -1259,6 +1255,104 @@ void main() {
     expect(find.byKey(const Key('item-row-a')), findsNothing);
     expect(find.byKey(const Key('item-row-b')), findsOneWidget);
     expect(find.text('View01*'), findsNothing);
+  });
+
+  testWidgets(
+    'Save as and Rename refuse a name already used on this collection',
+    (tester) async {
+      final a = fixtureItem(id: 'a', processingStatus: ProcessingStatus.tagged);
+      await _pumpLibrary(tester, items: FakeItemsRepository(items: [a]));
+      await tester.pumpAndSettle();
+
+      Future<void> saveAs(String name) async {
+        await tester.tap(find.byKey(const Key('library-views-menu')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('views-menu-save-as')));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byKey(const Key('view-name-field')), name);
+        await tester.tap(find.byKey(const Key('view-name-confirm')));
+        await tester.pumpAndSettle();
+      }
+
+      await saveAs('Ada');
+      expect(find.byKey(const Key('view-name-dialog')), findsNothing);
+
+      await saveAs('ada');
+      expect(find.byKey(const Key('view-name-dialog')), findsOneWidget);
+      expect(
+        find.text('A view with this name already exists.'),
+        findsOneWidget,
+      );
+
+      await tester.enterText(find.byKey(const Key('view-name-field')), 'All');
+      await tester.tap(find.byKey(const Key('view-name-confirm')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('view-name-dialog')), findsOneWidget);
+      expect(
+        find.text('A view with this name already exists.'),
+        findsOneWidget,
+      );
+
+      await tester.enterText(find.byKey(const Key('view-name-field')), 'Sam');
+      await tester.tap(find.byKey(const Key('view-name-confirm')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('view-name-dialog')), findsNothing);
+
+      final cols = ProviderScope.containerOf(
+        tester.element(find.byType(TagKinDesktopApp)),
+      ).read(collectionsControllerProvider);
+      expect(cols.views.map((v) => v.name), ['Ada', 'Sam']);
+
+      await tester.tap(find.byKey(const Key('library-views-menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('views-menu-rename')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('view-name-field')), 'Ada');
+      await tester.tap(find.byKey(const Key('view-name-confirm')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('view-name-dialog')), findsOneWidget);
+      expect(cols.views.map((v) => v.name), ['Ada', 'Sam']);
+
+      await tester.enterText(find.byKey(const Key('view-name-field')), 'Sam');
+      await tester.tap(find.byKey(const Key('view-name-confirm')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('view-name-dialog')), findsNothing);
+      expect(cols.views.map((v) => v.name), ['Ada', 'Sam']);
+    },
+  );
+
+  testWidgets('Hide item on All undoes back to All', (tester) async {
+    final a = fixtureItem(id: 'a', processingStatus: ProcessingStatus.tagged);
+    await _pumpLibrary(tester, items: FakeItemsRepository(items: [a]));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byKey(const Key('item-list-hide-a')));
+    await tester.tap(find.byKey(const Key('item-list-hide-a')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('item-row-a')), findsNothing);
+
+    final cols = ProviderScope.containerOf(
+      tester.element(find.byType(TagKinDesktopApp)),
+    ).read(collectionsControllerProvider);
+    expect(cols.views, hasLength(1));
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.meta);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.meta);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('item-row-a')), findsOneWidget);
+    expect(cols.views, isEmpty);
+    expect(cols.current.currentViewId, isNull);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.meta);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyY);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.meta);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('item-row-a')), findsNothing);
+    expect(cols.views, hasLength(1));
   });
 
   testWidgets('File Save persists a dirty named view without collection *', (

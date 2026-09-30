@@ -567,6 +567,42 @@ void main() {
         expect(disk.collections.single.views.single.name, 'Ada');
       });
 
+      test('saveView and renameView refuse a taken name and All', () async {
+        await controller.create(name: 'Trip', seedFolders: ['/a']);
+        final ada = await controller.saveView(
+          name: 'Ada',
+          filters: const LibraryViewFilters(filterQuery: 'Ada'),
+        );
+        expect(ada, isNotNull);
+        expect(
+          await controller.saveView(
+            name: ' ada ',
+            filters: const LibraryViewFilters(filterQuery: 'x'),
+          ),
+          isNull,
+        );
+        expect(
+          await controller.saveView(
+            name: 'All',
+            filters: LibraryViewFilters.all,
+          ),
+          isNull,
+        );
+        expect(controller.views.map((v) => v.name), ['Ada']);
+
+        final sam = await controller.saveView(
+          name: 'Sam',
+          filters: const LibraryViewFilters(filterQuery: 'Sam'),
+        );
+        expect(sam, isNotNull);
+        expect(await controller.renameView(sam!.id, name: 'Ada'), isFalse);
+        expect(controller.viewById(sam.id)!.name, 'Sam');
+        expect(await controller.renameView(sam.id, name: 'sam'), isTrue);
+        expect(controller.viewById(sam.id)!.name, 'sam');
+        expect(await controller.renameView(sam.id, name: 'All'), isFalse);
+        expect(controller.viewById(sam.id)!.name, 'sam');
+      });
+
       test('nextDefaultViewName skips taken ViewNN', () async {
         await controller.create(name: 'Trip', seedFolders: ['/a']);
         expect(controller.nextDefaultViewName(), 'View01');
@@ -599,10 +635,7 @@ void main() {
       test('hiddenItemIds round-trips on a saved view', () async {
         await controller.create(name: 'Trip', seedFolders: ['/a']);
         const filters = LibraryViewFilters(hiddenItemIds: ['item_a']);
-        final saved = await controller.saveView(
-          name: 'No a',
-          filters: filters,
-        );
+        final saved = await controller.saveView(name: 'No a', filters: filters);
         expect(saved!.filters.hiddenItemIds, ['item_a']);
         final disk = await CollectionsStore(supportDir: tempDir).load();
         expect(disk.collections.single.views.single.filters.hiddenItemIds, [

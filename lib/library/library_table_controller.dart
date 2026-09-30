@@ -396,11 +396,35 @@ class LibraryTableController extends ChangeNotifier {
 
   /// Called after a real View mutation (filter / hide-unhide / sort), not
   /// after load, expand, or collection membership changes.
-  VoidCallback? onViewFiltersChanged;
+  ///
+  /// Returns the in-flight auto-mint (All → ViewNN) so undo can snapshot
+  /// after that write finishes.
+  Future<void> Function()? onViewFiltersChanged;
+
+  Future<void>? _viewCommitTail;
+
+  void _scheduleViewCommit() {
+    final prev = _viewCommitTail ?? Future<void>.value();
+    _viewCommitTail = prev
+        .catchError((Object _) {})
+        .then((_) => _emitViewFiltersChanged());
+  }
+
+  Future<void> _emitViewFiltersChanged() {
+    final hook = onViewFiltersChanged;
+    if (hook == null) return Future<void>.value();
+    return hook();
+  }
+
+  /// Waits for every view-commit scheduled by mutations so far.
+  Future<void> awaitPendingViewCommit() async {
+    final tail = _viewCommitTail;
+    if (tail != null) await tail;
+  }
 
   void _notifyViewMutation() {
     _notify();
-    onViewFiltersChanged?.call();
+    _scheduleViewCommit();
   }
 
   void setActiveView(String? id, LibraryViewFilters? snapshot) {
@@ -465,6 +489,11 @@ class LibraryTableController extends ChangeNotifier {
   /// Parent dirs the user has expanded (multi-item groups default collapsed).
   /// Sibling-folder parents (2+ child directories) are auto-seeded into this set.
   final Set<String> expandedSourceDirs = {};
+
+  /// Open folders last restored from the collection page look.
+  /// [captureCollectionLibraryUi] reports this, not the live set, so a
+  /// folder expand or collapse does not dirty the collection.
+  List<String> _collectionExpandedBaseline = const [];
 
   /// Multi-child folder parents already considered for auto-expand this session.
   /// Prevents re-expanding after the user collapses one.
@@ -824,7 +853,7 @@ class LibraryTableController extends ChangeNotifier {
         for (final k in sortKeys)
           CollectionSortKey(k.column.name, ascending: k.ascending),
       ],
-      expandedDirs: expandedSourceDirs.toList()..sort(),
+      expandedDirs: _collectionExpandedBaseline,
     );
   }
 
@@ -832,6 +861,7 @@ class LibraryTableController extends ChangeNotifier {
   /// Query / status / sort live on Views; All is every collection item.
   Future<void> applyCollectionLibraryUi(CollectionLibraryUi ui) async {
     pageIndex = 0;
+    _collectionExpandedBaseline = List<String>.from(ui.expandedDirs);
     expandedSourceDirs
       ..clear()
       ..addAll(ui.expandedDirs);
@@ -860,7 +890,21 @@ class LibraryTableController extends ChangeNotifier {
       ],
       hiddenFolders: (hiddenFolders.toList()..sort()),
       hiddenItemIds: (hiddenItemIds.toList()..sort()),
+      expandedDirs: _expandedDirsForPersist(),
     );
+  }
+
+  /// Null when the live open set is the automatic sibling-folder expand,
+  /// so All and an untouched view do not store a list.
+  List<String>? _expandedDirsForPersist() {
+    final live = expandedSourceDirs.toList()..sort();
+    final automatic = _multiChildFolderParentPaths(filteredSorted).toList()
+      ..sort();
+    if (live.length == automatic.length) {
+      final auto = automatic.toSet();
+      if (live.every(auto.contains)) return null;
+    }
+    return live;
   }
 
   /// Snapshot written to a View: Hide-column stays inspect-only.
@@ -914,9 +958,22 @@ class LibraryTableController extends ChangeNotifier {
     if (nextStatus != statusFilter) {
       statusFilter = nextStatus;
       await load();
-    } else {
-      _notify();
     }
+    _applyViewExpandedDirs(f.expandedDirs);
+    _notify();
+  }
+
+  /// [dirs] null restores the automatic expand. An explicit list replaces
+  /// the open set and seeds branch parents so a later reload does not reopen
+  /// a folder this view collapsed.
+  void _applyViewExpandedDirs(List<String>? dirs) {
+    final branches = _multiChildFolderParentPaths(filteredSorted);
+    expandedSourceDirs
+      ..clear()
+      ..addAll(dirs ?? branches);
+    _seededBranchParents
+      ..clear()
+      ..addAll(branches);
   }
 
   static LibrarySortColumn? _sortColumnFromName(String name) {
@@ -944,7 +1001,7 @@ class LibraryTableController extends ChangeNotifier {
   Future<void> setStatusFilter(ProcessingStatus? status) async {
     statusFilter = status;
     await load();
-    onViewFiltersChanged?.call();
+    _scheduleViewCommit();
   }
 
   /// Click a column header (Cliptorium-style).
@@ -1050,6 +1107,14 @@ class LibraryTableController extends ChangeNotifier {
   /// Expand or collapse a multi-item source directory group.
   void toggleCollapseSourceDir(String dir) {
     if (!expandedSourceDirs.add(dir)) expandedSourceDirs.remove(dir);
+    _notifyViewMutation();
+  }
+
+  /// Replace the open path-group folders (Folders undo/redo).
+  void replaceExpandedSourceDirs(Iterable<String> dirs) {
+    expandedSourceDirs
+      ..clear()
+      ..addAll(dirs);
     _notify();
   }
 

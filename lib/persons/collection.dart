@@ -317,7 +317,11 @@ class CollectionSortKey {
 /// Folders filter/sort snapshot stored on a [SavedView].
 ///
 /// [all] is the built-in All view: no filters, Visible only, no sort, no
-/// hidden folders, no hidden items.
+/// hidden folders, no hidden items, and no explicit open-folder list.
+///
+/// [expandedDirs] null means the automatic folder expand (parents with two
+/// or more child folders open). A list, including an empty one, is the open
+/// set the user chose.
 class LibraryViewFilters {
   const LibraryViewFilters({
     this.filterQuery = '',
@@ -328,6 +332,7 @@ class LibraryViewFilters {
     this.sortKeys = const [],
     this.hiddenFolders = const [],
     this.hiddenItemIds = const [],
+    this.expandedDirs,
   });
 
   final String filterQuery;
@@ -352,6 +357,9 @@ class LibraryViewFilters {
   /// Item ids hidden in this view (Folders-only; not [Item.isHidden]).
   final List<String> hiddenItemIds;
 
+  /// Open path-group folders. Null keeps the automatic expand.
+  final List<String>? expandedDirs;
+
   static const all = LibraryViewFilters();
 
   LibraryViewFilters copyWith({
@@ -364,6 +372,8 @@ class LibraryViewFilters {
     List<CollectionSortKey>? sortKeys,
     List<String>? hiddenFolders,
     List<String>? hiddenItemIds,
+    List<String>? expandedDirs,
+    bool clearExpandedDirs = false,
   }) {
     return LibraryViewFilters(
       filterQuery: filterQuery ?? this.filterQuery,
@@ -376,19 +386,27 @@ class LibraryViewFilters {
       sortKeys: sortKeys ?? this.sortKeys,
       hiddenFolders: hiddenFolders ?? this.hiddenFolders,
       hiddenItemIds: hiddenItemIds ?? this.hiddenItemIds,
+      expandedDirs: clearExpandedDirs
+          ? null
+          : (expandedDirs ?? this.expandedDirs),
     );
   }
 
-  Map<String, Object?> toJson() => {
-    'filterQuery': filterQuery,
-    'statusFilter': statusFilter,
-    'whoNames': whoNames,
-    'whoMatchAll': whoMatchAll,
-    'hiddenItemsFilter': hiddenItemsFilter,
-    'sortKeys': [for (final k in sortKeys) k.toJson()],
-    'hiddenFolders': hiddenFolders,
-    'hiddenItemIds': hiddenItemIds,
-  };
+  Map<String, Object?> toJson() {
+    final json = <String, Object?>{
+      'filterQuery': filterQuery,
+      'statusFilter': statusFilter,
+      'whoNames': whoNames,
+      'whoMatchAll': whoMatchAll,
+      'hiddenItemsFilter': hiddenItemsFilter,
+      'sortKeys': [for (final k in sortKeys) k.toJson()],
+      'hiddenFolders': hiddenFolders,
+      'hiddenItemIds': hiddenItemIds,
+    };
+    final open = expandedDirs;
+    if (open != null) json['expandedDirs'] = open;
+    return json;
+  }
 
   factory LibraryViewFilters.fromJson(Map<String, dynamic> json) {
     final q = json['filterQuery'];
@@ -434,6 +452,14 @@ class LibraryViewFilters {
       }
     }
     ids.sort();
+    List<String>? expandedDirs;
+    final expandedRaw = json['expandedDirs'];
+    if (expandedRaw is List) {
+      expandedDirs = <String>[
+        for (final d in expandedRaw)
+          if (d is String && d.isNotEmpty) d,
+      ]..sort();
+    }
     return LibraryViewFilters(
       filterQuery: q is String ? q : '',
       statusFilter: status is String && status.isNotEmpty ? status : null,
@@ -443,6 +469,7 @@ class LibraryViewFilters {
       sortKeys: keys,
       hiddenFolders: folders,
       hiddenItemIds: ids,
+      expandedDirs: expandedDirs,
     );
   }
 
@@ -456,7 +483,8 @@ class LibraryViewFilters {
       other.hiddenItemsFilter == hiddenItemsFilter &&
       _listEquals(other.sortKeys, sortKeys) &&
       _listEquals(other.hiddenFolders, hiddenFolders) &&
-      _listEquals(other.hiddenItemIds, hiddenItemIds);
+      _listEquals(other.hiddenItemIds, hiddenItemIds) &&
+      _sameOptionalList(other.expandedDirs, expandedDirs);
 
   @override
   int get hashCode => Object.hash(
@@ -468,6 +496,7 @@ class LibraryViewFilters {
     Object.hashAll(sortKeys),
     Object.hashAll(hiddenFolders),
     Object.hashAll(hiddenItemIds),
+    expandedDirs == null ? 0 : Object.hash(1, Object.hashAll(expandedDirs!)),
   );
 }
 
@@ -671,4 +700,9 @@ bool _listEquals<T>(List<T> a, List<T> b) {
     if (a[i] != b[i]) return false;
   }
   return true;
+}
+
+bool _sameOptionalList<T>(List<T>? a, List<T>? b) {
+  if (a == null || b == null) return a == null && b == null;
+  return _listEquals(a, b);
 }

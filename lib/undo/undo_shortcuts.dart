@@ -27,16 +27,10 @@ bool focusIsInEditableText(BuildContext context) {
 const Map<ShortcutActivator, Intent> kScreenUndoShortcuts = {
   SingleActivator(LogicalKeyboardKey.keyZ, meta: true): ScreenUndoIntent(),
   SingleActivator(LogicalKeyboardKey.keyZ, control: true): ScreenUndoIntent(),
-  SingleActivator(
-    LogicalKeyboardKey.keyZ,
-    meta: true,
-    shift: true,
-  ): ScreenRedoIntent(),
-  SingleActivator(
-    LogicalKeyboardKey.keyZ,
-    control: true,
-    shift: true,
-  ): ScreenRedoIntent(),
+  SingleActivator(LogicalKeyboardKey.keyZ, meta: true, shift: true):
+      ScreenRedoIntent(),
+  SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true):
+      ScreenRedoIntent(),
   // macOS Cmd+Y and Windows/Linux Ctrl+Y
   SingleActivator(LogicalKeyboardKey.keyY, meta: true): ScreenRedoIntent(),
   SingleActivator(LogicalKeyboardKey.keyY, control: true): ScreenRedoIntent(),
@@ -220,10 +214,7 @@ class UndoShortcuts extends StatelessWidget {
                 },
               ),
             },
-            child: Focus(
-              autofocus: true,
-              child: child,
-            ),
+            child: Focus(autofocus: true, child: child),
           ),
         );
       },
@@ -233,10 +224,7 @@ class UndoShortcuts extends StatelessWidget {
 
 /// Subtle undo-depth indicator for a screen.
 class UndoDepthBadge extends StatelessWidget {
-  const UndoDepthBadge({
-    super.key,
-    required this.controller,
-  });
+  const UndoDepthBadge({super.key, required this.controller});
 
   final UndoController controller;
 
@@ -248,8 +236,7 @@ class UndoDepthBadge extends StatelessWidget {
         final depth = controller.undoDepth;
         if (depth == 0) return const SizedBox.shrink();
         final theme = Theme.of(context);
-        final base =
-            theme.textTheme.titleSmall ?? theme.textTheme.bodyMedium;
+        final base = theme.textTheme.titleSmall ?? theme.textTheme.bodyMedium;
         return Text(
           '$depth',
           key: const Key('undo-depth'),
@@ -272,8 +259,6 @@ class UndoSelectableRoute extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ActiveUndoShortcuts(
-      child: SelectableScope(child: child),
-    );
+    return ActiveUndoShortcuts(child: SelectableScope(child: child));
   }
 }

@@ -59,6 +59,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   late int _exportSoundtrackUnderVideoPercent;
   late int _exportMusicLoopCount;
   final UndoController _undoStack = UndoController();
+  String _familiarSeen = '';
+  bool _suppressFamiliarUndo = false;
 
   @override
   void initState() {
@@ -104,10 +106,45 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _exportSoundtrackUnderVideoPercent =
         prefs.exportSoundtrackUnderVideoPercentOrDefault;
     _exportMusicLoopCount = prefs.exportMusicLoopCountOrDefault;
+    _familiarSeen = _familiarRegions.text;
+    _familiarRegions.addListener(_onFamiliarRegionsEdited);
+  }
+
+  void _onFamiliarRegionsEdited() {
+    if (_suppressFamiliarUndo) return;
+    final next = _familiarRegions.text;
+    if (next == _familiarSeen) return;
+    final before = _prefsWithFamiliar(_familiarSeen);
+    _familiarSeen = next;
+    final after = _draftPrefs();
+    if (before == after) return;
+    _undoStack.push(
+      CallbackUndoableAction(
+        label: 'Edit setting',
+        onUndo: () async {
+          setState(() => _restoreDraftSnapshot(before));
+        },
+        onRedo: () async {
+          setState(() => _restoreDraftSnapshot(after));
+        },
+      ),
+    );
+  }
+
+  /// Snapshot draft prefs as if the familiar-regions field held [csv].
+  DesktopPrefs _prefsWithFamiliar(String csv) {
+    _suppressFamiliarUndo = true;
+    final saved = _familiarRegions.value;
+    _familiarRegions.text = csv;
+    final prefs = _draftPrefs();
+    _familiarRegions.value = saved;
+    _suppressFamiliarUndo = false;
+    return prefs;
   }
 
   /// Restore draft fields without recreating text controllers (undo/redo).
   void _restoreDraftSnapshot(DesktopPrefs prefs) {
+    _suppressFamiliarUndo = true;
     _showCountryWhenSameCountry = prefs.showCountryWhenSameCountry;
     _showStateWhenSameState = prefs.showStateWhenSameState;
     _multiColumnSort = prefs.multiColumnSort;
@@ -138,6 +175,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _exportSoundtrackUnderVideoPercent =
         prefs.exportSoundtrackUnderVideoPercentOrDefault;
     _exportMusicLoopCount = prefs.exportMusicLoopCountOrDefault;
+    _familiarSeen = _familiarRegions.text;
+    _suppressFamiliarUndo = false;
   }
 
   void _mutateDraft(VoidCallback change, {String label = 'Edit setting'}) {
@@ -254,7 +293,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final next = _draftPrefs();
     await _persist(next);
     if (!mounted) return;
+    _suppressFamiliarUndo = true;
     _familiarRegions.text = next.familiarRegions;
+    _familiarSeen = _familiarRegions.text;
+    _suppressFamiliarUndo = false;
     _baseline = next;
     _undoStack.clear();
     if (pop) Navigator.of(context).pop();

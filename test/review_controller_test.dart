@@ -166,52 +166,86 @@ void main() {
     stack.dispose();
   });
 
-  test('addTag optimistic then reconciles approved value; undo restores',
-      () async {
+  test('delete key-period comment undoes by adding the body back', () async {
     final item = fixtureItem(id: 'item_1');
-    final knowledge = fixtureKnowledge(
-      item: item,
-      tags: [fixtureTag(id: 'tag_what', dimension: 'what', value: 'picnic')],
-    );
+    final knowledge = fixtureKnowledge(item: item);
     final items = FakeItemsRepository(
       items: [item],
       knowledgeByItemId: {'item_1': knowledge},
     );
-    final corrections = FakeCorrectionsRepository(items: items);
-    final controller = _controller(items: items, corrections: corrections);
+    final comments = FakeCommentsRepository();
+    final stack = UndoController();
+    final controller = ReviewController(
+      itemId: 'item_1',
+      itemsRepository: items,
+      correctionsRepository: FakeCorrectionsRepository(items: items),
+      commentsRepository: comments,
+      resolveMedia: (_) async =>
+          const LocalMediaResolution(status: LocalMediaStatus.missing),
+      undoStack: stack,
+    );
     await controller.load();
+    await controller.addKeyPeriodComment('kp_1', 'hello');
+    final id = controller.commentsForKeyPeriod('kp_1').single.id;
+    await controller.deleteComment(id);
+    expect(controller.commentsForKeyPeriod('kp_1'), isEmpty);
+    expect(stack.undoDepth, 2);
 
-    final beforeValues =
-        controller.knowledge!.tags.map((t) => t.value).toList();
-    expect(beforeValues, contains('picnic'));
+    await stack.undo();
+    expect(controller.commentsForKeyPeriod('kp_1').single.body, 'hello');
 
-    // Start addTag without awaiting so we can observe optimistic state.
-    final pending = controller.addTag(dimension: 'where', value: 'beach');
-    // Allow microtask for optimistic notify.
-    await Future<void>.delayed(Duration.zero);
-    expect(
-      controller.knowledge!.tags.any((t) => t.value == 'beach'),
-      isTrue,
-      reason: 'optimistic tag visible before reconcile',
-    );
-    await pending;
-    expect(controller.phase, ReviewPhase.ready);
-    expect(
-      controller.knowledge!.tags.any((t) => t.value == 'beach'),
-      isTrue,
-    );
-    expect(corrections.addTagCalls, hasLength(1));
-    expect(controller.knowledge!.corrections, isNotEmpty);
-
-    final correctionId = controller.knowledge!.corrections.last.id;
-    await controller.undoCorrection(correctionId);
-    expect(corrections.undoCalls, [correctionId]);
-    expect(
-      controller.knowledge!.corrections.any((c) => c.id == correctionId),
-      isFalse,
-    );
+    await stack.redo();
+    expect(controller.commentsForKeyPeriod('kp_1'), isEmpty);
     controller.dispose();
+    stack.dispose();
   });
+
+  test(
+    'addTag optimistic then reconciles approved value; undo restores',
+    () async {
+      final item = fixtureItem(id: 'item_1');
+      final knowledge = fixtureKnowledge(
+        item: item,
+        tags: [fixtureTag(id: 'tag_what', dimension: 'what', value: 'picnic')],
+      );
+      final items = FakeItemsRepository(
+        items: [item],
+        knowledgeByItemId: {'item_1': knowledge},
+      );
+      final corrections = FakeCorrectionsRepository(items: items);
+      final controller = _controller(items: items, corrections: corrections);
+      await controller.load();
+
+      final beforeValues = controller.knowledge!.tags
+          .map((t) => t.value)
+          .toList();
+      expect(beforeValues, contains('picnic'));
+
+      // Start addTag without awaiting so we can observe optimistic state.
+      final pending = controller.addTag(dimension: 'where', value: 'beach');
+      // Allow microtask for optimistic notify.
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        controller.knowledge!.tags.any((t) => t.value == 'beach'),
+        isTrue,
+        reason: 'optimistic tag visible before reconcile',
+      );
+      await pending;
+      expect(controller.phase, ReviewPhase.ready);
+      expect(controller.knowledge!.tags.any((t) => t.value == 'beach'), isTrue);
+      expect(corrections.addTagCalls, hasLength(1));
+      expect(controller.knowledge!.corrections, isNotEmpty);
+
+      final correctionId = controller.knowledge!.corrections.last.id;
+      await controller.undoCorrection(correctionId);
+      expect(corrections.undoCalls, [correctionId]);
+      expect(
+        controller.knowledge!.corrections.any((c) => c.id == correctionId),
+        isFalse,
+      );
+      controller.dispose();
+    },
+  );
 
   test('editTag updates displayed value after reconcile', () async {
     final item = fixtureItem(id: 'item_1');
@@ -227,10 +261,7 @@ void main() {
     final controller = _controller(items: items, corrections: corrections);
     await controller.load();
     await controller.editTag('tag_what', 'hiking');
-    expect(
-      controller.knowledge!.tags.any((t) => t.value == 'hiking'),
-      isTrue,
-    );
+    expect(controller.knowledge!.tags.any((t) => t.value == 'hiking'), isTrue);
     expect(corrections.editTagCalls.single.input.value, 'hiking');
     controller.dispose();
   });
@@ -255,7 +286,10 @@ void main() {
   });
 
   test('correctCapturedAt updates item.capturedAt', () async {
-    final item = fixtureItem(id: 'item_1', capturedAt: '2026-01-01T00:00:00.000Z');
+    final item = fixtureItem(
+      id: 'item_1',
+      capturedAt: '2026-01-01T00:00:00.000Z',
+    );
     final knowledge = fixtureKnowledge(item: item, tags: const []);
     final items = FakeItemsRepository(
       items: [item],
@@ -269,27 +303,29 @@ void main() {
     controller.dispose();
   });
 
-  test('addItemComment attaches with server author + timestamp (R10)',
-      () async {
-    final item = fixtureItem(id: 'item_1');
-    final knowledge = fixtureKnowledge(item: item, tags: const []);
-    final items = FakeItemsRepository(
-      items: [item],
-      knowledgeByItemId: {'item_1': knowledge},
-    );
-    final comments = FakeCommentsRepository(authorUserId: 'acc_server');
-    final controller = _controller(items: items, comments: comments);
-    await controller.load();
-    await controller.addItemComment('nice shot');
-    expect(controller.itemComments, hasLength(1));
-    final c = controller.itemComments.single;
-    expect(c.body, 'nice shot');
-    expect(c.authorUserId, 'acc_server');
-    expect(c.createdAt, isNotEmpty);
-    expect(c.authorUserId, isNot(equals('pending')));
-    expect(comments.createItemCalls.single.input.body, 'nice shot');
-    controller.dispose();
-  });
+  test(
+    'addItemComment attaches with server author + timestamp (R10)',
+    () async {
+      final item = fixtureItem(id: 'item_1');
+      final knowledge = fixtureKnowledge(item: item, tags: const []);
+      final items = FakeItemsRepository(
+        items: [item],
+        knowledgeByItemId: {'item_1': knowledge},
+      );
+      final comments = FakeCommentsRepository(authorUserId: 'acc_server');
+      final controller = _controller(items: items, comments: comments);
+      await controller.load();
+      await controller.addItemComment('nice shot');
+      expect(controller.itemComments, hasLength(1));
+      final c = controller.itemComments.single;
+      expect(c.body, 'nice shot');
+      expect(c.authorUserId, 'acc_server');
+      expect(c.createdAt, isNotEmpty);
+      expect(c.authorUserId, isNot(equals('pending')));
+      expect(comments.createItemCalls.single.input.body, 'nice shot');
+      controller.dispose();
+    },
+  );
 
   test('saveItemComment replaces the single item comment', () async {
     final item = fixtureItem(id: 'item_1');
@@ -328,10 +364,7 @@ void main() {
     final controller = _controller(items: items, corrections: corrections);
     await controller.load();
     await controller.addTag(dimension: 'where', value: 'fail');
-    expect(
-      controller.knowledge!.tags.any((t) => t.value == 'fail'),
-      isFalse,
-    );
+    expect(controller.knowledge!.tags.any((t) => t.value == 'fail'), isFalse);
     expect(controller.mutationError, isA<ApiException>());
     controller.dispose();
   });

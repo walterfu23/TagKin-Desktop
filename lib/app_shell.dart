@@ -962,14 +962,14 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
     _syncActiveViewDirty();
   }
 
-  void _onViewFiltersChanged() {
+  Future<void> _onViewFiltersChanged() async {
     if (!mounted || _applyingCollectionUi) return;
     final cols = ref.read(collectionsControllerProvider);
     if (!cols.sessionReady) return;
     final table = _libraryLookSource;
     if (table == null) return;
     if (table.activeViewId != null) return;
-    unawaited(commitActiveView(table: table, cols: cols));
+    await commitActiveView(table: table, cols: cols);
   }
 
   /// Applies the collection's saved Folders look and folds any auto-expand
@@ -996,7 +996,8 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
           cols: cols,
         );
         if (!mounted) return;
-        // Auto-expand may change expandedDirs; fold into baseline, not dirty.
+        // Open folders live on the view. Capture keeps the collection's
+        // saved expand list so auto-expand and a user toggle do not dirty it.
         cols.adoptLibraryLook(table.captureCollectionLibraryUi());
       });
     } finally {
@@ -1065,7 +1066,8 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
       if (appExitCanSkipLeavePrompt(
         collectionDirty: cols.dirty,
         viewDirty: viewDirty,
-        exportBusy: itemListExportBusy ||
+        exportBusy:
+            itemListExportBusy ||
             ref.read(itemListExportJobManagerProvider).hasActive,
       )) {
         _quitConfirmed = true;

@@ -513,6 +513,49 @@ void main() {
     ]);
   });
 
+  testWidgets('person detail: exclude undo calls undoWhoExclusion', (
+    tester,
+  ) async {
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: 'Sam',
+          appearances: [
+            fixtureAppearance(id: 'ap_1', personId: 'person_1', tagId: 'tag_1'),
+          ],
+        ),
+      ],
+    );
+    final items = FakeItemsRepository(items: [fixtureItem(id: 'item_1')]);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          itemsRepositoryProvider.overrideWithValue(items),
+        ],
+        child: const MaterialApp(home: PersonDetailPage(personId: 'person_1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('appearance-thumb-ap_1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('appearance-exclude-ap_1')));
+    await tester.pumpAndSettle();
+
+    expect(items.createWhoExclusionCalls, hasLength(1));
+    expect(find.byKey(const Key('undo-depth')), findsOneWidget);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.meta);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.meta);
+    await tester.pumpAndSettle();
+
+    expect(items.undoWhoExclusionCalls, hasLength(1));
+  });
+
   testWidgets('person detail: appearance thumbs sit in one grid row', (
     tester,
   ) async {
@@ -592,9 +635,7 @@ void main() {
       expect(find.byKey(const Key('appearance-detail-ap_1')), findsOneWidget);
       expect(find.byKey(const Key('appearance-selected-ap_1')), findsOneWidget);
 
-      await tester.runAsync(
-        () => Future<void>.delayed(kDoubleTapTimeout),
-      );
+      await tester.runAsync(() => Future<void>.delayed(kDoubleTapTimeout));
       await tester.tap(find.byKey(const Key('appearance-thumb-ap_1')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('person-appearance-hint')), findsOneWidget);

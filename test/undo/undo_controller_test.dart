@@ -51,6 +51,25 @@ void main() {
       expect(c.undoDepth, 2);
     });
 
+    test('removeWhere drops only matching entries', () async {
+      final c = UndoController();
+      c.push(_act('keep', []));
+      c.push(_act('drop', [], draft: true));
+      c.push(
+        CallbackUndoableAction(
+          label: 'redo-drop',
+          draft: true,
+          onUndo: () async {},
+          onRedo: () async {},
+        ),
+      );
+      await c.undo();
+      c.removeWhere((action) => action.draft);
+      expect(c.undoDepth, 1);
+      expect(c.redoDepth, 0);
+      expect(c.canUndo, isTrue);
+    });
+
     test('failed undo keeps action on stack', () async {
       final c = UndoController();
       c.push(
@@ -68,9 +87,10 @@ void main() {
   });
 }
 
-UndoableAction _act(String id, List<String> log) {
+UndoableAction _act(String id, List<String> log, {bool draft = false}) {
   return CallbackUndoableAction(
     label: id,
+    draft: draft,
     onUndo: () async => log.add('undo:$id'),
     onRedo: () async => log.add('redo:$id'),
   );

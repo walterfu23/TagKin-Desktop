@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/app_shell.dart';
@@ -30,9 +31,7 @@ Widget _host() {
           key: const Key('open-settings'),
           onPressed: () {
             Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const SettingsPage(),
-              ),
+              MaterialPageRoute<void>(builder: (_) => const SettingsPage()),
             );
           },
           child: const Text('Open'),
@@ -49,10 +48,7 @@ void main() {
     await prefsController.load();
 
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: _overrides(prefsController),
-        child: _host(),
-      ),
+      ProviderScope(overrides: _overrides(prefsController), child: _host()),
     );
     await _openSettings(tester);
 
@@ -78,16 +74,43 @@ void main() {
     expect(prefsController.prefs.showCountryWhenSameCountry, isFalse);
   });
 
+  testWidgets('familiar regions undo restores the previous text', (
+    tester,
+  ) async {
+    final store = MemoryDesktopPrefsStore();
+    final prefsController = DesktopPrefsController(store: store);
+    await prefsController.load();
+
+    await tester.pumpWidget(
+      ProviderScope(overrides: _overrides(prefsController), child: _host()),
+    );
+    await _openSettings(tester);
+
+    final field = find.byKey(const Key('pref-familiar-regions'));
+    await tester.ensureVisible(field);
+    await tester.pumpAndSettle();
+    await tester.enterText(field, 'California');
+    await tester.pump();
+    expect(find.byKey(const Key('undo-depth')), findsOneWidget);
+
+    final scope = tester.element(find.byKey(const Key('pref-show-country-same')));
+    Focus.of(scope).requestFocus();
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.meta);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.meta);
+    await tester.pump();
+
+    expect(tester.widget<TextField>(field).controller?.text, isEmpty);
+  });
+
   testWidgets('dirty Settings Save from exit dialog persists', (tester) async {
     final store = MemoryDesktopPrefsStore();
     final prefsController = DesktopPrefsController(store: store);
     await prefsController.load();
 
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: _overrides(prefsController),
-        child: _host(),
-      ),
+      ProviderScope(overrides: _overrides(prefsController), child: _host()),
     );
     await _openSettings(tester);
 
@@ -106,16 +129,15 @@ void main() {
     expect(prefsController.prefs.showCountryWhenSameCountry, isTrue);
   });
 
-  testWidgets('Settings slider Save persists library page size', (tester) async {
+  testWidgets('Settings slider Save persists library page size', (
+    tester,
+  ) async {
     final store = MemoryDesktopPrefsStore();
     final prefsController = DesktopPrefsController(store: store);
     await prefsController.load();
 
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: _overrides(prefsController),
-        child: _host(),
-      ),
+      ProviderScope(overrides: _overrides(prefsController), child: _host()),
     );
     await _openSettings(tester);
 
@@ -145,10 +167,7 @@ void main() {
     await prefsController.load();
 
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: _overrides(prefsController),
-        child: _host(),
-      ),
+      ProviderScope(overrides: _overrides(prefsController), child: _host()),
     );
     await _openSettings(tester);
 
@@ -163,8 +182,9 @@ void main() {
     expect(prefsController.prefs.dateTimeFormat, DateTimeDisplayFormat.iso24);
   });
 
-  testWidgets('Settings Credits group shows remaining from /usage',
-      (tester) async {
+  testWidgets('Settings Credits group shows remaining from /usage', (
+    tester,
+  ) async {
     final store = MemoryDesktopPrefsStore();
     final prefsController = DesktopPrefsController(store: store);
     await prefsController.load();
@@ -194,7 +214,10 @@ void main() {
 
     expect(tile, findsOneWidget);
     expect(find.text('Credits remaining'), findsOneWidget);
-    expect(find.byKey(const Key('settings-credits-remaining-value')), findsOneWidget);
+    expect(
+      find.byKey(const Key('settings-credits-remaining-value')),
+      findsOneWidget,
+    );
     expect(find.text('1,234'), findsOneWidget);
     expect(find.byKey(const Key('settings-buy-credits')), findsOneWidget);
   });

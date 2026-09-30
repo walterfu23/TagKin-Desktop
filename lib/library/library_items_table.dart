@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/library/folders_undo_recorder.dart';
 import 'package:tagkin_desktop/library/item_hover_preview.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/library/local_thumb_cache.dart';
 import 'package:tagkin_desktop/library/processing_status_view.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
@@ -97,6 +100,18 @@ class LibraryItemsTable extends ConsumerWidget {
                             _HeaderRow(
                               controller: controller,
                               multiColumnSort: multiColumnSort,
+                              record: (label, mutate) {
+                                return ref
+                                    .read(foldersUndoProvider)
+                                    .record(
+                                      table: controller,
+                                      cols: ref.read(
+                                        collectionsControllerProvider,
+                                      ),
+                                      label: label,
+                                      mutate: mutate,
+                                    );
+                              },
                             ),
                             const Divider(height: 1),
                             Expanded(
@@ -137,8 +152,30 @@ class LibraryItemsTable extends ConsumerWidget {
                                                 controller,
                                                 dir,
                                               ),
-                                              onToggle: () => controller
-                                                  .toggleCollapseSourceDir(dir),
+                                              onToggle: () {
+                                                final expanded = controller
+                                                    .expandedSourceDirs
+                                                    .contains(dir);
+                                                unawaited(
+                                                  ref
+                                                      .read(foldersUndoProvider)
+                                                      .record(
+                                                        table: controller,
+                                                        cols: ref.read(
+                                                          collectionsControllerProvider,
+                                                        ),
+                                                        label: expanded
+                                                            ? 'Collapse folder'
+                                                            : 'Expand folder',
+                                                        mutate: () async {
+                                                          controller
+                                                              .toggleCollapseSourceDir(
+                                                                dir,
+                                                              );
+                                                        },
+                                                      ),
+                                                );
+                                              },
                                               onRemoveFolder: () =>
                                                   onRemoveFolder(dir, count),
                                               onHideFolder: () => onHideFolder(
@@ -222,10 +259,16 @@ String _retryTooltipUnder(LibraryTableController controller, String dir) {
 }
 
 class _HeaderRow extends StatelessWidget {
-  const _HeaderRow({required this.controller, required this.multiColumnSort});
+  const _HeaderRow({
+    required this.controller,
+    required this.multiColumnSort,
+    required this.record,
+  });
 
   final LibraryTableController controller;
   final bool multiColumnSort;
+  final Future<void> Function(String label, Future<void> Function() mutate)
+  record;
 
   @override
   Widget build(BuildContext context) {
@@ -241,6 +284,12 @@ class _HeaderRow extends StatelessWidget {
               column: LibrarySortColumn.source,
               controller: controller,
               multiColumnSort: multiColumnSort,
+              onSort: () => record('Sort', () async {
+                controller.toggleSort(
+                  LibrarySortColumn.source,
+                  multiColumn: multiColumnSort,
+                );
+              }),
             ),
             SizedBox(
               width: _kColVisibility,
@@ -294,6 +343,12 @@ class _HeaderRow extends StatelessWidget {
               controller: controller,
               multiColumnSort: multiColumnSort,
               trailing: _WhoFilterButton(controller: controller),
+              onSort: () => record('Sort', () async {
+                controller.toggleSort(
+                  LibrarySortColumn.who,
+                  multiColumn: multiColumnSort,
+                );
+              }),
             ),
             _SortHeader(
               label: 'What',
@@ -301,6 +356,12 @@ class _HeaderRow extends StatelessWidget {
               column: LibrarySortColumn.what,
               controller: controller,
               multiColumnSort: multiColumnSort,
+              onSort: () => record('Sort', () async {
+                controller.toggleSort(
+                  LibrarySortColumn.what,
+                  multiColumn: multiColumnSort,
+                );
+              }),
             ),
             _SortHeader(
               label: 'Where',
@@ -308,6 +369,12 @@ class _HeaderRow extends StatelessWidget {
               column: LibrarySortColumn.where,
               controller: controller,
               multiColumnSort: multiColumnSort,
+              onSort: () => record('Sort', () async {
+                controller.toggleSort(
+                  LibrarySortColumn.where,
+                  multiColumn: multiColumnSort,
+                );
+              }),
             ),
             _SortHeader(
               label: 'Comment',
@@ -315,6 +382,12 @@ class _HeaderRow extends StatelessWidget {
               column: LibrarySortColumn.comment,
               controller: controller,
               multiColumnSort: multiColumnSort,
+              onSort: () => record('Sort', () async {
+                controller.toggleSort(
+                  LibrarySortColumn.comment,
+                  multiColumn: multiColumnSort,
+                );
+              }),
             ),
             SizedBox(
               width: _kColStatus,
@@ -346,7 +419,13 @@ class _HeaderRow extends StatelessWidget {
                         ),
                       ),
                     ],
-                    onChanged: (v) => controller.setStatusFilter(v),
+                    onChanged: (v) {
+                      unawaited(
+                        record('Filter status', () async {
+                          await controller.setStatusFilter(v);
+                        }),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -365,6 +444,7 @@ class _SortHeader extends StatelessWidget {
     required this.column,
     required this.controller,
     required this.multiColumnSort,
+    required this.onSort,
     this.trailing,
   });
 
@@ -373,6 +453,7 @@ class _SortHeader extends StatelessWidget {
   final LibrarySortColumn column;
   final LibraryTableController controller;
   final bool multiColumnSort;
+  final Future<void> Function() onSort;
 
   /// Optional control (e.g. a column filter button) shown after the sort
   /// label, outside the sort tap target.
@@ -395,7 +476,7 @@ class _SortHeader extends StatelessWidget {
             child: InkWell(
               key: Key('sort-header-${column.name}'),
               onTap: () {
-                controller.toggleSort(column, multiColumn: multiColumnSort);
+                unawaited(onSort());
               },
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -553,9 +634,23 @@ class _WhoFilterDialogState extends State<_WhoFilterDialog> {
         FilledButton(
           key: const Key('who-filter-apply'),
           onPressed: () {
-            widget.controller.setWhoFilter(
-              names: _selected,
-              matchAll: _matchAll,
+            final container = ProviderScope.containerOf(context);
+            final selected = Set<String>.from(_selected);
+            final matchAll = _matchAll;
+            unawaited(
+              container
+                  .read(foldersUndoProvider)
+                  .record(
+                    table: widget.controller,
+                    cols: container.read(collectionsControllerProvider),
+                    label: 'Filter who',
+                    mutate: () async {
+                      widget.controller.setWhoFilter(
+                        names: selected,
+                        matchAll: matchAll,
+                      );
+                    },
+                  ),
             );
             Navigator.of(context).pop();
           },
@@ -954,11 +1049,7 @@ class _DataRow extends ConsumerWidget {
 }
 
 class _ThumbCell extends StatelessWidget {
-  const _ThumbCell({
-    required this.row,
-    required this.controller,
-    this.period,
-  });
+  const _ThumbCell({required this.row, required this.controller, this.period});
 
   final LibraryTableRow row;
   final LibraryTableController controller;
@@ -1003,11 +1094,7 @@ class _Thumb extends StatelessWidget {
     }
     return ClipRRect(
       borderRadius: BorderRadius.circular(4),
-      child: SizedBox(
-        width: _kThumbSize,
-        height: _kThumbSize,
-        child: child,
-      ),
+      child: SizedBox(width: _kThumbSize, height: _kThumbSize, child: child),
     );
   }
 

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:tagkin_desktop/library/folders_undo_recorder.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/persons/collection.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
@@ -260,6 +261,41 @@ class ViewsMenu extends ConsumerWidget {
     final cols = ref.read(collectionsControllerProvider);
     final table = ref.read(libraryTableControllerProvider);
     final prefs = ref.read(desktopPrefsControllerProvider);
+    if (sel.cmd == _ViewsCmd.manage) {
+      if (!context.mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (_) =>
+            _ManageViewsDialog(cols: cols, table: table, prefs: prefs),
+      );
+      return;
+    }
+    final label = switch (sel.cmd) {
+      _ViewsCmd.saveAs => 'Save view',
+      _ViewsCmd.update => 'Update view',
+      _ViewsCmd.rename => 'Rename view',
+      _ViewsCmd.delete => 'Delete view',
+      _ViewsCmd.all => 'Show all',
+      _ViewsCmd.manage || null => 'Change view',
+    };
+    await ref
+        .read(foldersUndoProvider)
+        .record(
+          table: table,
+          cols: cols,
+          label: label,
+          mutate: () => _runViewCommand(context, ref, sel, cols, table, prefs),
+        );
+  }
+
+  Future<void> _runViewCommand(
+    BuildContext context,
+    WidgetRef ref,
+    _ViewsSel sel,
+    CollectionsController cols,
+    LibraryTableController table,
+    DesktopPrefsController prefs,
+  ) async {
     final viewId = sel.viewId;
     if (viewId != null) {
       if (table.activeViewId == viewId) return;
@@ -315,6 +351,7 @@ class ViewsMenu extends ConsumerWidget {
       context,
       title: 'Save as new view',
       confirmLabel: 'Save',
+      nameTaken: cols.viewNameTaken,
     );
     if (result == null) return;
     final saved = await cols.saveView(
@@ -341,6 +378,7 @@ class ViewsMenu extends ConsumerWidget {
       confirmLabel: 'Save',
       initialName: current.name,
       initialDescription: current.description,
+      nameTaken: (name) => cols.viewNameTaken(name, excludingId: id),
     );
     if (result == null) return;
     await cols.renameView(
@@ -400,6 +438,7 @@ Future<({String name, String description})?> showViewNameDialog(
   required String confirmLabel,
   String initialName = '',
   String initialDescription = '',
+  bool Function(String name)? nameTaken,
 }) {
   return showDialog<({String name, String description})>(
     context: context,
@@ -408,6 +447,7 @@ Future<({String name, String description})?> showViewNameDialog(
       confirmLabel: confirmLabel,
       initialName: initialName,
       initialDescription: initialDescription,
+      nameTaken: nameTaken,
     ),
   );
 }
@@ -418,12 +458,14 @@ class _ViewNameDialog extends StatefulWidget {
     required this.confirmLabel,
     required this.initialName,
     required this.initialDescription,
+    this.nameTaken,
   });
 
   final String title;
   final String confirmLabel;
   final String initialName;
   final String initialDescription;
+  final bool Function(String name)? nameTaken;
 
   @override
   State<_ViewNameDialog> createState() => _ViewNameDialogState();
@@ -436,6 +478,7 @@ class _ViewNameDialogState extends State<_ViewNameDialog> {
   late final TextEditingController _description = TextEditingController(
     text: widget.initialDescription,
   );
+  String? _nameError;
 
   @override
   void dispose() {
@@ -447,6 +490,10 @@ class _ViewNameDialogState extends State<_ViewNameDialog> {
   void _save() {
     final trimmed = _name.text.trim();
     if (trimmed.isEmpty) return;
+    if (widget.nameTaken?.call(trimmed) == true) {
+      setState(() => _nameError = 'A view with this name already exists.');
+      return;
+    }
     Navigator.of(
       context,
     ).pop((name: trimmed, description: _description.text.trim()));
@@ -466,10 +513,15 @@ class _ViewNameDialogState extends State<_ViewNameDialog> {
               key: const Key('view-name-field'),
               controller: _name,
               autofocus: true,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'View name',
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
+                errorText: _nameError,
               ),
+              onChanged: (_) {
+                if (_nameError == null) return;
+                setState(() => _nameError = null);
+              },
               onSubmitted: (_) => _save(),
             ),
             const SizedBox(height: 12),
@@ -546,24 +598,35 @@ class _ManageViewsDialog extends StatelessWidget {
                                 TextButton(
                                   key: Key('views-manage-load-${v.id}'),
                                   onPressed: () async {
-                                    if (table.activeViewId != v.id) {
-                                      final ok = await confirmLeaveIfViewDirty(
-                                        context: context,
-                                        table: table,
-                                        cols: cols,
-                                        prefs: prefs,
-                                      );
-                                      if (!ok) return;
-                                    }
-                                    await applySavedView(
+                                    final undo = ProviderScope.containerOf(
+                                      context,
+                                    ).read(foldersUndoProvider);
+                                    await undo.record(
                                       table: table,
-                                      prefs: prefs,
-                                      view: v,
                                       cols: cols,
+                                      label: 'Change view',
+                                      mutate: () async {
+                                        if (table.activeViewId != v.id) {
+                                          final ok =
+                                              await confirmLeaveIfViewDirty(
+                                                context: context,
+                                                table: table,
+                                                cols: cols,
+                                                prefs: prefs,
+                                              );
+                                          if (!ok) return;
+                                        }
+                                        await applySavedView(
+                                          table: table,
+                                          prefs: prefs,
+                                          view: v,
+                                          cols: cols,
+                                        );
+                                        if (context.mounted) {
+                                          Navigator.of(context).pop();
+                                        }
+                                      },
                                     );
-                                    if (context.mounted) {
-                                      Navigator.of(context).pop();
-                                    }
                                   },
                                   child: const Text('Load'),
                                 ),
@@ -575,18 +638,33 @@ class _ManageViewsDialog extends StatelessWidget {
                                     size: 18,
                                   ),
                                   onPressed: () async {
-                                    final result = await showViewNameDialog(
+                                    final undo = ProviderScope.containerOf(
                                       context,
-                                      title: 'Rename view',
-                                      confirmLabel: 'Save',
-                                      initialName: v.name,
-                                      initialDescription: v.description,
-                                    );
-                                    if (result == null) return;
-                                    await cols.renameView(
-                                      v.id,
-                                      name: result.name,
-                                      description: result.description,
+                                    ).read(foldersUndoProvider);
+                                    await undo.record(
+                                      table: table,
+                                      cols: cols,
+                                      label: 'Rename view',
+                                      mutate: () async {
+                                        final result = await showViewNameDialog(
+                                          context,
+                                          title: 'Rename view',
+                                          confirmLabel: 'Save',
+                                          initialName: v.name,
+                                          initialDescription: v.description,
+                                          nameTaken: (name) =>
+                                              cols.viewNameTaken(
+                                                name,
+                                                excludingId: v.id,
+                                              ),
+                                        );
+                                        if (result == null) return;
+                                        await cols.renameView(
+                                          v.id,
+                                          name: result.name,
+                                          description: result.description,
+                                        );
+                                      },
                                     );
                                   },
                                 ),
@@ -598,19 +676,29 @@ class _ManageViewsDialog extends StatelessWidget {
                                     size: 18,
                                   ),
                                   onPressed: () async {
-                                    final ok = await _confirmDeleteView(
+                                    final undo = ProviderScope.containerOf(
                                       context,
-                                      v.name,
+                                    ).read(foldersUndoProvider);
+                                    await undo.record(
+                                      table: table,
+                                      cols: cols,
+                                      label: 'Delete view',
+                                      mutate: () async {
+                                        final ok = await _confirmDeleteView(
+                                          context,
+                                          v.name,
+                                        );
+                                        if (!ok) return;
+                                        await cols.deleteView(v.id);
+                                        if (table.activeViewId == v.id) {
+                                          await applyAllView(
+                                            table: table,
+                                            prefs: prefs,
+                                            cols: cols,
+                                          );
+                                        }
+                                      },
                                     );
-                                    if (!ok) return;
-                                    await cols.deleteView(v.id);
-                                    if (table.activeViewId == v.id) {
-                                      await applyAllView(
-                                        table: table,
-                                        prefs: prefs,
-                                        cols: cols,
-                                      );
-                                    }
                                   },
                                 ),
                               ],

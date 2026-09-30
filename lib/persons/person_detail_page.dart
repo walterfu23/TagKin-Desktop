@@ -553,12 +553,40 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
       personDetailControllerProvider(widget.personId),
     );
     try {
-      await ref.read(itemsRepositoryProvider).createWhoExclusion(itemId, tagId);
+      final created = await ref
+          .read(itemsRepositoryProvider)
+          .createWhoExclusion(itemId, tagId);
       if (!mounted) return;
       await controller.load();
       if (!mounted) return;
       setState(() => _selectedAppearanceId = null);
       ref.read(collectionsControllerProvider).markDirty();
+      var exclusionId = created.exclusion.id;
+      _undoStack.push(
+        CallbackUndoableAction(
+          label: 'Exclude appearance',
+          onUndo: () async {
+            await ref
+                .read(itemsRepositoryProvider)
+                .undoWhoExclusion(itemId, exclusionId);
+            if (!mounted) return;
+            await controller.load();
+            if (mounted) ref.read(collectionsControllerProvider).markDirty();
+          },
+          onRedo: () async {
+            final again = await ref
+                .read(itemsRepositoryProvider)
+                .createWhoExclusion(itemId, tagId);
+            exclusionId = again.exclusion.id;
+            if (!mounted) return;
+            await controller.load();
+            if (mounted) {
+              setState(() => _selectedAppearanceId = null);
+              ref.read(collectionsControllerProvider).markDirty();
+            }
+          },
+        ),
+      );
       if (controller.detail == null) {
         Navigator.of(context).pop();
         return;

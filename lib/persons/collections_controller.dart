@@ -246,7 +246,7 @@ class CollectionsController extends ChangeNotifier {
   /// Next unused ViewNN name on the open collection (View01, View02, …).
   String nextDefaultViewName() {
     var n = 1;
-    while (_viewNameTaken(_defaultViewName(n))) {
+    while (viewNameTaken(_defaultViewName(n))) {
       n++;
     }
     return _defaultViewName(n);
@@ -255,12 +255,18 @@ class CollectionsController extends ChangeNotifier {
   static String _defaultViewName(int n) =>
       'View${n.toString().padLeft(2, '0')}';
 
-  bool _viewNameTaken(String name) {
+  /// True when [name] is the built-in All view, or another saved view on the
+  /// open collection already uses it (case-insensitive). [excludingId] is the
+  /// view being renamed, which may keep its own name.
+  bool viewNameTaken(String name, {String? excludingId}) {
     final trimmed = name.trim().toLowerCase();
     if (trimmed.isEmpty) return false;
+    if (trimmed == 'all') return true;
     final cur = _current;
     if (cur == null) return false;
-    return cur.views.any((v) => v.name.toLowerCase() == trimmed);
+    return cur.views.any(
+      (v) => v.id != excludingId && v.name.toLowerCase() == trimmed,
+    );
   }
 
   Future<void> _mintDefaultCollection(List<String> libraryFolders) async {
@@ -731,7 +737,7 @@ class CollectionsController extends ChangeNotifier {
     final cur = _current;
     if (cur == null || !sessionReady) return null;
     final trimmed = name.trim();
-    if (trimmed.isEmpty) return null;
+    if (trimmed.isEmpty || viewNameTaken(trimmed)) return null;
     final created = SavedView(
       id: newCollectionId(),
       name: trimmed,
@@ -770,7 +776,10 @@ class CollectionsController extends ChangeNotifier {
     final idx = cur.views.indexWhere((v) => v.id == id);
     if (idx < 0) return false;
     final trimmedName = name?.trim();
-    if (trimmedName != null && trimmedName.isEmpty) return false;
+    if (trimmedName != null &&
+        (trimmedName.isEmpty || viewNameTaken(trimmedName, excludingId: id))) {
+      return false;
+    }
     final nextViews = List<SavedView>.of(cur.views);
     nextViews[idx] = nextViews[idx].copyWith(
       name: trimmedName,
@@ -816,6 +825,31 @@ class CollectionsController extends ChangeNotifier {
       currentViewId: id,
     );
     return true;
+  }
+
+  /// Replace the open collection's saved views, recents, and current view.
+  ///
+  /// Used by Folders undo/redo. Fails when [collectionId] is not the open
+  /// collection so a stale snapshot cannot write another collection.
+  Future<void> restoreViewsState({
+    required String collectionId,
+    required List<SavedView> views,
+    required List<String> recentViewIds,
+    required String? currentViewId,
+  }) async {
+    final cur = _current;
+    if (cur == null || !sessionReady || cur.id != collectionId) {
+      throw StateError('Collection changed');
+    }
+    if (currentViewId != null && !views.any((v) => v.id == currentViewId)) {
+      throw StateError('View is gone');
+    }
+    await _persistViewsPatch(
+      views: views,
+      recentViewIds: recentViewIds,
+      currentViewId: currentViewId,
+      clearCurrentViewId: currentViewId == null,
+    );
   }
 
   /// Persist which Folders view is current (null = All). Does not dirty `*`.

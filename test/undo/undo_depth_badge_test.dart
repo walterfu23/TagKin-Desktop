@@ -35,10 +35,9 @@ void main() {
 
     final badge = tester.widget<Text>(find.byKey(const Key('undo-depth')));
     final titleSize =
-        Theme.of(tester.element(find.text('Faces')))
-            .textTheme
-            .titleLarge
-            ?.fontSize ??
+        Theme.of(
+          tester.element(find.text('Faces')),
+        ).textTheme.titleLarge?.fontSize ??
         22;
     expect(badge.style!.fontSize!, lessThan(titleSize));
   });

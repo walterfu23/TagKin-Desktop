@@ -51,5 +51,5 @@ class ActiveUndoHostStack extends Notifier<UndoController?> {
 
 final activeScreenUndoControllerProvider =
     NotifierProvider<ActiveUndoHostStack, UndoController?>(
-  ActiveUndoHostStack.new,
-);
+      ActiveUndoHostStack.new,
+    );

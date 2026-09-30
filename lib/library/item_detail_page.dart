@@ -6,6 +6,7 @@ import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/jobs/jobs_controller.dart';
+import 'package:tagkin_desktop/library/folders_undo_recorder.dart';
 import 'package:tagkin_desktop/library/item_detail_edits.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/views_menu.dart';
@@ -96,15 +97,25 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
   void _toggleHidden(Item item) {
     _cacheLibraryTable();
     final table = _libraryTable;
-    if (table != null) {
-      table.setItemHiddenInView(
-        item.id,
-        hidden: !table.isItemHiddenInView(item.id),
-      );
-      setState(() {});
+    if (table == null) {
+      setState(() => _localHiddenInView = !_localHiddenInView);
       return;
     }
-    setState(() => _localHiddenInView = !_localHiddenInView);
+    final hidden = table.isItemHiddenInView(item.id);
+    unawaited(
+      ref
+          .read(foldersUndoProvider)
+          .record(
+            stack: _edits.undo,
+            table: table,
+            cols: ref.read(collectionsControllerProvider),
+            label: hidden ? 'Unhide item' : 'Hide item',
+            mutate: () async {
+              table.setItemHiddenInView(item.id, hidden: !hidden);
+              if (mounted) setState(() {});
+            },
+          ),
+    );
   }
 
   bool _hiddenInView(String itemId) {

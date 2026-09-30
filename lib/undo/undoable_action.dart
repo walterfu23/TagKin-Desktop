@@ -1,9 +1,13 @@
 /// One reversible gesture on a screen's LIFO undo/redo stack (D12).
 abstract class UndoableAction {
-  const UndoableAction({required this.label});
+  const UndoableAction({required this.label, this.draft = false});
 
   /// Short label for diagnostics / optional UI.
   final String label;
+
+  /// Item-detail drafts (assign / exclude before Save). Save and Discard
+  /// drop these and keep committed entries such as Hide item.
+  final bool draft;
 
   Future<void> undo();
   Future<void> redo();
@@ -13,6 +17,7 @@ abstract class UndoableAction {
 class CallbackUndoableAction extends UndoableAction {
   CallbackUndoableAction({
     required super.label,
+    super.draft,
     required this.onUndo,
     required this.onRedo,
   });

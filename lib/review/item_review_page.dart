@@ -187,7 +187,9 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     if (_comment.trim() != _commentBaseline.trim()) return true;
     if (_pendingItemAssigns.isNotEmpty) return true;
     if (_exclusionIntents.isNotEmpty) return true;
-    if (knowledge == null) return _cropIntents.isNotEmpty || _appearanceIntents.isNotEmpty;
+    if (knowledge == null) {
+      return _cropIntents.isNotEmpty || _appearanceIntents.isNotEmpty;
+    }
     for (final e in _cropIntents.entries) {
       if (!e.value.sameAs(_baselineCrop(knowledge, e.key))) return true;
     }
@@ -242,18 +244,22 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
   void _mutateDraft(VoidCallback change, {required String label}) {
     final beforeComment = _comment;
     final beforeCrops = Map<String, PersonAssignIntent>.from(_cropIntents);
-    final beforeAppearances =
-        Map<String, PersonAssignIntent>.from(_appearanceIntents);
-    final beforeExclusions =
-        Map<String, PersonAssignIntent>.from(_exclusionIntents);
+    final beforeAppearances = Map<String, PersonAssignIntent>.from(
+      _appearanceIntents,
+    );
+    final beforeExclusions = Map<String, PersonAssignIntent>.from(
+      _exclusionIntents,
+    );
     final beforePending = List<PersonAssignIntent>.from(_pendingItemAssigns);
     setState(change);
     final afterComment = _comment;
     final afterCrops = Map<String, PersonAssignIntent>.from(_cropIntents);
-    final afterAppearances =
-        Map<String, PersonAssignIntent>.from(_appearanceIntents);
-    final afterExclusions =
-        Map<String, PersonAssignIntent>.from(_exclusionIntents);
+    final afterAppearances = Map<String, PersonAssignIntent>.from(
+      _appearanceIntents,
+    );
+    final afterExclusions = Map<String, PersonAssignIntent>.from(
+      _exclusionIntents,
+    );
     final afterPending = List<PersonAssignIntent>.from(_pendingItemAssigns);
     if (beforeComment == afterComment &&
         _mapEquals(beforeCrops, afterCrops) &&
@@ -267,6 +273,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     _undoStack.push(
       CallbackUndoableAction(
         label: label,
+        draft: true,
         onUndo: () async {
           setState(() {
             _comment = beforeComment;
@@ -336,8 +343,9 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     String? exceptExclusionId,
     String? sameKeyPeriodId,
   }) {
-    final knowledge =
-        ref.read(reviewControllerProvider(widget.itemId)).knowledge;
+    final knowledge = ref
+        .read(reviewControllerProvider(widget.itemId))
+        .knowledge;
     if (knowledge == null) return false;
     final occupied = draftPersonKeysOnItem(
       knowledge: knowledge,
@@ -372,8 +380,9 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     String? personId,
     String? name,
   }) async {
-    final knowledge =
-        ref.read(reviewControllerProvider(widget.itemId)).knowledge;
+    final knowledge = ref
+        .read(reviewControllerProvider(widget.itemId))
+        .knowledge;
     String? periodId;
     if (knowledge != null) {
       for (final tag in whoFaceCropTags(knowledge)) {
@@ -391,29 +400,20 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     )) {
       return;
     }
-    _mutateDraft(
-      () {
-        _cropIntents[tagId] = PersonAssignIntent(
-          personId: personId,
-          name: name,
-        );
-      },
-      label: 'Assign face',
-    );
+    _mutateDraft(() {
+      _cropIntents[tagId] = PersonAssignIntent(personId: personId, name: name);
+    }, label: 'Assign face');
   }
 
   Future<void> _assignItem({String? personId, String? name}) async {
     if (_refuseIfPersonOccupied(personId: personId, name: name)) {
       return;
     }
-    _mutateDraft(
-      () {
-        _pendingItemAssigns.add(
-          PersonAssignIntent(personId: personId, name: name),
-        );
-      },
-      label: 'Assign item',
-    );
+    _mutateDraft(() {
+      _pendingItemAssigns.add(
+        PersonAssignIntent(personId: personId, name: name),
+      );
+    }, label: 'Assign item');
   }
 
   Future<void> _reassignAppearance(
@@ -428,82 +428,65 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     )) {
       return;
     }
-    _mutateDraft(
-      () {
-        _appearanceIntents[appearanceId] = PersonAssignIntent(
-          personId: personId,
-          name: name,
-        );
-      },
-      label: 'Reassign',
-    );
+    _mutateDraft(() {
+      _appearanceIntents[appearanceId] = PersonAssignIntent(
+        personId: personId,
+        name: name,
+      );
+    }, label: 'Reassign');
   }
 
   Future<void> _unassignAppearance(String appearanceId) async {
-    _mutateDraft(
-      () {
-        final knowledge =
-            ref.read(reviewControllerProvider(widget.itemId)).knowledge;
-        var fromCrop = false;
-        if (knowledge != null) {
-          for (final tag in whoFaceCropTags(knowledge)) {
-            final ap = appearanceForWhoTag(knowledge, tag.id);
-            if (ap?.id == appearanceId) {
-              _cropIntents[tag.id] = const PersonAssignIntent(unassign: true);
-              fromCrop = true;
-            }
+    _mutateDraft(() {
+      final knowledge = ref
+          .read(reviewControllerProvider(widget.itemId))
+          .knowledge;
+      var fromCrop = false;
+      if (knowledge != null) {
+        for (final tag in whoFaceCropTags(knowledge)) {
+          final ap = appearanceForWhoTag(knowledge, tag.id);
+          if (ap?.id == appearanceId) {
+            _cropIntents[tag.id] = const PersonAssignIntent(unassign: true);
+            fromCrop = true;
           }
         }
-        if (!fromCrop) {
-          _appearanceIntents[appearanceId] =
-              const PersonAssignIntent(unassign: true);
-        }
-      },
-      label: 'Unassign',
-    );
+      }
+      if (!fromCrop) {
+        _appearanceIntents[appearanceId] = const PersonAssignIntent(
+          unassign: true,
+        );
+      }
+    }, label: 'Unassign');
   }
 
   Future<void> _excludeCrop(String tagId) async {
-    _mutateDraft(
-      () {
-        _cropIntents[tagId] = const PersonAssignIntent(exclude: true);
-      },
-      label: 'Exclude face',
-    );
+    _mutateDraft(() {
+      _cropIntents[tagId] = const PersonAssignIntent(exclude: true);
+    }, label: 'Exclude face');
   }
 
   Future<void> _excludeOtherCrops(String keepTagId) async {
     final review = ref.read(reviewControllerProvider(widget.itemId));
     final knowledge = review.knowledge;
     if (knowledge == null) return;
-    _mutateDraft(
-      () {
-        for (final tag in whoFaceCropTags(knowledge)) {
-          if (tag.id == keepTagId) continue;
-          _cropIntents[tag.id] = const PersonAssignIntent(exclude: true);
-        }
-      },
-      label: 'Exclude other faces',
-    );
+    _mutateDraft(() {
+      for (final tag in whoFaceCropTags(knowledge)) {
+        if (tag.id == keepTagId) continue;
+        _cropIntents[tag.id] = const PersonAssignIntent(exclude: true);
+      }
+    }, label: 'Exclude other faces');
   }
 
   Future<void> _includeDraftCrop(String tagId) async {
-    _mutateDraft(
-      () {
-        _cropIntents.remove(tagId);
-      },
-      label: 'Include face',
-    );
+    _mutateDraft(() {
+      _cropIntents.remove(tagId);
+    }, label: 'Include face');
   }
 
   Future<void> _includeExclusion(String exclusionId) async {
-    _mutateDraft(
-      () {
-        _exclusionIntents[exclusionId] =
-            const PersonAssignIntent(include: true);
-      },
-      label: 'Include face',
-    );
+    _mutateDraft(() {
+      _exclusionIntents[exclusionId] = const PersonAssignIntent(include: true);
+    }, label: 'Include face');
   }
 
   Future<void> _assignIncludedExclusion(
@@ -518,25 +501,19 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     )) {
       return;
     }
-    _mutateDraft(
-      () {
-        _exclusionIntents[exclusionId] = PersonAssignIntent(
-          include: true,
-          personId: personId,
-          name: name,
-        );
-      },
-      label: 'Assign face',
-    );
+    _mutateDraft(() {
+      _exclusionIntents[exclusionId] = PersonAssignIntent(
+        include: true,
+        personId: personId,
+        name: name,
+      );
+    }, label: 'Assign face');
   }
 
   Future<void> _excludeIncludedExclusion(String exclusionId) async {
-    _mutateDraft(
-      () {
-        _exclusionIntents.remove(exclusionId);
-      },
-      label: 'Exclude face',
-    );
+    _mutateDraft(() {
+      _exclusionIntents.remove(exclusionId);
+    }, label: 'Exclude face');
   }
 
   Future<void> _refreshFoldersRows(Iterable<String> itemIds) async {
@@ -567,10 +544,12 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
           };
     final forwardComment = _comment;
     final forwardCrops = Map<String, PersonAssignIntent>.from(_cropIntents);
-    final forwardAppearances =
-        Map<String, PersonAssignIntent>.from(_appearanceIntents);
-    final forwardExclusions =
-        Map<String, PersonAssignIntent>.from(_exclusionIntents);
+    final forwardAppearances = Map<String, PersonAssignIntent>.from(
+      _appearanceIntents,
+    );
+    final forwardExclusions = Map<String, PersonAssignIntent>.from(
+      _exclusionIntents,
+    );
     final forwardPending = List<PersonAssignIntent>.from(_pendingItemAssigns);
     final createdExclusionIds = <String>[];
     final alsoMovedIds = <String>[];
@@ -601,9 +580,10 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
               }
             }
           }
-          includedExclusionTagIds.add(
-            (exclusionId: e.key, tagId: exclusion?.createdFromTagId),
-          );
+          includedExclusionTagIds.add((
+            exclusionId: e.key,
+            tagId: exclusion?.createdFromTagId,
+          ));
           await items.undoWhoExclusion(widget.itemId, e.key);
           if (e.value.hasTarget && exclusion?.createdFromTagId != null) {
             await items.assignPersonToItem(
@@ -645,9 +625,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
       if (!mounted) return;
       if (alsoMovedIds.isNotEmpty) {
         final n = alsoMovedIds.length;
-        final faces = n == 1
-            ? '1 other alike face'
-            : '$n other alike faces';
+        final faces = n == 1 ? '1 other alike face' : '$n other alike faces';
         final dest = alsoMovedDestName?.trim();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -660,7 +638,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
           ),
         );
       }
-      _undoStack.clear();
+      _undoStack.removeWhere((action) => action.draft);
       _undoStack.push(
         CallbackUndoableAction(
           label: 'Save item',
@@ -681,7 +659,9 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
             }
             if (previousCrop.isNotEmpty || previousAppearances.isNotEmpty) {
               await _applyPersonIntents(
-                knowledge: ref.read(reviewControllerProvider(widget.itemId)).knowledge,
+                knowledge: ref
+                    .read(reviewControllerProvider(widget.itemId))
+                    .knowledge,
                 cropIntents: previousCrop,
                 appearanceIntents: previousAppearances,
                 pendingItemAssigns: const [],
@@ -710,8 +690,9 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
           onRedo: () async {
             if (forwardExclusions.isNotEmpty) {
               final items = ref.read(itemsRepositoryProvider);
-              final live =
-                  ref.read(reviewControllerProvider(widget.itemId)).knowledge;
+              final live = ref
+                  .read(reviewControllerProvider(widget.itemId))
+                  .knowledge;
               for (final e in forwardExclusions.entries) {
                 if (!e.value.include) continue;
                 String? tagId;
@@ -733,8 +714,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
                 }
                 if (exclusion == null) continue;
                 await items.undoWhoExclusion(widget.itemId, exclusion.id);
-                if (e.value.hasTarget &&
-                    exclusion.createdFromTagId != null) {
+                if (e.value.hasTarget && exclusion.createdFromTagId != null) {
                   await items.assignPersonToItem(
                     widget.itemId,
                     personId: e.value.personId,
@@ -748,7 +728,9 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
                 forwardAppearances.isNotEmpty ||
                 forwardPending.isNotEmpty) {
               await _applyPersonIntents(
-                knowledge: ref.read(reviewControllerProvider(widget.itemId)).knowledge,
+                knowledge: ref
+                    .read(reviewControllerProvider(widget.itemId))
+                    .knowledge,
                 cropIntents: forwardCrops,
                 appearanceIntents: forwardAppearances,
                 pendingItemAssigns: forwardPending,
@@ -784,12 +766,14 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
   }
 
   Future<
-      ({
-        List<String> createdExclusionIds,
-        List<String> alsoMovedIds,
-        Set<String> alsoMovedItemIds,
-        String? alsoMovedDestName,
-      })> _applyPersonIntents({
+    ({
+      List<String> createdExclusionIds,
+      List<String> alsoMovedIds,
+      Set<String> alsoMovedItemIds,
+      String? alsoMovedDestName,
+    })
+  >
+  _applyPersonIntents({
     required ItemKnowledge? knowledge,
     required Map<String, PersonAssignIntent> cropIntents,
     required Map<String, PersonAssignIntent> appearanceIntents,
@@ -828,8 +812,9 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
 
     for (final e in cropIntents.entries) {
       final intent = e.value;
-      final appearance =
-          knowledge == null ? null : appearanceForWhoTag(knowledge, e.key);
+      final appearance = knowledge == null
+          ? null
+          : appearanceForWhoTag(knowledge, e.key);
       if (intent.exclude) {
         final created = await items.createWhoExclusion(widget.itemId, e.key);
         createdExclusionIds.add(created.exclusion.id);
@@ -894,8 +879,9 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
   }
 
   void _discard() {
-    final knowledge =
-        ref.read(reviewControllerProvider(widget.itemId)).knowledge;
+    final knowledge = ref
+        .read(reviewControllerProvider(widget.itemId))
+        .knowledge;
     setState(() {
       _comment = _commentBaseline;
       _cropIntents.clear();
@@ -904,7 +890,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
       _pendingItemAssigns.clear();
       _seedOverlappingExcludes(knowledge);
     });
-    _undoStack.clear();
+    _undoStack.removeWhere((action) => action.draft);
     _publishDirty();
   }
 
@@ -916,20 +902,16 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
       builder: (ctx) => AlertDialog(
         key: const Key('item-detail-dirty-dialog'),
         title: const Text('Save item?'),
-        content: const Text(
-          'You have unsaved changes. Save before leaving?',
-        ),
+        content: const Text('You have unsaved changes. Save before leaving?'),
         actions: [
           TextButton(
             key: const Key('item-detail-dirty-discard'),
-            onPressed: () =>
-                Navigator.pop(ctx, _ItemDetailLeaveChoice.discard),
+            onPressed: () => Navigator.pop(ctx, _ItemDetailLeaveChoice.discard),
             child: const Text('Discard'),
           ),
           TextButton(
             key: const Key('item-detail-dirty-cancel'),
-            onPressed: () =>
-                Navigator.pop(ctx, _ItemDetailLeaveChoice.cancel),
+            onPressed: () => Navigator.pop(ctx, _ItemDetailLeaveChoice.cancel),
             child: const Text('Cancel'),
           ),
           FilledButton(
@@ -1130,192 +1112,202 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
         return ActiveUndoHost(
           controller: _undoStack,
           child: UndoShortcuts(
-          controller: _undoStack,
-          onError: (e) {
-            if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('$e')),
-            );
-          },
-          child: Column(
-          key: const Key('item-review'),
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (widget.embedSaveButton) ...[
-              Row(
-                children: [
-                  const Spacer(),
-                  UndoDepthBadge(controller: _undoStack),
-                  const SizedBox(width: 8),
-                  ListenableBuilder(
-                    listenable: _edits,
-                    builder: (context, _) {
-                      return FilledButton(
-                        key: const Key('item-detail-save'),
-                        onPressed:
-                            _edits.isDirty && !_edits.saving ? _save : null,
-                        child: const Text('Save'),
+            controller: _undoStack,
+            onError: (e) {
+              if (!mounted) return;
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text('$e')));
+            },
+            child: Column(
+              key: const Key('item-review'),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (widget.embedSaveButton) ...[
+                  Row(
+                    children: [
+                      const Spacer(),
+                      UndoDepthBadge(controller: _undoStack),
+                      const SizedBox(width: 8),
+                      ListenableBuilder(
+                        listenable: _edits,
+                        builder: (context, _) {
+                          return FilledButton(
+                            key: const Key('item-detail-save'),
+                            onPressed: _edits.isDirty && !_edits.saving
+                                ? _save
+                                : null,
+                            child: const Text('Save'),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                if (fieldsItem != null) ...[
+                  ItemFieldsGroup(
+                    item: fieldsItem,
+                    knowledge: knowledge,
+                    personNamesById: _personNamesById,
+                    whoPersonNames: knowledge == null
+                        ? null
+                        : _whoCsvNames(knowledge),
+                    omittedWhoTagIds: {
+                      for (final e in _cropIntents.entries)
+                        if (e.value.exclude) e.key,
+                    },
+                    commentText: _comment,
+                    commentEnabled: !review.isBusy && !_saving,
+                    onCommentChanged: (value) {
+                      setState(() => _comment = value);
+                      _publishDirty();
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                if (knowledge != null) ...[
+                  _faceAssignView(
+                    knowledge: knowledge,
+                    cropTags: knowledge.item.type == ItemType.video
+                        ? itemLevelWhoFaceCropTags(knowledge)
+                        : null,
+                    allowItemAssign: !itemHasWhoFaceCrops(knowledge),
+                  ),
+                  Builder(
+                    builder: (context) {
+                      final includedIds = {
+                        for (final e in _exclusionIntents.entries)
+                          if (e.value.include) e.key,
+                      };
+                      final draftExcluded = [
+                        for (final tag in whoFaceCropTags(knowledge))
+                          if (_cropIntents[tag.id]?.exclude == true) tag,
+                      ];
+                      final visibleSaved = knowledge.whoExclusions.where(
+                        (e) => !includedIds.contains(e.id),
+                      );
+                      if (visibleSaved.isEmpty && draftExcluded.isEmpty) {
+                        return const SizedBox.shrink();
+                      }
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 12),
+                          ExcludedFacesStrip(
+                            knowledge: knowledge,
+                            draftExcludedCrops: draftExcluded,
+                            includedExclusionIds: includedIds,
+                            onIncludeExclusion: _includeExclusion,
+                            onIncludeDraftCrop: _includeDraftCrop,
+                            includeEnabled: !_saving,
+                          ),
+                        ],
                       );
                     },
                   ),
                 ],
-              ),
-              const SizedBox(height: 8),
-            ],
-            if (fieldsItem != null) ...[
-              ItemFieldsGroup(
-                item: fieldsItem,
-                knowledge: knowledge,
-                personNamesById: _personNamesById,
-                whoPersonNames:
-                    knowledge == null ? null : _whoCsvNames(knowledge),
-                omittedWhoTagIds: {
-                  for (final e in _cropIntents.entries)
-                    if (e.value.exclude) e.key,
-                },
-                commentText: _comment,
-                commentEnabled: !review.isBusy && !_saving,
-                onCommentChanged: (value) {
-                  setState(() => _comment = value);
-                  _publishDirty();
-                },
-              ),
-              const SizedBox(height: 12),
-            ],
-            if (knowledge != null) ...[
-              _faceAssignView(
-                knowledge: knowledge,
-                cropTags: knowledge.item.type == ItemType.video
-                    ? itemLevelWhoFaceCropTags(knowledge)
-                    : null,
-                allowItemAssign: !itemHasWhoFaceCrops(knowledge),
-              ),
-              Builder(
-                builder: (context) {
-                  final includedIds = {
-                    for (final e in _exclusionIntents.entries)
-                      if (e.value.include) e.key,
-                  };
-                  final draftExcluded = [
-                    for (final tag in whoFaceCropTags(knowledge))
-                      if (_cropIntents[tag.id]?.exclude == true) tag,
-                  ];
-                  final visibleSaved = knowledge.whoExclusions
-                      .where((e) => !includedIds.contains(e.id));
-                  if (visibleSaved.isEmpty && draftExcluded.isEmpty) {
-                    return const SizedBox.shrink();
-                  }
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 12),
-                      ExcludedFacesStrip(
-                        knowledge: knowledge,
-                        draftExcludedCrops: draftExcluded,
-                        includedExclusionIds: includedIds,
-                        onIncludeExclusion: _includeExclusion,
-                        onIncludeDraftCrop: _includeDraftCrop,
-                        includeEnabled: !_saving,
+                const SizedBox(height: 12),
+                if (_personLoadError != null) ...[
+                  Text(
+                    _personLoadError!,
+                    key: const Key('item-review-persons-error'),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                if (review.phase == ReviewPhase.loading)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        key: Key('review-loading'),
                       ),
-                    ],
-                  );
-                },
-              ),
-            ],
-            const SizedBox(height: 12),
-            if (_personLoadError != null) ...[
-              Text(
-                _personLoadError!,
-                key: const Key('item-review-persons-error'),
-              ),
-              const SizedBox(height: 12),
-            ],
-            if (review.phase == ReviewPhase.loading)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Center(
-                  child: CircularProgressIndicator(
-                    key: Key('review-loading'),
+                    ),
+                  )
+                else if (review.phase == ReviewPhase.error)
+                  _ReviewError(
+                    error: review.error!,
+                    onRetry: () => review.load(),
+                  )
+                else if (knowledge != null && media != null) ...[
+                  if (media.status != LocalMediaStatus.available) ...[
+                    _MediaStatusBanner(resolution: media),
+                    const SizedBox(height: 12),
+                  ],
+                  if (_videoOpenError != null) ...[
+                    Text(
+                      _videoOpenError!,
+                      key: const Key('item-review-video-error'),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  MediaViewer(
+                    itemType: knowledge.item.type,
+                    resolution: media,
+                    player: _player,
+                    videoController: _videoController,
+                    whoOverlays: showFaceOverlays
+                        ? knowledge.tags
+                              .where(
+                                (t) =>
+                                    t.dimension == 'who' &&
+                                    t.status == TagStatus.active &&
+                                    t.region != null,
+                              )
+                              .toList()
+                        : const [],
+                    personNameByWhoTagId: _whoOverlayNames(knowledge),
                   ),
-                ),
-              )
-            else if (review.phase == ReviewPhase.error)
-              _ReviewError(
-                error: review.error!,
-                onRetry: () => review.load(),
-              )
-            else if (knowledge != null && media != null) ...[
-              if (media.status != LocalMediaStatus.available) ...[
-                _MediaStatusBanner(resolution: media),
-                const SizedBox(height: 12),
+                  if (_assignError != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      _assignError!,
+                      key: const Key('item-assign-error'),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ],
+                  if (review.mutationError != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      '${review.mutationError}',
+                      key: const Key('correction-error'),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  if (knowledge.item.type == ItemType.video) ...[
+                    const SizedBox(height: 16),
+                    KeyPeriodScrubber(
+                      keyPeriods: knowledge.keyPeriods,
+                      player: _player,
+                      onEditBounds: (p) => _editBounds(review, p),
+                      commentsFor: review.commentsForKeyPeriod,
+                      onAddComment: review.addKeyPeriodComment,
+                      onEditComment: review.editComment,
+                      onDeleteComment: review.deleteComment,
+                      correctionsEnabled: !review.isBusy,
+                      periodFaces: (period) => _faceAssignView(
+                        key: Key('period-faces-${period.id}'),
+                        knowledge: knowledge,
+                        cropTags: whoFaceCropTagsForPeriod(
+                          knowledge,
+                          period.id,
+                        ),
+                        includeIncludedExclusions: false,
+                        allowItemAssign: false,
+                        faceGridKey: Key('key-period-face-grid-${period.id}'),
+                        faceHintKey: Key('key-period-face-hint-${period.id}'),
+                      ),
+                    ),
+                  ],
+                ],
               ],
-              if (_videoOpenError != null) ...[
-                Text(
-                  _videoOpenError!,
-                  key: const Key('item-review-video-error'),
-                ),
-                const SizedBox(height: 12),
-              ],
-              MediaViewer(
-                itemType: knowledge.item.type,
-                resolution: media,
-                player: _player,
-                videoController: _videoController,
-                whoOverlays: showFaceOverlays
-                    ? knowledge.tags
-                        .where(
-                          (t) =>
-                              t.dimension == 'who' &&
-                              t.status == TagStatus.active &&
-                              t.region != null,
-                        )
-                        .toList()
-                    : const [],
-                personNameByWhoTagId: _whoOverlayNames(knowledge),
-              ),
-              if (_assignError != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  _assignError!,
-                  key: const Key('item-assign-error'),
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-              ],
-              if (review.mutationError != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  '${review.mutationError}',
-                  key: const Key('correction-error'),
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-              ],
-              const SizedBox(height: 12),
-              if (knowledge.item.type == ItemType.video) ...[
-                const SizedBox(height: 16),
-                KeyPeriodScrubber(
-                  keyPeriods: knowledge.keyPeriods,
-                  player: _player,
-                  onEditBounds: (p) => _editBounds(review, p),
-                  commentsFor: review.commentsForKeyPeriod,
-                  onAddComment: review.addKeyPeriodComment,
-                  onEditComment: review.editComment,
-                  onDeleteComment: review.deleteComment,
-                  correctionsEnabled: !review.isBusy,
-                  periodFaces: (period) => _faceAssignView(
-                    key: Key('period-faces-${period.id}'),
-                    knowledge: knowledge,
-                    cropTags: whoFaceCropTagsForPeriod(knowledge, period.id),
-                    includeIncludedExclusions: false,
-                    allowItemAssign: false,
-                    faceGridKey: Key('key-period-face-grid-${period.id}'),
-                    faceHintKey: Key('key-period-face-hint-${period.id}'),
-                  ),
-                ),
-              ],
-            ],
-          ],
-        ),
-        ),
+            ),
+          ),
         );
       },
     );

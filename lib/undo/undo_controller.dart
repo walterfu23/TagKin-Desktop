@@ -43,6 +43,14 @@ class UndoController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Drop matching entries from both stacks (item-detail Save/Discard).
+  void removeWhere(bool Function(UndoableAction action) test) {
+    _undo.removeWhere(test);
+    _redo.removeWhere(test);
+    lastError = null;
+    notifyListeners();
+  }
+
   Future<void> undo() async {
     if (!canUndo) return;
     final action = _undo.removeLast();
