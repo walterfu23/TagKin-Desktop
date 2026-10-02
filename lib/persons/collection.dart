@@ -316,7 +316,7 @@ class CollectionSortKey {
 
 /// Folders filter/sort snapshot stored on a [SavedView].
 ///
-/// [all] is the built-in All view: no filters, Visible only, no sort, no
+/// [all] is the built-in All view: no filters, Both, no sort, no
 /// hidden folders, no hidden items, and no explicit open-folder list.
 ///
 /// [expandedDirs] null means the automatic folder expand (parents with two
@@ -328,7 +328,7 @@ class LibraryViewFilters {
     this.statusFilter,
     this.whoNames = const [],
     this.whoMatchAll = false,
-    this.hiddenItemsFilter = 'visible',
+    this.hiddenItemsFilter = 'both',
     this.sortKeys = const [],
     this.hiddenFolders = const [],
     this.hiddenItemIds = const [],
@@ -433,9 +433,7 @@ class LibraryViewFilters {
         }
       }
     }
-    final hiddenName = hidden is String && hidden.isNotEmpty
-        ? hidden
-        : 'visible';
+    final hiddenName = hidden is String && hidden.isNotEmpty ? hidden : 'both';
     final foldersRaw = json['hiddenFolders'];
     final folders = <String>[];
     if (foldersRaw is List) {

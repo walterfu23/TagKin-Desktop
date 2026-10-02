@@ -324,7 +324,9 @@ void main() {
       find.byKey(const Key('item-inline-who-badge-item_face-1')),
       findsOneWidget,
     );
-    await tester.tap(find.byKey(const Key('item-inline-who-field-item_face-0')));
+    await tester.tap(
+      find.byKey(const Key('item-inline-who-field-item_face-0')),
+    );
     await tester.pumpAndSettle();
     expect(
       find.byKey(const Key('item-inline-who-option-item_face-0-new')),
@@ -387,9 +389,7 @@ void main() {
     await tester.tap(find.byKey(const Key('folders-edit-toggle')));
     await tester.pumpAndSettle();
 
-    final field = find.byKey(
-      const Key('item-inline-who-field-item_face-0'),
-    );
+    final field = find.byKey(const Key('item-inline-who-field-item_face-0'));
     expect(
       find.descendant(of: field, matching: find.text('Maya')),
       findsWidgets,
@@ -418,83 +418,84 @@ void main() {
     expect(items.assignPersonCalls.single.personId, isNull);
   });
 
-  testWidgets('period row edit carries keyPeriodId; empty period Who is read-only', (
-    tester,
-  ) async {
-    final item = fixtureItem(
-      id: 'vid_edit',
-      type: ItemType.video,
-      processingStatus: ProcessingStatus.tagged,
-    );
-    final items = FakeItemsRepository(
-      items: [item],
-      knowledgeByItemId: {
-        'vid_edit': fixtureKnowledge(
-          item: item,
-          tags: const [],
-          keyPeriods: [
-            KeyPeriodKnowledge(
-              id: 'kp-face',
-              itemId: 'vid_edit',
-              startMs: 0,
-              endMs: 1000,
-              tags: [
-                fixtureTag(
-                  id: 'face_p',
-                  itemId: 'vid_edit',
-                  keyPeriodId: 'kp-face',
-                  dimension: 'who',
-                  value: 'person',
-                  region: const TagRegion(
-                    yMin: 0.1,
-                    xMin: 0.1,
-                    yMax: 0.3,
-                    xMax: 0.3,
+  testWidgets(
+    'period row edit carries keyPeriodId; empty period Who is read-only',
+    (tester) async {
+      final item = fixtureItem(
+        id: 'vid_edit',
+        type: ItemType.video,
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final items = FakeItemsRepository(
+        items: [item],
+        knowledgeByItemId: {
+          'vid_edit': fixtureKnowledge(
+            item: item,
+            tags: const [],
+            keyPeriods: [
+              KeyPeriodKnowledge(
+                id: 'kp-face',
+                itemId: 'vid_edit',
+                startMs: 0,
+                endMs: 1000,
+                tags: [
+                  fixtureTag(
+                    id: 'face_p',
+                    itemId: 'vid_edit',
+                    keyPeriodId: 'kp-face',
+                    dimension: 'who',
+                    value: 'person',
+                    region: const TagRegion(
+                      yMin: 0.1,
+                      xMin: 0.1,
+                      yMax: 0.3,
+                      xMax: 0.3,
+                    ),
                   ),
-                ),
-              ],
-            ),
-            KeyPeriodKnowledge(
-              id: 'kp-plain',
-              itemId: 'vid_edit',
-              startMs: 2000,
-              endMs: 3000,
-              tags: [
-                fixtureTag(
-                  id: 'what_p',
-                  itemId: 'vid_edit',
-                  keyPeriodId: 'kp-plain',
-                  dimension: 'what',
-                  value: 'swim',
-                ),
-              ],
-            ),
-          ],
-        ),
-      },
-    );
-    final corrections = FakeCorrectionsRepository(items: items);
-    await _pumpLibrary(tester, items: items, corrections: corrections);
-    await tester.tap(find.byKey(const Key('folders-edit-toggle')));
-    await tester.pumpAndSettle();
+                ],
+              ),
+              KeyPeriodKnowledge(
+                id: 'kp-plain',
+                itemId: 'vid_edit',
+                startMs: 2000,
+                endMs: 3000,
+                tags: [
+                  fixtureTag(
+                    id: 'what_p',
+                    itemId: 'vid_edit',
+                    keyPeriodId: 'kp-plain',
+                    dimension: 'what',
+                    value: 'swim',
+                  ),
+                ],
+              ),
+            ],
+          ),
+        },
+      );
+      final corrections = FakeCorrectionsRepository(items: items);
+      await _pumpLibrary(tester, items: items, corrections: corrections);
+      await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+      await tester.pumpAndSettle();
 
-    expect(
-      find.byKey(const Key('item-inline-who-readonly-vid_edit-kp-kp-plain')),
-      findsOneWidget,
-    );
-    await tester.enterText(
-      find.byKey(
-        const Key('item-inline-what-add-field-vid_edit-kp-kp-plain'),
-      ),
-      'hike',
-    );
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.pumpAndSettle();
-    expect(corrections.addTagCalls, isNotEmpty);
-    expect(corrections.addTagCalls.last.input.keyPeriodId, 'kp-plain');
-    expect(corrections.addTagCalls.last.input.dimension, 'what');
-    expect(corrections.addTagCalls.last.input.value, 'hike');
-  });
+      expect(
+        find.byKey(const Key('item-inline-who-readonly-vid_edit-kp-kp-plain')),
+        findsOneWidget,
+      );
+      await tester.enterText(
+        find.byKey(
+          const Key('item-inline-what-add-field-vid_edit-kp-kp-plain'),
+        ),
+        'hike',
+      );
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(corrections.addTagCalls, isNotEmpty);
+      expect(corrections.addTagCalls.last.input.keyPeriodId, 'kp-plain');
+      expect(corrections.addTagCalls.last.input.dimension, 'what');
+      expect(corrections.addTagCalls.last.input.value, 'hike');
+    },
+  );
 
   testWidgets('library table renders fixture items with processingStatus', (
     tester,
@@ -1000,7 +1001,21 @@ void main() {
         .setItemHiddenInView('hidden_sam', hidden: true);
     await tester.pumpAndSettle();
 
-    // Default Visible: checklist only offers the visible row's name.
+    // Default Both: checklist offers every name currently shown.
+    await tester.tap(find.byKey(const Key('library-who-filter-button')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('who-filter-option-Visible Vic')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('who-filter-option-Sam')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('who-filter-cancel')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('library-hidden-filter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Visible').last);
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('library-who-filter-button')));
     await tester.pumpAndSettle();
     expect(
@@ -1350,11 +1365,16 @@ void main() {
     // Non-destructive: no two-step Sure? confirm.
     expect(find.text('Sure?'), findsNothing);
     expect(items.setItemHiddenCalls, isEmpty);
-    // Hidden items are excluded from Folders by default (Visible filter)
-    // — the item stays in the account, only the row hides.
+    // Both is the default: the row stays, marked hidden.
+    expect(find.byKey(const Key('item-row-item_list_hide')), findsOneWidget);
+    expect(find.byTooltip('Unhide item'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('library-hidden-filter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Visible').last);
+    await tester.pumpAndSettle();
     expect(find.byKey(const Key('item-row-item_list_hide')), findsNothing);
 
-    // Hide-column Both reveals it again (still in this view's hidden set).
     await tester.tap(find.byKey(const Key('library-hidden-filter')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Both').last);
@@ -1442,6 +1462,14 @@ void main() {
 
     expect(find.text('Sure?'), findsNothing);
     expect(items.setItemHiddenCalls, isEmpty);
+    expect(find.byKey(const Key('source-group-$shared')), findsOneWidget);
+    expect(find.byTooltip('Unhide folder'), findsOneWidget);
+    expect(find.byKey(const Key('item-row-keep')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('library-hidden-filter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Visible').last);
+    await tester.pumpAndSettle();
     expect(find.byKey(const Key('source-group-$shared')), findsNothing);
     expect(find.byKey(const Key('item-row-keep')), findsOneWidget);
 
@@ -1487,7 +1515,8 @@ void main() {
     );
     await tester.tap(find.byKey(const Key('source-group-hide-$shared')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('source-group-$shared')), findsNothing);
+    expect(find.byKey(const Key('source-group-$shared')), findsOneWidget);
+    expect(find.byTooltip('Unhide folder'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('library-views-menu')));
     await tester.pumpAndSettle();
@@ -1501,7 +1530,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('View01').last);
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('source-group-$shared')), findsNothing);
+    expect(find.byKey(const Key('source-group-$shared')), findsOneWidget);
+    expect(find.byTooltip('Unhide folder'), findsOneWidget);
 
     final ctx = tester.element(find.byType(ItemsListPage));
     final cols = ProviderScope.containerOf(
@@ -1579,7 +1609,8 @@ void main() {
     await tester.tap(find.byKey(const Key('item-list-hide-a')));
     await tester.pumpAndSettle();
     expect(items.setItemHiddenCalls, isEmpty);
-    expect(find.byKey(const Key('item-row-a')), findsNothing);
+    expect(find.byKey(const Key('item-row-a')), findsOneWidget);
+    expect(find.byTooltip('Unhide item'), findsOneWidget);
     expect(find.byKey(const Key('item-row-b')), findsOneWidget);
     expect(find.text('View01*'), findsWidgets);
 
@@ -1599,7 +1630,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('View01').last);
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('item-row-a')), findsNothing);
+    expect(find.byKey(const Key('item-row-a')), findsOneWidget);
+    expect(find.byTooltip('Unhide item'), findsOneWidget);
     expect(find.byKey(const Key('item-row-b')), findsOneWidget);
     expect(find.text('View01*'), findsNothing);
   });
@@ -1676,7 +1708,8 @@ void main() {
     await tester.ensureVisible(find.byKey(const Key('item-list-hide-a')));
     await tester.tap(find.byKey(const Key('item-list-hide-a')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('item-row-a')), findsNothing);
+    expect(find.byKey(const Key('item-row-a')), findsOneWidget);
+    expect(find.byTooltip('Unhide item'), findsOneWidget);
 
     final cols = ProviderScope.containerOf(
       tester.element(find.byType(TagKinDesktopApp)),
@@ -1698,7 +1731,8 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.keyY);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.meta);
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('item-row-a')), findsNothing);
+    expect(find.byKey(const Key('item-row-a')), findsOneWidget);
+    expect(find.byTooltip('Unhide item'), findsOneWidget);
     expect(cols.views, hasLength(1));
   });
 

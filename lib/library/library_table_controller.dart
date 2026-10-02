@@ -366,9 +366,10 @@ class LibraryTableController extends ChangeNotifier {
   List<LibrarySortKey> sortKeys = const [];
   int pageIndex = 0;
 
-  /// Folders Hide-column filter (view-local hidden items/folders). In-memory
-  /// (not a [DesktopPrefs] entry) — inspect-only, not written to a View.
-  HiddenItemsFilter _hiddenItemsFilter = HiddenItemsFilter.visible;
+  /// Folders Hide-column filter (view-local hidden items/folders). Default
+  /// Both. In-memory (not a [DesktopPrefs] entry) — inspect-only, not written
+  /// to a View.
+  HiddenItemsFilter _hiddenItemsFilter = HiddenItemsFilter.both;
 
   HiddenItemsFilter get hiddenItemsFilter => _hiddenItemsFilter;
 
@@ -802,9 +803,9 @@ class LibraryTableController extends ChangeNotifier {
         : groupDisplayTagsByDimension(knowledge);
     final itemWhere = knowledge == null
         ? const <String>[]
-        : groupItemLevelTagsByDimension(knowledge.tags)['where']!
-              .map((tag) => tag.value)
-              .toList();
+        : groupItemLevelTagsByDimension(
+            knowledge.tags,
+          )['where']!.map((tag) => tag.value).toList();
     _replaceRow(itemId, (r) {
       if (knowledge == null && comments == null) return r;
       final periodComments = comments == null
@@ -1046,8 +1047,9 @@ class LibraryTableController extends ChangeNotifier {
   LibraryViewFilters persistableViewFilters() {
     final current = captureViewFilters();
     final hide = activeViewId == null
-        ? 'visible'
-        : (activeViewSnapshot?.hiddenItemsFilter ?? 'visible');
+        ? HiddenItemsFilter.both.name
+        : (activeViewSnapshot?.hiddenItemsFilter ??
+              HiddenItemsFilter.both.name);
     return current.copyWith(hiddenItemsFilter: hide);
   }
 
@@ -1065,7 +1067,7 @@ class LibraryTableController extends ChangeNotifier {
     ];
     _whoFilterNames = Set<String>.from(f.whoNames);
     _whoFilterMatchAll = f.whoMatchAll;
-    HiddenItemsFilter nextHidden = HiddenItemsFilter.visible;
+    HiddenItemsFilter nextHidden = HiddenItemsFilter.both;
     for (final v in HiddenItemsFilter.values) {
       if (v.name == f.hiddenItemsFilter) {
         nextHidden = v;

@@ -14,16 +14,14 @@ Status vs current code (2026-08-13). [not yet implemented] = not in the tree. [d
 12. [done] remove/disable the retry button once the retry is in progress. Q: what about two folders doing retry at the same time?
 13. [done] where: should show city, state, and country (if different than the current country) — desktop display reverse-geocode; API now also persists city on the metadata where tag
 14. [done] GPS reverse-geocode before VLM (city persisted on metadata where; prompt includes GPS city)
-
-15. [not yet implemented] the full folder path and file names should remain in the desktop, perhaps as table columns.
+15. [done] the full folder path and file names should remain in the desktop, perhaps as table columns.
 table columns: path, file name, vid/photo, len, tags, ingestion date, status
 might want to consider path hiearchy.
-
-16. [not yet implemented] direct edit any entry in the table
-17. [not yet implemented] does not seem to work. what about manual linking
-18. [not yet implemented] where: restaurant. should also show city, state.
-19. [not yet implemented] include user first name, last name from clerk
+16. [done] direct edit any entry in the table
+18. [done] where: restaurant. should also show city, state.
 20. [done] add tagging of videos (image-only sample frames per key period; no native video model).
+
+19. [not yet implemented] include user first name, last name from clerk
 21. [not yet implemented] after removing an item, everything collapses
 22. [not yet implemented] faces from the same folder, they are more likely to be assigned to persons from the same folder as well.
 23. [not yet implemented] use google as an auth provider. add other providers as well (Google via Clerk is in tree; additional IdPs are not)

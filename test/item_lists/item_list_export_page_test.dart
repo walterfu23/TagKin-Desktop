@@ -429,11 +429,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('1 item'), findsOneWidget);
+    expect(folders.isFolderHidden(trip), isTrue);
+    expect(find.text('2 items'), findsOneWidget);
     expect(find.byKey(const Key('item-list-drag-photo-keep')), findsOneWidget);
     expect(
       find.byKey(const Key('item-list-drag-photo-hidden-folder')),
-      findsNothing,
+      findsOneWidget,
     );
     expect(find.text('View01'), findsWidgets);
   });
