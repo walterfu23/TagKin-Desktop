@@ -156,6 +156,87 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /auth/email-code:
+    post:
+      tags: [system]
+      operationId: sendEmailSignInCode
+      summary: Email a Firebase sign-in code to the address on the ID token
+      description: >
+        Bearer is a Firebase ID token that has not yet passed this step. The
+        API emails a 6-digit code to the email claim on that token and does not
+        return the code. It does not create an account. 401 `email_code_required`
+        on other routes until `POST /auth/email-code/verify` succeeds for this
+        sign-in (`auth_time`). Clerk does not use this route. 429 when a code
+        was sent in the last minute. 503 when outbound mail is not configured.
+      responses:
+        "200":
+          description: Code was sent, or this sign-in was already verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailSignInCodeStart"
+        "400":
+          description: Token has no email, or Firebase is not the active provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Resend too soon, or the challenge is locked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Mail is not configured or the send failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/email-code/verify:
+    post:
+      tags: [system]
+      operationId: verifyEmailSignInCode
+      summary: Accept the emailed Firebase sign-in code
+      description: >
+        Bearer is the same Firebase ID token used to send the code. On success,
+        that sign-in (`sub` + `auth_time`) may call the rest of the API,
+        including after the ID token is refreshed. A wrong code stays
+        unauthorized. Five wrong tries lock the challenge until a new code is
+        sent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailSignInCodeVerifyRequest"
+      responses:
+        "200":
+          description: This sign-in passed the email code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailSignInCodeVerifyResponse"
+        "401":
+          description: Wrong, expired, or missing code, or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Too many wrong tries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /me:
     get:
       tags: [system]
@@ -2224,6 +2305,31 @@ components:
       properties:
         idToken:
           type: string
+
+    EmailSignInCodeStart:
+      type: object
+      required: [emailMasked, alreadyVerified]
+      properties:
+        emailMasked:
+          type: string
+          description: Masked destination, such as a...@gmail.com. Never the code.
+        alreadyVerified:
+          type: boolean
+
+    EmailSignInCodeVerifyRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          description: 6-digit code from the email.
+
+    EmailSignInCodeVerifyResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
 
     Error:
       type: object

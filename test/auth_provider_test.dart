@@ -59,23 +59,28 @@ void main() {
     expect(session.idToken, 'id-1');
   });
 
-  test('changing the global provider clears the previous local session', () async {
-    final store = MemorySecureKeyValueStore();
-    await store.write(key: kActiveAuthProviderKey, value: 'clerk');
-    await store.write(key: kFirebaseSessionKey, value: 'old');
-    var clearedClerk = false;
-    final changed = await reconcileStoredProvider(
-      store: store,
-      nextProviderId: 'firebase',
-      clearClerk: () async => clearedClerk = true,
-    );
-    expect(changed, isTrue);
-    expect(clearedClerk, isTrue);
-    expect(await store.read(key: kFirebaseSessionKey), isNull);
-    expect(await store.read(key: kActiveAuthProviderKey), 'firebase');
-  });
+  test(
+    'changing the global provider clears the previous local session',
+    () async {
+      final store = MemorySecureKeyValueStore();
+      await store.write(key: kActiveAuthProviderKey, value: 'clerk');
+      await store.write(key: kFirebaseSessionKey, value: 'old');
+      var clearedClerk = false;
+      final changed = await reconcileStoredProvider(
+        store: store,
+        nextProviderId: 'firebase',
+        clearClerk: () async => clearedClerk = true,
+      );
+      expect(changed, isTrue);
+      expect(clearedClerk, isTrue);
+      expect(await store.read(key: kFirebaseSessionKey), isNull);
+      expect(await store.read(key: kActiveAuthProviderKey), 'firebase');
+    },
+  );
 
-  testWidgets('firebase bootstrap shows the firebase sign-in form', (tester) async {
+  testWidgets('firebase bootstrap shows the firebase sign-in form', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -108,8 +113,72 @@ void main() {
     expect(find.byKey(const Key('firebase-google')), findsNothing);
   });
 
-  testWidgets('firebase sign-in shows Continue with Google when bootstrap has a client id',
-      (tester) async {
+  testWidgets(
+    'firebase sign-in shows Continue with Google when bootstrap has a client id',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: FirebaseSignInPage(
+            config: const FirebasePublicConfig(
+              apiKey: 'public-key',
+              authDomain: 'app.firebaseapp.com',
+              projectId: 'app',
+              googleClientId: 'client.apps.googleusercontent.com',
+            ),
+            apiUrl: 'http://localhost:8787',
+            onSession: (_) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('firebase-google')), findsOneWidget);
+      expect(find.text('Continue with Google'), findsOneWidget);
+      expect(find.byKey(const Key('firebase-email')), findsOneWidget);
+    },
+  );
+
+  testWidgets('firebase sign-in asks for the emailed code before a session', (
+    tester,
+  ) async {
+    var sessions = 0;
+    final client = MockClient((request) async {
+      if (request.url.path.contains('signInWithPassword')) {
+        return http.Response(
+          jsonEncode({
+            'idToken': 'id-1',
+            'refreshToken': 'refresh-1',
+            'expiresIn': '3600',
+            'localId': 'uid-1',
+            'email': 'a@example.com',
+          }),
+          200,
+        );
+      }
+      if (request.url.path == '/auth/email-code') {
+        return http.Response(
+          jsonEncode({
+            'emailMasked': 'a...@example.com',
+            'alreadyVerified': false,
+          }),
+          200,
+        );
+      }
+      if (request.url.path == '/auth/email-code/verify') {
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        if (body['code'] != '123456') {
+          return http.Response(
+            jsonEncode({
+              'code': 'email_code_invalid',
+              'message': 'That code is wrong.',
+            }),
+            401,
+          );
+        }
+        return http.Response(jsonEncode({'ok': true}), 200);
+      }
+      return http.Response('missing', 404);
+    });
+
     await tester.pumpWidget(
       MaterialApp(
         home: FirebaseSignInPage(
@@ -117,16 +186,43 @@ void main() {
             apiKey: 'public-key',
             authDomain: 'app.firebaseapp.com',
             projectId: 'app',
-            googleClientId: 'client.apps.googleusercontent.com',
           ),
           apiUrl: 'http://localhost:8787',
-          onSession: (_) {},
+          httpClient: client,
+          onSession: (_) => sessions += 1,
         ),
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('firebase-google')), findsOneWidget);
-    expect(find.text('Continue with Google'), findsOneWidget);
-    expect(find.byKey(const Key('firebase-email')), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('firebase-email')),
+      'a@example.com',
+    );
+    await tester.enterText(
+      find.byKey(const Key('firebase-password')),
+      'secret',
+    );
+    await tester.tap(find.byKey(const Key('firebase-submit')));
+    await tester.pumpAndSettle();
+    expect(sessions, 0);
+    expect(find.byKey(const Key('firebase-email-code')), findsOneWidget);
+    expect(find.textContaining('a...@example.com'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('firebase-email-code')),
+      '000000',
+    );
+    await tester.tap(find.byKey(const Key('firebase-email-code-submit')));
+    await tester.pumpAndSettle();
+    expect(sessions, 0);
+    expect(find.text('That code is wrong.'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('firebase-email-code')),
+      '123456',
+    );
+    await tester.tap(find.byKey(const Key('firebase-email-code-submit')));
+    await tester.pumpAndSettle();
+    expect(sessions, 1);
   });
 }

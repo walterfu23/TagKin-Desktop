@@ -928,6 +928,19 @@ class _AccountBootstrapState extends ConsumerState<AccountBootstrap> {
               launchUrl: ref.read(checkoutUrlLauncherProvider),
             );
           }
+          if (error is UnauthorizedException &&
+              error.code == 'email_code_required' &&
+              widget.onSignOut != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              widget.onSignOut!();
+            });
+            return const Scaffold(
+              body: Center(
+                child: CircularProgressIndicator(key: Key('account-loading')),
+              ),
+            );
+          }
           if (error is UnauthorizedException) {
             return Scaffold(
               body: Center(

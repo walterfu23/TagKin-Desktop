@@ -7,9 +7,10 @@ import 'package:http/http.dart' as http;
 ///
 /// Callers must route to sign-in — [ApiClient] never silently retries.
 class UnauthorizedException implements Exception {
-  UnauthorizedException({this.message = 'Unauthorized'});
+  UnauthorizedException({this.message = 'Unauthorized', this.code});
 
   final String message;
+  final String? code;
 
   @override
   String toString() => 'UnauthorizedException: $message';
@@ -196,8 +197,10 @@ class ApiClient {
 
   http.Response _guard(http.Response response) {
     if (response.statusCode == 401) {
+      final parsed = _tryParseError(response.body);
       throw UnauthorizedException(
-        message: _messageFromBody(response.body) ?? 'Unauthorized',
+        message: parsed?.message ?? 'Unauthorized',
+        code: parsed?.code,
       );
     }
     if (response.statusCode == 426) {

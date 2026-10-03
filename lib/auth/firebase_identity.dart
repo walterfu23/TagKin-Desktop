@@ -28,12 +28,12 @@ class FirebaseSession {
   final String? email;
 
   Map<String, Object?> toJson() => {
-        'idToken': idToken,
-        'refreshToken': refreshToken,
-        'expiresAt': expiresAt.toIso8601String(),
-        'localId': localId,
-        'email': email,
-      };
+    'idToken': idToken,
+    'refreshToken': refreshToken,
+    'expiresAt': expiresAt.toIso8601String(),
+    'localId': localId,
+    'email': email,
+  };
 
   static FirebaseSession? tryParse(Object? json) {
     if (json is! Map) return null;
@@ -94,6 +94,77 @@ Uri googleAuthorizeUri({
   });
 }
 
+class EmailCodeStart {
+  const EmailCodeStart({
+    required this.emailMasked,
+    required this.alreadyVerified,
+  });
+
+  final String emailMasked;
+  final bool alreadyVerified;
+}
+
+/// Asks the API to email a sign-in code to the address on [idToken].
+/// The response never includes the code.
+Future<EmailCodeStart> requestEmailSignInCode({
+  required String apiUrl,
+  required String idToken,
+  http.Client? httpClient,
+}) async {
+  final client = httpClient ?? http.Client();
+  final close = httpClient == null;
+  try {
+    final res = await client.post(
+      Uri.parse('$apiUrl/auth/email-code'),
+      headers: {
+        'authorization': 'Bearer $idToken',
+        'content-type': 'application/json',
+      },
+    );
+    final json = _jsonMap(res);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw FirebaseAuthException(_apiMessage(json, res.statusCode));
+    }
+    final masked = json['emailMasked'];
+    if (masked is! String || masked.isEmpty) {
+      throw FirebaseAuthException(
+        'Sign-in did not say where the code was sent.',
+      );
+    }
+    return EmailCodeStart(
+      emailMasked: masked,
+      alreadyVerified: json['alreadyVerified'] == true,
+    );
+  } finally {
+    if (close) client.close();
+  }
+}
+
+Future<void> verifyEmailSignInCode({
+  required String apiUrl,
+  required String idToken,
+  required String code,
+  http.Client? httpClient,
+}) async {
+  final client = httpClient ?? http.Client();
+  final close = httpClient == null;
+  try {
+    final res = await client.post(
+      Uri.parse('$apiUrl/auth/email-code/verify'),
+      headers: {
+        'authorization': 'Bearer $idToken',
+        'content-type': 'application/json',
+      },
+      body: jsonEncode({'code': code.trim()}),
+    );
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw FirebaseAuthException(_apiMessage(_jsonMap(res), res.statusCode));
+    }
+  } finally {
+    if (close) client.close();
+  }
+}
+
 Future<FirebaseSession> signInWithPassword({
   required FirebasePublicConfig config,
   required String email,
@@ -123,10 +194,7 @@ Future<FirebaseSession> refreshFirebaseSession({
         'https://securetoken.googleapis.com/v1/token?key=${Uri.encodeQueryComponent(config.apiKey)}',
       ),
       headers: {'content-type': 'application/x-www-form-urlencoded'},
-      body: {
-        'grant_type': 'refresh_token',
-        'refresh_token': refreshToken,
-      },
+      body: {'grant_type': 'refresh_token', 'refresh_token': refreshToken},
     );
     final json = _jsonMap(res);
     if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -263,6 +331,12 @@ Map<String, dynamic> _jsonMap(http.Response res) {
     return {};
   }
   return {};
+}
+
+String _apiMessage(Map<String, dynamic> json, int status) {
+  final message = json['message'];
+  if (message is String && message.isNotEmpty) return message;
+  return 'Sign-in code failed ($status).';
 }
 
 String _firebaseMessage(Map<String, dynamic> json) {

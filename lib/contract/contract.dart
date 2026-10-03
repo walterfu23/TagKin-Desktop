@@ -967,6 +967,64 @@ class EditTag {
   }
 }
 
+class EmailSignInCodeStart {
+  const EmailSignInCodeStart({
+    required this.emailMasked,
+    required this.alreadyVerified,
+  });
+
+  final String emailMasked;
+  final bool alreadyVerified;
+
+  factory EmailSignInCodeStart.fromJson(Map<String, dynamic> json) => EmailSignInCodeStart(
+        emailMasked: json['emailMasked'] as String,
+        alreadyVerified: json['alreadyVerified'] as bool,
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['emailMasked'] = emailMasked;
+    json['alreadyVerified'] = alreadyVerified;
+    return json;
+  }
+}
+
+class EmailSignInCodeVerifyRequest {
+  const EmailSignInCodeVerifyRequest({
+    required this.code,
+  });
+
+  final String code;
+
+  factory EmailSignInCodeVerifyRequest.fromJson(Map<String, dynamic> json) => EmailSignInCodeVerifyRequest(
+        code: json['code'] as String,
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['code'] = code;
+    return json;
+  }
+}
+
+class EmailSignInCodeVerifyResponse {
+  const EmailSignInCodeVerifyResponse({
+    required this.ok,
+  });
+
+  final bool ok;
+
+  factory EmailSignInCodeVerifyResponse.fromJson(Map<String, dynamic> json) => EmailSignInCodeVerifyResponse(
+        ok: json['ok'] as bool,
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['ok'] = ok;
+    return json;
+  }
+}
+
 class Error {
   const Error({
     required this.code,
