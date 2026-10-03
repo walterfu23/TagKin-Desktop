@@ -154,6 +154,12 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     ref.read(libraryTableControllerProvider).load();
   }
 
+  void _refreshUsage() {
+    final tab = ref.read(activeTopLevelTabProvider);
+    if (tab != TopLevelTab.folders) return;
+    ref.read(usageControllerProvider).refresh();
+  }
+
   void _retry() {
     ref.read(libraryTableControllerProvider).load();
     ref.read(usageControllerProvider).load();
@@ -460,6 +466,15 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
     // restored on app start.
     ref.listen(desktopPrefsProvider, (previous, next) {
       _applyLivePrefs(next);
+    });
+    ref.listen<TopLevelTab>(activeTopLevelTabProvider, (previous, next) {
+      if (previous == null || previous == next) return;
+      if (next != TopLevelTab.folders) return;
+      _refreshUsage();
+    });
+    ref.listen<int>(foldersUsageRefreshTickProvider, (previous, next) {
+      if (previous == null || previous == next) return;
+      _refreshUsage();
     });
     ref.listen(collectionsControllerProvider, (previous, next) {
       final prevId = previous != null && previous.sessionReady

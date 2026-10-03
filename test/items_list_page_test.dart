@@ -20,6 +20,8 @@ import 'package:tagkin_desktop/persons/collection_navigation.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/persons/collections_store.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
+import 'package:tagkin_desktop/prefs/settings_navigation.dart';
+import 'package:tagkin_desktop/prefs/settings_page.dart';
 import 'package:tagkin_desktop/prepass/prepass_controller.dart';
 import 'package:tagkin_desktop/prepass/prepass_payload_builder.dart';
 
@@ -529,6 +531,47 @@ void main() {
   testWidgets('empty library shows empty state', (tester) async {
     await _pumpLibrary(tester, items: FakeItemsRepository());
     expect(find.byKey(const Key('items-empty')), findsOneWidget);
+  });
+
+  testWidgets('returning to Folders reloads remaining credits', (tester) async {
+    final usage = FakeUsageRepository(
+      summary: fixtureUsageSummary(remainingCredits: 0),
+    );
+    await _pumpLibrary(tester, items: FakeItemsRepository(), usage: usage);
+    expect(find.text('0 credits'), findsOneWidget);
+
+    usage.summary = fixtureUsageSummary(remainingCredits: 2500);
+    await tester.tap(find.byKey(const Key('nav-persons')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('nav-folders')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2,500 credits'), findsOneWidget);
+    expect(usage.getUsageCallCount, greaterThan(1));
+  });
+
+  testWidgets('closing Settings reloads remaining credits on Folders', (
+    tester,
+  ) async {
+    final usage = FakeUsageRepository(
+      summary: fixtureUsageSummary(remainingCredits: 0),
+    );
+    await _pumpLibrary(tester, items: FakeItemsRepository(), usage: usage);
+    expect(find.text('0 credits'), findsOneWidget);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ItemsListPage)),
+    );
+    container.read(openSettingsTickProvider.notifier).state++;
+    await tester.pumpAndSettle();
+    expect(find.byType(SettingsPage), findsOneWidget);
+
+    usage.summary = fixtureUsageSummary(remainingCredits: 2500);
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SettingsPage), findsNothing);
+    expect(find.text('2,500 credits'), findsOneWidget);
   });
 
   testWidgets('tap row opens item detail', (tester) async {

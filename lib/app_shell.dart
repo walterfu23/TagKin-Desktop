@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io' show Platform;
 import 'dart:ui' show AppExitResponse;
 
@@ -8,7 +9,14 @@ import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:tagkin_desktop/auth/auth_bootstrap.dart';
+import 'package:tagkin_desktop/auth/firebase_identity.dart';
+import 'package:tagkin_desktop/auth/firebase_sign_in_page.dart';
+import 'package:tagkin_desktop/auth/login_hero.dart';
 import 'package:tagkin_desktop/auth/macos_oauth_deep_links.dart';
+import 'package:tagkin_desktop/auth/macos_oauth_return_hint.dart';
+import 'package:tagkin_desktop/auth/provider_session.dart';
+import 'package:tagkin_desktop/auth/secure_persistor.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/api/comments_repository.dart';
 import 'package:tagkin_desktop/api/corrections_repository.dart';
@@ -19,12 +27,9 @@ import 'package:tagkin_desktop/api/me_repository.dart';
 import 'package:tagkin_desktop/api/persons_repository.dart';
 import 'package:tagkin_desktop/api/usage_repository.dart';
 import 'package:tagkin_desktop/api/credits_repository.dart';
-import 'package:tagkin_desktop/auth/login_hero.dart';
-import 'package:tagkin_desktop/auth/macos_oauth_return_hint.dart';
-import 'package:tagkin_desktop/auth/secure_persistor.dart';
 import 'package:tagkin_desktop/branding.g.dart';
 import 'package:tagkin_desktop/config/app_config.dart';
-import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/contract/contract.dart' hide AuthBootstrap;
 import 'package:tagkin_desktop/credits/checkout_launcher.dart';
 import 'package:tagkin_desktop/persons/collection_navigation.dart';
 import 'package:tagkin_desktop/persons/collection_start_gate.dart';
@@ -61,12 +66,25 @@ final appConfigProvider = Provider<AppConfig>((ref) => AppConfig.load());
 
 /// Secure Clerk persistor (overridable with [MemorySecureKeyValueStore] in tests).
 final securePersistorProvider = Provider<SecureStoragePersistor>((ref) {
+  if (Platform.environment['FLUTTER_TEST'] == 'true') {
+    return SecureStoragePersistor(store: MemorySecureKeyValueStore());
+  }
   return SecureStoragePersistor();
 });
 
-/// Optional override: when non-null, the shell skips live Clerk and uses this
+/// Optional override: when non-null, the shell skips live auth and uses this
 /// session (unit/widget/integration tests).
 final testSessionProvider = Provider<TestSession?>((ref) => null);
+
+/// Active consumer auth provider from `GET /auth/bootstrap`.
+/// Widget tests skip the network and fall back to the local Clerk key.
+final authBootstrapProvider = Provider<Future<AuthBootstrap?>>((ref) {
+  if (Platform.environment['FLUTTER_TEST'] == 'true') {
+    return Future<AuthBootstrap?>.value(null);
+  }
+  final config = ref.watch(appConfigProvider);
+  return fetchAuthBootstrap(config.apiUrl);
+});
 
 /// Authenticated [ApiClient] — overridden inside the signed-in host.
 final apiClientProvider = Provider<ApiClient>((ref) {
@@ -93,6 +111,10 @@ final creditsRepositoryProvider = Provider<CreditsRepository>(
   (ref) => CreditsRepository(ref.watch(apiClientProvider)),
   dependencies: [apiClientProvider],
 );
+
+/// Bumped when a page pushed over the shell closes on Folders, so the
+/// folder list reloads remaining credits without a new sign-in.
+final foldersUsageRefreshTickProvider = StateProvider<int>((ref) => 0);
 
 /// System-browser Checkout launcher. Override in tests.
 final checkoutUrlLauncherProvider = Provider<CheckoutUrlLauncher>(
@@ -185,49 +207,280 @@ class AuthShell extends ConsumerWidget {
     }
 
     final config = ref.watch(appConfigProvider);
-    if (!config.hasClerkKey) {
-      return const _MissingClerkConfigPage();
+    final persistor = ref.watch(securePersistorProvider);
+    return _ProviderAuthGate(
+      config: config,
+      persistor: persistor,
+      signedInHome: signedInHome,
+    );
+  }
+}
+
+/// Loads the global auth provider, then mounts Clerk or Firebase.
+class _ProviderAuthGate extends ConsumerStatefulWidget {
+  const _ProviderAuthGate({
+    required this.config,
+    required this.persistor,
+    required this.signedInHome,
+  });
+
+  final AppConfig config;
+  final SecureStoragePersistor persistor;
+  final Widget signedInHome;
+
+  @override
+  ConsumerState<_ProviderAuthGate> createState() => _ProviderAuthGateState();
+}
+
+class _ProviderAuthGateState extends ConsumerState<_ProviderAuthGate> {
+  AuthBootstrap? _bootstrap;
+  FirebaseSession? _firebaseSession;
+  var _ready = false;
+  Timer? _watch;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    if (Platform.environment['FLUTTER_TEST'] != 'true') {
+      _watch = Timer.periodic(const Duration(seconds: 20), (_) => _load());
+    }
+  }
+
+  @override
+  void dispose() {
+    _watch?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final bootstrap = await ref.read(authBootstrapProvider);
+    if (!mounted) return;
+    if (bootstrap == null && _bootstrap != null) return;
+    final providerId = bootstrap?.providerId ??
+        (widget.config.hasClerkKey ? 'clerk' : null);
+    final previous = _bootstrap?.providerId;
+    if (previous != null && providerId != null && previous != providerId) {
+      await widget.persistor.clearAll();
+      await widget.persistor.store.delete(key: kFirebaseSessionKey);
+    }
+    await reconcileStoredProvider(
+      store: widget.persistor.store,
+      nextProviderId: providerId,
+      clearClerk: widget.persistor.clearAll,
+    );
+    FirebaseSession? restored = _firebaseSession;
+    if (bootstrap?.isFirebase == true) {
+      if (previous != null && previous != 'firebase') restored = null;
+      final raw = await widget.persistor.store.read(key: kFirebaseSessionKey);
+      if (raw != null) {
+        try {
+          restored = FirebaseSession.tryParse(jsonDecode(raw));
+        } on FormatException {
+          restored = null;
+        }
+      } else if (previous != null && previous != bootstrap?.providerId) {
+        restored = null;
+      }
+    } else {
+      restored = null;
+    }
+    if (!mounted) return;
+    setState(() {
+      _bootstrap = bootstrap ?? _bootstrap;
+      _firebaseSession = restored;
+      _ready = true;
+    });
+  }
+
+  Future<void> _onFirebaseSession(FirebaseSession session) async {
+    await widget.persistor.store.write(
+      key: kFirebaseSessionKey,
+      value: jsonEncode(session.toJson()),
+    );
+    if (!mounted) return;
+    setState(() => _firebaseSession = session);
+  }
+
+  Future<void> _signOutFirebase() async {
+    await widget.persistor.store.delete(key: kFirebaseSessionKey);
+    if (!mounted) return;
+    setState(() => _firebaseSession = null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_ready) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator(key: Key('auth-boot'))),
+      );
+    }
+    final bootstrap = _bootstrap;
+    if (bootstrap != null && bootstrap.isFirebase) {
+      final firebase = bootstrap.firebase;
+      if (firebase == null) {
+        return const _MissingFirebaseConfigPage();
+      }
+      final session = _firebaseSession;
+      if (session == null) {
+        return FirebaseSignInPage(
+          config: firebase,
+          onSession: (next) => _onFirebaseSession(next),
+        );
+      }
+      return _FirebaseSignedInHost(
+        config: widget.config,
+        firebase: firebase,
+        session: session,
+        onSession: _onFirebaseSession,
+        onSignOut: _signOutFirebase,
+        signedInHome: widget.signedInHome,
+      );
     }
 
-    final persistor = ref.watch(securePersistorProvider);
-    return ClerkAuth(
-      config: ClerkAuthConfig(
-        publishableKey: config.clerkPublishableKey!,
-        persistor: persistor,
-        // Default httpConnectionTimeout is 500ms with 8 retries — a slightly
-        // slow Clerk reachability check burns >5s before the login form appears.
-        httpConnectionTimeout: const Duration(seconds: 15),
-        retryOptions: const RetryOptions(maxAttempts: 3),
-        sessionTokenPolling: false,
-        // Default 9.7s client refresh races the rotating-token nonce exchange
-        // after Safari Allow and can replace the new session with a
-        // session-less client (login screen stays up / flashes back).
-        clientRefreshPeriod: Duration.zero,
-        loading: const _ClerkBootLoading(),
-        // macOS only: send OAuth (Google, etc.) to the system browser instead
-        // of the in-app WKWebView popup. The embedded webview hits an
-        // unresolved Flutter/AppKit bug where an unhandled keyboard event can
-        // be redispatched in an infinite loop, which can peg WindowServer
-        // hard enough to freeze the whole desktop, not just this app (see
-        // flutter/flutter#170316, #184557). Windows uses WebView2, not
-        // WKWebView, so it is not affected and keeps the in-app popup.
-        redirectionGenerator: Platform.isMacOS ? _oauthRedirectUri : null,
-        deepLinkStream: Platform.isMacOS ? macosOauthDeepLinks() : null,
+    final publishableKey =
+        bootstrap?.clerkPublishableKey ?? widget.config.clerkPublishableKey;
+    if (publishableKey == null || publishableKey.trim().isEmpty) {
+      return const _MissingClerkConfigPage();
+    }
+    return _clerkAuthTree(
+      publishableKey: publishableKey,
+      persistor: widget.persistor,
+      config: widget.config,
+      signedInHome: widget.signedInHome,
+    );
+  }
+}
+
+Widget _clerkAuthTree({
+  required String publishableKey,
+  required SecureStoragePersistor persistor,
+  required AppConfig config,
+  required Widget signedInHome,
+}) {
+  return ClerkAuth(
+    config: ClerkAuthConfig(
+      publishableKey: publishableKey,
+      persistor: persistor,
+      httpConnectionTimeout: const Duration(seconds: 15),
+      retryOptions: const RetryOptions(maxAttempts: 3),
+      sessionTokenPolling: false,
+      clientRefreshPeriod: Duration.zero,
+      loading: const _ClerkBootLoading(),
+      redirectionGenerator: Platform.isMacOS ? _oauthRedirectUri : null,
+      deepLinkStream: Platform.isMacOS ? macosOauthDeepLinks() : null,
+    ),
+    child: ClerkErrorListener(
+      child: ClerkAuthBuilder(
+        signedOutBuilder: (context, authState) {
+          return _ClerkSignedOutPage(authState: authState);
+        },
+        signedInBuilder: (context, authState) {
+          return _ClerkSignedInHost(
+            authState: authState,
+            persistor: persistor,
+            config: config,
+            signedInHome: signedInHome,
+          );
+        },
       ),
-      child: ClerkErrorListener(
-        child: ClerkAuthBuilder(
-          signedOutBuilder: (context, authState) {
-            return _ClerkSignedOutPage(authState: authState);
-          },
-          signedInBuilder: (context, authState) {
-            return _ClerkSignedInHost(
-              authState: authState,
-              persistor: persistor,
-              config: config,
-              signedInHome: signedInHome,
-            );
-          },
+    ),
+  );
+}
+
+class _MissingFirebaseConfigPage extends StatelessWidget {
+  const _MissingFirebaseConfigPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'Firebase is the sign-in provider, but its public client config is missing on the API.',
+            key: Key('missing-firebase-config'),
+            textAlign: TextAlign.center,
+          ),
         ),
+      ),
+    );
+  }
+}
+
+class _FirebaseSignedInHost extends ConsumerStatefulWidget {
+  const _FirebaseSignedInHost({
+    required this.config,
+    required this.firebase,
+    required this.session,
+    required this.onSession,
+    required this.onSignOut,
+    required this.signedInHome,
+  });
+
+  final AppConfig config;
+  final FirebasePublicConfig firebase;
+  final FirebaseSession session;
+  final ValueChanged<FirebaseSession> onSession;
+  final Future<void> Function() onSignOut;
+  final Widget signedInHome;
+
+  @override
+  ConsumerState<_FirebaseSignedInHost> createState() =>
+      _FirebaseSignedInHostState();
+}
+
+class _FirebaseSignedInHostState extends ConsumerState<_FirebaseSignedInHost> {
+  late final ApiClient _client;
+  late FirebaseSession _session;
+
+  @override
+  void initState() {
+    super.initState();
+    _session = widget.session;
+    _client = ApiClient(
+      baseUrl: widget.config.apiUrl,
+      tokenProvider: _token,
+      clientIdentity: ref.read(clientIdentityProvider).headerValue,
+      onClientTooOld: (_) {
+        ref.read(forceUpdateRequiredProvider.notifier).state = true;
+      },
+    );
+  }
+
+  Future<String?> _token() async {
+    final fresh = _session.expiresAt.isAfter(
+      DateTime.now().toUtc().add(const Duration(seconds: 60)),
+    );
+    if (fresh) return _session.idToken;
+    try {
+      final next = await refreshFirebaseSession(
+        config: widget.firebase,
+        refreshToken: _session.refreshToken,
+      );
+      _session = next;
+      widget.onSession(next);
+      return next.idToken;
+    } on FirebaseAuthException {
+      return null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _client.close();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ProviderScope(
+      overrides: [apiClientProvider.overrideWithValue(_client)],
+      child: AccountBootstrap(
+        loadAccount: () => MeRepository(_client).getMe(),
+        onUnauthorized: () {},
+        onSignOut: widget.onSignOut,
+        signedInHome: widget.signedInHome,
       ),
     );
   }
@@ -684,9 +937,9 @@ class _AccountBootstrapState extends ConsumerState<AccountBootstrap> {
                     children: [
                       Text(
                         'Could not authorize with tagkin-api (401): $error\n\n'
-                        'Confirm tagkin-api is running with the same Clerk JWT '
-                        'public key, then Retry. If this persists after an API '
-                        'restart, Sign out and sign in again.',
+                        'Confirm tagkin-api is running with the same sign-in '
+                        'provider, then Retry. If an operator switched the '
+                        'provider, Sign out and sign in again.',
                         key: const Key('auth-unauthorized'),
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.titleMedium,
@@ -1086,6 +1339,11 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
     unawaited(_handleWindowClose());
   }
 
+  @override
+  void onWindowFocus() {
+    _requestFoldersUsageRefresh();
+  }
+
   Future<void> _handleWindowClose() {
     final existing = _windowCloseInFlight;
     if (existing != null) return existing;
@@ -1222,6 +1480,12 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
     }
   }
 
+  void _requestFoldersUsageRefresh() {
+    if (!mounted) return;
+    if (ref.read(activeTopLevelTabProvider) != TopLevelTab.folders) return;
+    ref.read(foldersUsageRefreshTickProvider.notifier).update((n) => n + 1);
+  }
+
   Future<void> _openSettings() async {
     if (_settingsOpen) return;
     _settingsOpen = true;
@@ -1229,6 +1493,7 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
       await pushSettingsPage(context);
     } finally {
       _settingsOpen = false;
+      _requestFoldersUsageRefresh();
     }
   }
 
@@ -1239,6 +1504,7 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
       await pushItemListExportPage(context);
     } finally {
       _itemListExportOpen = false;
+      _requestFoldersUsageRefresh();
     }
   }
 

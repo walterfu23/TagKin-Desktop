@@ -343,6 +343,80 @@ class AssignedAppearancesPage {
   }
 }
 
+class AuthBootstrap {
+  const AuthBootstrap({
+    required this.providerId,
+    this.clerk,
+    this.firebase,
+  });
+
+  final String providerId;
+  final AuthBootstrapClerk? clerk;
+  final AuthBootstrapFirebase? firebase;
+
+  factory AuthBootstrap.fromJson(Map<String, dynamic> json) => AuthBootstrap(
+        providerId: json['providerId'] as String,
+        clerk: json['clerk'] == null ? null : AuthBootstrapClerk.fromJson(json['clerk'] as Map<String, dynamic>),
+        firebase: json['firebase'] == null ? null : AuthBootstrapFirebase.fromJson(json['firebase'] as Map<String, dynamic>),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['providerId'] = providerId;
+    if (clerk != null) json['clerk'] = clerk?.toJson();
+    if (firebase != null) json['firebase'] = firebase?.toJson();
+    return json;
+  }
+}
+
+class AuthBootstrapClerk {
+  const AuthBootstrapClerk({
+    required this.publishableKey,
+  });
+
+  final String publishableKey;
+
+  factory AuthBootstrapClerk.fromJson(Map<String, dynamic> json) => AuthBootstrapClerk(
+        publishableKey: json['publishableKey'] as String,
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['publishableKey'] = publishableKey;
+    return json;
+  }
+}
+
+class AuthBootstrapFirebase {
+  const AuthBootstrapFirebase({
+    required this.apiKey,
+    required this.authDomain,
+    required this.projectId,
+    this.googleClientId,
+  });
+
+  final String apiKey;
+  final String authDomain;
+  final String projectId;
+  final String? googleClientId;
+
+  factory AuthBootstrapFirebase.fromJson(Map<String, dynamic> json) => AuthBootstrapFirebase(
+        apiKey: json['apiKey'] as String,
+        authDomain: json['authDomain'] as String,
+        projectId: json['projectId'] as String,
+        googleClientId: json['googleClientId'] == null ? null : json['googleClientId'] as String,
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['apiKey'] = apiKey;
+    json['authDomain'] = authDomain;
+    json['projectId'] = projectId;
+    if (googleClientId != null) json['googleClientId'] = googleClientId;
+    return json;
+  }
+}
+
 class CancelItemResponse {
   const CancelItemResponse({
     required this.item,

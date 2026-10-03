@@ -94,6 +94,26 @@ paths:
               schema:
                 $ref: "#/components/schemas/Health"
 
+  /auth/bootstrap:
+    get:
+      tags: [system]
+      operationId: getAuthBootstrap
+      summary: Public config for the one active consumer auth provider
+      description: >
+        No bearer token. Returns the global provider id and only the public
+        client values for that provider (publishable key or Firebase web
+        config). Server verification keys and service-account credentials are
+        never included (R8). Switching the provider is an operator action;
+        tokens from the previous provider then fail with 401.
+      security: []
+      responses:
+        "200":
+          description: Active provider and its public client config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthBootstrap"
+
   /me:
     get:
       tags: [system]
@@ -2110,6 +2130,35 @@ components:
           enum: [ok]
         version:
           type: string
+
+    AuthBootstrap:
+      type: object
+      required: [providerId]
+      description: >
+        Public sign-in config. `clerk` or `firebase` is present only for the
+        active provider, and only with non-secret client values.
+      properties:
+        providerId:
+          type: string
+          enum: [clerk, firebase]
+        clerk:
+          type: object
+          required: [publishableKey]
+          properties:
+            publishableKey:
+              type: string
+        firebase:
+          type: object
+          required: [apiKey, authDomain, projectId]
+          properties:
+            apiKey:
+              type: string
+            authDomain:
+              type: string
+            projectId:
+              type: string
+            googleClientId:
+              type: string
 
     Error:
       type: object

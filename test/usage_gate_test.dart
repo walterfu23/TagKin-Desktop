@@ -162,6 +162,54 @@ void main() {
       controller.dispose();
     });
 
+    test('refresh replaces the count after a later success', () async {
+      final repo = FakeUsageRepository(
+        summary: fixtureUsageSummary(remainingCredits: 0),
+      );
+      final controller = UsageController(usageRepository: repo);
+      await controller.load();
+      expect(controller.gate.blocked, isTrue);
+      repo.summary = fixtureUsageSummary(remainingCredits: 2500);
+      await controller.refresh();
+      expect(controller.remainingCredits, 2500);
+      expect(controller.gate.blocked, isFalse);
+      expect(controller.phase, UsagePhase.loaded);
+      expect(repo.getUsageCallCount, 2);
+      controller.dispose();
+    });
+
+    test('refresh keeps the last count when the fetch fails', () async {
+      final repo = FakeUsageRepository(
+        summary: fixtureUsageSummary(remainingCredits: 0),
+      );
+      final controller = UsageController(usageRepository: repo);
+      await controller.load();
+      repo.getUsageError = ApiException(statusCode: 500, message: 'boom');
+      await controller.refresh();
+      expect(controller.remainingCredits, 0);
+      expect(controller.gate.blocked, isTrue);
+      expect(controller.phase, UsagePhase.loaded);
+      expect(repo.getUsageCallCount, 2);
+      controller.dispose();
+    });
+
+    test('refresh clears a stale out-of-credits banner when balance is positive',
+        () async {
+      final repo = FakeUsageRepository(
+        summary: fixtureUsageSummary(remainingCredits: 0),
+      );
+      final controller = UsageController(usageRepository: repo);
+      await controller.load();
+      controller.noteAnalyzeReject('outOfCredits', 'Out of credits');
+      await Future<void>.delayed(Duration.zero);
+      repo.summary = fixtureUsageSummary(remainingCredits: 20000);
+      await controller.refresh();
+      expect(controller.remainingCredits, 20000);
+      expect(controller.analyzeRejectCode, isNull);
+      expect(controller.gate.blocked, isFalse);
+      controller.dispose();
+    });
+
     test('ensureLoaded fetches once then no-ops', () async {
       final repo = FakeUsageRepository();
       final controller = UsageController(usageRepository: repo);

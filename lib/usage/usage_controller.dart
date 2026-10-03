@@ -11,7 +11,8 @@ enum UsagePhase { idle, loading, loaded, error }
 /// Loads `GET /usage` once (on-demand) and exposes [UsageGate] for ingest UI.
 ///
 /// Does not auto-retry on error (matches D1 [ApiClient] no-silent-retry).
-/// Does not poll — refresh by calling [load] again (e.g. on page re-entry).
+/// Does not poll. [refresh] runs when Folders is shown again; [load] is the
+/// first fetch and the explicit Settings refresh.
 ///
 /// Analyze-time credit rejects (`insufficientCredits` / `outOfCredits` /
 /// `paidPaused`) are recorded via [noteAnalyzeReject] so [UsageBanner] can
@@ -53,9 +54,7 @@ class UsageController extends ChangeNotifier {
 
     try {
       final loaded = await usageRepository.getUsage();
-      summary = loaded;
-      gate = UsageGate.fromSummary(loaded);
-      phase = UsagePhase.loaded;
+      _applyLoaded(loaded);
     } catch (e) {
       error = e;
       phase = UsagePhase.error;
@@ -63,6 +62,46 @@ class UsageController extends ChangeNotifier {
       gate = UsageGate.open;
       summary = null;
     }
+    notifyListeners();
+  }
+
+  int _refreshGen = 0;
+
+  /// Re-fetches usage when Folders is shown again or the window is focused.
+  /// A failure keeps the last [summary] and [gate]. Does not wait on an
+  /// earlier fetch, so a stuck request cannot hide a newer balance.
+  Future<void> refresh() {
+    final gen = ++_refreshGen;
+    final future = _refreshAt(gen);
+    _inFlight = future;
+    return future;
+  }
+
+  Future<void> _refreshAt(int gen) async {
+    if (summary == null) {
+      await _load();
+      return;
+    }
+    try {
+      final loaded = await usageRepository.getUsage();
+      if (gen != _refreshGen) return;
+      _applyLoaded(loaded);
+      if (loaded.remainingCredits > 0 &&
+          analyzeRejectCode == 'outOfCredits') {
+        analyzeRejectCode = null;
+        analyzeRejectMessage = null;
+        notifyListeners();
+      }
+    } catch (_) {
+      // Keep the count already on screen.
+    }
+  }
+
+  void _applyLoaded(UsageSummary loaded) {
+    summary = loaded;
+    gate = UsageGate.fromSummary(loaded);
+    phase = UsagePhase.loaded;
+    error = null;
     notifyListeners();
   }
 

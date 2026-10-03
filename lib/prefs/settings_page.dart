@@ -69,7 +69,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _applyDraft(_baseline);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      ref.read(usageControllerProvider).ensureLoaded();
+      ref.read(usageControllerProvider).refresh();
     });
   }
 
@@ -586,7 +586,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     // Keep the autoDispose usage controller alive while Settings is open so
-    // the lazily-built Credits tile still sees the ensureLoaded fetch.
+    // the lazily-built Credits tile still sees the refresh fetch.
     ref.watch(usageControllerProvider);
     return PopScope(
       canPop: false,
