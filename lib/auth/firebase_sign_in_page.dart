@@ -1,23 +1,23 @@
-import 'dart:async';
-import 'dart:io' show Platform;
-
-import 'package:app_links/app_links.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:tagkin_desktop/auth/auth_bootstrap.dart';
 import 'package:tagkin_desktop/auth/firebase_identity.dart';
+import 'package:tagkin_desktop/auth/google_loopback.dart';
 import 'package:tagkin_desktop/auth/login_hero.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// Email/password Firebase sign-in, plus Google when a public client id is set.
+/// Email/password Firebase sign-in, plus Google (macOS and Windows) when
+/// bootstrap carries a public Google client id.
 class FirebaseSignInPage extends StatefulWidget {
   const FirebaseSignInPage({
     super.key,
     required this.config,
+    required this.apiUrl,
     required this.onSession,
   });
 
   final FirebasePublicConfig config;
+  final String apiUrl;
   final ValueChanged<FirebaseSession> onSession;
 
   @override
@@ -30,12 +30,12 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
   var _signUp = false;
   var _busy = false;
   String? _error;
-  PkcePair? _pendingPkce;
-  StreamSubscription<Uri>? _links;
+  GoogleLoopback? _loopback;
+  var _googleCancelled = false;
 
   @override
   void dispose() {
-    _links?.cancel();
+    _loopback?.cancel();
     _email.dispose();
     _password.dispose();
     super.dispose();
@@ -66,50 +66,72 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
     }
   }
 
+  bool get _googleWaiting => _loopback != null;
+
   Future<void> _google() async {
     final clientId = widget.config.googleClientId;
-    if (clientId == null) return;
-    final pkce = createPkcePair();
-    _pendingPkce = pkce;
-    _links ??= AppLinks().uriLinkStream.listen(_onLink);
-    final uri = googleAuthorizeUri(
-      clientId: clientId,
-      redirectUri: kFirebaseOauthRedirect,
-      codeChallenge: pkce.challenge,
-    );
-    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!opened && mounted) {
-      setState(() => _error = 'Could not open the browser for Google sign-in.');
-    }
-  }
-
-  Future<void> _onLink(Uri uri) async {
-    final code = oauthCodeFromRedirect(uri);
-    final pkce = _pendingPkce;
-    if (code == null || pkce == null || _busy) return;
+    if (clientId == null || _busy) return;
     setState(() {
       _busy = true;
       _error = null;
+      _googleCancelled = false;
     });
+    GoogleLoopback? loopback;
     try {
+      final pkce = createPkcePair();
+      loopback = await GoogleLoopback.start();
+      if (!mounted) {
+        await loopback.cancel();
+        return;
+      }
+      setState(() => _loopback = loopback);
+      final uri = googleAuthorizeUri(
+        clientId: clientId,
+        redirectUri: loopback.redirectUri,
+        codeChallenge: pkce.challenge,
+        state: loopback.state,
+      );
+      final opened =
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened) {
+        await loopback.cancel();
+        throw GoogleLoopbackException(
+          'Could not open the browser for Google sign-in.',
+        );
+      }
+      final code = await loopback.code;
       final session = await signInWithGoogleCode(
         config: widget.config,
+        apiUrl: widget.apiUrl,
         code: code,
         codeVerifier: pkce.verifier,
-        redirectUri: kFirebaseOauthRedirect,
+        redirectUri: loopback.redirectUri,
       );
       if (!mounted) return;
       widget.onSession(session);
+    } on GoogleLoopbackException catch (e) {
+      if (!mounted) return;
+      if (!_googleCancelled) setState(() => _error = e.message);
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       setState(() => _error = e.message);
-    } catch (_) {
+    } catch (e, st) {
       if (!mounted) return;
-      setState(() => _error = 'Google sign-in failed.');
+      debugPrint('Google sign-in failed: $e\n$st');
+      setState(() => _error = '$e');
     } finally {
-      _pendingPkce = null;
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _loopback = null;
+          _busy = false;
+        });
+      }
     }
+  }
+
+  Future<void> _cancelGoogle() async {
+    _googleCancelled = true;
+    await _loopback?.cancel();
   }
 
   @override
@@ -125,6 +147,37 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
             style: Theme.of(context).textTheme.headlineSmall,
           ),
           const SizedBox(height: 16),
+          if (!kIsWeb && widget.config.googleClientId != null) ...[
+            if (_googleWaiting) ...[
+              const Text(
+                'Finish signing in with Google in your browser.',
+                key: Key('firebase-google-waiting'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton(
+                key: const Key('firebase-google-cancel'),
+                onPressed: _cancelGoogle,
+                child: const Text('Cancel'),
+              ),
+            ] else
+              OutlinedButton(
+                key: const Key('firebase-google'),
+                onPressed: _busy ? null : _google,
+                child: const Text('Continue with Google'),
+              ),
+            const SizedBox(height: 16),
+            const Row(
+              children: [
+                Expanded(child: Divider()),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8),
+                  child: Text('or'),
+                ),
+                Expanded(child: Divider()),
+              ],
+            ),
+            const SizedBox(height: 4),
+          ],
           TextField(
             key: const Key('firebase-email'),
             controller: _email,
@@ -167,16 +220,6 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
                 ? 'Have an account? Sign in'
                 : 'New here? Create account'),
           ),
-          if (!kIsWeb &&
-              Platform.isMacOS &&
-              widget.config.googleClientId != null) ...[
-            const SizedBox(height: 8),
-            OutlinedButton(
-              key: const Key('firebase-google'),
-              onPressed: _busy ? null : _google,
-              child: const Text('Continue with Google'),
-            ),
-          ],
         ],
       ),
     );

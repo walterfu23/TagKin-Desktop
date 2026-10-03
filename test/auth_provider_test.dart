@@ -8,6 +8,7 @@ import 'package:http/testing.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/auth/auth_bootstrap.dart';
 import 'package:tagkin_desktop/auth/firebase_identity.dart';
+import 'package:tagkin_desktop/auth/firebase_sign_in_page.dart';
 import 'package:tagkin_desktop/auth/provider_session.dart';
 import 'package:tagkin_desktop/auth/secure_persistor.dart';
 import 'package:tagkin_desktop/config/app_config.dart';
@@ -103,5 +104,29 @@ void main() {
     expect(find.byKey(const Key('firebase-sign-in')), findsOneWidget);
     expect(find.byKey(const Key('firebase-email')), findsOneWidget);
     expect(find.byKey(const Key('missing-clerk-config')), findsNothing);
+    // No Google client id in bootstrap: no Google button.
+    expect(find.byKey(const Key('firebase-google')), findsNothing);
+  });
+
+  testWidgets('firebase sign-in shows Continue with Google when bootstrap has a client id',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FirebaseSignInPage(
+          config: const FirebasePublicConfig(
+            apiKey: 'public-key',
+            authDomain: 'app.firebaseapp.com',
+            projectId: 'app',
+            googleClientId: 'client.apps.googleusercontent.com',
+          ),
+          apiUrl: 'http://localhost:8787',
+          onSession: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('firebase-google')), findsOneWidget);
+    expect(find.text('Continue with Google'), findsOneWidget);
+    expect(find.byKey(const Key('firebase-email')), findsOneWidget);
   });
 }

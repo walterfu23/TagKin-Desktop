@@ -75,10 +75,12 @@ PkcePair createPkcePair({Random? random}) {
   return PkcePair(verifier: verifier, challenge: challenge);
 }
 
+/// Google authorize URL for the loopback ("Desktop app" client) flow.
 Uri googleAuthorizeUri({
   required String clientId,
   required String redirectUri,
   required String codeChallenge,
+  required String state,
 }) {
   return Uri.https('accounts.google.com', '/o/oauth2/v2/auth', {
     'client_id': clientId,
@@ -87,17 +89,9 @@ Uri googleAuthorizeUri({
     'scope': 'openid email profile',
     'code_challenge': codeChallenge,
     'code_challenge_method': 'S256',
+    'state': state,
     'prompt': 'select_account',
   });
-}
-
-const String kFirebaseOauthRedirect = 'tagkindesktop://oauth/callback';
-
-String? oauthCodeFromRedirect(Uri uri) {
-  if (uri.scheme != 'tagkindesktop') return null;
-  final code = uri.queryParameters['code'];
-  if (code == null || code.isEmpty) return null;
-  return code;
 }
 
 Future<FirebaseSession> signInWithPassword({
@@ -157,8 +151,12 @@ Future<FirebaseSession> refreshFirebaseSession({
   }
 }
 
+/// Completes Google sign-in: the TagKin API exchanges the one-time [code] for a
+/// Google ID token (the Desktop-app client secret stays server-side, R8), then
+/// Firebase Identity Toolkit turns that into a Firebase session.
 Future<FirebaseSession> signInWithGoogleCode({
   required FirebasePublicConfig config,
+  required String apiUrl,
   required String code,
   required String codeVerifier,
   required String redirectUri,
@@ -168,21 +166,24 @@ Future<FirebaseSession> signInWithGoogleCode({
   final close = httpClient == null;
   try {
     final tokenRes = await client.post(
-      Uri.parse('https://oauth2.googleapis.com/token'),
-      headers: {'content-type': 'application/x-www-form-urlencoded'},
-      body: {
+      Uri.parse('$apiUrl/auth/google/token'),
+      headers: {'content-type': 'application/json'},
+      body: jsonEncode({
         'code': code,
-        'client_id': config.googleClientId ?? '',
-        'redirect_uri': redirectUri,
-        'grant_type': 'authorization_code',
-        'code_verifier': codeVerifier,
-      },
+        'codeVerifier': codeVerifier,
+        'redirectUri': redirectUri,
+      }),
     );
     final tokenJson = _jsonMap(tokenRes);
     if (tokenRes.statusCode < 200 || tokenRes.statusCode >= 300) {
-      throw FirebaseAuthException(_firebaseMessage(tokenJson));
+      final message = tokenJson['message'];
+      throw FirebaseAuthException(
+        message is String && message.isNotEmpty
+            ? message
+            : 'Google sign-in failed (${tokenRes.statusCode}).',
+      );
     }
-    final googleIdToken = tokenJson['id_token'];
+    final googleIdToken = tokenJson['idToken'];
     if (googleIdToken is! String || googleIdToken.isEmpty) {
       throw FirebaseAuthException('Google did not return a sign-in token.');
     }

@@ -1108,6 +1108,50 @@ class GenerateMusicResponse {
   }
 }
 
+class GoogleCodeExchangeRequest {
+  const GoogleCodeExchangeRequest({
+    required this.code,
+    required this.codeVerifier,
+    required this.redirectUri,
+  });
+
+  final String code;
+  final String codeVerifier;
+  final String redirectUri;
+
+  factory GoogleCodeExchangeRequest.fromJson(Map<String, dynamic> json) => GoogleCodeExchangeRequest(
+        code: json['code'] as String,
+        codeVerifier: json['codeVerifier'] as String,
+        redirectUri: json['redirectUri'] as String,
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['code'] = code;
+    json['codeVerifier'] = codeVerifier;
+    json['redirectUri'] = redirectUri;
+    return json;
+  }
+}
+
+class GoogleCodeExchangeResponse {
+  const GoogleCodeExchangeResponse({
+    required this.idToken,
+  });
+
+  final String idToken;
+
+  factory GoogleCodeExchangeResponse.fromJson(Map<String, dynamic> json) => GoogleCodeExchangeResponse(
+        idToken: json['idToken'] as String,
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['idToken'] = idToken;
+    return json;
+  }
+}
+
 class Health {
   const Health({
     required this.status,

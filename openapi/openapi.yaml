@@ -114,6 +114,48 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthBootstrap"
 
+  /auth/google/token:
+    post:
+      tags: [system]
+      operationId: exchangeGoogleAuthCode
+      summary: Exchange a Google OAuth code for a Google ID token (Firebase sign-in)
+      description: >
+        No bearer token. Used by the desktop "Continue with Google" flow when
+        the active provider is Firebase. The desktop opens the system browser
+        with a loopback redirect, receives a single-use authorization code, and
+        posts it here with its PKCE verifier. The API holds the Google
+        Desktop-app client secret (R8) and returns only the Google ID token,
+        which the desktop hands to Firebase Identity Toolkit. `redirectUri`
+        must be an `http://127.0.0.1:<port>` (or `localhost`) loopback URL.
+        400 when Google is not enabled, the provider is not Firebase, or the
+        code is rejected; 503 when Google is unreachable.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GoogleCodeExchangeRequest"
+      responses:
+        "200":
+          description: Google ID token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GoogleCodeExchangeResponse"
+        "400":
+          description: Not enabled, invalid request, or code rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Google is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /me:
     get:
       tags: [system]
@@ -2159,6 +2201,29 @@ components:
               type: string
             googleClientId:
               type: string
+              description: >
+                Public Google Desktop-app OAuth client id. Present only when the
+                API can also exchange the code (client secret configured).
+
+    GoogleCodeExchangeRequest:
+      type: object
+      required: [code, codeVerifier, redirectUri]
+      properties:
+        code:
+          type: string
+        codeVerifier:
+          type: string
+          description: PKCE verifier (43-128 chars).
+        redirectUri:
+          type: string
+          description: Loopback redirect used for the authorize request.
+
+    GoogleCodeExchangeResponse:
+      type: object
+      required: [idToken]
+      properties:
+        idToken:
+          type: string
 
     Error:
       type: object

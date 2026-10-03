@@ -325,6 +325,7 @@ class _ProviderAuthGateState extends ConsumerState<_ProviderAuthGate> {
       if (session == null) {
         return FirebaseSignInPage(
           config: firebase,
+          apiUrl: widget.config.apiUrl,
           onSession: (next) => _onFirebaseSession(next),
         );
       }

@@ -6,6 +6,9 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<!-- Google sign-in: one-shot 127.0.0.1 loopback listener for the OAuth redirect. -->
+	<key>com.apple.security.network.server</key>
+	<true/>
 	<!-- D3: NSOpenPanel / file_picker getDirectoryPath + read selected folder. -->
 	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>
