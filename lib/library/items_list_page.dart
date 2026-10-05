@@ -553,7 +553,10 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
                                 ),
                               ],
                               const SizedBox(width: 12),
-                              const CreditsRemainingChip(),
+                              CreditsRemainingChip(
+                                creditsRepository:
+                                    ref.watch(creditsRepositoryProvider),
+                              ),
                               const SizedBox(width: 12),
                               FilledButton.icon(
                                 key: const Key('folders-edit-toggle'),

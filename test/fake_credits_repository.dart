@@ -14,6 +14,7 @@ class FakeCreditsRepository implements CreditsRepository {
     this.claimError,
     this.previewError,
     this.redeemError,
+    this.lots,
   }) : packs = packs ??
             [
               const CreditPackOffer(
@@ -36,10 +37,19 @@ class FakeCreditsRepository implements CreditsRepository {
   Object? claimError;
   Object? previewError;
   Object? redeemError;
+  CreditLotList? lots;
 
   final launched = <String>[];
+  int listLotsCount = 0;
   int listPacksCount = 0;
   int getPurchaseCount = 0;
+
+  @override
+  Future<CreditLotList> listLots() async {
+    listLotsCount++;
+    return lots ??
+        const CreditLotList(creditExpiryDays: 7, lots: <CreditLot>[]);
+  }
 
   @override
   Future<CreditPackOfferList> listPacks() async {

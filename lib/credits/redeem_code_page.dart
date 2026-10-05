@@ -86,7 +86,7 @@ class _RedeemCodePageState extends ConsumerState<RedeemCodePage> {
           textKey: Key('redeem-code-remaining'),
         ),
         const Text(
-          'Enter a redeem code. Credits do not expire.',
+          'Enter a redeem code. Credits expire after you receive them.',
         ),
         const SizedBox(height: 16),
         TextField(

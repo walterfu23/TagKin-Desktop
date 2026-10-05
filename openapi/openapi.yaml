@@ -689,6 +689,24 @@ paths:
         "409":
           $ref: "#/components/responses/TrialRejected"
 
+  /credits/lots:
+    get:
+      tags: [credits]
+      operationId: listCreditLots
+      summary: >
+        Spendable credit packs for the authenticated account, earliest expiry
+        first. Owner is the session (R10). Due packs are expired before the
+        list is returned.
+      responses:
+        "200":
+          description: Spendable packs grouped only by the client
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreditLotList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /credits/packs:
     get:
       tags: [credits]
@@ -3659,6 +3677,7 @@ components:
         - lowCreditWarningCredits
         - lowCreditWarning
         - creditAdmission
+        - creditExpiryDays
       properties:
         killSwitch:
           $ref: "#/components/schemas/KillSwitchState"
@@ -3691,6 +3710,53 @@ components:
           description: >
             True when this account reserves/settles in credits. Always true
             after the Phase 6 cutover.
+        creditExpiryDays:
+          type: integer
+          minimum: 1
+          description: >
+            How many days a newly granted pack of credits lasts. Existing
+            packs keep the expiry they were given.
+        nextExpiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            Earliest expiry among spendable credit packs, or null when none
+            remain. UTC.
+
+    CreditLot:
+      type: object
+      description: One spendable pack of credits and when it expires.
+      required:
+        - expiresAt
+        - remainingCredits
+      properties:
+        expiresAt:
+          type: string
+          format: date-time
+          description: When this pack expires (UTC).
+        remainingCredits:
+          type: integer
+          minimum: 0
+          description: Credits still spendable in this pack.
+
+    CreditLotList:
+      type: object
+      required:
+        - creditExpiryDays
+        - lots
+      properties:
+        creditExpiryDays:
+          type: integer
+          minimum: 1
+          description: >
+            How many days a newly granted pack lasts. Existing packs keep
+            the expiry they were given.
+        lots:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreditLot"
+          description: Spendable packs, earliest expiry first.
 
     TrialStatus:
       type: string

@@ -31,6 +31,8 @@ UsageSummary fixtureUsageSummary({
   int lowCreditWarningCredits = 500,
   bool lowCreditWarning = false,
   bool creditAdmission = true,
+  int creditExpiryDays = 7,
+  String? nextExpiresAt,
 }) {
   return UsageSummary(
     killSwitch: KillSwitchState(
@@ -43,5 +45,7 @@ UsageSummary fixtureUsageSummary({
     lowCreditWarningCredits: lowCreditWarningCredits,
     lowCreditWarning: lowCreditWarning,
     creditAdmission: creditAdmission,
+    creditExpiryDays: creditExpiryDays,
+    nextExpiresAt: nextExpiresAt,
   );
 }

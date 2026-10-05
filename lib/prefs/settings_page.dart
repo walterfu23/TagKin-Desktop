@@ -1131,9 +1131,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   _settingsGroup(
                     title: 'Credits',
                     subtitle:
-                        'Buy a credit pack, redeem a code, or add a card for the Trial pack. Credits do not expire.',
+                        'Buy a credit pack, redeem a code, or add a card for the Trial pack. Credits expire.',
                     children: [
-                      const CreditsRemainingTile(),
+                      CreditsRemainingTile(
+                        creditsRepository: ref.watch(creditsRepositoryProvider),
+                      ),
                       ListTile(
                         key: const Key('settings-buy-credits'),
                         title: const Text('Buy credits'),

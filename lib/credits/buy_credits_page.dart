@@ -103,7 +103,9 @@ class _BuyCreditsPageState extends ConsumerState<BuyCreditsPage>
         const CreditsRemainingSentence(
           textKey: Key('buy-credits-remaining'),
         ),
-        const Text('Choose a credit pack. Credits do not expire.'),
+        const Text(
+          'Choose a credit pack. Credits expire after you receive them.',
+        ),
         const SizedBox(height: 16),
         RadioGroup<String>(
           groupValue: controller.selected?.packId,

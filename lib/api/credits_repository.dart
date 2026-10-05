@@ -9,6 +9,11 @@ class CreditsRepository {
 
   final ApiClient _client;
 
+  Future<CreditLotList> listLots() async {
+    final response = await _client.get('/credits/lots');
+    return CreditLotList.fromJson(_client.decodeMap(response, '/credits/lots'));
+  }
+
   Future<CreditPackOfferList> listPacks() async {
     final response = await _client.get('/credits/packs');
     return CreditPackOfferList.fromJson(_client.decodeMap(response, '/credits/packs'));

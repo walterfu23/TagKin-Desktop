@@ -91,7 +91,7 @@ class _TrialCardPageState extends ConsumerState<TrialCardPage>
       children: [
         const CreditsRemainingSentence(textKey: Key('trial-card-remaining')),
         Text(
-          'Add a card to receive the Trial pack. $kAppName never sees the card number.',
+          'Add a card to receive the Trial pack. Credits expire after you receive them. $kAppName never sees the card number.',
         ),
         const SizedBox(height: 16),
         FilledButton(

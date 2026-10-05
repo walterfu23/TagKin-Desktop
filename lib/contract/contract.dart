@@ -749,6 +749,50 @@ class CreateWhoExclusionResult {
   }
 }
 
+class CreditLot {
+  const CreditLot({
+    required this.expiresAt,
+    required this.remainingCredits,
+  });
+
+  final String expiresAt;
+  final int remainingCredits;
+
+  factory CreditLot.fromJson(Map<String, dynamic> json) => CreditLot(
+        expiresAt: json['expiresAt'] as String,
+        remainingCredits: (json['remainingCredits'] as num).toInt(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['expiresAt'] = expiresAt;
+    json['remainingCredits'] = remainingCredits;
+    return json;
+  }
+}
+
+class CreditLotList {
+  const CreditLotList({
+    required this.creditExpiryDays,
+    required this.lots,
+  });
+
+  final int creditExpiryDays;
+  final List<CreditLot> lots;
+
+  factory CreditLotList.fromJson(Map<String, dynamic> json) => CreditLotList(
+        creditExpiryDays: (json['creditExpiryDays'] as num).toInt(),
+        lots: (json['lots'] as List<dynamic>).map((e) => CreditLot.fromJson(e as Map<String, dynamic>)).toList(),
+      );
+
+  Map<String, dynamic> toJson() {
+    final json = <String, dynamic>{};
+    json['creditExpiryDays'] = creditExpiryDays;
+    json['lots'] = lots.map((e) => e.toJson()).toList();
+    return json;
+  }
+}
+
 class CreditPackOffer {
   const CreditPackOffer({
     required this.packId,
@@ -2902,6 +2946,8 @@ class UsageSummary {
     required this.lowCreditWarningCredits,
     required this.lowCreditWarning,
     required this.creditAdmission,
+    required this.creditExpiryDays,
+    this.nextExpiresAt,
   });
 
   final KillSwitchState killSwitch;
@@ -2911,6 +2957,8 @@ class UsageSummary {
   final int lowCreditWarningCredits;
   final bool lowCreditWarning;
   final bool creditAdmission;
+  final int creditExpiryDays;
+  final String? nextExpiresAt;
 
   factory UsageSummary.fromJson(Map<String, dynamic> json) => UsageSummary(
         killSwitch: KillSwitchState.fromJson(json['killSwitch'] as Map<String, dynamic>),
@@ -2920,6 +2968,8 @@ class UsageSummary {
         lowCreditWarningCredits: (json['lowCreditWarningCredits'] as num).toInt(),
         lowCreditWarning: json['lowCreditWarning'] as bool,
         creditAdmission: json['creditAdmission'] as bool,
+        creditExpiryDays: (json['creditExpiryDays'] as num).toInt(),
+        nextExpiresAt: json['nextExpiresAt'] == null ? null : json['nextExpiresAt'] as String,
       );
 
   Map<String, dynamic> toJson() {
@@ -2931,6 +2981,8 @@ class UsageSummary {
     json['lowCreditWarningCredits'] = lowCreditWarningCredits;
     json['lowCreditWarning'] = lowCreditWarning;
     json['creditAdmission'] = creditAdmission;
+    json['creditExpiryDays'] = creditExpiryDays;
+    if (nextExpiresAt != null) json['nextExpiresAt'] = nextExpiresAt;
     return json;
   }
 }
