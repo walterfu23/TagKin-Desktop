@@ -48,7 +48,7 @@ class _BuyCreditsPageState extends ConsumerState<BuyCreditsPage>
         listenable: controller,
         builder: (context, _) {
           return Scaffold(
-            appBar: AppBar(title: const Text('Buy credits')),
+            appBar: AppBar(title: const Text('Add credits')),
             body: Padding(
               padding: const EdgeInsets.all(24),
               child: SingleChildScrollView(
@@ -150,22 +150,6 @@ class _BuyCreditsPageState extends ConsumerState<BuyCreditsPage>
                   : controller.startCheckout,
               child: const Text('Continue to Checkout'),
             ),
-            TextButton(
-              key: const Key('buy-credits-have-a-code'),
-              onPressed: () {
-                final container = ProviderScope.containerOf(context);
-                Navigator.of(context).push<void>(
-                  MaterialPageRoute<void>(
-                    settings: const RouteSettings(name: 'redeem-code'),
-                    builder: (_) => UncontrolledProviderScope(
-                      container: container,
-                      child: const RedeemCodePage(),
-                    ),
-                  ),
-                );
-              },
-              child: const Text('Have a code?'),
-            ),
             if (controller.phase == BuyCreditsPhase.awaitingBrowser ||
                 controller.phase == BuyCreditsPhase.polling) ...[
               OutlinedButton(
@@ -181,7 +165,35 @@ class _BuyCreditsPageState extends ConsumerState<BuyCreditsPage>
             ],
           ],
         ),
+        const SizedBox(height: 24),
+        const Divider(),
+        const SizedBox(height: 16),
+        Text(
+          'Have a redeem code?',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        const Text('Use a code instead of buying a pack.'),
+        const SizedBox(height: 12),
+        FilledButton(
+          key: const Key('buy-credits-have-a-code'),
+          onPressed: _openRedeemCode,
+          child: const Text('Redeem code'),
+        ),
       ],
+    );
+  }
+
+  void _openRedeemCode() {
+    final container = ProviderScope.containerOf(context);
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        settings: const RouteSettings(name: 'redeem-code'),
+        builder: (_) => UncontrolledProviderScope(
+          container: container,
+          child: const RedeemCodePage(),
+        ),
+      ),
     );
   }
 }

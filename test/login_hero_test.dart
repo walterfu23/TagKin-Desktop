@@ -4,7 +4,7 @@ import 'package:tagkin_desktop/auth/login_hero.dart';
 import 'package:tagkin_desktop/branding.g.dart';
 
 void main() {
-  testWidgets('login hero shows the TagFam poster, app name, and tagline', (
+  testWidgets('login hero shows the branded poster, app name, and tagline', (
     tester,
   ) async {
     await tester.pumpWidget(

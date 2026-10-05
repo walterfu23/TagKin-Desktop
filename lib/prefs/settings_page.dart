@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/api/me_repository.dart';
 import 'package:tagkin_desktop/app_shell.dart';
+import 'package:tagkin_desktop/branding.g.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/credits/credits_navigation.dart';
 import 'package:tagkin_desktop/item_lists/export_photo_transition.dart';
@@ -353,8 +354,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       if (status == ClientSupportStatus.warn) {
         ref.read(clientWarnDismissedProvider.notifier).state = false;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('A newer version of TagKin is available.'),
+          SnackBar(
+            content: Text('A newer version of $kAppName is available.'),
           ),
         );
         return;
@@ -1160,7 +1161,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   _settingsGroup(
                     title: 'About',
                     subtitle:
-                        'This computer’s TagKin version. Check for updates talks to tagkin-api; installing a new build still needs a download until auto-update is wired.',
+                        'This computer’s $kAppName version. Check for updates talks to tagkin-api; installing a new build still needs a download until auto-update is wired.',
                     children: [
                       ListTile(
                         key: const Key('settings-about-version'),
@@ -1180,7 +1181,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       if (ref.watch(clientSupportProvider)?.downloadUrl != null)
                         ListTile(
                           key: const Key('settings-download-tagkin'),
-                          title: const Text('Download TagKin'),
+                          title: Text('Download $kAppName'),
                           subtitle: const Text(
                             'Open the latest installer in your browser',
                           ),

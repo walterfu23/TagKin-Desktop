@@ -16,10 +16,10 @@ String creditDebtDisclosure({
   required int netCredits,
 }) {
   if (debtCreditsToClear <= 0) {
-    return '${formatCreditCount(netCredits)} credits will become remaining.';
+    return '${formatCreditCount(netCredits)} credits will be added.';
   }
   return '${formatCreditCount(debtCreditsToClear)} credits will clear refund debt; '
-      '${formatCreditCount(netCredits)} will become remaining.';
+      '${formatCreditCount(netCredits)} will be added.';
 }
 
 String packDebtDisclosure(CreditPackOffer offer) => creditDebtDisclosure(

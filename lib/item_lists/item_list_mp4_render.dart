@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
+import 'package:tagkin_desktop/branding.g.dart';
 import 'package:tagkin_desktop/ingest/folder_bookmark_store.dart';
 import 'package:tagkin_desktop/item_lists/item_list_mp4_filter.dart';
 import 'package:tagkin_desktop/item_lists/item_list_mp4_materialize.dart';
@@ -85,7 +86,7 @@ String _itemListMp4FailureSentence({
   if (lower.contains('permission denied') ||
       lower.contains('read-only file system') ||
       lower.contains('operation not permitted')) {
-    return 'TagKin could not save to that folder. Choose a different folder.';
+    return '$kAppName could not save to that folder. Choose a different folder.';
   }
   if (exitCode == -9 ||
       exitCode == 137 ||
@@ -304,7 +305,7 @@ void ensureItemListExportNonEmpty(String path) {
   final file = File(path);
   if (!file.existsSync() || file.lengthSync() == 0) {
     throw ItemListMp4RenderException(
-      'The exported file was empty. Save As again and keep it in a folder TagKin can write.',
+      'The exported file was empty. Save As again and keep it in a folder $kAppName can write.',
     );
   }
 }
@@ -1087,7 +1088,7 @@ Future<void> itemListRenderMp4({
       );
       if (n <= 0) {
         throw ItemListMp4RenderException(
-          'The exported MP4 was empty. Save As again and keep it in a folder TagKin can write.',
+          'The exported MP4 was empty. Save As again and keep it in a folder $kAppName can write.',
         );
       }
     } else if (useMacSavePanel && SecurityScopedBookmarks.isSupported) {
@@ -1099,7 +1100,7 @@ Future<void> itemListRenderMp4({
       final dest = File(outputPath);
       if (!dest.existsSync() || dest.lengthSync() == 0) {
         throw ItemListMp4RenderException(
-          'The exported MP4 was empty. Save As again and keep it in a folder TagKin can write.',
+          'The exported MP4 was empty. Save As again and keep it in a folder $kAppName can write.',
         );
       }
     }

@@ -7,7 +7,7 @@ const String kLoginHeroAsset = 'branding/icon_macos.png';
 const String kLoginHeroTagline =
     'Who, what, when, and where in your photos and videos.';
 
-/// Branded poster: TagFam art as a full-bleed graphic plus the app name.
+/// Branded poster: Dock art as a full-bleed graphic plus the app name.
 class LoginHero extends StatelessWidget {
   const LoginHero({super.key});
 

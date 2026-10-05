@@ -9,14 +9,14 @@ Internal names stay as they are (`tagkin_desktop`, bundle id `com.tagkin.tagkinD
 Edit [`branding.yaml`](./branding.yaml):
 
 ```yaml
-appName: TagKin          # Dock, menu bar, window title, in-app chrome
-fileName: TagKin         # TagKin.app / TagKin.exe (no spaces)
-adminAppName: TagKin Admin
+appName: FamFace         # Dock, menu bar, window title, in-app chrome
+fileName: FamFace         # FamFace.app / FamFace.exe (no spaces)
+adminAppName: FamFace Admin
 ```
 
 `fileName` and `adminAppName` can be omitted; they default to `appName` without spaces and `"<appName> Admin"`.
 
-Example — TagKin → TagFam: set `appName: TagFam` and `fileName: TagFam`, then do step 3.
+Example — a rename: set `appName`, `fileName`, and `adminAppName`, then do step 3.
 
 ## 2. Change the icons
 

@@ -104,7 +104,7 @@ class UsageBanner extends StatelessWidget {
               TextButton(
                 key: const Key('usage-banner-buy-credits'),
                 onPressed: action,
-                child: const Text('Buy credits'),
+                child: const Text('Add credits'),
               ),
           ],
         ),
@@ -137,7 +137,7 @@ class UsageBanner extends StatelessWidget {
               TextButton(
                 key: const Key('usage-banner-buy-credits'),
                 onPressed: action,
-                child: const Text('Buy credits'),
+                child: const Text('Add credits'),
               ),
           ],
         ),

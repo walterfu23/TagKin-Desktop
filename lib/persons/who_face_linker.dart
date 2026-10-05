@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:tagkin_desktop/api/items_repository.dart';
+import 'package:tagkin_desktop/branding.g.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/ingest/model_upload_image.dart';
 import 'package:tagkin_desktop/ingest/upload_mime.dart';
@@ -251,7 +252,7 @@ class WhoFaceLinker {
     if (media.status == LocalMediaStatus.accessDenied) {
       throw StateError(
         'macOS sandbox blocked ${media.path}. Re-open that folder once in the '
-        'main TagKin app (Add from folder) so the security-scoped bookmark is '
+        'main $kAppName app (Add from folder) so the security-scoped bookmark is '
         'saved, then re-run the loop.',
       );
     }

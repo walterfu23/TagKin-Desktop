@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:tagkin_desktop/branding.g.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/credits/checkout_launcher.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
@@ -20,8 +21,8 @@ class UpdateRequiredPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final min = support?.minVersion;
     final message = min == null
-        ? 'This version of TagKin is no longer supported. Download the latest version to continue.'
-        : 'This version of TagKin is no longer supported. Update to $min or newer to continue.';
+        ? 'This version of $kAppName is no longer supported. Download the latest version to continue.'
+        : 'This version of $kAppName is no longer supported. Update to $min or newer to continue.';
     final url = support?.downloadUrl;
     return SelectableScope(
       child: Scaffold(
@@ -55,7 +56,7 @@ class UpdateRequiredPage extends StatelessWidget {
                           (launchUrl ?? launchCheckoutUrl)(parsed);
                         }
                       },
-                      child: const Text('Download TagKin'),
+                      child: Text('Download $kAppName'),
                     ),
                   ],
                   if (onSignOut != null) ...[

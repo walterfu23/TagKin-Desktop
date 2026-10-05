@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:tagkin_desktop/branding.g.dart';
+
 class GoogleLoopbackException implements Exception {
   GoogleLoopbackException(this.message);
   final String message;
@@ -75,7 +77,7 @@ class GoogleLoopback {
       return;
     }
     if (params['state'] != state) {
-      await _reply(request, 'This sign-in link is not valid for TagKin.',
+      await _reply(request, 'This sign-in link is not valid for $kAppName.',
           status: HttpStatus.badRequest);
       return;
     }
@@ -97,7 +99,7 @@ class GoogleLoopback {
     }
     await _reply(
       request,
-      'Return to TagKin to finish signing in. You can close this tab.',
+      'Return to $kAppName to finish signing in. You can close this tab.',
     );
     if (!_done.isCompleted) _done.complete(code);
     // After this handler returns. Cancelling the subscription from inside
@@ -114,7 +116,7 @@ class GoogleLoopback {
     request.response.headers.contentType = ContentType.html;
     final safe = const HtmlEscape().convert(message);
     request.response.write(
-      '<!doctype html><html><head><meta charset="utf-8"><title>TagKin</title></head>'
+      '<!doctype html><html><head><meta charset="utf-8"><title>$kAppName</title></head>'
       '<body style="font-family:-apple-system,Segoe UI,sans-serif;text-align:center;margin-top:20vh">'
       '<p>$safe</p></body></html>',
     );

@@ -2186,7 +2186,7 @@ components:
             $ref: "#/components/schemas/Error"
           example:
             code: client_too_old
-            message: This TagKin desktop version is no longer supported. Update to 1.0.0 or newer.
+            message: This FamFace desktop version is no longer supported. Update to 1.0.0 or newer.
     BadRequest:
       description: Malformed request body or query
       content:

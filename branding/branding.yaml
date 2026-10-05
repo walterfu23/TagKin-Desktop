@@ -7,10 +7,10 @@
 #   TagKin/mac/131_branding-admin.sh   (operator GUI)
 
 # Everything the end user reads (Dock, menu bar, window title, in-app chrome).
-appName: TagFam
+appName: FamFace
 
 # On-disk bundle / exe name (no spaces). Defaults to appName with spaces stripped.
-fileName: TagFam
+fileName: FamFace
 
 # Operator GUI title. Defaults to "<appName> Admin".
-adminAppName: TagFam Admin
+adminAppName: FamFace Admin

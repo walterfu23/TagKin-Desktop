@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:tagkin_desktop/branding.g.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/credits/checkout_launcher.dart';
 import 'package:tagkin_desktop/update/client_support_providers.dart';
@@ -21,8 +22,8 @@ class ClientUpdateBanner extends ConsumerWidget {
     }
     final latest = support.latestVersion;
     final message = latest == null
-        ? 'A newer version of TagKin is available.'
-        : 'A newer version of TagKin is available ($latest).';
+        ? 'A newer version of $kAppName is available.'
+        : 'A newer version of $kAppName is available ($latest).';
     return Material(
       key: const Key('client-update-banner'),
       color: Colors.amber.shade100,

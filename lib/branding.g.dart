@@ -4,7 +4,7 @@
 // ignore_for_file: type=lint
 
 /// User-facing app name (Dock, menu bar, window title, in-app chrome).
-const String kAppName = 'TagFam';
+const String kAppName = 'FamFace';
 
 /// On-disk bundle / executable name (no spaces).
-const String kAppFileName = 'TagFam';
+const String kAppFileName = 'FamFace';

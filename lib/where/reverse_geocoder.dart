@@ -16,7 +16,7 @@ class DefaultReverseGeocoder implements ReverseGeocoder {
   DefaultReverseGeocoder({
     http.Client? httpClient,
     this._geocoding,
-    this.userAgent = 'TagKinDesktop/1.0 (where reverse-geocode)',
+    this.userAgent = 'FamFaceDesktop/1.0 (where reverse-geocode)',
   }) : _http = httpClient ?? http.Client();
 
   final http.Client _http;

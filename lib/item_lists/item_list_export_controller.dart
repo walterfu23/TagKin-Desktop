@@ -14,6 +14,7 @@ import 'package:tagkin_desktop/contract/contract.dart'
 import 'package:tagkin_desktop/contract/contract.dart'
     as api
     show ItemListExportFormat;
+import 'package:tagkin_desktop/branding.g.dart';
 import 'package:tagkin_desktop/ingest/folder_bookmark_store.dart';
 import 'package:tagkin_desktop/item_lists/item_list_fcp7_xml.dart';
 import 'package:tagkin_desktop/item_lists/item_list_fcpxml.dart';
@@ -126,7 +127,7 @@ Future<String?> saveItemListToFile({
         );
         if (contents.isNotEmpty && n <= 0) {
           throw ItemListMp4RenderException(
-            'The exported file was empty. Save As again and keep it in a folder TagKin can write.',
+            'The exported file was empty. Save As again and keep it in a folder $kAppName can write.',
           );
         }
       } finally {

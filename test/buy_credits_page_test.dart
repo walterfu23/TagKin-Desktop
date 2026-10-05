@@ -48,7 +48,7 @@ void main() {
     expect(find.text('\$20 — 2,000 credits'), findsOneWidget);
     expect(
       find.text(
-        '1,200 credits will clear refund debt; 800 will become remaining.',
+        '1,200 credits will clear refund debt; 800 will be added.',
       ),
       findsOneWidget,
     );
@@ -113,7 +113,7 @@ void main() {
     expect(usage.getUsageCallCount, greaterThan(0));
   });
 
-  testWidgets('insufficient and out-of-credits banners offer Buy credits',
+  testWidgets('insufficient and out-of-credits banners offer Add credits',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -131,6 +131,7 @@ void main() {
       ),
     );
     expect(find.byKey(const Key('usage-banner-buy-credits')), findsOneWidget);
+    expect(find.text('Add credits'), findsOneWidget);
 
     await tester.pumpWidget(
       MaterialApp(
@@ -152,5 +153,6 @@ void main() {
     expect(find.byKey(const Key('usage-banner-insufficient-credits')),
         findsOneWidget);
     expect(find.byKey(const Key('usage-banner-buy-credits')), findsOneWidget);
+    expect(find.text('Add credits'), findsOneWidget);
   });
 }
