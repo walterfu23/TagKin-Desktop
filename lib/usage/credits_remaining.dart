@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/api/credits_repository.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/credits/credits_navigation.dart';
 import 'package:tagkin_desktop/credits/pack_label.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
@@ -263,7 +264,7 @@ Future<void> showCreditLotsDialog(
   final groups = groupCreditLotsByLocalDay(loaded.lots);
   await showDialog<void>(
     context: context,
-    builder: (context) {
+    builder: (dialogContext) {
       return AlertDialog(
         key: const Key('credits-lots-dialog'),
         title: const Text('Credits expire'),
@@ -292,7 +293,7 @@ Future<void> showCreditLotsDialog(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Row(
                         children: [
-                          Expanded(child: Text(group.label)),
+                          Expanded(child: Text('Expires ${group.label}')),
                           Text(
                             '${formatCreditCount(group.remainingCredits)} credits',
                             key: Key('credits-lots-row-${group.label}'),
@@ -307,8 +308,18 @@ Future<void> showCreditLotsDialog(
         actions: [
           TextButton(
             key: const Key('credits-lots-close'),
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text('Close'),
+          ),
+          FilledButton(
+            key: const Key('credits-lots-add-credits'),
+            onPressed: () async {
+              await Navigator.of(dialogContext).maybePop();
+              if (context.mounted) {
+                await pushBuyCreditsPage(context);
+              }
+            },
+            child: const Text('Add credits'),
           ),
         ],
       );

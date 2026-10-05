@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/api/api_client.dart';
+import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/usage/credits_remaining.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
@@ -204,6 +205,15 @@ void main() {
     addTearDown(controller.dispose);
     await tester.pumpWidget(
       ProviderScope(
+        overrides: [
+          creditsRepositoryProvider.overrideWithValue(credits),
+          usageRepositoryProvider.overrideWithValue(
+            FakeUsageRepository(
+              summary: fixtureUsageSummary(remainingCredits: 700),
+            ),
+          ),
+          checkoutUrlLauncherProvider.overrideWithValue((uri) async => true),
+        ],
         child: MaterialApp(
           home: Scaffold(
             body: CreditsRemainingChip(
@@ -220,10 +230,28 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('credits-lots-dialog')), findsOneWidget);
     expect(find.text('Credits expire'), findsWidgets);
+    expect(
+      find.text(
+        'Expires ${formatCreditExpiryDay(DateTime.parse('2026-10-08T12:00:00.000Z'))}',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        'Expires ${formatCreditExpiryDay(DateTime.parse('2026-10-11T12:00:00.000Z'))}',
+      ),
+      findsOneWidget,
+    );
     final soon = tester.getTopLeft(find.text('500 credits'));
     final later = tester.getTopLeft(find.text('200 credits'));
     expect(soon.dy, lessThan(later.dy));
     expect(credits.listLotsCount, 1);
+    expect(find.byKey(const Key('credits-lots-add-credits')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('credits-lots-add-credits')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('credits-lots-dialog')), findsNothing);
+    expect(find.text('Add credits'), findsOneWidget);
   });
 
   testWidgets('chip turns amber when the next pack expires within 48 hours',
