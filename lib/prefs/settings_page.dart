@@ -12,6 +12,7 @@ import 'package:tagkin_desktop/update/client_support_providers.dart';
 import 'package:tagkin_desktop/usage/credits_remaining.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
+import 'package:tagkin_desktop/prefs/second_factor_section.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prefs/range_slider_control.dart';
 import 'package:tagkin_desktop/ui/format_local_datetime.dart';
@@ -59,6 +60,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   late TextEditingController _exportMusicPrompt;
   late int _exportSoundtrackUnderVideoPercent;
   late int _exportMusicLoopCount;
+  late bool _requireSecondFactor;
   final UndoController _undoStack = UndoController();
   String _familiarSeen = '';
   bool _suppressFamiliarUndo = false;
@@ -107,6 +109,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _exportSoundtrackUnderVideoPercent =
         prefs.exportSoundtrackUnderVideoPercentOrDefault;
     _exportMusicLoopCount = prefs.exportMusicLoopCountOrDefault;
+    _requireSecondFactor = prefs.requireSecondFactor;
     _familiarSeen = _familiarRegions.text;
     _familiarRegions.addListener(_onFamiliarRegionsEdited);
   }
@@ -176,6 +179,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _exportSoundtrackUnderVideoPercent =
         prefs.exportSoundtrackUnderVideoPercentOrDefault;
     _exportMusicLoopCount = prefs.exportMusicLoopCountOrDefault;
+    _requireSecondFactor = prefs.requireSecondFactor;
     _familiarSeen = _familiarRegions.text;
     _suppressFamiliarUndo = false;
   }
@@ -243,6 +247,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       'export.musicPrompt': _exportMusicPrompt.text,
       'export.soundtrackUnderVideoPercent': _exportSoundtrackUnderVideoPercent,
       'export.musicLoopCount': _exportMusicLoopCount,
+      'auth.requireSecondFactor': _requireSecondFactor,
     });
   }
 
@@ -625,6 +630,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               body: ListView(
                 padding: const EdgeInsets.all(24),
                 children: [
+                  SecondFactorSection(
+                    requireSecondFactor: _requireSecondFactor,
+                    onRequireChanged: (value) => _mutateDraft(
+                      () => _requireSecondFactor = value,
+                    ),
+                  ),
                   _settingsIntro(),
                   _settingsGroup(
                     title: 'Display',

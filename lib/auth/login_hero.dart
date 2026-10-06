@@ -66,3 +66,47 @@ class LoginHero extends StatelessWidget {
     );
   }
 }
+
+/// Signed-out pages share the sign-in split: poster on the left when the
+/// window is at least 800px wide, form only when it is narrower.
+class SignedOutFrame extends StatelessWidget {
+  const SignedOutFrame({
+    super.key,
+    required this.child,
+    this.formWidth = 360,
+    this.scaffoldKey,
+  });
+
+  final Widget child;
+  final double formWidth;
+  final Key? scaffoldKey;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      key: scaffoldKey,
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final form = Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: formWidth),
+                  child: child,
+                ),
+              ),
+            );
+            if (constraints.maxWidth < 800) return form;
+            return Row(
+              children: [
+                const Expanded(child: LoginHero()),
+                Expanded(child: form),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}

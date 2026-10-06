@@ -94,21 +94,49 @@ Uri googleAuthorizeUri({
   });
 }
 
-class EmailCodeStart {
-  const EmailCodeStart({
-    required this.emailMasked,
-    required this.alreadyVerified,
+class MfaFactor {
+  const MfaFactor({
+    required this.enrollmentId,
+    required this.kind,
+    required this.label,
   });
 
-  final String emailMasked;
-  final bool alreadyVerified;
+  final String enrollmentId;
+
+  /// `phone` or `totp`.
+  final String kind;
+  final String label;
 }
 
-/// Asks the API to email a sign-in code to the address on [idToken].
-/// The response never includes the code.
+class MfaChallenge {
+  const MfaChallenge({
+    required this.pendingCredential,
+    required this.factors,
+  });
+
+  final String pendingCredential;
+  final List<MfaFactor> factors;
+}
+
+/// Identity Toolkit accepted the first factor and still needs SMS or TOTP.
+class MfaRequired implements Exception {
+  MfaRequired(this.challenge);
+  final MfaChallenge challenge;
+  @override
+  String toString() => 'A second factor is required.';
+}
+
+class EmailCodeStart {
+  const EmailCodeStart({required this.emailMasked});
+
+  final String emailMasked;
+}
+
+/// Asks the API to email a sign-in code for [email]. No bearer. The response
+/// never includes the code, and it looks the same when the address is unknown.
 Future<EmailCodeStart> requestEmailSignInCode({
   required String apiUrl,
-  required String idToken,
+  required String email,
   http.Client? httpClient,
 }) async {
   final client = httpClient ?? http.Client();
@@ -116,10 +144,8 @@ Future<EmailCodeStart> requestEmailSignInCode({
   try {
     final res = await client.post(
       Uri.parse('$apiUrl/auth/email-code'),
-      headers: {
-        'authorization': 'Bearer $idToken',
-        'content-type': 'application/json',
-      },
+      headers: {'content-type': 'application/json'},
+      body: jsonEncode({'email': email.trim()}),
     );
     final json = _jsonMap(res);
     if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -131,18 +157,17 @@ Future<EmailCodeStart> requestEmailSignInCode({
         'Sign-in did not say where the code was sent.',
       );
     }
-    return EmailCodeStart(
-      emailMasked: masked,
-      alreadyVerified: json['alreadyVerified'] == true,
-    );
+    return EmailCodeStart(emailMasked: masked);
   } finally {
     if (close) client.close();
   }
 }
 
-Future<void> verifyEmailSignInCode({
+/// Returns the one-time Firebase email-link code. The caller exchanges it
+/// and does not show it.
+Future<String> verifyEmailSignInCode({
   required String apiUrl,
-  required String idToken,
+  required String email,
   required String code,
   http.Client? httpClient,
 }) async {
@@ -151,15 +176,18 @@ Future<void> verifyEmailSignInCode({
   try {
     final res = await client.post(
       Uri.parse('$apiUrl/auth/email-code/verify'),
-      headers: {
-        'authorization': 'Bearer $idToken',
-        'content-type': 'application/json',
-      },
-      body: jsonEncode({'code': code.trim()}),
+      headers: {'content-type': 'application/json'},
+      body: jsonEncode({'email': email.trim(), 'code': code.trim()}),
     );
+    final json = _jsonMap(res);
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw FirebaseAuthException(_apiMessage(_jsonMap(res), res.statusCode));
+      throw FirebaseAuthException(_apiMessage(json, res.statusCode));
     }
+    final oob = json['oobCode'];
+    if (oob is! String || oob.isEmpty) {
+      throw FirebaseAuthException('Sign-in did not return a session.');
+    }
+    return oob;
   } finally {
     if (close) client.close();
   }
@@ -208,11 +236,13 @@ Future<FirebaseSession> refreshFirebaseSession({
       throw FirebaseAuthException('Sign-in did not return a session.');
     }
     final seconds = int.tryParse(expiresIn?.toString() ?? '') ?? 3600;
+    final email = _emailFromIdToken(idToken) ?? json['email'];
     return FirebaseSession(
       idToken: idToken,
       refreshToken: nextRefresh,
       expiresAt: DateTime.now().toUtc().add(Duration(seconds: seconds)),
       localId: userId,
+      email: email is String && email.isNotEmpty ? email : null,
     );
   } finally {
     if (close) client.close();
@@ -273,6 +303,33 @@ Future<FirebaseSession> signInWithGoogleCode({
   }
 }
 
+/// Exchanges the one-time code from [verifyEmailSignInCode].
+Future<FirebaseSession> signInWithEmailLink({
+  required FirebasePublicConfig config,
+  required String email,
+  required String oobCode,
+  http.Client? httpClient,
+}) async {
+  final client = httpClient ?? http.Client();
+  final close = httpClient == null;
+  try {
+    final res = await client.post(
+      Uri.parse(
+        'https://identitytoolkit.googleapis.com/v1/accounts:signInWithEmailLink?key=${Uri.encodeQueryComponent(config.apiKey)}',
+      ),
+      headers: {'content-type': 'application/json'},
+      body: jsonEncode({'email': email.trim(), 'oobCode': oobCode}),
+    );
+    final session = _sessionFromIdentity(res);
+    if (_jsonMap(res)['isNewUser'] == true) {
+      throw FirebaseAuthException('No account for that email.');
+    }
+    return session;
+  } finally {
+    if (close) client.close();
+  }
+}
+
 Future<FirebaseSession> _passwordGrant({
   required FirebasePublicConfig config,
   required String email,
@@ -302,6 +359,8 @@ Future<FirebaseSession> _passwordGrant({
 
 FirebaseSession _sessionFromIdentity(http.Response res) {
   final json = _jsonMap(res);
+  final challenge = _mfaChallenge(json);
+  if (challenge != null) throw MfaRequired(challenge);
   if (res.statusCode < 200 || res.statusCode >= 300) {
     throw FirebaseAuthException(_firebaseMessage(json));
   }
@@ -312,14 +371,79 @@ FirebaseSession _sessionFromIdentity(http.Response res) {
     throw FirebaseAuthException('Sign-in did not return a session.');
   }
   final seconds = int.tryParse(json['expiresIn']?.toString() ?? '') ?? 3600;
-  final email = json['email'];
+  final email = json['email'] ?? _emailFromIdToken(idToken);
   return FirebaseSession(
     idToken: idToken,
     refreshToken: refreshToken,
     expiresAt: DateTime.now().toUtc().add(Duration(seconds: seconds)),
     localId: localId,
-    email: email is String ? email : null,
+    email: email is String && email.isNotEmpty ? email : null,
   );
+}
+
+MfaChallenge? _mfaChallenge(Map<String, dynamic> json) {
+  var pending = json['mfaPendingCredential'];
+  var info = json['mfaInfo'];
+  final error = json['error'];
+  if (error is Map && error['message'] is String) {
+    final message = error['message'] as String;
+    final colon = message.indexOf('{');
+    if (colon >= 0) {
+      try {
+        final embedded = jsonDecode(message.substring(colon));
+        if (embedded is Map) {
+          pending ??= embedded['mfaPendingCredential'];
+          info ??= embedded['mfaInfo'];
+        }
+      } on FormatException {
+        // The error text is not an embedded MFA payload.
+      }
+    }
+  }
+  if (pending is! String || pending.isEmpty || info is! List) return null;
+  final factors = <MfaFactor>[];
+  for (final raw in info) {
+    if (raw is! Map) continue;
+    final id = raw['mfaEnrollmentId'];
+    if (id is! String || id.isEmpty) continue;
+    final phone = raw['phoneInfo'];
+    if (phone is String && phone.isNotEmpty) {
+      factors.add(MfaFactor(enrollmentId: id, kind: 'phone', label: phone));
+      continue;
+    }
+    if (raw['totpInfo'] != null) {
+      final name = raw['displayName'];
+      factors.add(
+        MfaFactor(
+          enrollmentId: id,
+          kind: 'totp',
+          label: name is String && name.isNotEmpty ? name : 'Authenticator app',
+        ),
+      );
+    }
+  }
+  if (factors.isEmpty) return null;
+  return MfaChallenge(pendingCredential: pending, factors: factors);
+}
+
+String? _emailFromIdToken(String idToken) {
+  final payload = _jwtPayload(idToken);
+  final email = payload?['email'];
+  return email is String && email.isNotEmpty ? email : null;
+}
+
+Map<String, dynamic>? _jwtPayload(String jwt) {
+  final parts = jwt.split('.');
+  if (parts.length < 2) return null;
+  try {
+    final normalized = base64Url.normalize(parts[1]);
+    final decoded = jsonDecode(utf8.decode(base64Url.decode(normalized)));
+    if (decoded is Map<String, dynamic>) return decoded;
+    if (decoded is Map) return decoded.map((k, v) => MapEntry('$k', v));
+  } on FormatException {
+    return null;
+  }
+  return null;
 }
 
 Map<String, dynamic> _jsonMap(http.Response res) {

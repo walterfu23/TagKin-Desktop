@@ -160,41 +160,42 @@ paths:
     post:
       tags: [system]
       operationId: sendEmailSignInCode
-      summary: Email a Firebase sign-in code to the address on the ID token
+      summary: Email a Firebase sign-in code as an alternative to a password
       description: >
-        Bearer is a Firebase ID token that has not yet passed this step. The
-        API emails a 6-digit code to the email claim on that token and does not
-        return the code. It does not create an account. 401 `email_code_required`
-        on other routes until `POST /auth/email-code/verify` succeeds for this
-        sign-in (`auth_time`). Clerk does not use this route. 429 when a code
-        was sent in the last minute. 503 when outbound mail is not configured.
+        No bearer. Body is the email address. When that address has a Firebase
+        user, the API emails a 6-digit code and stores a one-time email-link
+        code. The response never contains either code, and it is the same shape
+        when the address is unknown. This is a first factor, not a second
+        factor. Clerk does not use this route. 429 when a code was sent in the
+        last minute or the caller is sending too often. 503 when outbound mail
+        or the Firebase service account is not configured.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailSignInCodeStartRequest"
       responses:
         "200":
-          description: Code was sent, or this sign-in was already verified
+          description: The same response whether or not a code was sent
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/EmailSignInCodeStart"
         "400":
-          description: Token has no email, or Firebase is not the active provider
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "401":
-          description: Missing or invalid Firebase token
+          description: Missing email, or Firebase is not the active provider
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "429":
-          description: Resend too soon, or the challenge is locked
+          description: Resend too soon, or too many sends
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "503":
-          description: Mail is not configured or the send failed
+          description: Mail or the Firebase service account is not configured
           content:
             application/json:
               schema:
@@ -204,13 +205,14 @@ paths:
     post:
       tags: [system]
       operationId: verifyEmailSignInCode
-      summary: Accept the emailed Firebase sign-in code
+      summary: Exchange the emailed code for a one-time Firebase email-link code
       description: >
-        Bearer is the same Firebase ID token used to send the code. On success,
-        that sign-in (`sub` + `auth_time`) may call the rest of the API,
-        including after the ID token is refreshed. A wrong code stays
-        unauthorized. Five wrong tries lock the challenge until a new code is
-        sent.
+        No bearer. On success the response contains `oobCode`, which the
+        desktop passes to Identity Toolkit `signInWithEmailLink`. That call
+        is the sign-in. If the account has SMS or an authenticator app
+        enrolled, Identity Toolkit still requires that second factor. A wrong
+        code stays unauthorized. Five wrong tries lock the challenge until a
+        new code is sent. The response does not create a TagKin account.
       requestBody:
         required: true
         content:
@@ -219,13 +221,13 @@ paths:
               $ref: "#/components/schemas/EmailSignInCodeVerifyRequest"
       responses:
         "200":
-          description: This sign-in passed the email code
+          description: The 6-digit code matched
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/EmailSignInCodeVerifyResponse"
         "401":
-          description: Wrong, expired, or missing code, or invalid token
+          description: Wrong, expired, or missing code
           content:
             application/json:
               schema:
@@ -2324,30 +2326,40 @@ components:
         idToken:
           type: string
 
+    EmailSignInCodeStartRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+
     EmailSignInCodeStart:
       type: object
-      required: [emailMasked, alreadyVerified]
+      required: [emailMasked]
       properties:
         emailMasked:
           type: string
           description: Masked destination, such as a...@gmail.com. Never the code.
-        alreadyVerified:
-          type: boolean
 
     EmailSignInCodeVerifyRequest:
       type: object
-      required: [code]
+      required: [email, code]
       properties:
+        email:
+          type: string
         code:
           type: string
           description: 6-digit code from the email.
 
     EmailSignInCodeVerifyResponse:
       type: object
-      required: [ok]
+      required: [oobCode]
       properties:
-        ok:
-          type: boolean
+        oobCode:
+          type: string
+          description: >
+            One-time Identity Toolkit email-link code. The desktop exchanges
+            it and does not show it.
 
     Error:
       type: object

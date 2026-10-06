@@ -21,4 +21,30 @@ void main() {
     expect(find.text(kLoginHeroTagline), findsOneWidget);
     expect(find.byType(Image), findsOneWidget);
   });
+
+  testWidgets('a wide signed-out page shows the poster beside the form', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1000, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      const MaterialApp(home: SignedOutFrame(child: Text('Form'))),
+    );
+    expect(find.byKey(const Key('login-hero')), findsOneWidget);
+    expect(find.text('Form'), findsOneWidget);
+  });
+
+  testWidgets('a narrow signed-out page shows only the form', (tester) async {
+    tester.view.physicalSize = const Size(500, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      const MaterialApp(home: SignedOutFrame(child: Text('Form'))),
+    );
+    expect(find.byKey(const Key('login-hero')), findsNothing);
+    expect(find.text('Form'), findsOneWidget);
+  });
 }

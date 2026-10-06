@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/auth/auth_bootstrap.dart';
+import 'package:tagkin_desktop/auth/firebase_desk.dart';
 import 'package:tagkin_desktop/auth/firebase_identity.dart';
 import 'package:tagkin_desktop/auth/firebase_sign_in_page.dart';
 import 'package:tagkin_desktop/auth/login_hero.dart';
@@ -41,6 +42,7 @@ import 'package:tagkin_desktop/persons/persons_list_page.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/views_menu.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
+import 'package:tagkin_desktop/prefs/second_factor_section.dart';
 import 'package:tagkin_desktop/prefs/settings_navigation.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_status_banner.dart';
@@ -235,6 +237,7 @@ class _ProviderAuthGate extends ConsumerStatefulWidget {
 class _ProviderAuthGateState extends ConsumerState<_ProviderAuthGate> {
   AuthBootstrap? _bootstrap;
   FirebaseSession? _firebaseSession;
+  var _gateFresh = false;
   var _ready = false;
   Timer? _watch;
 
@@ -293,26 +296,35 @@ class _ProviderAuthGateState extends ConsumerState<_ProviderAuthGate> {
     });
   }
 
-  Future<void> _onFirebaseSession(FirebaseSession session) async {
+  Future<void> _onFirebaseSession(
+    FirebaseSession session, {
+    bool fresh = false,
+  }) async {
     await widget.persistor.store.write(
       key: kFirebaseSessionKey,
       value: jsonEncode(session.toJson()),
     );
     if (!mounted) return;
-    setState(() => _firebaseSession = session);
+    setState(() {
+      _firebaseSession = session;
+      if (fresh) _gateFresh = true;
+    });
   }
 
   Future<void> _signOutFirebase() async {
     await widget.persistor.store.delete(key: kFirebaseSessionKey);
     if (!mounted) return;
-    setState(() => _firebaseSession = null);
+    setState(() {
+      _firebaseSession = null;
+      _gateFresh = false;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     if (!_ready) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator(key: Key('auth-boot'))),
+      return const SignedOutFrame(
+        child: CircularProgressIndicator(key: Key('auth-boot')),
       );
     }
     final bootstrap = _bootstrap;
@@ -326,13 +338,18 @@ class _ProviderAuthGateState extends ConsumerState<_ProviderAuthGate> {
         return FirebaseSignInPage(
           config: firebase,
           apiUrl: widget.config.apiUrl,
-          onSession: (next) => _onFirebaseSession(next),
+          onSession: (next) => _onFirebaseSession(next, fresh: true),
         );
       }
       return _FirebaseSignedInHost(
         config: widget.config,
         firebase: firebase,
         session: session,
+        gateFresh: _gateFresh,
+        onGateCleared: () {
+          if (!mounted) return;
+          setState(() => _gateFresh = false);
+        },
         onSession: _onFirebaseSession,
         onSignOut: _signOutFirebase,
         signedInHome: widget.signedInHome,
@@ -394,16 +411,11 @@ class _MissingFirebaseConfigPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text(
-            'Firebase is the sign-in provider, but its public client config is missing on the API.',
-            key: Key('missing-firebase-config'),
-            textAlign: TextAlign.center,
-          ),
-        ),
+    return const SignedOutFrame(
+      child: Text(
+        'Firebase is the sign-in provider, but its public client config is missing on the API.',
+        key: Key('missing-firebase-config'),
+        textAlign: TextAlign.center,
       ),
     );
   }
@@ -414,6 +426,8 @@ class _FirebaseSignedInHost extends ConsumerStatefulWidget {
     required this.config,
     required this.firebase,
     required this.session,
+    required this.gateFresh,
+    required this.onGateCleared,
     required this.onSession,
     required this.onSignOut,
     required this.signedInHome,
@@ -422,6 +436,8 @@ class _FirebaseSignedInHost extends ConsumerStatefulWidget {
   final AppConfig config;
   final FirebasePublicConfig firebase;
   final FirebaseSession session;
+  final bool gateFresh;
+  final VoidCallback onGateCleared;
   final ValueChanged<FirebaseSession> onSession;
   final Future<void> Function() onSignOut;
   final Widget signedInHome;
@@ -476,12 +492,32 @@ class _FirebaseSignedInHostState extends ConsumerState<_FirebaseSignedInHost> {
   @override
   Widget build(BuildContext context) {
     return ProviderScope(
-      overrides: [apiClientProvider.overrideWithValue(_client)],
-      child: AccountBootstrap(
-        loadAccount: () => MeRepository(_client).getMe(),
-        onUnauthorized: () {},
-        onSignOut: widget.onSignOut,
-        signedInHome: widget.signedInHome,
+      overrides: [
+        apiClientProvider.overrideWithValue(_client),
+        firebaseDeskProvider.overrideWithValue(
+          FirebaseDesk(
+            apiUrl: widget.config.apiUrl,
+            config: widget.firebase,
+            session: _session,
+            onSession: (next) {
+              setState(() => _session = next);
+              widget.onSession(next);
+            },
+            onSignOut: widget.onSignOut,
+          ),
+        ),
+      ],
+      child: SecondFactorGate(
+        active:
+            widget.gateFresh &&
+            ref.watch(desktopPrefsProvider).requireSecondFactor,
+        onCleared: widget.onGateCleared,
+        child: AccountBootstrap(
+          loadAccount: () => MeRepository(_client).getMe(),
+          onUnauthorized: () {},
+          onSignOut: widget.onSignOut,
+          signedInHome: widget.signedInHome,
+        ),
       ),
     );
   }
@@ -610,55 +646,7 @@ class _ClerkSignedOutPageState extends State<_ClerkSignedOutPage> {
         ],
       ],
     );
-    return Scaffold(
-      backgroundColor: const Color(0xFFEEF1F8),
-      body: SelectionContainer.disabled(
-        child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final wide = constraints.maxWidth >= 880;
-              if (wide) {
-                return Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Expanded(flex: 5, child: LoginHero()),
-                      const SizedBox(width: 32),
-                      Expanded(
-                        flex: 4,
-                        child: Center(
-                          child: SingleChildScrollView(
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 420),
-                              child: clerkColumn,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }
-              return SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  children: [
-                    const SizedBox(
-                      height: 220,
-                      width: double.infinity,
-                      child: LoginHero(),
-                    ),
-                    const SizedBox(height: 24),
-                    clerkColumn,
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ),
-    );
+    return SignedOutFrame(formWidth: 420, child: clerkColumn);
   }
 }
 
@@ -708,21 +696,19 @@ class _ClerkBootLoading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              kAppName,
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600),
-            ),
-            SizedBox(height: 16),
-            CircularProgressIndicator(key: Key('clerk-boot-loading')),
-            SizedBox(height: 16),
-            Text('Loading sign-in…', key: Key('clerk-boot-loading-label')),
-          ],
-        ),
+    return const SignedOutFrame(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            kAppName,
+            style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600),
+          ),
+          SizedBox(height: 16),
+          CircularProgressIndicator(key: Key('clerk-boot-loading')),
+          SizedBox(height: 16),
+          Text('Loading sign-in…', key: Key('clerk-boot-loading-label')),
+        ],
       ),
     );
   }
@@ -733,17 +719,12 @@ class _MissingClerkConfigPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            'Set CLERK_PUBLISHABLE_KEY in .env (see mac/103_clerk-env.sh).',
-            key: const Key('missing-clerk-config'),
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-        ),
+    return SignedOutFrame(
+      child: Text(
+        'Set CLERK_PUBLISHABLE_KEY in .env (see mac/103_clerk-env.sh).',
+        key: const Key('missing-clerk-config'),
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.titleMedium,
       ),
     );
   }
@@ -928,27 +909,11 @@ class _AccountBootstrapState extends ConsumerState<AccountBootstrap> {
               launchUrl: ref.read(checkoutUrlLauncherProvider),
             );
           }
-          if (error is UnauthorizedException &&
-              error.code == 'email_code_required' &&
-              widget.onSignOut != null) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!mounted) return;
-              widget.onSignOut!();
-            });
-            return const Scaffold(
-              body: Center(
-                child: CircularProgressIndicator(key: Key('account-loading')),
-              ),
-            );
-          }
           if (error is UnauthorizedException) {
-            return Scaffold(
-              body: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
+            return SignedOutFrame(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
                       Text(
                         'Could not authorize with tagkin-api (401): $error\n\n'
                         'Confirm tagkin-api is running with the same sign-in '
@@ -976,9 +941,7 @@ class _AccountBootstrapState extends ConsumerState<AccountBootstrap> {
                           child: const Text('Sign out'),
                         ),
                       ],
-                    ],
-                  ),
-                ),
+                ],
               ),
             );
           }

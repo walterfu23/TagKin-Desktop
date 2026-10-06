@@ -56,3 +56,5 @@ From Specs.md (remaining spec gaps):
 47. [not yet implemented] operator-hosted GPU pool (deferred; R1 tension) (Specs §13)
 48. should allow undo/redo everywhere, including item details page. folder ingestion dose not allow undo/redo
 49. [Done] in the item detail page, should have a way for an excluded face to be assigned to a person.
+50. allow the music to stay for the future regeration of the same mp4 file?
+51. add cost to the sms usage 

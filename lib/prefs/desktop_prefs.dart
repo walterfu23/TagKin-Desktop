@@ -36,6 +36,7 @@ class DesktopPrefs {
     this.exportMusicPrompt = '',
     this.exportSoundtrackUnderVideoPercent = 5,
     this.exportMusicLoopCount = 2,
+    this.requireSecondFactor = true,
   });
 
   /// When true, include country even if place country matches device locale.
@@ -97,6 +98,11 @@ class DesktopPrefs {
 
   /// Job status poll interval while analyze/upload runs.
   final int jobsPollIntervalSeconds;
+
+  /// When true (default), a fresh Firebase sign-in with no second factor
+  /// stops until one is added. A saved session is not interrupted. An
+  /// enrolled factor is still asked for when this is off.
+  final bool requireSecondFactor;
 
   /// How Captured / Added / When / comment timestamps are shown.
   final DateTimeDisplayFormat dateTimeFormat;
@@ -298,6 +304,7 @@ class DesktopPrefs {
     String? exportMusicPrompt,
     int? exportSoundtrackUnderVideoPercent,
     int? exportMusicLoopCount,
+    bool? requireSecondFactor,
   }) {
     return DesktopPrefs(
       showCountryWhenSameCountry:
@@ -344,6 +351,7 @@ class DesktopPrefs {
           exportSoundtrackUnderVideoPercentOrDefault,
       exportMusicLoopCount:
           exportMusicLoopCount ?? exportMusicLoopCountOrDefault,
+      requireSecondFactor: requireSecondFactor ?? this.requireSecondFactor,
     );
   }
 
@@ -378,6 +386,7 @@ class DesktopPrefs {
     'export.soundtrackUnderVideoPercent':
         exportSoundtrackUnderVideoPercentOrDefault,
     'export.musicLoopCount': exportMusicLoopCountOrDefault,
+    'auth.requireSecondFactor': requireSecondFactor,
   };
 
   factory DesktopPrefs.fromJson(Map<String, dynamic> json) {
@@ -546,6 +555,7 @@ class DesktopPrefs {
         min: exportMusicLoopCountMin,
         max: exportMusicLoopCountMax,
       ),
+      requireSecondFactor: flag('auth.requireSecondFactor', fallback: true),
     );
   }
 
@@ -583,7 +593,8 @@ class DesktopPrefs {
       other.exportMusicPromptOrDefault == exportMusicPromptOrDefault &&
       other.exportSoundtrackUnderVideoPercentOrDefault ==
           exportSoundtrackUnderVideoPercentOrDefault &&
-      other.exportMusicLoopCountOrDefault == exportMusicLoopCountOrDefault;
+      other.exportMusicLoopCountOrDefault == exportMusicLoopCountOrDefault &&
+      other.requireSecondFactor == requireSecondFactor;
 
   @override
   int get hashCode => Object.hashAll([
@@ -614,5 +625,6 @@ class DesktopPrefs {
     exportMusicPromptOrDefault,
     exportSoundtrackUnderVideoPercentOrDefault,
     exportMusicLoopCountOrDefault,
+    requireSecondFactor,
   ]);
 }
