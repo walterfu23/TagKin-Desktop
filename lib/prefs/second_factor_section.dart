@@ -7,6 +7,7 @@ import 'package:tagkin_desktop/auth/firebase_identity.dart';
 import 'package:tagkin_desktop/auth/firebase_mfa.dart';
 import 'package:tagkin_desktop/auth/login_hero.dart';
 import 'package:tagkin_desktop/auth/phone_number.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
 /// Settings block for optional SMS and authenticator second factors.
@@ -14,7 +15,13 @@ class SecondFactorSection extends ConsumerStatefulWidget {
   const SecondFactorSection({
     super.key,
     this.gate = false,
+    this.newAccount = false,
     this.onEnrolled,
+    this.onSkip,
+    this.authenticatorOnly = false,
+    this.phoneOnly = false,
+    this.initialPhone,
+    this.httpClient,
     this.requireSecondFactor,
     this.onRequireChanged,
     this.showSmsCodeField = false,
@@ -23,7 +30,24 @@ class SecondFactorSection extends ConsumerStatefulWidget {
   /// Full-page enrollment after a fresh sign-in. Hides the on/off switch.
   final bool gate;
 
+  /// This sign-in created the account. The step is titled as sign-up.
+  final bool newAccount;
+
   final VoidCallback? onEnrolled;
+
+  /// Opens the library without adding an authenticator.
+  final VoidCallback? onSkip;
+
+  /// QR setup only. No phone field.
+  final bool authenticatorOnly;
+
+  /// Phone setup only. No authenticator button.
+  final bool phoneOnly;
+
+  /// Number already collected at sign-in. Enrollment sends the text to it.
+  final String? initialPhone;
+
+  final http.Client? httpClient;
 
   /// Draft value for the Settings switch. Null hides the switch.
   final bool? requireSecondFactor;
@@ -45,12 +69,27 @@ class _SecondFactorSectionState extends ConsumerState<SecondFactorSection> {
   String? _error;
   List<MfaFactor>? _factors;
   TotpEnrollment? _totp;
+  var _totpCodeStep = false;
   String? _smsSession;
 
   @override
   void initState() {
     super.initState();
     if (widget.showSmsCodeField) _smsSession = 'pending';
+    final initialPhone = widget.initialPhone;
+    if (initialPhone != null && initialPhone.isNotEmpty) {
+      _phone.text = initialPhone;
+      if (widget.phoneOnly && !widget.showSmsCodeField) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _startSms();
+        });
+      }
+    }
+    if (widget.authenticatorOnly) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _startTotp();
+      });
+    }
   }
 
   @override
@@ -70,6 +109,7 @@ class _SecondFactorSectionState extends ConsumerState<SecondFactorSection> {
       final factors = await listFactors(
         config: desk.config,
         idToken: desk.session.idToken,
+        httpClient: widget.httpClient,
       );
       if (!mounted) return;
       setState(() {
@@ -91,6 +131,7 @@ class _SecondFactorSectionState extends ConsumerState<SecondFactorSection> {
     }
     setState(() {
       _totp = null;
+      _totpCodeStep = false;
       _smsSession = null;
       _code.clear();
     });
@@ -109,8 +150,14 @@ class _SecondFactorSectionState extends ConsumerState<SecondFactorSection> {
         config: desk.config,
         idToken: desk.session.idToken,
         accountLabel: desk.session.email ?? 'account',
+        httpClient: widget.httpClient,
       );
-      if (mounted) setState(() => _totp = totp);
+      if (mounted) {
+        setState(() {
+          _totp = totp;
+          _totpCodeStep = false;
+        });
+      }
     } on FirebaseAuthException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } finally {
@@ -129,6 +176,7 @@ class _SecondFactorSectionState extends ConsumerState<SecondFactorSection> {
         idToken: desk.session.idToken,
         sessionInfo: totp.sessionInfo,
         code: _code.text,
+        httpClient: widget.httpClient,
       );
       if (!mounted) return;
       _replace(session, enrolled: widget.gate);
@@ -229,6 +277,7 @@ class _SecondFactorSectionState extends ConsumerState<SecondFactorSection> {
       await requestEmailSignInCode(
         apiUrl: desk.apiUrl,
         email: email,
+        httpClient: widget.httpClient,
       );
       if (!mounted) return;
       final code = await _askCode('Enter the code emailed to $email');
@@ -237,11 +286,13 @@ class _SecondFactorSectionState extends ConsumerState<SecondFactorSection> {
         apiUrl: desk.apiUrl,
         email: email,
         code: code,
+        httpClient: widget.httpClient,
       );
       final session = await signInWithEmailLink(
         config: desk.config,
         email: email,
         oobCode: oob,
+        httpClient: widget.httpClient,
       );
       if (!mounted) return;
       _replace(session);
@@ -283,29 +334,99 @@ class _SecondFactorSectionState extends ConsumerState<SecondFactorSection> {
     );
   }
 
+  void _goBack() {
+    setState(() {
+      if (_totpCodeStep) {
+        _totpCodeStep = false;
+        _code.clear();
+        _error = null;
+        return;
+      }
+      _totp = null;
+      _smsSession = null;
+      _code.clear();
+      _error = null;
+    });
+  }
+
+  /// In the gate Back is an outlined button under the filled one. The
+  /// Settings card keeps the text link.
+  Widget _backButton() {
+    const key = Key('firebase-mfa-gate-back');
+    final onPressed = _busy ? null : _goBack;
+    if (!widget.gate) {
+      return TextButton(
+        key: key,
+        onPressed: onPressed,
+        child: const Text('Back'),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: OutlinedButton(
+        key: key,
+        onPressed: onPressed,
+        child: const Text('Back'),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final desk = ref.watch(firebaseDeskProvider);
     if (desk == null) return const SizedBox.shrink();
     final verified = idTokenEmailVerified(desk.session.idToken);
     final factors = _factors;
+    final requireSecondFactor = ref
+        .watch(desktopPrefsProvider)
+        .requireSecondFactor;
+    // Mid-enrollment in the gate: the QR or a code field is on screen and the
+    // page has its own title. Sign out and Continue stay on the choice page.
+    final enrolling = widget.gate && (_totp != null || _smsSession != null);
+    final title = widget.phoneOnly
+        ? (_smsSession != null ? 'Enter the code' : 'Add a phone number')
+        : widget.authenticatorOnly
+        ? (_totpCodeStep ? 'Enter the code' : 'Add an authenticator app')
+        : widget.gate && _totp != null
+        ? (_totpCodeStep ? 'Enter the code' : 'Scan this code')
+        : widget.gate && _smsSession != null
+        ? 'Enter the code'
+        : widget.newAccount
+        ? 'Create your account'
+        : widget.gate
+        ? 'Add a second factor'
+        : 'Second factor';
+    final intro = _totp != null
+        ? _totpCodeStep
+              ? 'Open that entry. Type the 6-digit code it shows. '
+                    'The code changes every 30 seconds.'
+              : 'Scan this once in your authenticator app. '
+                    'A new entry appears there. Do not scan this code again.'
+        : widget.authenticatorOnly
+        ? 'Scan the code with your authenticator app, then enter the code it shows.'
+        : widget.gate && _smsSession != null
+        ? 'Type the code from the text message.'
+        : widget.phoneOnly
+        ? 'Enter your phone number. FamFace texts a code to it.'
+        : widget.newAccount
+        ? 'Add an authenticator app to finish creating your account. '
+              'A phone number is the other choice.'
+        : widget.gate
+        ? 'Add an authenticator app to finish signing in. '
+              'A phone number is the other choice.'
+        : 'Password, an emailed code, and Google stay ways to sign in. '
+              'An enrolled phone or authenticator is asked for at the next sign-in.';
     final body = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          widget.gate ? 'Add a second factor' : 'Second factor',
+          title,
           style: widget.gate
               ? Theme.of(context).textTheme.headlineSmall
               : Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 8),
-        Text(
-          widget.gate
-              ? 'Add an authenticator app to finish signing in. '
-                  'A phone number is the other choice.'
-              : 'Password, an emailed code, and Google stay ways to sign in. '
-                  'An enrolled phone or authenticator is asked for at the next sign-in.',
-        ),
+        Text(intro),
         if (!widget.gate &&
             widget.requireSecondFactor != null &&
             widget.onRequireChanged != null)
@@ -320,122 +441,138 @@ class _SecondFactorSectionState extends ConsumerState<SecondFactorSection> {
             value: widget.requireSecondFactor ?? true,
             onChanged: widget.onRequireChanged,
           ),
-            if (!verified) ...[
-              const SizedBox(height: 8),
-              const Text(
-                'Verify your email before adding a second factor.',
+        if (!verified) ...[
+          const SizedBox(height: 8),
+          const Text('Verify your email before adding a second factor.'),
+          TextButton(
+            key: const Key('settings-verify-email'),
+            onPressed: _busy ? null : _verifyEmail,
+            child: const Text('Email me a code'),
+          ),
+        ],
+        if (!widget.gate && factors == null)
+          TextButton(
+            key: const Key('settings-second-factor-load'),
+            onPressed: _busy ? null : _load,
+            child: const Text('Show second factors'),
+          )
+        else if (factors != null) ...[
+          for (final factor in factors)
+            ListTile(
+              title: Text(factor.label),
+              subtitle: Text(
+                factor.kind == 'phone' ? 'Text message' : 'Authenticator app',
               ),
-              TextButton(
-                key: const Key('settings-verify-email'),
-                onPressed: _busy ? null : _verifyEmail,
-                child: const Text('Email me a code'),
+              trailing: TextButton(
+                onPressed: _busy ? null : () => _remove(factor),
+                child: const Text('Remove'),
               ),
-            ],
-            if (!widget.gate && factors == null)
-              TextButton(
-                key: const Key('settings-second-factor-load'),
-                onPressed: _busy ? null : _load,
-                child: const Text('Show second factors'),
-              )
-            else if (factors != null) ...[
-              for (final factor in factors)
-                ListTile(
-                  title: Text(factor.label),
-                  subtitle: Text(
-                    factor.kind == 'phone' ? 'Text message' : 'Authenticator app',
-                  ),
-                  trailing: TextButton(
-                    onPressed: _busy ? null : () => _remove(factor),
-                    child: const Text('Remove'),
-                  ),
-                ),
-              if (factors.isEmpty)
-                const Text('No second factor yet.'),
-            ],
-            if (_totp != null && (_smsSession == null || !widget.gate)) ...[
-              const SizedBox(height: 8),
-              QrImageView(data: _totp!.otpauthUrl, size: 160),
-              SelectableScope(
-                child: SelectableText(
-                  _totp!.sharedSecretKey,
-                  key: const Key('settings-totp-secret'),
-                ),
+            ),
+          if (factors.isEmpty) const Text('No second factor yet.'),
+        ],
+        if (_totp != null && (_smsSession == null || !widget.gate)) ...[
+          if (!_totpCodeStep) ...[
+            const SizedBox(height: 8),
+            QrImageView(data: _totp!.otpauthUrl, size: 160),
+            SelectableScope(
+              child: SelectableText(
+                _totp!.sharedSecretKey,
+                key: const Key('settings-totp-secret'),
               ),
-              TextField(
-                key: const Key('settings-totp-code'),
-                controller: _code,
-                decoration: const InputDecoration(labelText: 'Code from the app'),
-              ),
-              FilledButton(
-                onPressed: _busy ? null : _finishTotp,
-                child: const Text('Add authenticator'),
-              ),
-            ] else if (_smsSession == null || !widget.gate)
-              widget.gate
-                  ? FilledButton(
-                      key: const Key('settings-add-totp'),
-                      onPressed: _busy || !verified ? null : _startTotp,
-                      child: const Text('Add authenticator app'),
-                    )
-                  : TextButton(
-                      key: const Key('settings-add-totp'),
-                      onPressed: _busy || !verified ? null : _startTotp,
-                      child: const Text('Add authenticator app'),
-                    ),
-            if (_smsSession == null && (_totp == null || !widget.gate)) ...[
-              TextField(
-                key: const Key('settings-phone'),
-                controller: _phone,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(
-                  labelText: 'Phone number',
-                  helperText: kPhoneNumberExample,
-                ),
-              ),
-              TextButton(
-                key: const Key('settings-add-phone'),
-                onPressed: _busy || !verified ? null : _startSms,
-                child: const Text('Text me a code'),
-              ),
-            ] else if (_smsSession != null) ...[
-              TextField(
-                key: const Key('settings-sms-code'),
-                controller: _code,
-                decoration: const InputDecoration(
-                  labelText: 'Code from the text',
-                  helperText: kTextCodeDelayNote,
-                ),
-              ),
-              FilledButton(
-                onPressed: _busy ? null : _finishSms,
-                child: const Text('Add phone'),
-              ),
-            ],
-            if (_error != null)
-              Text(
-                _error!,
-                key: const Key('settings-second-factor-error'),
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            if (widget.gate && (_totp != null || _smsSession != null))
-              TextButton(
-                key: const Key('firebase-mfa-gate-back'),
-                onPressed: _busy
-                    ? null
-                    : () => setState(() {
-                        _totp = null;
-                        _smsSession = null;
-                        _code.clear();
-                        _error = null;
-                      }),
-                child: const Text('Back'),
-              ),
-            if (widget.gate)
-              TextButton(
-                key: const Key('firebase-mfa-gate-sign-out'),
-                onPressed: _busy ? null : () => desk.onSignOut(),
-                child: const Text('Sign out'),
-              ),
+            ),
+            FilledButton(
+              key: const Key('settings-totp-next'),
+              onPressed: _busy
+                  ? null
+                  : () => setState(() {
+                      _totpCodeStep = true;
+                      _error = null;
+                    }),
+              child: const Text('Next'),
+            ),
+          ] else ...[
+            TextField(
+              key: const Key('settings-totp-code'),
+              controller: _code,
+              decoration: const InputDecoration(labelText: 'Code from the app'),
+            ),
+            FilledButton(
+              onPressed: _busy ? null : _finishTotp,
+              child: const Text('Verify'),
+            ),
+          ],
+        ] else if (!widget.phoneOnly && (_smsSession == null || !widget.gate))
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              key: const Key('settings-add-totp'),
+              onPressed: _busy || !verified ? null : _startTotp,
+              child: const Text('Add authenticator app'),
+            ),
+          ),
+        if (!widget.authenticatorOnly &&
+            _smsSession == null &&
+            _totp == null) ...[
+          TextField(
+            key: const Key('settings-phone'),
+            controller: _phone,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(
+              labelText: 'Phone number',
+              helperText: kPhoneNumberExample,
+            ),
+          ),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              key: const Key('settings-add-phone'),
+              onPressed: _busy || !verified ? null : _startSms,
+              child: const Text('Text me a code'),
+            ),
+          ),
+        ] else if (_smsSession != null) ...[
+          TextField(
+            key: const Key('settings-sms-code'),
+            controller: _code,
+            decoration: const InputDecoration(
+              labelText: 'Code from the text',
+              helperText: kTextCodeDelayNote,
+            ),
+          ),
+          FilledButton(
+            onPressed: _busy ? null : _finishSms,
+            child: const Text('Verify'),
+          ),
+        ],
+        if (_error != null)
+          Text(
+            _error!,
+            key: const Key('settings-second-factor-error'),
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        if (_totpCodeStep ||
+            (widget.gate &&
+                !widget.authenticatorOnly &&
+                (_totp != null || _smsSession != null)))
+          _backButton(),
+        if (widget.authenticatorOnly || widget.phoneOnly)
+          TextButton(
+            key: const Key('firebase-mfa-gate-skip'),
+            onPressed: _busy ? null : widget.onSkip,
+            child: const Text('Skip'),
+          ),
+        if (widget.newAccount && !requireSecondFactor && !enrolling)
+          TextButton(
+            key: const Key('firebase-mfa-gate-skip-new'),
+            onPressed: _busy ? null : widget.onSkip,
+            child: const Text('Continue'),
+          ),
+        if (widget.gate && !enrolling)
+          TextButton(
+            key: const Key('firebase-mfa-gate-sign-out'),
+            onPressed: _busy ? null : () => desk.onSignOut(),
+            child: const Text('Sign out'),
+          ),
       ],
     );
     if (widget.gate) {
@@ -457,13 +594,30 @@ class SecondFactorGate extends ConsumerStatefulWidget {
   const SecondFactorGate({
     super.key,
     required this.active,
+    this.newAccount = false,
+    this.addAuthenticator = false,
+    this.addPhone = false,
+    this.enrollPhone,
     required this.onCleared,
     required this.child,
     this.httpClient,
   });
 
-  /// True only for a fresh sign-in while the desktop setting is on.
+  /// True for a fresh sign-in that still needs this step.
   final bool active;
+
+  /// Titles the step as creating the account.
+  final bool newAccount;
+
+  /// After a text code, show authenticator setup before the library.
+  final bool addAuthenticator;
+
+  /// After an authenticator code, show phone setup before the library.
+  final bool addPhone;
+
+  /// Number collected before sign-in. The phone page texts this number.
+  final String? enrollPhone;
+
   final VoidCallback onCleared;
   final Widget child;
   final http.Client? httpClient;
@@ -479,12 +633,14 @@ class _SecondFactorGateState extends ConsumerState<SecondFactorGate> {
   @override
   void initState() {
     super.initState();
+    if (widget.addAuthenticator || widget.addPhone) return;
     if (widget.active) _check();
   }
 
   @override
   void didUpdateWidget(SecondFactorGate oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.addAuthenticator || widget.addPhone) return;
     if (widget.active && !oldWidget.active) _check();
     if (!widget.active && _enroll) {
       setState(() => _enroll = false);
@@ -525,6 +681,25 @@ class _SecondFactorGateState extends ConsumerState<SecondFactorGate> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.addAuthenticator) {
+      return SecondFactorSection(
+        gate: true,
+        authenticatorOnly: true,
+        httpClient: widget.httpClient,
+        onEnrolled: widget.onCleared,
+        onSkip: widget.onCleared,
+      );
+    }
+    if (widget.addPhone) {
+      return SecondFactorSection(
+        gate: true,
+        phoneOnly: true,
+        initialPhone: widget.enrollPhone,
+        httpClient: widget.httpClient,
+        onEnrolled: widget.onCleared,
+        onSkip: widget.onCleared,
+      );
+    }
     if (!widget.active) return widget.child;
     if (_checking) {
       return const SignedOutFrame(
@@ -534,7 +709,10 @@ class _SecondFactorGateState extends ConsumerState<SecondFactorGate> {
     if (_enroll) {
       return SecondFactorSection(
         gate: true,
+        newAccount: widget.newAccount,
+        httpClient: widget.httpClient,
         onEnrolled: widget.onCleared,
+        onSkip: widget.newAccount ? widget.onCleared : null,
       );
     }
     return widget.child;

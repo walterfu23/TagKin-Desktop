@@ -12,6 +12,26 @@ class FirebaseAuthException implements Exception {
   String toString() => message;
 }
 
+/// Password sign-in reported that Firebase has no user for that email.
+class FirebaseAccountMissing extends FirebaseAuthException {
+  FirebaseAccountMissing()
+    : super('No account for that email. Create one below.');
+}
+
+/// The refresh token can never succeed again (deleted or disabled user,
+/// or a refresh token Firebase has rejected).
+class FirebaseSessionRevoked extends FirebaseAuthException {
+  FirebaseSessionRevoked([super.message = 'That account was removed.']);
+}
+
+const _revokedRefreshCodes = <String>{
+  'USER_NOT_FOUND',
+  'USER_DISABLED',
+  'TOKEN_EXPIRED',
+  'INVALID_REFRESH_TOKEN',
+  'MISSING_REFRESH_TOKEN',
+};
+
 class FirebaseSession {
   const FirebaseSession({
     required this.idToken,
@@ -19,6 +39,7 @@ class FirebaseSession {
     required this.expiresAt,
     required this.localId,
     this.email,
+    this.isNewUser = false,
   });
 
   final String idToken;
@@ -26,6 +47,10 @@ class FirebaseSession {
   final DateTime expiresAt;
   final String localId;
   final String? email;
+
+  /// True only for the sign-in response that created the Firebase user.
+  /// Not stored: a relaunch uses the gate marker instead.
+  final bool isNewUser;
 
   Map<String, Object?> toJson() => {
     'idToken': idToken,
@@ -109,10 +134,7 @@ class MfaFactor {
 }
 
 class MfaChallenge {
-  const MfaChallenge({
-    required this.pendingCredential,
-    required this.factors,
-  });
+  const MfaChallenge({required this.pendingCredential, required this.factors});
 
   final String pendingCredential;
   final List<MfaFactor> factors;
@@ -205,6 +227,7 @@ Future<FirebaseSession> signInWithPassword({
     email: email,
     password: password,
     method: signUp ? 'signUp' : 'signInWithPassword',
+    forceNewUser: signUp,
     httpClient: httpClient,
   );
 }
@@ -217,15 +240,27 @@ Future<FirebaseSession> refreshFirebaseSession({
   final client = httpClient ?? http.Client();
   final close = httpClient == null;
   try {
-    final res = await client.post(
-      Uri.parse(
-        'https://securetoken.googleapis.com/v1/token?key=${Uri.encodeQueryComponent(config.apiKey)}',
-      ),
-      headers: {'content-type': 'application/x-www-form-urlencoded'},
-      body: {'grant_type': 'refresh_token', 'refresh_token': refreshToken},
-    );
+    final http.Response res;
+    try {
+      res = await client.post(
+        Uri.parse(
+          'https://securetoken.googleapis.com/v1/token?key=${Uri.encodeQueryComponent(config.apiKey)}',
+        ),
+        headers: {'content-type': 'application/x-www-form-urlencoded'},
+        body: {'grant_type': 'refresh_token', 'refresh_token': refreshToken},
+      );
+    } on FirebaseAuthException {
+      rethrow;
+    } on Object {
+      throw FirebaseAuthException('Sign-in failed.');
+    }
     final json = _jsonMap(res);
     if (res.statusCode < 200 || res.statusCode >= 300) {
+      if (res.statusCode >= 400 &&
+          res.statusCode < 500 &&
+          _isSessionRevoked(json)) {
+        throw FirebaseSessionRevoked(_firebaseMessage(json));
+      }
       throw FirebaseAuthException(_firebaseMessage(json));
     }
     final idToken = json['id_token'];
@@ -320,11 +355,7 @@ Future<FirebaseSession> signInWithEmailLink({
       headers: {'content-type': 'application/json'},
       body: jsonEncode({'email': email.trim(), 'oobCode': oobCode}),
     );
-    final session = _sessionFromIdentity(res);
-    if (_jsonMap(res)['isNewUser'] == true) {
-      throw FirebaseAuthException('No account for that email.');
-    }
-    return session;
+    return _sessionFromIdentity(res);
   } finally {
     if (close) client.close();
   }
@@ -335,6 +366,7 @@ Future<FirebaseSession> _passwordGrant({
   required String email,
   required String password,
   required String method,
+  bool forceNewUser = false,
   http.Client? httpClient,
 }) async {
   final client = httpClient ?? http.Client();
@@ -351,13 +383,20 @@ Future<FirebaseSession> _passwordGrant({
         'returnSecureToken': true,
       }),
     );
-    return _sessionFromIdentity(res);
+    if (method == 'signInWithPassword' &&
+        _firebaseErrorCode(_jsonMap(res)) == 'EMAIL_NOT_FOUND') {
+      throw FirebaseAccountMissing();
+    }
+    return _sessionFromIdentity(res, forceNewUser: forceNewUser);
   } finally {
     if (close) client.close();
   }
 }
 
-FirebaseSession _sessionFromIdentity(http.Response res) {
+FirebaseSession _sessionFromIdentity(
+  http.Response res, {
+  bool forceNewUser = false,
+}) {
   final json = _jsonMap(res);
   final challenge = _mfaChallenge(json);
   if (challenge != null) throw MfaRequired(challenge);
@@ -378,6 +417,7 @@ FirebaseSession _sessionFromIdentity(http.Response res) {
     expiresAt: DateTime.now().toUtc().add(Duration(seconds: seconds)),
     localId: localId,
     email: email is String && email.isNotEmpty ? email : null,
+    isNewUser: forceNewUser || json['isNewUser'] == true,
   );
 }
 
@@ -461,6 +501,34 @@ String _apiMessage(Map<String, dynamic> json, int status) {
   final message = json['message'];
   if (message is String && message.isNotEmpty) return message;
   return 'Sign-in code failed ($status).';
+}
+
+String? _firebaseErrorCode(Map<String, dynamic> json) {
+  final error = json['error'];
+  if (error is! Map || error['message'] is! String) return null;
+  final message = error['message'] as String;
+  final colon = message.indexOf(':');
+  return colon >= 0 ? message.substring(0, colon) : message;
+}
+
+bool _isSessionRevoked(Map<String, dynamic> json) {
+  final blobs = <String>[];
+  final code = _firebaseErrorCode(json);
+  if (code != null) blobs.add(code);
+  final error = json['error'];
+  if (error is String && error.isNotEmpty) blobs.add(error);
+  final description = json['error_description'];
+  if (description is String && description.isNotEmpty) blobs.add(description);
+  for (final blob in blobs) {
+    for (final revoked in _revokedRefreshCodes) {
+      if (blob == revoked ||
+          blob.startsWith('$revoked ') ||
+          blob.startsWith('$revoked:')) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 String _firebaseMessage(Map<String, dynamic> json) {

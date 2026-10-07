@@ -46,9 +46,14 @@ class TrialCardController extends ChangeNotifier {
     try {
       final created = await creditsRepository.startTrialVerification();
       verificationId = created.verificationId;
-      final opened = await launchUrl(Uri.parse(created.cardSetupUrl));
-      if (!opened) {
-        errorMessage = 'Could not open the browser';
+      final uri = Uri.parse(created.cardSetupUrl);
+      if (isStubCheckoutUrl(uri)) {
+        errorMessage = stubCheckoutMessage;
+      } else {
+        final opened = await launchUrl(uri);
+        if (!opened) {
+          errorMessage = 'Could not open the browser';
+        }
       }
     } catch (e) {
       errorMessage = apiUserMessage(e);

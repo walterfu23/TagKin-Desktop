@@ -85,6 +85,12 @@ class BuyCreditsController extends ChangeNotifier {
         return;
       }
       final uri = Uri.parse(url);
+      if (isStubCheckoutUrl(uri)) {
+        errorMessage = stubCheckoutMessage;
+        phase = BuyCreditsPhase.failed;
+        notifyListeners();
+        return;
+      }
       launchedUrls.add(uri);
       final opened = await launchUrl(uri);
       if (!opened) {

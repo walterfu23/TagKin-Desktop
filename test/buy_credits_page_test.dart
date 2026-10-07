@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/credits/buy_credits_page.dart';
+import 'package:tagkin_desktop/credits/checkout_launcher.dart';
 import 'package:tagkin_desktop/usage/usage_banner.dart';
 import 'package:tagkin_desktop/usage/usage_gate.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
@@ -56,7 +57,7 @@ void main() {
     await tester.tap(find.byKey(const Key('buy-credits-checkout')));
     await tester.pump();
     await tester.pump();
-    expect(launched, [Uri.parse('https://checkout.stripe.test/cs_test_1')]);
+    expect(launched, [Uri.parse('https://checkout.stripe.com/c/pay/cs_test_1')]);
     expect(launched.single.toString(), isNot(contains('Bearer')));
     expect(launched.single.toString(), isNot(contains('sk_')));
   });
@@ -154,5 +155,138 @@ void main() {
         findsOneWidget);
     expect(find.byKey(const Key('usage-banner-buy-credits')), findsOneWidget);
     expect(find.text('Add credits'), findsOneWidget);
+  });
+
+  testWidgets('Free trial section follows pack availability and grant',
+      (tester) async {
+    Future<void> pump(TrialSummary summary) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            creditsRepositoryProvider.overrideWithValue(
+              FakeCreditsRepository(trial: summary),
+            ),
+            usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+            checkoutUrlLauncherProvider.overrideWithValue((uri) async => true),
+          ],
+          child: const MaterialApp(
+            home: SelectableScope(child: BuyCreditsPage()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    TrialSummary summary({
+      TrialStatus status = TrialStatus.notstarted,
+      bool available = true,
+    }) {
+      return TrialSummary(
+        status: status,
+        eligible: status != TrialStatus.granted,
+        available: available,
+        neverHadCredits: false,
+        publishableKey: 'pk_test_stub',
+      );
+    }
+
+    await pump(summary());
+    expect(find.byKey(const Key('buy-credits-free-trial')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('buy-credits-free-trial')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('trial-card-heading')), findsOneWidget);
+    expect(find.text('Get your free credits'), findsOneWidget);
+    expect(find.text('Free trial'), findsWidgets);
+
+    await pump(summary(status: TrialStatus.granted, available: true));
+    expect(find.byKey(const Key('buy-credits-free-trial')), findsNothing);
+
+    await pump(summary(available: false));
+    expect(find.byKey(const Key('buy-credits-free-trial')), findsNothing);
+  });
+
+  testWidgets('stub checkout host is not opened', (tester) async {
+    final credits = FakeCreditsRepository(
+      purchase: const CreditPurchaseView(
+        purchaseId: 'pur_stub',
+        status: CreditPurchaseStatus.pending,
+        packId: 'pack20',
+        priceUsdCents: 2000,
+        currency: 'usd',
+        credits: 2000,
+        maxDebtCreditsToClear: 0,
+        quotedNetCredits: 2000,
+        checkoutUrl: 'https://checkout.stripe.test/cs_test_1',
+        remainingCredits: 0,
+      ),
+    );
+    final launched = <Uri>[];
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          creditsRepositoryProvider.overrideWithValue(credits),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          checkoutUrlLauncherProvider.overrideWithValue((uri) async {
+            launched.add(uri);
+            return true;
+          }),
+        ],
+        child: const MaterialApp(
+          home: SelectableScope(child: BuyCreditsPage()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('buy-credits-checkout')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(launched, isEmpty);
+    expect(find.text(stubCheckoutMessage), findsOneWidget);
+  });
+
+  testWidgets('Open card form does not open the stub host', (tester) async {
+    final credits = FakeCreditsRepository(
+      trial: const TrialSummary(
+        status: TrialStatus.notstarted,
+        eligible: true,
+        available: true,
+        neverHadCredits: true,
+        publishableKey: 'pk_test_stub',
+      ),
+      verification: const TrialVerificationCreated(
+        verificationId: 'ver_1',
+        intentKind: TrialIntentKind.setupintent,
+        cardSetupUrl: 'https://checkout.stripe.test/cs_setup',
+        publishableKey: 'pk_test_stub',
+      ),
+    );
+    final launched = <Uri>[];
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          creditsRepositoryProvider.overrideWithValue(credits),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          checkoutUrlLauncherProvider.overrideWithValue((uri) async {
+            launched.add(uri);
+            return true;
+          }),
+        ],
+        child: const MaterialApp(
+          home: SelectableScope(child: BuyCreditsPage()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('buy-credits-free-trial')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('trial-card-open')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(launched, isEmpty);
+    expect(find.text(stubCheckoutMessage), findsOneWidget);
   });
 }

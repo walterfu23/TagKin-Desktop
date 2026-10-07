@@ -69,7 +69,7 @@ class FakeCreditsRepository implements CreditsRepository {
       credits: 2000,
       maxDebtCreditsToClear: 0,
       quotedNetCredits: 2000,
-      checkoutUrl: 'https://checkout.stripe.test/cs_test_1',
+      checkoutUrl: 'https://checkout.stripe.com/c/pay/cs_test_1',
       remainingCredits: 0,
     );
     return purchase!;
@@ -88,7 +88,7 @@ class FakeCreditsRepository implements CreditsRepository {
           credits: 2000,
           maxDebtCreditsToClear: 0,
           quotedNetCredits: 2000,
-          checkoutUrl: 'https://checkout.stripe.test/cs_test_1',
+          checkoutUrl: 'https://checkout.stripe.com/c/pay/cs_test_1',
           remainingCredits: 0,
         );
   }
@@ -113,8 +113,10 @@ class FakeCreditsRepository implements CreditsRepository {
   Future<TrialSummary> getTrial() async {
     return trial ??
         const TrialSummary(
-          status: TrialStatus.notstarted,
-          eligible: true,
+          status: TrialStatus.granted,
+          eligible: false,
+          available: true,
+          neverHadCredits: false,
           publishableKey: 'pk_test_stub',
         );
   }
@@ -125,7 +127,7 @@ class FakeCreditsRepository implements CreditsRepository {
         const TrialVerificationCreated(
           verificationId: 'ver_1',
           intentKind: TrialIntentKind.setupintent,
-          cardSetupUrl: 'https://checkout.stripe.test/cs_setup',
+          cardSetupUrl: 'https://checkout.stripe.com/c/pay/cs_setup',
           publishableKey: 'pk_test_stub',
         );
   }

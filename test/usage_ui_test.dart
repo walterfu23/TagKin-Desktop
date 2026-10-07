@@ -209,6 +209,9 @@ void main() {
 
     expect(find.byKey(const Key('usage-banner-out-of-credits')), findsOneWidget);
     expect(find.text('Out of credits'), findsOneWidget);
+    expect(find.byKey(const Key('usage-banner-buy-credits')), findsOneWidget);
+    expect(find.byKey(const Key('usage-banner-free-trial')), findsNothing);
+    expect(find.byKey(const Key('usage-banner-redeem-code')), findsNothing);
     final button = tester.widget<FilledButton>(
       find.byKey(const Key('add-from-folder')),
     );
@@ -240,5 +243,27 @@ void main() {
     );
     expect(find.text('Not enough credits for this analysis'), findsOneWidget);
     expect(find.text('Only 40 credits remaining'), findsNothing);
+  });
+
+  testWidgets('out of credits offers Add credits only', (tester) async {
+    var buy = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: UsageBanner(
+            gate: UsageGate.fromSummary(
+              fixtureUsageSummary(remainingCredits: 0),
+            ),
+            onBuyCredits: () => buy += 1,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Out of credits'), findsOneWidget);
+    expect(find.byKey(const Key('usage-banner-free-trial')), findsNothing);
+    expect(find.byKey(const Key('usage-banner-redeem-code')), findsNothing);
+    await tester.tap(find.byKey(const Key('usage-banner-buy-credits')));
+    expect(buy, 1);
   });
 }

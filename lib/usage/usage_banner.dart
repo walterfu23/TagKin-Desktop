@@ -41,7 +41,14 @@ class UsageBanner extends StatelessWidget {
         context,
         'Out of credits',
         const Key('usage-banner-out-of-credits'),
-        action: onBuyCredits,
+        actions: [
+          if (onBuyCredits != null)
+            _action(
+              const Key('usage-banner-buy-credits'),
+              'Add credits',
+              onBuyCredits!,
+            ),
+        ],
       );
     }
 
@@ -50,7 +57,14 @@ class UsageBanner extends StatelessWidget {
         context,
         'Not enough credits for this analysis',
         const Key('usage-banner-insufficient-credits'),
-        action: onBuyCredits,
+        actions: [
+          if (onBuyCredits != null)
+            _action(
+              const Key('usage-banner-buy-credits'),
+              'Add credits',
+              onBuyCredits!,
+            ),
+        ],
       );
     }
 
@@ -59,7 +73,14 @@ class UsageBanner extends StatelessWidget {
         context,
         'Only ${formatCreditCount(gate.remainingCredits)} credits remaining',
         const Key('usage-banner-low-credits'),
-        action: onBuyCredits,
+        actions: [
+          if (onBuyCredits != null)
+            _action(
+              const Key('usage-banner-buy-credits'),
+              'Add credits',
+              onBuyCredits!,
+            ),
+        ],
       );
     }
 
@@ -74,11 +95,19 @@ class UsageBanner extends StatelessWidget {
     return const SizedBox.shrink(key: Key('usage-banner-hidden'));
   }
 
+  Widget _action(Key key, String label, VoidCallback onPressed) {
+    return TextButton(
+      key: key,
+      onPressed: onPressed,
+      child: Text(label),
+    );
+  }
+
   Widget _blocked(
     BuildContext context,
     String message,
     Key textKey, {
-    VoidCallback? action,
+    List<Widget> actions = const [],
   }) {
     return Material(
       color: Theme.of(context).colorScheme.errorContainer,
@@ -100,12 +129,7 @@ class UsageBanner extends StatelessWidget {
                 ),
               ),
             ),
-            if (action != null)
-              TextButton(
-                key: const Key('usage-banner-buy-credits'),
-                onPressed: action,
-                child: const Text('Add credits'),
-              ),
+            ...actions,
           ],
         ),
       ),
@@ -116,7 +140,7 @@ class UsageBanner extends StatelessWidget {
     BuildContext context,
     String message,
     Key textKey, {
-    VoidCallback? action,
+    List<Widget> actions = const [],
   }) {
     return Material(
       color: Colors.amber.shade100,
@@ -133,12 +157,7 @@ class UsageBanner extends StatelessWidget {
                 style: TextStyle(color: Colors.amber.shade900),
               ),
             ),
-            if (action != null)
-              TextButton(
-                key: const Key('usage-banner-buy-credits'),
-                onPressed: action,
-                child: const Text('Add credits'),
-              ),
+            ...actions,
           ],
         ),
       ),

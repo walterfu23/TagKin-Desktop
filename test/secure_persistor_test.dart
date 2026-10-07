@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/auth/secure_persistor.dart';
 
@@ -54,6 +55,45 @@ void main() {
     });
   });
 
+  group('FlutterSecureKeyValueStore.delete', () {
+    final missing = PlatformException(
+      code: 'Unexpected security result code',
+      message:
+          'Code: -34018, Message: A required entitlement is not present.',
+      details: -34018,
+    );
+
+    test('a missing entry that reports -34018 is already deleted', () async {
+      final store = FlutterSecureKeyValueStore(
+        _ScriptedSecureStorage(deleteError: missing, readValue: null),
+      );
+      await store.delete(key: 'tagkin.firebase.gate');
+    });
+
+    test('a -34018 delete rethrows when the entry is still stored', () async {
+      final store = FlutterSecureKeyValueStore(
+        _ScriptedSecureStorage(deleteError: missing, readValue: 'kept'),
+      );
+      await expectLater(
+        store.delete(key: 'tagkin.firebase.session'),
+        throwsA(missing),
+      );
+    });
+
+    test('a -34018 delete rethrows when the follow-up read fails', () async {
+      final store = FlutterSecureKeyValueStore(
+        _ScriptedSecureStorage(
+          deleteError: missing,
+          readError: PlatformException(code: 'read-failed'),
+        ),
+      );
+      await expectLater(
+        store.delete(key: 'tagkin.firebase.session'),
+        throwsA(missing),
+      );
+    });
+  });
+
   group('isSecureStoreUserCanceled', () {
     test('detects Keychain -128 cancel', () {
       expect(
@@ -73,6 +113,44 @@ void main() {
       );
     });
   });
+}
+
+/// [FlutterSecureStorage] stand-in. Overrides never touch the real Keychain.
+class _ScriptedSecureStorage extends FlutterSecureStorage {
+  _ScriptedSecureStorage({this.deleteError, this.readValue, this.readError});
+
+  final PlatformException? deleteError;
+  final String? readValue;
+  final PlatformException? readError;
+
+  @override
+  Future<void> delete({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    final error = deleteError;
+    if (error != null) throw error;
+  }
+
+  @override
+  Future<String?> read({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    final error = readError;
+    if (error != null) throw error;
+    return readValue;
+  }
 }
 
 /// Secure store that always throws Keychain user-cancel (-128).

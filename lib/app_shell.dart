@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:tagkin_desktop/auth/auth_bootstrap.dart';
 import 'package:tagkin_desktop/auth/firebase_desk.dart';
 import 'package:tagkin_desktop/auth/firebase_identity.dart';
@@ -32,6 +33,8 @@ import 'package:tagkin_desktop/branding.g.dart';
 import 'package:tagkin_desktop/config/app_config.dart';
 import 'package:tagkin_desktop/contract/contract.dart' hide AuthBootstrap;
 import 'package:tagkin_desktop/credits/checkout_launcher.dart';
+import 'package:tagkin_desktop/credits/credits_navigation.dart';
+import 'package:tagkin_desktop/credits/trial_first_login_prompt.dart';
 import 'package:tagkin_desktop/persons/collection_navigation.dart';
 import 'package:tagkin_desktop/persons/collection_start_gate.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
@@ -87,6 +90,10 @@ final authBootstrapProvider = Provider<Future<AuthBootstrap?>>((ref) {
   final config = ref.watch(appConfigProvider);
   return fetchAuthBootstrap(config.apiUrl);
 });
+
+/// Shared client for Firebase sign-in, token refresh, and the signed-in API.
+/// Null in the app. Tests override it so those calls stay off the network.
+final authHttpClientProvider = Provider<http.Client?>((ref) => null);
 
 /// Authenticated [ApiClient] — overridden inside the signed-in host.
 final apiClientProvider = Provider<ApiClient>((ref) {
@@ -238,7 +245,17 @@ class _ProviderAuthGateState extends ConsumerState<_ProviderAuthGate> {
   AuthBootstrap? _bootstrap;
   FirebaseSession? _firebaseSession;
   var _gateFresh = false;
+  var _gateNew = false;
+  var _addAuthenticator = false;
+  var _addPhone = false;
+  String? _enrollPhone;
   var _ready = false;
+  var _startupRefreshDone = false;
+
+  /// Set when the user signs out, so the 20s reload does not put the
+  /// library back if the Keychain entry could not be removed.
+  var _signedOut = false;
+  String? _signInNotice;
   Timer? _watch;
 
   @override
@@ -260,12 +277,13 @@ class _ProviderAuthGateState extends ConsumerState<_ProviderAuthGate> {
     final bootstrap = await ref.read(authBootstrapProvider);
     if (!mounted) return;
     if (bootstrap == null && _bootstrap != null) return;
-    final providerId = bootstrap?.providerId ??
-        (widget.config.hasClerkKey ? 'clerk' : null);
+    final providerId =
+        bootstrap?.providerId ?? (widget.config.hasClerkKey ? 'clerk' : null);
     final previous = _bootstrap?.providerId;
     if (previous != null && providerId != null && previous != providerId) {
       await widget.persistor.clearAll();
       await widget.persistor.store.delete(key: kFirebaseSessionKey);
+      await widget.persistor.store.delete(key: kFirebaseGateKey);
     }
     await reconcileStoredProvider(
       store: widget.persistor.store,
@@ -273,6 +291,9 @@ class _ProviderAuthGateState extends ConsumerState<_ProviderAuthGate> {
       clearClerk: widget.persistor.clearAll,
     );
     FirebaseSession? restored = _firebaseSession;
+    var gateFresh = _gateFresh;
+    var gateNew = _gateNew;
+    var notice = _signInNotice;
     if (bootstrap?.isFirebase == true) {
       if (previous != null && previous != 'firebase') restored = null;
       final raw = await widget.persistor.store.read(key: kFirebaseSessionKey);
@@ -285,13 +306,59 @@ class _ProviderAuthGateState extends ConsumerState<_ProviderAuthGate> {
       } else if (previous != null && previous != bootstrap?.providerId) {
         restored = null;
       }
+      final firebase = bootstrap?.firebase;
+      if (restored != null &&
+          _firebaseSession == null &&
+          !_startupRefreshDone &&
+          firebase != null) {
+        _startupRefreshDone = true;
+        try {
+          final next = await refreshFirebaseSession(
+            config: firebase,
+            refreshToken: restored.refreshToken,
+            httpClient: ref.read(authHttpClientProvider),
+          ).timeout(const Duration(seconds: 5));
+          await widget.persistor.store.write(
+            key: kFirebaseSessionKey,
+            value: jsonEncode(next.toJson()),
+          );
+          restored = next;
+        } on FirebaseSessionRevoked {
+          await widget.persistor.store.delete(key: kFirebaseSessionKey);
+          await widget.persistor.store.delete(key: kFirebaseGateKey);
+          restored = null;
+          notice = kAccountRemovedNotice;
+        } on Object {
+          // A timeout or a network error keeps the stored session.
+        }
+      }
+      if (restored != null) {
+        final marker = await widget.persistor.store.read(key: kFirebaseGateKey);
+        if (marker == kFirebaseGateNew || marker == kFirebaseGateRequire) {
+          gateFresh = true;
+          gateNew = marker == kFirebaseGateNew;
+        }
+      } else {
+        gateFresh = false;
+        gateNew = false;
+      }
     } else {
       restored = null;
+      gateFresh = false;
+      gateNew = false;
+    }
+    if (_signedOut) {
+      restored = null;
+      gateFresh = false;
+      gateNew = false;
     }
     if (!mounted) return;
     setState(() {
       _bootstrap = bootstrap ?? _bootstrap;
       _firebaseSession = restored;
+      _gateFresh = gateFresh;
+      _gateNew = gateNew;
+      _signInNotice = notice;
       _ready = true;
     });
   }
@@ -304,20 +371,54 @@ class _ProviderAuthGateState extends ConsumerState<_ProviderAuthGate> {
       key: kFirebaseSessionKey,
       value: jsonEncode(session.toJson()),
     );
+    if (fresh) {
+      final require = ref.read(desktopPrefsProvider).requireSecondFactor;
+      if (session.isNewUser) {
+        await widget.persistor.store.write(
+          key: kFirebaseGateKey,
+          value: kFirebaseGateNew,
+        );
+      } else if (require) {
+        await widget.persistor.store.write(
+          key: kFirebaseGateKey,
+          value: kFirebaseGateRequire,
+        );
+      } else {
+        await widget.persistor.store.delete(key: kFirebaseGateKey);
+      }
+    }
     if (!mounted) return;
     setState(() {
+      _signedOut = false;
       _firebaseSession = session;
-      if (fresh) _gateFresh = true;
+      if (fresh) {
+        _gateFresh = true;
+        _gateNew = session.isNewUser;
+      }
     });
   }
 
-  Future<void> _signOutFirebase() async {
-    await widget.persistor.store.delete(key: kFirebaseSessionKey);
-    if (!mounted) return;
-    setState(() {
-      _firebaseSession = null;
-      _gateFresh = false;
-    });
+  Future<void> _signOutFirebase({String? notice}) async {
+    try {
+      await widget.persistor.store.delete(key: kFirebaseSessionKey);
+      await widget.persistor.store.delete(key: kFirebaseGateKey);
+    } finally {
+      // A Keychain failure must not leave the library on screen. The error
+      // still propagates, and an entry that could not be removed stays for
+      // the next launch.
+      if (mounted) {
+        setState(() {
+          _signedOut = true;
+          _firebaseSession = null;
+          _gateFresh = false;
+          _gateNew = false;
+          _addAuthenticator = false;
+          _addPhone = false;
+          _enrollPhone = null;
+          if (notice != null) _signInNotice = notice;
+        });
+      }
+    }
   }
 
   @override
@@ -338,7 +439,18 @@ class _ProviderAuthGateState extends ConsumerState<_ProviderAuthGate> {
         return FirebaseSignInPage(
           config: firebase,
           apiUrl: widget.config.apiUrl,
+          notice: _signInNotice,
+          onAttempt: () {
+            if (_signInNotice == null || !mounted) return;
+            setState(() => _signInNotice = null);
+          },
+          httpClient: ref.watch(authHttpClientProvider),
           onSession: (next) => _onFirebaseSession(next, fresh: true),
+          onAddAuthenticator: () => _addAuthenticator = true,
+          onAddPhone: (phone) {
+            _enrollPhone = phone;
+            _addPhone = true;
+          },
         );
       }
       return _FirebaseSignedInHost(
@@ -346,12 +458,27 @@ class _ProviderAuthGateState extends ConsumerState<_ProviderAuthGate> {
         firebase: firebase,
         session: session,
         gateFresh: _gateFresh,
+        gateNew: _gateNew,
+        addAuthenticator: _addAuthenticator,
+        addPhone: _addPhone,
+        enrollPhone: _enrollPhone,
         onGateCleared: () {
-          if (!mounted) return;
-          setState(() => _gateFresh = false);
+          unawaited(
+            widget.persistor.store.delete(key: kFirebaseGateKey).then((_) {
+              if (!mounted) return;
+              setState(() {
+                _gateFresh = false;
+                _gateNew = false;
+                _addAuthenticator = false;
+                _addPhone = false;
+                _enrollPhone = null;
+              });
+            }),
+          );
         },
         onSession: _onFirebaseSession,
         onSignOut: _signOutFirebase,
+        onSessionRevoked: () => _signOutFirebase(notice: kAccountRemovedNotice),
         signedInHome: widget.signedInHome,
       );
     }
@@ -427,9 +554,14 @@ class _FirebaseSignedInHost extends ConsumerStatefulWidget {
     required this.firebase,
     required this.session,
     required this.gateFresh,
+    required this.gateNew,
+    required this.addAuthenticator,
+    required this.addPhone,
+    this.enrollPhone,
     required this.onGateCleared,
     required this.onSession,
     required this.onSignOut,
+    required this.onSessionRevoked,
     required this.signedInHome,
   });
 
@@ -437,9 +569,14 @@ class _FirebaseSignedInHost extends ConsumerStatefulWidget {
   final FirebasePublicConfig firebase;
   final FirebaseSession session;
   final bool gateFresh;
+  final bool gateNew;
+  final bool addAuthenticator;
+  final bool addPhone;
+  final String? enrollPhone;
   final VoidCallback onGateCleared;
   final ValueChanged<FirebaseSession> onSession;
   final Future<void> Function() onSignOut;
+  final Future<void> Function() onSessionRevoked;
   final Widget signedInHome;
 
   @override
@@ -458,6 +595,7 @@ class _FirebaseSignedInHostState extends ConsumerState<_FirebaseSignedInHost> {
     _client = ApiClient(
       baseUrl: widget.config.apiUrl,
       tokenProvider: _token,
+      httpClient: ref.read(authHttpClientProvider),
       clientIdentity: ref.read(clientIdentityProvider).headerValue,
       onClientTooOld: (_) {
         ref.read(forceUpdateRequiredProvider.notifier).state = true;
@@ -474,10 +612,14 @@ class _FirebaseSignedInHostState extends ConsumerState<_FirebaseSignedInHost> {
       final next = await refreshFirebaseSession(
         config: widget.firebase,
         refreshToken: _session.refreshToken,
+        httpClient: ref.read(authHttpClientProvider),
       );
       _session = next;
       widget.onSession(next);
       return next.idToken;
+    } on FirebaseSessionRevoked {
+      await widget.onSessionRevoked();
+      return null;
     } on FirebaseAuthException {
       return null;
     }
@@ -509,8 +651,16 @@ class _FirebaseSignedInHostState extends ConsumerState<_FirebaseSignedInHost> {
       ],
       child: SecondFactorGate(
         active:
-            widget.gateFresh &&
-            ref.watch(desktopPrefsProvider).requireSecondFactor,
+            widget.addAuthenticator ||
+            widget.addPhone ||
+            (widget.gateFresh &&
+                (widget.gateNew ||
+                    ref.watch(desktopPrefsProvider).requireSecondFactor)),
+        newAccount: widget.gateNew,
+        addAuthenticator: widget.addAuthenticator,
+        addPhone: widget.addPhone,
+        enrollPhone: widget.enrollPhone,
+        httpClient: ref.watch(authHttpClientProvider),
         onCleared: widget.onGateCleared,
         child: AccountBootstrap(
           loadAccount: () => MeRepository(_client).getMe(),
@@ -914,33 +1064,33 @@ class _AccountBootstrapState extends ConsumerState<AccountBootstrap> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                      Text(
-                        'Could not authorize with tagkin-api (401): $error\n\n'
-                        'Confirm tagkin-api is running with the same sign-in '
-                        'provider, then Retry. If an operator switched the '
-                        'provider, Sign out and sign in again.',
-                        key: const Key('auth-unauthorized'),
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 16),
-                      FilledButton(
-                        key: const Key('account-retry'),
-                        onPressed: () {
-                          setState(() {
-                            _future = _load();
-                          });
-                        },
-                        child: const Text('Retry'),
-                      ),
-                      if (widget.onSignOut != null) ...[
-                        const SizedBox(height: 8),
-                        TextButton(
-                          key: const Key('auth-sign-out'),
-                          onPressed: () => widget.onSignOut!(),
-                          child: const Text('Sign out'),
-                        ),
-                      ],
+                  Text(
+                    'Could not authorize with tagkin-api (401): $error\n\n'
+                    'Confirm tagkin-api is running with the same sign-in '
+                    'provider, then Retry. If an operator switched the '
+                    'provider, Sign out and sign in again.',
+                    key: const Key('auth-unauthorized'),
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    key: const Key('account-retry'),
+                    onPressed: () {
+                      setState(() {
+                        _future = _load();
+                      });
+                    },
+                    child: const Text('Retry'),
+                  ),
+                  if (widget.onSignOut != null) ...[
+                    const SizedBox(height: 8),
+                    TextButton(
+                      key: const Key('auth-sign-out'),
+                      onPressed: () => widget.onSignOut!(),
+                      child: const Text('Sign out'),
+                    ),
+                  ],
                 ],
               ),
             );
@@ -1061,7 +1211,20 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
       ref.read(signedInAccountIdProvider.notifier).state = widget.account.id;
       if (Platform.environment.containsKey('FLUTTER_TEST')) return;
       unawaited(ref.read(folderIngestQueueProvider).restoreOnSignIn());
+      unawaited(_promptTrialIfNeverHadCredits());
     });
+  }
+
+  /// Opens **Get your free credits** when the pack is available and this
+  /// account has never received credits. A failed fetch leaves the library up.
+  Future<void> _promptTrialIfNeverHadCredits() async {
+    try {
+      final summary = await ref.read(creditsRepositoryProvider).getTrial();
+      if (!mounted || !TrialFirstLoginPrompt.shouldPrompt(summary)) return;
+      await pushTrialCardPage(context);
+    } catch (_) {
+      // A failed fetch leaves the library up.
+    }
   }
 
   /// Cmd+A on Faces must expand loose face selection even when focus is not

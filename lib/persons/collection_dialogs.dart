@@ -222,6 +222,27 @@ class _DeleteCollectionDialogState extends State<_DeleteCollectionDialog> {
   }
 }
 
+/// Body of the Add-from-folder claim dialog.
+///
+/// One sentence per owning collection (already A–Z), then the move question.
+String folderClaimConflictMessage(
+  List<FolderClaimConflict> groups, {
+  required String currentCollectionName,
+}) {
+  final owned = [for (final group in groups) _ownedCollectionSentence(group)];
+  return '${owned.join(' ')} '
+      'Move them to “$currentCollectionName”?';
+}
+
+String _ownedCollectionSentence(FolderClaimConflict group) {
+  final folders = sortedAlphaBy(group.folders, (f) => f);
+  final quoted = '“${group.collectionName}”';
+  if (folders.length == 1) {
+    return 'The folder ${folders.single} is in another collection: $quoted.';
+  }
+  return 'The folders ${folders.join(', ')} are in another collection: $quoted.';
+}
+
 /// Move here / Cancel when Add from folder hits leaves owned elsewhere.
 ///
 /// Returns true only on Move here. Cancel / dismiss leaves ownership as-is.
@@ -257,28 +278,11 @@ class _FolderClaimConflictDialog extends StatelessWidget {
         key: const Key('collection-folder-claim-dialog'),
         title: const Text('Folder already in another collection'),
         content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'These folders already belong to another collection. '
-                'Move them to “$currentCollectionName”?',
-              ),
-              const SizedBox(height: 12),
-              for (final group in groups) ...[
-                Text(
-                  group.collectionName,
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                for (final folder in sortedAlphaBy(group.folders, (f) => f))
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8, top: 4),
-                    child: Text(folder),
-                  ),
-                const SizedBox(height: 8),
-              ],
-            ],
+          child: Text(
+            folderClaimConflictMessage(
+              groups,
+              currentCollectionName: currentCollectionName,
+            ),
           ),
         ),
         actions: [

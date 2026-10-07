@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/credits/buy_credits_controller.dart';
+import 'package:tagkin_desktop/credits/credits_navigation.dart';
 import 'package:tagkin_desktop/credits/pack_label.dart';
 import 'package:tagkin_desktop/credits/redeem_code_page.dart';
+import 'package:tagkin_desktop/credits/trial_card_controller.dart';
 import 'package:tagkin_desktop/usage/credits_remaining.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
@@ -24,6 +27,7 @@ class _BuyCreditsPageState extends ConsumerState<BuyCreditsPage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(buyCreditsControllerProvider).loadOffers();
       ref.read(usageControllerProvider).ensureLoaded();
+      ref.read(trialCardControllerProvider).load();
     });
   }
 
@@ -43,16 +47,17 @@ class _BuyCreditsPageState extends ConsumerState<BuyCreditsPage>
   @override
   Widget build(BuildContext context) {
     final controller = ref.watch(buyCreditsControllerProvider);
+    final trial = ref.watch(trialCardControllerProvider);
     return SelectableScope(
       child: ListenableBuilder(
-        listenable: controller,
+        listenable: Listenable.merge([controller, trial]),
         builder: (context, _) {
           return Scaffold(
             appBar: AppBar(title: const Text('Add credits')),
             body: Padding(
               padding: const EdgeInsets.all(24),
               child: SingleChildScrollView(
-                child: _body(controller),
+                child: _body(controller, trial),
               ),
             ),
           );
@@ -61,7 +66,7 @@ class _BuyCreditsPageState extends ConsumerState<BuyCreditsPage>
     );
   }
 
-  Widget _body(BuyCreditsController controller) {
+  Widget _body(BuyCreditsController controller, TrialCardController trial) {
     if (controller.phase == BuyCreditsPhase.loadingOffers) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -167,6 +172,23 @@ class _BuyCreditsPageState extends ConsumerState<BuyCreditsPage>
             ],
           ],
         ),
+        if (_showFreeTrial(trial)) ...[
+          const SizedBox(height: 24),
+          const Divider(),
+          const SizedBox(height: 16),
+          Text(
+            'Free trial',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          const Text('Add a card to receive the Trial pack.'),
+          const SizedBox(height: 12),
+          FilledButton(
+            key: const Key('buy-credits-free-trial'),
+            onPressed: () => _openFreeTrial(trial),
+            child: const Text('Free trial'),
+          ),
+        ],
         const SizedBox(height: 24),
         const Divider(),
         const SizedBox(height: 16),
@@ -184,6 +206,18 @@ class _BuyCreditsPageState extends ConsumerState<BuyCreditsPage>
         ),
       ],
     );
+  }
+
+  bool _showFreeTrial(TrialCardController trial) {
+    final summary = trial.summary;
+    if (summary == null) return false;
+    return summary.available && summary.status != TrialStatus.granted;
+  }
+
+  Future<void> _openFreeTrial(TrialCardController trial) async {
+    await pushTrialCardPage(context);
+    if (!mounted) return;
+    await trial.load();
   }
 
   void _openRedeemCode() {

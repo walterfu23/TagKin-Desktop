@@ -51,7 +51,7 @@ class _TrialCardPageState extends ConsumerState<TrialCardPage>
         listenable: controller,
         builder: (context, _) {
           return Scaffold(
-            appBar: AppBar(title: const Text('Card verification')),
+            appBar: AppBar(title: const Text('Free trial')),
             body: Padding(
               padding: const EdgeInsets.all(24),
               child: _body(controller),
@@ -91,7 +91,13 @@ class _TrialCardPageState extends ConsumerState<TrialCardPage>
       children: [
         const CreditsRemainingSentence(textKey: Key('trial-card-remaining')),
         Text(
-          'Add a card to receive the Trial pack. Credits expire after you receive them. $kAppName never sees the card number.',
+          'Get your free credits',
+          key: const Key('trial-card-heading'),
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Add a card to get the Trial pack. You are not charged. $kAppName never sees the card number. A valid payment method is required to prevent abuse of free trials.',
         ),
         const SizedBox(height: 16),
         FilledButton(

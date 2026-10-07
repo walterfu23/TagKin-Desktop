@@ -27,6 +27,21 @@ bool isSecureStoreUserCanceled(Object error) {
       message.contains('User cancelled');
 }
 
+/// True for Keychain errSecMissingEntitlement (-34018).
+///
+/// The macOS plugin reports it as
+/// `PlatformException(Unexpected security result code, Code: -34018, ...)`,
+/// so the status is in the message and details, not [PlatformException.code].
+bool isSecureStoreMissingEntitlement(Object error) {
+  if (error is! PlatformException) return false;
+  if (error.code == '-34018') return true;
+  final details = error.details;
+  if (details == -34018 || details == '-34018') return true;
+  final message = error.message ?? '';
+  return message.contains('-34018') ||
+      message.contains('required entitlement is not present');
+}
+
 /// Production store → OS Keychain / Credential Manager via [FlutterSecureStorage].
 class FlutterSecureKeyValueStore implements SecureKeyValueStore {
   FlutterSecureKeyValueStore([FlutterSecureStorage? storage])
@@ -79,6 +94,17 @@ class FlutterSecureKeyValueStore implements SecureKeyValueStore {
       await _storage.delete(key: key);
     } on PlatformException catch (e) {
       if (isSecureStoreUserCanceled(e)) return;
+      // The plugin also queries the iCloud keychain. On this sandboxed Mac
+      // that half returns -34018. When the login-keychain entry is already
+      // gone, the plugin reports that error instead of "not found".
+      if (isSecureStoreMissingEntitlement(e)) {
+        try {
+          final stillThere = await _storage.read(key: key);
+          if (stillThere == null) return;
+        } on PlatformException {
+          // A failed read is not proof the entry is gone.
+        }
+      }
       rethrow;
     }
   }

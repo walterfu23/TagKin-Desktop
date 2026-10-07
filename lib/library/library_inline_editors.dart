@@ -346,6 +346,31 @@ class _FolderInlineWhoState extends ConsumerState<FolderInlineWho> {
         ],
       );
     }
+    if (crops.isEmpty && knowledge.whoExclusions.isNotEmpty) {
+      final assignments = period == null
+          ? itemLevelPersonAssignments(knowledge)
+          : const <PersonAppearance>[];
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < assignments.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: _dropdownFor(
+                key: Key('item-inline-who-item-${assignments[i].id}'),
+                index: i,
+                appearance: assignments[i],
+                tagId: null,
+              ),
+            ),
+          Text(
+            'Excluded',
+            key: Key('item-inline-who-excluded-${widget.scopeId}'),
+          ),
+        ],
+      );
+    }
     if (crops.isEmpty) {
       final assignments = period == null
           ? itemLevelPersonAssignments(knowledge)
@@ -418,6 +443,7 @@ class _FolderInlineWhoState extends ConsumerState<FolderInlineWho> {
           : ref.read(libraryTableControllerProvider).personName(personId),
       persons: _persons,
       hint: hint,
+      canExclude: tagId != null,
       onPick: (pick) => _commitPick(
         appearance: appearance,
         tagId: tagId,
@@ -439,7 +465,11 @@ class _FolderInlineWhoState extends ConsumerState<FolderInlineWho> {
   }) async {
     final who = ref.read(folderWhoEditorProvider);
     final WhoEditResult result;
-    if (pick.unassign) {
+    if (pick.exclude) {
+      final id = tagId;
+      if (id == null || id.isEmpty) return;
+      result = await who.excludeFace(itemId: widget.row.item.id, tagId: id);
+    } else if (pick.unassign) {
       final id = appearance?.personId;
       if (appearance == null || id == null || id.isEmpty) return;
       result = await who.unassign(
@@ -514,22 +544,31 @@ class _FaceWhoRow extends StatelessWidget {
 class _WhoPick {
   const _WhoPick.person(this.personId)
       : name = null,
-        unassign = false;
+        unassign = false,
+        exclude = false;
   const _WhoPick.newName(this.name)
       : personId = null,
-        unassign = false;
+        unassign = false,
+        exclude = false;
   const _WhoPick.unassign()
       : personId = null,
         name = null,
-        unassign = true;
+        unassign = true,
+        exclude = false;
+  const _WhoPick.exclude()
+      : personId = null,
+        name = null,
+        unassign = false,
+        exclude = true;
 
   final String? personId;
   final String? name;
   final bool unassign;
+  final bool exclude;
 }
 
-/// One Who dropdown: New person, Unassigned (when set), then existing people.
-/// Saves as soon as an entry is picked.
+/// One Who dropdown: New person, Exclude (face crops), Unassigned (when set),
+/// then existing people. Saves as soon as an entry is picked.
 class _WhoDropdown extends StatefulWidget {
   const _WhoDropdown({
     super.key,
@@ -540,9 +579,11 @@ class _WhoDropdown extends StatefulWidget {
     required this.persons,
     required this.onPick,
     this.hint = 'Who',
+    this.canExclude = false,
   });
 
   static const _newValue = '__new_person__';
+  static const _excludeValue = '__exclude__';
   static const _unassignValue = '__unassign__';
 
   final Key fieldKey;
@@ -552,6 +593,7 @@ class _WhoDropdown extends StatefulWidget {
   final List<Person> persons;
   final Future<void> Function(_WhoPick pick) onPick;
   final String hint;
+  final bool canExclude;
 
   @override
   State<_WhoDropdown> createState() => _WhoDropdownState();
@@ -575,6 +617,8 @@ class _WhoDropdownState extends State<_WhoDropdown> {
       pick = id != null
           ? _WhoPick.person(id)
           : _WhoPick.newName(resolved.name ?? '');
+    } else if (value == _WhoDropdown._excludeValue) {
+      pick = const _WhoPick.exclude();
     } else if (value == _WhoDropdown._unassignValue) {
       pick = const _WhoPick.unassign();
     } else {
@@ -600,6 +644,12 @@ class _WhoDropdownState extends State<_WhoDropdown> {
         value: _WhoDropdown._newValue,
         child: const Text('New person'),
       ),
+      if (widget.canExclude)
+        DropdownMenuItem(
+          key: Key('${widget.optionKeyPrefix}-exclude'),
+          value: _WhoDropdown._excludeValue,
+          child: const Text('Exclude'),
+        ),
       if (current != null)
         DropdownMenuItem(
           key: Key('${widget.optionKeyPrefix}-unassigned'),

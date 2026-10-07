@@ -420,6 +420,68 @@ void main() {
     expect(items.assignPersonCalls.single.personId, isNull);
   });
 
+  testWidgets('Folders edit mode excludes an unassigned face', (tester) async {
+    final item = fixtureItem(
+      id: 'item_face',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {
+        'item_face': fixtureKnowledge(
+          item: item,
+          tags: [
+            fixtureTag(
+              id: 'face_1',
+              itemId: 'item_face',
+              dimension: 'who',
+              value: 'person',
+              region: const TagRegion(
+                yMin: 0.1,
+                xMin: 0.2,
+                yMax: 0.4,
+                xMax: 0.5,
+              ),
+            ),
+          ],
+        ),
+      },
+    );
+    await _pumpLibrary(tester, items: items);
+    await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const Key('item-inline-who-field-item_face-0')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('item-inline-who-option-item_face-0-new')),
+      findsWidgets,
+    );
+    expect(
+      find.byKey(const Key('item-inline-who-option-item_face-0-exclude')),
+      findsWidgets,
+    );
+    expect(
+      find.byKey(const Key('item-inline-who-option-item_face-0-unassigned')),
+      findsNothing,
+    );
+    await tester.tap(find.text('Exclude').last);
+    await tester.pumpAndSettle();
+    expect(items.createWhoExclusionCalls, [
+      (itemId: 'item_face', tagId: 'face_1'),
+    ]);
+    expect(
+      find.byKey(const Key('item-inline-who-excluded-item_face')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('item-inline-who-add-field-item_face')),
+      findsNothing,
+    );
+  });
+
   testWidgets(
     'period row edit carries keyPeriodId; empty period Who is read-only',
     (tester) async {

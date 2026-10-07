@@ -2737,16 +2737,22 @@ class TrialSummary {
   const TrialSummary({
     required this.status,
     required this.eligible,
+    required this.available,
+    required this.neverHadCredits,
     required this.publishableKey,
   });
 
   final TrialStatus status;
   final bool eligible;
+  final bool available;
+  final bool neverHadCredits;
   final String publishableKey;
 
   factory TrialSummary.fromJson(Map<String, dynamic> json) => TrialSummary(
         status: TrialStatus.fromWire(json['status'] as String),
         eligible: json['eligible'] as bool,
+        available: json['available'] as bool,
+        neverHadCredits: json['neverHadCredits'] as bool,
         publishableKey: json['publishableKey'] as String,
       );
 
@@ -2754,6 +2760,8 @@ class TrialSummary {
     final json = <String, dynamic>{};
     json['status'] = status.wire;
     json['eligible'] = eligible;
+    json['available'] = available;
+    json['neverHadCredits'] = neverHadCredits;
     json['publishableKey'] = publishableKey;
     return json;
   }

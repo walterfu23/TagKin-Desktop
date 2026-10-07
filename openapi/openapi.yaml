@@ -3791,13 +3791,24 @@ components:
       description: >
         Trial eligibility for the authenticated account (S5). Status and the
         Stripe publishable key only — never a secret or card PAN (R8).
-      required: [status, eligible, publishableKey]
+      required: [status, eligible, available, neverHadCredits, publishableKey]
       properties:
         status:
           $ref: "#/components/schemas/TrialStatus"
         eligible:
           type: boolean
           description: True when this account has not already received a Trial pack.
+        available:
+          type: boolean
+          description: >
+            True when the Trial pack exists, is enabled, and has credits
+            greater than 0.
+        neverHadCredits:
+          type: boolean
+          description: >
+            True when this account has no credit-adding application (redeem,
+            admin grant, purchase, or Trial). A revoke or expiry alone does
+            not clear it. Remaining credits of 0 is not this flag.
         publishableKey:
           type: string
           description: Stripe publishable key for client card collection.

@@ -262,10 +262,10 @@ Future<FirebaseSession> finishMfaSignIn({
     'mfaPendingCredential': challenge.pendingCredential,
   };
   if (factor.kind == 'totp') {
-    body['totpVerificationInfo'] = {
-      'mfaEnrollmentId': factor.enrollmentId,
-      'verificationCode': code.trim(),
-    };
+    // mfaEnrollmentId is a sibling of totpVerificationInfo. Nesting it makes
+    // Firebase reject the request as an invalid argument.
+    body['mfaEnrollmentId'] = factor.enrollmentId;
+    body['totpVerificationInfo'] = {'verificationCode': code.trim()};
   } else {
     final session = smsSessionInfo;
     if (session == null || session.isEmpty) {

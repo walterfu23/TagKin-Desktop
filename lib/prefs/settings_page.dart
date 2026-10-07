@@ -1163,7 +1163,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       ),
                       ListTile(
                         key: const Key('settings-trial-card'),
-                        title: const Text('Card verification'),
+                        title: const Text('Free trial'),
                         subtitle: const Text(
                           'Required once before Trial credits become remaining credits',
                         ),

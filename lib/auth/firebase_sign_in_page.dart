@@ -6,7 +6,12 @@ import 'package:tagkin_desktop/auth/firebase_identity.dart';
 import 'package:tagkin_desktop/auth/firebase_mfa.dart';
 import 'package:tagkin_desktop/auth/google_loopback.dart';
 import 'package:tagkin_desktop/auth/login_hero.dart';
+import 'package:tagkin_desktop/auth/phone_number.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+/// Shown when a stored session belonged to an account that was removed.
+const String kAccountRemovedNotice =
+    'That account was removed. Sign in again or create an account.';
 
 /// Email/password Firebase sign-in, plus Google (macOS and Windows) when
 /// bootstrap carries a public Google client id.
@@ -16,12 +21,30 @@ class FirebaseSignInPage extends StatefulWidget {
     required this.config,
     required this.apiUrl,
     required this.onSession,
+    this.onAddAuthenticator,
+    this.onAddPhone,
+    this.notice,
+    this.onAttempt,
     this.httpClient,
   });
 
   final FirebasePublicConfig config;
   final String apiUrl;
   final ValueChanged<FirebaseSession> onSession;
+
+  /// One-shot line above the form, such as after a removed account.
+  final String? notice;
+
+  /// A sign-in attempt started. The shell clears [notice].
+  final VoidCallback? onAttempt;
+
+  /// Called just before [onSession] when the text code was for adding an
+  /// authenticator app.
+  final VoidCallback? onAddAuthenticator;
+
+  /// Called just before [onSession] with the number to enroll after the
+  /// authenticator code.
+  final ValueChanged<String>? onAddPhone;
   final http.Client? httpClient;
 
   @override
@@ -32,6 +55,7 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   final _code = TextEditingController();
+  final _phone = TextEditingController();
   var _signUp = false;
   var _busy = false;
   String? _error;
@@ -39,6 +63,12 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
   String? _emailMasked;
   MfaChallenge? _mfa;
   var _factorIndex = 0;
+  var _factorChosen = false;
+  var _addAuthenticator = false;
+  var _addPhone = false;
+  String? _phoneE164;
+  var _phoneStep = false;
+  var _usePassword = false;
   String? _smsSession;
   GoogleLoopback? _loopback;
   var _googleCancelled = false;
@@ -49,6 +79,7 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
     _email.dispose();
     _password.dispose();
     _code.dispose();
+    _phone.dispose();
     super.dispose();
   }
 
@@ -56,6 +87,12 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
     setState(() {
       _mfa = challenge;
       _factorIndex = 0;
+      _factorChosen = false;
+      _addAuthenticator = false;
+      _addPhone = false;
+      _phoneE164 = null;
+      _phone.clear();
+      _phoneStep = false;
       _smsSession = null;
       _emailCode = false;
       _error = null;
@@ -64,6 +101,7 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
   }
 
   Future<void> _submit() async {
+    widget.onAttempt?.call();
     setState(() {
       _busy = true;
       _error = null;
@@ -78,6 +116,12 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
       );
       if (!mounted) return;
       widget.onSession(session);
+    } on FirebaseAccountMissing catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _signUp = true;
+        _error = e.message;
+      });
     } on MfaRequired catch (e) {
       if (!mounted) return;
       _showMfa(e.challenge);
@@ -93,6 +137,7 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
   }
 
   Future<void> _emailMe() async {
+    widget.onAttempt?.call();
     setState(() {
       _busy = true;
       _error = null;
@@ -125,6 +170,7 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
   Future<void> _google() async {
     final clientId = widget.config.googleClientId;
     if (clientId == null || _busy) return;
+    widget.onAttempt?.call();
     setState(() {
       _busy = true;
       _error = null;
@@ -231,7 +277,8 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
   Future<void> _submitMfa() async {
     final challenge = _mfa;
     if (challenge == null || _busy || challenge.factors.isEmpty) return;
-    final factor = challenge.factors[_factorIndex.clamp(0, challenge.factors.length - 1)];
+    final factor =
+        challenge.factors[_factorIndex.clamp(0, challenge.factors.length - 1)];
     setState(() {
       _busy = true;
       _error = null;
@@ -264,6 +311,9 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
         httpClient: widget.httpClient,
       );
       if (!mounted) return;
+      if (_addAuthenticator) widget.onAddAuthenticator?.call();
+      final phone = _phoneE164;
+      if (_addPhone && phone != null) widget.onAddPhone?.call(phone);
       widget.onSession(session);
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
@@ -290,10 +340,50 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
     return 'Continue';
   }
 
+  String _factorChoiceLabel(MfaFactor factor) =>
+      factor.kind == 'phone' ? 'Text ${factor.label}' : 'Authenticator app';
+
+  bool get _phoneWithoutAuthenticator {
+    final factors = _mfa?.factors;
+    if (factors == null || factors.isEmpty) return false;
+    return factors.any((factor) => factor.kind == 'phone') &&
+        factors.every((factor) => factor.kind != 'totp');
+  }
+
+  bool get _authenticatorWithoutPhone {
+    final factors = _mfa?.factors;
+    if (factors == null || factors.isEmpty) return false;
+    return factors.any((factor) => factor.kind == 'totp') &&
+        factors.every((factor) => factor.kind != 'phone');
+  }
+
   MfaFactor? get _selectedFactor {
     final factors = _mfa?.factors;
     if (factors == null || factors.isEmpty) return null;
     return factors[_factorIndex.clamp(0, factors.length - 1)];
+  }
+
+  void _acceptPhone() {
+    final phone = normalizePhone(_phone.text);
+    setState(() {
+      if (phone.e164 == null) {
+        _error = phone.error;
+        return;
+      }
+      _phoneE164 = phone.e164;
+      _error = null;
+      _code.clear();
+    });
+  }
+
+  void _skipPhone() {
+    setState(() {
+      _addPhone = false;
+      _phoneE164 = null;
+      _factorChosen = true;
+      _error = null;
+      _code.clear();
+    });
   }
 
   Future<void> _cancelGoogle() async {
@@ -309,8 +399,14 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (widget.notice != null) ...[
+            Text(widget.notice!, key: const Key('firebase-sign-in-notice')),
+            const SizedBox(height: 12),
+          ],
           Text(
-            _mfa != null
+            _mfa != null && _addPhone && _phoneE164 == null
+                ? 'Add a phone number'
+                : _mfa != null
                 ? 'Second factor'
                 : _emailCode
                 ? 'Check your email'
@@ -318,46 +414,237 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
             style: Theme.of(context).textTheme.headlineSmall,
           ),
           const SizedBox(height: 16),
-          if (_mfa != null) ...[
-            Text(
-              _mfa!.factors.length == 1
-                  ? 'Enter the code from ${_mfa!.factors.first.label}.'
-                  : 'Choose a second factor.',
-              key: const Key('firebase-mfa-hint'),
+          if (_mfa != null && _addPhone && _phoneE164 == null) ...[
+            const Text(
+              'Enter your phone number. FamFace texts a code to it.',
+              key: Key('firebase-mfa-hint'),
             ),
-            if (_mfa!.factors.length > 1) ...[
-              const SizedBox(height: 8),
-              RadioGroup<int>(
-                groupValue: _factorIndex,
-                onChanged: _busy
-                    ? (_) {}
-                    : (v) => setState(() {
-                        _factorIndex = v ?? 0;
-                        _smsSession = null;
-                        _code.clear();
-                      }),
-                child: Column(
-                  children: [
-                    for (var i = 0; i < _mfa!.factors.length; i++)
-                      RadioListTile<int>(
-                        key: Key('firebase-mfa-factor-$i'),
-                        value: i,
-                        title: Text(_mfa!.factors[i].label),
-                      ),
-                  ],
-                ),
+            const SizedBox(height: 12),
+            TextField(
+              key: const Key('firebase-mfa-phone'),
+              controller: _phone,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                labelText: 'Phone number',
+                helperText: kPhoneNumberExample,
+              ),
+              onSubmitted: (_) => _busy ? null : _acceptPhone(),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                key: const Key('firebase-auth-error'),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ],
+            const SizedBox(height: 16),
+            FilledButton(
+              key: const Key('firebase-mfa-phone-continue'),
+              onPressed: _busy ? null : _acceptPhone,
+              child: const Text('Continue'),
+            ),
+            TextButton(
+              key: const Key('firebase-mfa-phone-skip'),
+              onPressed: _busy ? null : _skipPhone,
+              child: const Text('Skip'),
+            ),
+            TextButton(
+              key: const Key('firebase-mfa-choice-back'),
+              onPressed: _busy
+                  ? null
+                  : () => setState(() {
+                      _addPhone = false;
+                      _phoneE164 = null;
+                      _error = null;
+                    }),
+              child: const Text('Back'),
+            ),
+          ] else if (_mfa != null && _addPhone) ...[
+            const Text(
+              'Enter the code from your authenticator app. The text is sent after this.',
+              key: Key('firebase-mfa-hint'),
+            ),
             const SizedBox(height: 12),
             TextField(
               key: const Key('firebase-mfa-code'),
               controller: _code,
               keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: _smsPrompt,
-              ),
+              decoration: const InputDecoration(labelText: 'Code'),
               onSubmitted: (_) => _busy ? null : _submitMfa(),
             ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                key: const Key('firebase-auth-error'),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            const SizedBox(height: 16),
+            FilledButton(
+              key: const Key('firebase-mfa-submit'),
+              onPressed: _busy ? null : _submitMfa,
+              child: const Text('Continue'),
+            ),
+            TextButton(
+              key: const Key('firebase-mfa-choice-back'),
+              onPressed: _busy
+                  ? null
+                  : () => setState(() {
+                      _phoneE164 = null;
+                      _error = null;
+                      _code.clear();
+                    }),
+              child: const Text('Back'),
+            ),
+          ] else if (_mfa != null && !_factorChosen) ...[
+            const Text(
+              'Choose a second factor.',
+              key: Key('firebase-mfa-hint'),
+            ),
+            const SizedBox(height: 12),
+            for (var i = 0; i < _mfa!.factors.length; i++) ...[
+              if (i > 0) const SizedBox(height: 8),
+              OutlinedButton(
+                key: Key('firebase-mfa-factor-$i'),
+                onPressed: _busy
+                    ? null
+                    : () => setState(() {
+                        _factorIndex = i;
+                        _addAuthenticator = false;
+                        _addPhone = false;
+                        _smsSession = null;
+                        _error = null;
+                        _code.clear();
+                        if (_phoneWithoutAuthenticator) {
+                          _phoneStep = true;
+                          _factorChosen = false;
+                        } else {
+                          _factorChosen = true;
+                        }
+                      }),
+                child: Text(
+                  _phoneWithoutAuthenticator && _mfa!.factors[i].kind == 'phone'
+                      ? 'Send text ${_mfa!.factors[i].label}'
+                      : _factorChoiceLabel(_mfa!.factors[i]),
+                ),
+              ),
+            ],
+            if (_phoneWithoutAuthenticator) ...[
+              const SizedBox(height: 8),
+              OutlinedButton(
+                key: const Key('firebase-mfa-add-authenticator'),
+                onPressed: _busy
+                    ? null
+                    : () => setState(() {
+                        _factorIndex = _mfa!.factors.indexWhere(
+                          (factor) => factor.kind == 'phone',
+                        );
+                        _factorChosen = false;
+                        _addAuthenticator = true;
+                        _phoneStep = true;
+                        _smsSession = null;
+                        _error = null;
+                        _code.clear();
+                      }),
+                child: const Text('Add authenticator app'),
+              ),
+            ],
+            if (_authenticatorWithoutPhone) ...[
+              const SizedBox(height: 8),
+              OutlinedButton(
+                key: const Key('firebase-mfa-add-phone'),
+                onPressed: _busy
+                    ? null
+                    : () => setState(() {
+                        _factorIndex = _mfa!.factors.indexWhere(
+                          (factor) => factor.kind == 'totp',
+                        );
+                        _factorChosen = false;
+                        _addPhone = true;
+                        _phoneE164 = null;
+                        _addAuthenticator = false;
+                        _smsSession = null;
+                        _error = null;
+                        _code.clear();
+                      }),
+                child: const Text('Add phone number'),
+              ),
+            ],
+            if (_phoneWithoutAuthenticator && _phoneStep) ...[
+              const SizedBox(height: 12),
+              if (_addAuthenticator)
+                const Text(
+                  'Enter the code from the text first. Then you can add an authenticator app.',
+                ),
+              if (!_addAuthenticator || _smsSession != null) ...[
+                if (_addAuthenticator) const SizedBox(height: 12),
+                TextField(
+                  key: const Key('firebase-mfa-code'),
+                  controller: _code,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: _addAuthenticator
+                        ? 'Code from the text'
+                        : _smsPrompt,
+                  ),
+                  onSubmitted: (_) => _busy ? null : _submitMfa(),
+                ),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _error!,
+                  key: const Key('firebase-auth-error'),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+              const SizedBox(height: 16),
+              FilledButton(
+                key: const Key('firebase-mfa-submit'),
+                onPressed: _busy ? null : _submitMfa,
+                child: Text(_mfaButton),
+              ),
+            ],
+            const SizedBox(height: 8),
+            TextButton(
+              key: const Key('firebase-mfa-choice-back'),
+              onPressed: _busy
+                  ? null
+                  : () => setState(() {
+                      _mfa = null;
+                      _addAuthenticator = false;
+                      _addPhone = false;
+                      _phoneE164 = null;
+                      _phoneStep = false;
+                      _smsSession = null;
+                      _error = null;
+                      _code.clear();
+                    }),
+              child: const Text('Back'),
+            ),
+          ] else if (_mfa != null) ...[
+            Text(
+              _addAuthenticator
+                  ? 'Enter the code from the text first. Then you can add an authenticator app.'
+                  : 'Enter the code from ${_selectedFactor?.label ?? 'your second factor'}.',
+              key: const Key('firebase-mfa-hint'),
+            ),
+            if (!_addAuthenticator || _smsSession != null) ...[
+              const SizedBox(height: 12),
+              TextField(
+                key: const Key('firebase-mfa-code'),
+                controller: _code,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: _addAuthenticator
+                      ? 'Code from the text'
+                      : _smsPrompt,
+                ),
+                onSubmitted: (_) => _busy ? null : _submitMfa(),
+              ),
+            ],
             if (_error != null) ...[
               const SizedBox(height: 12),
               Text(
@@ -373,10 +660,20 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
               child: Text(_mfaButton),
             ),
             TextButton(
+              key: const Key('firebase-mfa-back'),
               onPressed: _busy
                   ? null
                   : () => setState(() {
-                      _mfa = null;
+                      if (_mfa!.factors.length > 1 ||
+                          _phoneWithoutAuthenticator ||
+                          _authenticatorWithoutPhone) {
+                        _factorChosen = false;
+                        _addAuthenticator = false;
+                        _addPhone = false;
+                        _phoneE164 = null;
+                      } else {
+                        _mfa = null;
+                      }
                       _smsSession = null;
                       _error = null;
                       _code.clear();
@@ -466,15 +763,17 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
               autofillHints: const [AutofillHints.email],
               decoration: const InputDecoration(labelText: 'Email'),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              key: const Key('firebase-password'),
-              controller: _password,
-              obscureText: true,
-              autofillHints: const [AutofillHints.password],
-              decoration: const InputDecoration(labelText: 'Password'),
-              onSubmitted: (_) => _busy ? null : _submit(),
-            ),
+            if (_signUp || _usePassword) ...[
+              const SizedBox(height: 12),
+              TextField(
+                key: const Key('firebase-password'),
+                controller: _password,
+                obscureText: true,
+                autofillHints: const [AutofillHints.password],
+                decoration: const InputDecoration(labelText: 'Password'),
+                onSubmitted: (_) => _busy ? null : _submit(),
+              ),
+            ],
             if (_error != null) ...[
               const SizedBox(height: 12),
               Text(
@@ -484,23 +783,38 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
               ),
             ],
             const SizedBox(height: 16),
-            FilledButton(
-              key: const Key('firebase-submit'),
-              onPressed: _busy ? null : _submit,
-              child: Text(_signUp ? 'Create account' : 'Sign in'),
-            ),
-            if (!_signUp)
-              TextButton(
+            if (_signUp || _usePassword)
+              OutlinedButton(
+                key: const Key('firebase-submit'),
+                onPressed: _busy ? null : _submit,
+                child: Text(_signUp ? 'Create account' : 'Sign in'),
+              )
+            else
+              OutlinedButton(
+                key: const Key('firebase-use-password'),
+                onPressed: _busy
+                    ? null
+                    : () => setState(() {
+                        _usePassword = true;
+                        _error = null;
+                      }),
+                child: const Text('Sign in with password'),
+              ),
+            if (!_signUp) ...[
+              const SizedBox(height: 8),
+              OutlinedButton(
                 key: const Key('firebase-email-me'),
                 onPressed: _busy ? null : _emailMe,
                 child: const Text('Email me a code'),
               ),
+            ],
             TextButton(
               key: const Key('firebase-toggle-mode'),
               onPressed: _busy
                   ? null
                   : () => setState(() {
                       _signUp = !_signUp;
+                      _usePassword = false;
                       _error = null;
                     }),
               child: Text(

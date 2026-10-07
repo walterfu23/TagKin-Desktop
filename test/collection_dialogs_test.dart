@@ -88,9 +88,13 @@ void main() {
       find.byKey(const Key('collection-folder-claim-dialog')),
       findsOneWidget,
     );
-    expect(find.text('Vacation'), findsOneWidget);
-    expect(find.text('/albums/Owned'), findsOneWidget);
-    expect(find.textContaining('Trip'), findsOneWidget);
+    expect(
+      find.text(
+        'The folder /albums/Owned is in another collection: “Vacation”. '
+        'Move them to “Trip”?',
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(find.byKey(const Key('collection-folder-claim-move')));
     await tester.pumpAndSettle();
