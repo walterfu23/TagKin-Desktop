@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io' show Platform;
 import 'dart:ui' show AppExitResponse;
 
@@ -10,6 +9,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:tagkin_desktop/auth/account_chooser.dart';
+import 'package:tagkin_desktop/auth/account_roster.dart';
 import 'package:tagkin_desktop/auth/auth_bootstrap.dart';
 import 'package:tagkin_desktop/auth/firebase_desk.dart';
 import 'package:tagkin_desktop/auth/firebase_identity.dart';
@@ -45,7 +46,6 @@ import 'package:tagkin_desktop/persons/persons_list_page.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/views_menu.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
-import 'package:tagkin_desktop/prefs/second_factor_section.dart';
 import 'package:tagkin_desktop/prefs/settings_navigation.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_status_banner.dart';
@@ -68,6 +68,15 @@ final signedInAccountIdProvider = StateProvider<String?>((ref) => null);
 
 /// App-wide config (overridable in tests).
 final appConfigProvider = Provider<AppConfig>((ref) => AppConfig.load());
+
+/// Non-secret account list (email and id). Tests get an in-memory list so
+/// widget tests do not write Application Support.
+final accountDirectoryProvider = Provider<AccountDirectory>((ref) {
+  if (Platform.environment['FLUTTER_TEST'] == 'true') {
+    return MemoryAccountDirectory();
+  }
+  return FileAccountDirectory();
+});
 
 /// Secure Clerk persistor (overridable with [MemorySecureKeyValueStore] in tests).
 final securePersistorProvider = Provider<SecureStoragePersistor>((ref) {
@@ -244,19 +253,25 @@ class _ProviderAuthGate extends ConsumerStatefulWidget {
 class _ProviderAuthGateState extends ConsumerState<_ProviderAuthGate> {
   AuthBootstrap? _bootstrap;
   FirebaseSession? _firebaseSession;
-  var _gateFresh = false;
-  var _gateNew = false;
-  var _addAuthenticator = false;
-  var _addPhone = false;
-  String? _enrollPhone;
+  List<SavedAccount> _accounts = const [];
   var _ready = false;
   var _startupRefreshDone = false;
+  var _adding = false;
+  var _canReturn = false;
+  String? _setupEmail;
 
-  /// Set when the user signs out, so the 20s reload does not put the
-  /// library back if the Keychain entry could not be removed.
-  var _signedOut = false;
+  /// Set when the user leaves the library for the account list, so the 20s
+  /// reload does not put the library back.
+  var _holdLibrary = false;
   String? _signInNotice;
   Timer? _watch;
+
+  FirebaseAccountRoster _roster() {
+    return FirebaseAccountRoster(
+      secure: widget.persistor.store,
+      directory: ref.read(accountDirectoryProvider),
+    );
+  }
 
   @override
   void initState() {
@@ -282,143 +297,167 @@ class _ProviderAuthGateState extends ConsumerState<_ProviderAuthGate> {
     final previous = _bootstrap?.providerId;
     if (previous != null && providerId != null && previous != providerId) {
       await widget.persistor.clearAll();
-      await widget.persistor.store.delete(key: kFirebaseSessionKey);
-      await widget.persistor.store.delete(key: kFirebaseGateKey);
+      await _roster().clear();
     }
     await reconcileStoredProvider(
       store: widget.persistor.store,
       nextProviderId: providerId,
       clearClerk: widget.persistor.clearAll,
     );
-    FirebaseSession? restored = _firebaseSession;
-    var gateFresh = _gateFresh;
-    var gateNew = _gateNew;
+    FirebaseSession? restored;
     var notice = _signInNotice;
+    var accounts = _accounts;
     if (bootstrap?.isFirebase == true) {
-      if (previous != null && previous != 'firebase') restored = null;
-      final raw = await widget.persistor.store.read(key: kFirebaseSessionKey);
-      if (raw != null) {
-        try {
-          restored = FirebaseSession.tryParse(jsonDecode(raw));
-        } on FormatException {
-          restored = null;
-        }
-      } else if (previous != null && previous != bootstrap?.providerId) {
+      final roster = _roster();
+      accounts = await roster.accounts();
+      if (_holdLibrary || _adding) {
         restored = null;
-      }
-      final firebase = bootstrap?.firebase;
-      if (restored != null &&
-          _firebaseSession == null &&
-          !_startupRefreshDone &&
-          firebase != null) {
-        _startupRefreshDone = true;
-        try {
-          final next = await refreshFirebaseSession(
-            config: firebase,
-            refreshToken: restored.refreshToken,
-            httpClient: ref.read(authHttpClientProvider),
-          ).timeout(const Duration(seconds: 5));
-          await widget.persistor.store.write(
-            key: kFirebaseSessionKey,
-            value: jsonEncode(next.toJson()),
-          );
-          restored = next;
-        } on FirebaseSessionRevoked {
-          await widget.persistor.store.delete(key: kFirebaseSessionKey);
-          await widget.persistor.store.delete(key: kFirebaseGateKey);
-          restored = null;
-          notice = kAccountRemovedNotice;
-        } on Object {
-          // A timeout or a network error keeps the stored session.
-        }
-      }
-      if (restored != null) {
-        final marker = await widget.persistor.store.read(key: kFirebaseGateKey);
-        if (marker == kFirebaseGateNew || marker == kFirebaseGateRequire) {
-          gateFresh = true;
-          gateNew = marker == kFirebaseGateNew;
-        }
       } else {
-        gateFresh = false;
-        gateNew = false;
+        restored = await roster.activeSession();
+        final firebase = bootstrap?.firebase;
+        if (restored != null &&
+            _firebaseSession == null &&
+            !_startupRefreshDone &&
+            firebase != null) {
+          _startupRefreshDone = true;
+          final next = await _refreshSession(restored, firebase);
+          if (next == null && _signInNotice != null) {
+            notice = _signInNotice;
+            restored = null;
+            accounts = await roster.accounts();
+          } else if (next != null) {
+            restored = next;
+          }
+        }
       }
-    } else {
-      restored = null;
-      gateFresh = false;
-      gateNew = false;
-    }
-    if (_signedOut) {
-      restored = null;
-      gateFresh = false;
-      gateNew = false;
     }
     if (!mounted) return;
     setState(() {
       _bootstrap = bootstrap ?? _bootstrap;
       _firebaseSession = restored;
-      _gateFresh = gateFresh;
-      _gateNew = gateNew;
+      _accounts = accounts;
       _signInNotice = notice;
       _ready = true;
     });
   }
 
-  Future<void> _onFirebaseSession(
-    FirebaseSession session, {
-    bool fresh = false,
-  }) async {
-    await widget.persistor.store.write(
-      key: kFirebaseSessionKey,
-      value: jsonEncode(session.toJson()),
-    );
-    if (fresh) {
-      final require = ref.read(desktopPrefsProvider).requireSecondFactor;
-      if (session.isNewUser) {
-        await widget.persistor.store.write(
-          key: kFirebaseGateKey,
-          value: kFirebaseGateNew,
-        );
-      } else if (require) {
-        await widget.persistor.store.write(
-          key: kFirebaseGateKey,
-          value: kFirebaseGateRequire,
-        );
-      } else {
-        await widget.persistor.store.delete(key: kFirebaseGateKey);
-      }
+  Future<FirebaseSession?> _refreshSession(
+    FirebaseSession session,
+    FirebasePublicConfig firebase,
+  ) async {
+    try {
+      final next = await refreshFirebaseSession(
+        config: firebase,
+        refreshToken: session.refreshToken,
+        httpClient: ref.read(authHttpClientProvider),
+      ).timeout(const Duration(seconds: 5));
+      await _roster().remember(next);
+      return next;
+    } on FirebaseSessionRevoked {
+      await _roster().dropSession(session.localId);
+      _signInNotice = kAccountRemovedNotice;
+      return null;
+    } on Object {
+      // A timeout or a network error keeps the stored session.
+      return session;
     }
+  }
+
+  Future<void> _onFirebaseSession(FirebaseSession session) async {
+    await _roster().remember(session);
+    final accounts = await _roster().accounts();
     if (!mounted) return;
     setState(() {
-      _signedOut = false;
+      _holdLibrary = false;
+      _adding = false;
+      _setupEmail = null;
       _firebaseSession = session;
-      if (fresh) {
-        _gateFresh = true;
-        _gateNew = session.isNewUser;
+      _accounts = accounts;
+      _signInNotice = null;
+    });
+  }
+
+  Future<void> _showAccountList({String? notice, bool canReturn = true}) async {
+    final accounts = await _roster().accounts();
+    if (!mounted) return;
+    setState(() {
+      _holdLibrary = true;
+      _canReturn = canReturn && accounts.any((account) => account.hasSession);
+      _adding = false;
+      _firebaseSession = null;
+      _accounts = accounts;
+      if (notice != null) _signInNotice = notice;
+    });
+  }
+
+  Future<void> _returnToActive() async {
+    final session = await _roster().activeSession();
+    if (!mounted || session == null) return;
+    setState(() {
+      _holdLibrary = false;
+      _setupEmail = null;
+      _firebaseSession = session;
+    });
+  }
+
+  Future<void> _activateSaved(String localId) async {
+    final roster = _roster();
+    final session = await roster.makeActive(localId);
+    final firebase = _bootstrap?.firebase;
+    if (session == null || firebase == null) {
+      final accounts = await roster.accounts();
+      SavedAccount? match;
+      for (final account in accounts) {
+        if (account.localId == localId) match = account;
+      }
+      if (!mounted) return;
+      setState(() {
+        _accounts = accounts;
+        _adding = true;
+        _setupEmail = match?.email;
+      });
+      return;
+    }
+    final next = await _refreshSession(session, firebase);
+    final accounts = await roster.accounts();
+    if (!mounted) return;
+    setState(() {
+      _accounts = accounts;
+      if (next == null) {
+        _firebaseSession = null;
+        _holdLibrary = true;
+        _adding = false;
+      } else {
+        _firebaseSession = next;
+        _holdLibrary = false;
+        _adding = false;
+        _signInNotice = null;
       }
     });
   }
 
-  Future<void> _signOutFirebase({String? notice}) async {
-    try {
-      await widget.persistor.store.delete(key: kFirebaseSessionKey);
-      await widget.persistor.store.delete(key: kFirebaseGateKey);
-    } finally {
-      // A Keychain failure must not leave the library on screen. The error
-      // still propagates, and an entry that could not be removed stays for
-      // the next launch.
-      if (mounted) {
-        setState(() {
-          _signedOut = true;
-          _firebaseSession = null;
-          _gateFresh = false;
-          _gateNew = false;
-          _addAuthenticator = false;
-          _addPhone = false;
-          _enrollPhone = null;
-          if (notice != null) _signInNotice = notice;
-        });
+  Future<void> _beginSetup(String? email) async {
+    if (!mounted) return;
+    setState(() {
+      _adding = true;
+      _holdLibrary = true;
+      _firebaseSession = null;
+      _setupEmail = email;
+    });
+  }
+
+  Future<void> _removeAccount(String localId) async {
+    final next = await _roster().removeFromComputer(localId);
+    final accounts = await _roster().accounts();
+    if (!mounted) return;
+    setState(() {
+      _accounts = accounts;
+      if (next == null || _firebaseSession?.localId == localId) {
+        _firebaseSession = next;
+        _holdLibrary = next == null;
+        _adding = next == null && accounts.isEmpty;
       }
-    }
+    });
   }
 
   @override
@@ -436,49 +475,49 @@ class _ProviderAuthGateState extends ConsumerState<_ProviderAuthGate> {
       }
       final session = _firebaseSession;
       if (session == null) {
+        if (!_adding && _accounts.isNotEmpty) {
+          return AccountChooserPage(
+            accounts: _accounts,
+            notice: _signInNotice,
+            onActivate: (account) => unawaited(_activateSaved(account.localId)),
+            onSetup: (email) => unawaited(_beginSetup(email)),
+            onBack: _canReturn ? () => unawaited(_returnToActive()) : null,
+          );
+        }
         return FirebaseSignInPage(
           config: firebase,
           apiUrl: widget.config.apiUrl,
           notice: _signInNotice,
+          initialEmail: _setupEmail,
           onAttempt: () {
             if (_signInNotice == null || !mounted) return;
             setState(() => _signInNotice = null);
           },
+          onCancel: _accounts.isEmpty
+              ? null
+              : () => unawaited(_showAccountList()),
           httpClient: ref.watch(authHttpClientProvider),
-          onSession: (next) => _onFirebaseSession(next, fresh: true),
-          onAddAuthenticator: () => _addAuthenticator = true,
-          onAddPhone: (phone) {
-            _enrollPhone = phone;
-            _addPhone = true;
-          },
+          onSession: _onFirebaseSession,
         );
       }
       return _FirebaseSignedInHost(
+        key: ValueKey(session.localId),
         config: widget.config,
         firebase: firebase,
         session: session,
-        gateFresh: _gateFresh,
-        gateNew: _gateNew,
-        addAuthenticator: _addAuthenticator,
-        addPhone: _addPhone,
-        enrollPhone: _enrollPhone,
-        onGateCleared: () {
-          unawaited(
-            widget.persistor.store.delete(key: kFirebaseGateKey).then((_) {
-              if (!mounted) return;
-              setState(() {
-                _gateFresh = false;
-                _gateNew = false;
-                _addAuthenticator = false;
-                _addPhone = false;
-                _enrollPhone = null;
-              });
-            }),
+        onSession: _onFirebaseSession,
+        onSignOut: _showAccountList,
+        onActivate: _activateSaved,
+        onBeginSetup: _beginSetup,
+        onRemove: _removeAccount,
+        onSessionRevoked: () async {
+          final id = _firebaseSession?.localId;
+          if (id != null) await _roster().dropSession(id);
+          await _showAccountList(
+            notice: kAccountRemovedNotice,
+            canReturn: false,
           );
         },
-        onSession: _onFirebaseSession,
-        onSignOut: _signOutFirebase,
-        onSessionRevoked: () => _signOutFirebase(notice: kAccountRemovedNotice),
         signedInHome: widget.signedInHome,
       );
     }
@@ -550,17 +589,15 @@ class _MissingFirebaseConfigPage extends StatelessWidget {
 
 class _FirebaseSignedInHost extends ConsumerStatefulWidget {
   const _FirebaseSignedInHost({
+    super.key,
     required this.config,
     required this.firebase,
     required this.session,
-    required this.gateFresh,
-    required this.gateNew,
-    required this.addAuthenticator,
-    required this.addPhone,
-    this.enrollPhone,
-    required this.onGateCleared,
     required this.onSession,
     required this.onSignOut,
+    required this.onActivate,
+    required this.onBeginSetup,
+    required this.onRemove,
     required this.onSessionRevoked,
     required this.signedInHome,
   });
@@ -568,14 +605,11 @@ class _FirebaseSignedInHost extends ConsumerStatefulWidget {
   final AppConfig config;
   final FirebasePublicConfig firebase;
   final FirebaseSession session;
-  final bool gateFresh;
-  final bool gateNew;
-  final bool addAuthenticator;
-  final bool addPhone;
-  final String? enrollPhone;
-  final VoidCallback onGateCleared;
   final ValueChanged<FirebaseSession> onSession;
-  final Future<void> Function() onSignOut;
+  final Future<void> Function({String? notice}) onSignOut;
+  final Future<void> Function(String localId) onActivate;
+  final Future<void> Function(String? email) onBeginSetup;
+  final Future<void> Function(String localId) onRemove;
   final Future<void> Function() onSessionRevoked;
   final Widget signedInHome;
 
@@ -592,6 +626,7 @@ class _FirebaseSignedInHostState extends ConsumerState<_FirebaseSignedInHost> {
   void initState() {
     super.initState();
     _session = widget.session;
+    _bindCatalog();
     _client = ApiClient(
       baseUrl: widget.config.apiUrl,
       tokenProvider: _token,
@@ -601,6 +636,15 @@ class _FirebaseSignedInHostState extends ConsumerState<_FirebaseSignedInHost> {
         ref.read(forceUpdateRequiredProvider.notifier).state = true;
       },
     );
+  }
+
+  void _bindCatalog() {
+    final store = ref.read(collectionsStoreProvider);
+    store.accountKey = widget.session.localId;
+    final cols = ref.read(collectionsControllerProvider);
+    if (cols.loaded) {
+      unawaited(cols.load());
+    }
   }
 
   Future<String?> _token() async {
@@ -645,29 +689,22 @@ class _FirebaseSignedInHostState extends ConsumerState<_FirebaseSignedInHost> {
               setState(() => _session = next);
               widget.onSession(next);
             },
-            onSignOut: widget.onSignOut,
+            onSignOut: () => widget.onSignOut(),
+            loadAccounts: () => FirebaseAccountRoster(
+              secure: ref.read(securePersistorProvider).store,
+              directory: ref.read(accountDirectoryProvider),
+            ).accounts(),
+            activateAccount: widget.onActivate,
+            beginSetup: widget.onBeginSetup,
+            removeAccount: widget.onRemove,
           ),
         ),
       ],
-      child: SecondFactorGate(
-        active:
-            widget.addAuthenticator ||
-            widget.addPhone ||
-            (widget.gateFresh &&
-                (widget.gateNew ||
-                    ref.watch(desktopPrefsProvider).requireSecondFactor)),
-        newAccount: widget.gateNew,
-        addAuthenticator: widget.addAuthenticator,
-        addPhone: widget.addPhone,
-        enrollPhone: widget.enrollPhone,
-        httpClient: ref.watch(authHttpClientProvider),
-        onCleared: widget.onGateCleared,
-        child: AccountBootstrap(
-          loadAccount: () => MeRepository(_client).getMe(),
-          onUnauthorized: () {},
-          onSignOut: widget.onSignOut,
-          signedInHome: widget.signedInHome,
-        ),
+      child: AccountBootstrap(
+        loadAccount: () => MeRepository(_client).getMe(),
+        onUnauthorized: () {},
+        onSignOut: () => widget.onSignOut(),
+        signedInHome: widget.signedInHome,
       ),
     );
   }
@@ -676,10 +713,10 @@ class _FirebaseSignedInHostState extends ConsumerState<_FirebaseSignedInHost> {
 /// Signed-out Clerk form, or a spinner while FAPI env is still empty.
 ///
 /// `clerk_auth` times out the *first* `/environment` + `/client` fetch at 1s.
-/// `./11_dev.sh` wipes the Keychain cache, so a slightly slow Clerk reply
-/// leaves [ClerkAuthentication] with `isNotAvailable` (blank widget) and
-/// only retries every 10s — still with that 1s cap. Refresh here uses the
-/// 15s HTTP timeout instead.
+/// A cold Keychain (first launch, or after `./118_clear_secure_store.sh`)
+/// makes a slightly slow Clerk reply leave [ClerkAuthentication] with
+/// `isNotAvailable` (blank widget) and only retries every 10s — still with
+/// that 1s cap. Refresh here uses the 15s HTTP timeout instead.
 class _ClerkSignedOutPage extends StatefulWidget {
   const _ClerkSignedOutPage({required this.authState});
 
@@ -1515,6 +1552,45 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
     await handler();
   }
 
+  Future<void> _switchAccount() async {
+    final desk = ref.read(firebaseDeskProvider);
+    final load = desk?.loadAccounts;
+    if (desk == null || load == null) return;
+    final accounts = await load();
+    if (!mounted) return;
+    final choice = await showAccountSwitchDialog(
+      context: context,
+      accounts: accounts,
+      activeLocalId: desk.session.localId,
+    );
+    if (choice == null || !mounted) return;
+    final leaves = switch (choice.kind) {
+      AccountSwitchKind.remove => choice.localId == desk.session.localId,
+      AccountSwitchKind.activate => choice.localId != desk.session.localId,
+      AccountSwitchKind.add || AccountSwitchKind.setup => true,
+    };
+    if (leaves) {
+      final ok = await _confirmLeaveIfDirty();
+      if (!ok || !mounted) return;
+      ref.read(collectionsControllerProvider).clearSession();
+      ref.read(activeViewDirtyProvider.notifier).state = false;
+      _collectionBootstrapRequested = false;
+      await _disarmWindowCloseGate();
+    }
+    switch (choice.kind) {
+      case AccountSwitchKind.activate:
+        final id = choice.localId;
+        if (id != null) await desk.activateAccount?.call(id);
+      case AccountSwitchKind.add:
+        await desk.beginSetup?.call(null);
+      case AccountSwitchKind.setup:
+        await desk.beginSetup?.call(choice.email);
+      case AccountSwitchKind.remove:
+        final id = choice.localId;
+        if (id != null) await desk.removeAccount?.call(id);
+    }
+  }
+
   List<String> _libraryFolders() {
     try {
       final table = ref.read(libraryTableControllerProvider);
@@ -1897,7 +1973,14 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
                     ),
                   ),
                 ),
-                if (widget.onSignOut != null)
+                if (ref.watch(firebaseDeskProvider)?.loadAccounts != null)
+                  IconButton(
+                    key: const Key('switch-account'),
+                    tooltip: 'Switch account',
+                    onPressed: _switchAccount,
+                    icon: const Icon(Icons.switch_account),
+                  )
+                else if (widget.onSignOut != null)
                   IconButton(
                     key: const Key('sign-out'),
                     tooltip: 'Sign out',

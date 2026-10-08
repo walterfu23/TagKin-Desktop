@@ -7,13 +7,22 @@ import 'package:tagkin_desktop/prefs/desktop_prefs_store.dart';
 
 /// Loads/saves [CollectionsFile] as JSON under Application Support.
 class CollectionsStore {
-  CollectionsStore({Directory? supportDir}) : _supportDirOverride = supportDir;
+  CollectionsStore({Directory? supportDir, this.accountKey})
+    : _supportDirOverride = supportDir;
 
   final Directory? _supportDirOverride;
 
+  /// Firebase user id for this catalog. Null keeps the shared file, used by
+  /// Clerk and by tests that do not switch accounts.
+  String? accountKey;
+
   Future<File> _file() async {
     final dir = await tagkinAppSupportDir(override: _supportDirOverride);
-    return File(p.join(dir.path, 'collections.json'));
+    final key = accountKey;
+    final name = (key == null || key.isEmpty)
+        ? 'collections.json'
+        : 'collections.${key.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')}.json';
+    return File(p.join(dir.path, name));
   }
 
   Future<CollectionsFile> load() async {
@@ -41,15 +50,18 @@ class CollectionsStore {
 /// In-memory [CollectionsStore] for widget tests (avoids fake-async IO hangs).
 class MemoryCollectionsStore extends CollectionsStore {
   MemoryCollectionsStore([CollectionsFile initial = CollectionsFile.empty])
-      : _data = initial;
+    : _slots = {'': initial};
 
-  CollectionsFile _data;
+  final Map<String, CollectionsFile> _slots;
+
+  String get _slot => accountKey ?? '';
 
   @override
-  Future<CollectionsFile> load() async => _data;
+  Future<CollectionsFile> load() async =>
+      _slots[_slot] ?? CollectionsFile.empty;
 
   @override
   Future<void> save(CollectionsFile catalog) async {
-    _data = catalog;
+    _slots[_slot] = catalog;
   }
 }

@@ -1,12 +1,11 @@
 # 11_dev.ps1 — run the desktop app on Windows (foreground, live console). Band 11-49 = ops.
-# Always clears the D1 secure store first (clean Clerk session each run).
+# Keeps the Credential Manager login so a saved account opens Folders on the next launch.
+# A clean sign-in is .\118_clear_secure_store.ps1, then this script.
 # Loads CLERK_PUBLISHABLE_KEY / TAGKIN_API_URL from .env and passes them via
 # --dart-define (mirrors mac/11_dev.sh).
 $ErrorActionPreference = 'Stop'
 $winDir = Split-Path -Parent $PSCommandPath
 . (Join-Path $winDir '_env.ps1')
-
-& (Join-Path $winDir '118_clear_secure_store.ps1')
 
 $envFile = Join-Path $global:TagKinDesktopRoot '.env'
 if (Test-Path $envFile) {

@@ -42,7 +42,7 @@ Subsystem regression entry points use **`NNN_test_dN.ps1`** (`d0`, `d1`, … `d1
 | [`119_fetch_face_models.ps1`](./119_fetch_face_models.ps1) | Download InsightFace ONNX weights for cross-photo person linking (optional; large). |
 | [`120_branding.ps1`](./120_branding.ps1) | After changing `branding/branding.yaml` or `branding/icon_*.png` — regenerate the user-facing name and app icons. Then relaunch (`./11_dev.ps1`). |
 | [`122_wipe_Devtime.ps1`](./122_wipe_Devtime.ps1) | **Devtime only.** Wipe collections, prefs, bookmarks, and Credential Manager session (`CONFIRM=1`). Pair with `TagKin/mac/122_wipe_Devtime.sh` for Postgres. Does not delete media or face models. |
-| [`11_dev.ps1`](./11_dev.ps1) | Clear secure store, then run the app on Windows (`flutter run -d windows`). |
+| [`11_dev.ps1`](./11_dev.ps1) | Keep the Credential Manager login, then run the app on Windows (`flutter run -d windows`). A clean sign-in is `.\118_clear_secure_store.ps1` first. |
 | [`12_person_link_loop.ps1`](./12_person_link_loop.ps1) | Ops: delete suggested persons → re-analyze item ids → who-face link; repeat until Persons consolidate (max 20). Needs `TAGKIN_API_TOKEN` + `TAGKIN_LOOP_ITEM_IDS`. |
 | [`51_test_all.ps1`](./51_test_all.ps1) | All completed desktop subsystem bars in order (`106_test_d0`, `107_test_d1`, `108_test_d2`, …). Before a PR. |
 | [`106_test_d0.ps1`](./106_test_d0.ps1) | D0 Foundation regression bar alone. |

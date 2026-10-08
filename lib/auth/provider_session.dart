@@ -28,6 +28,7 @@ Future<bool> reconcileStoredProvider({
     await clearClerk();
     await store.delete(key: kFirebaseSessionKey);
     await store.delete(key: kFirebaseGateKey);
+    await store.delete(key: 'tagkin.firebase.roster');
   }
   if (nextProviderId != null && nextProviderId.isNotEmpty) {
     await store.write(key: kActiveAuthProviderKey, value: nextProviderId);

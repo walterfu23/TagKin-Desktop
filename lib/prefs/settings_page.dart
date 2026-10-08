@@ -12,7 +12,6 @@ import 'package:tagkin_desktop/update/client_support_providers.dart';
 import 'package:tagkin_desktop/usage/credits_remaining.dart';
 import 'package:tagkin_desktop/usage/usage_controller.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
-import 'package:tagkin_desktop/prefs/second_factor_section.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prefs/range_slider_control.dart';
 import 'package:tagkin_desktop/ui/format_local_datetime.dart';
@@ -359,9 +358,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       if (status == ClientSupportStatus.warn) {
         ref.read(clientWarnDismissedProvider.notifier).state = false;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('A newer version of $kAppName is available.'),
-          ),
+          SnackBar(content: Text('A newer version of $kAppName is available.')),
         );
         return;
       }
@@ -630,12 +627,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               body: ListView(
                 padding: const EdgeInsets.all(24),
                 children: [
-                  SecondFactorSection(
-                    requireSecondFactor: _requireSecondFactor,
-                    onRequireChanged: (value) => _mutateDraft(
-                      () => _requireSecondFactor = value,
-                    ),
-                  ),
                   _settingsIntro(),
                   _settingsGroup(
                     title: 'Display',

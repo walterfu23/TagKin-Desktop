@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:tagkin_desktop/app_shell.dart';
+import 'package:tagkin_desktop/auth/account_roster.dart';
 import 'package:tagkin_desktop/auth/auth_bootstrap.dart';
 import 'package:tagkin_desktop/auth/firebase_desk.dart';
 import 'package:tagkin_desktop/auth/firebase_identity.dart';
@@ -350,10 +351,7 @@ void main() {
       find.widgetWithText(OutlinedButton, 'Authenticator app'),
       findsOneWidget,
     );
-    expect(
-      find.byKey(const Key('firebase-mfa-add-phone')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('firebase-mfa-add-phone')), findsOneWidget);
     await tester.tap(find.widgetWithText(OutlinedButton, 'Authenticator app'));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('firebase-mfa-code')), findsOneWidget);
@@ -593,10 +591,7 @@ void main() {
       find.widgetWithText(OutlinedButton, 'Authenticator app'),
       findsOneWidget,
     );
-    expect(
-      find.byKey(const Key('firebase-mfa-add-phone')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('firebase-mfa-add-phone')), findsOneWidget);
     expect(addPhone, 0);
 
     await tester.tap(find.byKey(const Key('firebase-mfa-add-phone')));
@@ -608,10 +603,7 @@ void main() {
       find.widgetWithText(OutlinedButton, 'Authenticator app'),
       findsNothing,
     );
-    expect(
-      find.byKey(const Key('firebase-mfa-add-phone')),
-      findsNothing,
-    );
+    expect(find.byKey(const Key('firebase-mfa-add-phone')), findsNothing);
     expect(addPhone, 0);
     expect(sessions, 0);
 
@@ -628,7 +620,10 @@ void main() {
       findsNothing,
     );
 
-    await tester.enterText(find.byKey(const Key('firebase-mfa-code')), '654321');
+    await tester.enterText(
+      find.byKey(const Key('firebase-mfa-code')),
+      '654321',
+    );
     await tester.tap(find.byKey(const Key('firebase-mfa-submit')));
     await tester.pumpAndSettle();
     expect(addPhone, 1);
@@ -1139,11 +1134,12 @@ void main() {
     );
   });
 
-  testWidgets('a new account shows Create your account and no Continue', (
+  testWidgets('creating an account makes it the active account', (
     tester,
   ) async {
     final store = await _pumpShell(
       tester,
+      library: true,
       client: _shellClient(
         onIdentity: (request) async {
           if (request.url.path.contains('accounts:signUp')) {
@@ -1154,41 +1150,24 @@ void main() {
       ),
     );
     await _createAccount(tester);
-    expect(find.text('Create your account'), findsOneWidget);
-    expect(find.text('Add a second factor'), findsNothing);
-    expect(find.byKey(const Key('firebase-mfa-gate-skip-new')), findsNothing);
-    expect(await store.read(key: kFirebaseGateKey), kFirebaseGateNew);
+    expect(find.byKey(const Key('signed-in-home')), findsOneWidget);
+    expect(find.text('Create your account'), findsNothing);
+    expect(find.byKey(const Key('firebase-mfa-gate')), findsNothing);
+    final roster = FirebaseAccountRoster(
+      secure: store,
+      directory: MemoryAccountDirectory(),
+    );
+    final active = await roster.activeSession();
+    expect(active?.localId, 'uid-1');
+    expect(active?.email, 'a@example.com');
   });
 
-  testWidgets('a new account can continue when a second factor is optional', (
+  testWidgets('an emailed code for a new user opens the library', (
     tester,
   ) async {
     await _pumpShell(
       tester,
       library: true,
-      prefs: const DesktopPrefs(requireSecondFactor: false),
-      client: _shellClient(
-        onIdentity: (request) async {
-          if (request.url.path.contains('accounts:signUp')) {
-            return http.Response(jsonEncode(_identityBody()), 200);
-          }
-          return http.Response('missing', 404);
-        },
-      ),
-    );
-    await _createAccount(tester);
-    expect(find.byKey(const Key('firebase-mfa-gate-skip-new')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('firebase-mfa-gate-skip-new')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('signed-in-home')), findsOneWidget);
-    expect(find.byKey(const Key('firebase-mfa-gate')), findsNothing);
-  });
-
-  testWidgets('an emailed code for a new user shows Create your account', (
-    tester,
-  ) async {
-    await _pumpShell(
-      tester,
       client: _shellClient(
         onIdentity: (request) async {
           if (request.url.path == '/auth/email-code') {
@@ -1222,16 +1201,17 @@ void main() {
     );
     await tester.tap(find.byKey(const Key('firebase-email-code-submit')));
     await tester.pumpAndSettle();
-    expect(find.text('Create your account'), findsOneWidget);
-    expect(find.text('No account for that email.'), findsNothing);
+    expect(find.byKey(const Key('signed-in-home')), findsOneWidget);
+    expect(find.text('Create your account'), findsNothing);
     expect(find.byKey(const Key('firebase-auth-error')), findsNothing);
   });
 
-  testWidgets('an existing sign-in still shows Add a second factor', (
+  testWidgets('a password sets up the account and opens the library', (
     tester,
   ) async {
     await _pumpShell(
       tester,
+      library: true,
       client: _shellClient(
         onIdentity: (request) async {
           if (request.url.path.contains('signInWithPassword')) {
@@ -1253,181 +1233,29 @@ void main() {
     );
     await tester.tap(find.byKey(const Key('firebase-submit')));
     await tester.pumpAndSettle();
-    expect(find.text('Add a second factor'), findsOneWidget);
-    expect(find.text('Create your account'), findsNothing);
+    expect(find.byKey(const Key('signed-in-home')), findsOneWidget);
+    expect(find.text('Add a second factor'), findsNothing);
+    expect(find.byKey(const Key('switch-account')), findsOneWidget);
+    expect(find.byKey(const Key('sign-out')), findsNothing);
   });
 
-  testWidgets('verifying email does not leave the new-account step', (
-    tester,
-  ) async {
-    await _pumpShell(
-      tester,
-      client: _shellClient(
-        onIdentity: (request) async {
-          final path = request.url.path;
-          if (path.contains('accounts:signUp')) {
-            return http.Response(jsonEncode(_identityBody()), 200);
-          }
-          if (path == '/auth/email-code') {
-            return http.Response(
-              jsonEncode({'emailMasked': 'a...@example.com'}),
-              200,
-            );
-          }
-          if (path == '/auth/email-code/verify') {
-            return http.Response(jsonEncode({'oobCode': 'oob-1'}), 200);
-          }
-          if (path.contains('signInWithEmailLink')) {
-            return http.Response(
-              jsonEncode(_identityBody(idToken: _verifiedToken())),
-              200,
-            );
-          }
-          return http.Response('missing', 404);
-        },
-      ),
-    );
-    await _createAccount(tester);
-    expect(find.text('Create your account'), findsOneWidget);
-    await tester.tap(find.byKey(const Key('settings-verify-email')));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.descendant(
-        of: find.byType(AlertDialog),
-        matching: find.byType(TextField),
-      ),
-      '123456',
-    );
-    await tester.tap(
-      find.descendant(
-        of: find.byType(AlertDialog),
-        matching: find.widgetWithText(FilledButton, 'Continue'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Create your account'), findsOneWidget);
-    expect(find.byKey(const Key('settings-verify-email')), findsNothing);
-  });
-
-  testWidgets(
-    'an existing sign-in with the setting off writes no gate marker',
-    (tester) async {
-      final store = await _pumpShell(
-        tester,
-        library: true,
-        prefs: const DesktopPrefs(requireSecondFactor: false),
-        client: _shellClient(
-          onIdentity: (request) async {
-            if (request.url.path.contains('signInWithPassword')) {
-              return http.Response(jsonEncode(_identityBody()), 200);
-            }
-            return http.Response('missing', 404);
-          },
-        ),
-      );
-      await tester.enterText(
-        find.byKey(const Key('firebase-email')),
-        'a@example.com',
-      );
-      await tester.tap(find.byKey(const Key('firebase-use-password')));
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const Key('firebase-password')),
-        'secret',
-      );
-      await tester.tap(find.byKey(const Key('firebase-submit')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('signed-in-home')), findsOneWidget);
-      expect(find.byKey(const Key('firebase-mfa-gate')), findsNothing);
-      expect(await store.read(key: kFirebaseGateKey), isNull);
-    },
-  );
-
-  testWidgets('a stored new-account marker resumes Create your account', (
-    tester,
-  ) async {
+  testWidgets('a saved session opens the library', (tester) async {
     final store = MemorySecureKeyValueStore();
-    await _writeStoredSession(store, marker: kFirebaseGateNew);
-    await _pumpShell(
-      tester,
-      store: store,
-      client: _shellClient(onIdentity: _unusedIdentity),
-    );
-    expect(find.text('Create your account'), findsOneWidget);
-    expect(find.byKey(const Key('signed-in-home')), findsNothing);
-  });
-
-  testWidgets('a stored require marker resumes Add a second factor', (
-    tester,
-  ) async {
-    final store = MemorySecureKeyValueStore();
-    await _writeStoredSession(store, marker: kFirebaseGateRequire);
-    await _pumpShell(
-      tester,
-      store: store,
-      client: _shellClient(onIdentity: _unusedIdentity),
-    );
-    expect(find.text('Add a second factor'), findsOneWidget);
-    expect(find.text('Create your account'), findsNothing);
-  });
-
-  testWidgets('finishing the gate deletes the marker', (tester) async {
-    final store = MemorySecureKeyValueStore();
-    await _writeStoredSession(store, marker: kFirebaseGateRequire);
+    await _writeStoredSession(store);
     await _pumpShell(
       tester,
       store: store,
       library: true,
-      client: _shellClient(factors: true, onIdentity: _unusedIdentity),
+      client: _shellClient(onIdentity: _unusedIdentity),
     );
     expect(find.byKey(const Key('signed-in-home')), findsOneWidget);
-    expect(await store.read(key: kFirebaseGateKey), isNull);
+    expect(find.text('Create your account'), findsNothing);
+    expect(find.byKey(const Key('firebase-mfa-gate')), findsNothing);
   });
 
-  testWidgets('sign out reaches sign-in when Keychain delete fails', (
-    tester,
-  ) async {
-    final store = _ThrowingDeleteStore();
-    await _writeStoredSession(store, marker: kFirebaseGateNew);
-    await _pumpShell(
-      tester,
-      store: store,
-      client: _shellClient(onIdentity: _unusedIdentity),
-    );
-    expect(find.text('Create your account'), findsOneWidget);
-    Object? asyncError;
-    await runZonedGuarded(() async {
-      await tester.tap(find.byKey(const Key('firebase-mfa-gate-sign-out')));
-      await tester.pump();
-      await tester.pumpAndSettle();
-    }, (error, stack) {
-      asyncError = error;
-    });
-    expect(asyncError, isA<PlatformException>());
-    expect(find.byKey(const Key('firebase-sign-in')), findsOneWidget);
-    expect(await store.read(key: kFirebaseSessionKey), isNotNull);
-  });
-
-  testWidgets('sign out deletes the gate marker', (tester) async {
+  testWidgets('a removed account asks to set it up again', (tester) async {
     final store = MemorySecureKeyValueStore();
-    await _writeStoredSession(store, marker: kFirebaseGateNew);
-    await _pumpShell(
-      tester,
-      store: store,
-      client: _shellClient(onIdentity: _unusedIdentity),
-    );
-    await tester.tap(find.byKey(const Key('firebase-mfa-gate-sign-out')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('firebase-sign-in')), findsOneWidget);
-    expect(await store.read(key: kFirebaseGateKey), isNull);
-    expect(await store.read(key: kFirebaseSessionKey), isNull);
-  });
-
-  testWidgets('a removed account returns to sign-in with a notice', (
-    tester,
-  ) async {
-    final store = MemorySecureKeyValueStore();
-    await _writeStoredSession(store, marker: kFirebaseGateNew);
+    await _writeStoredSession(store);
     await _pumpShell(
       tester,
       store: store,
@@ -1437,11 +1265,12 @@ void main() {
         onIdentity: _unusedIdentity,
       ),
     );
-    expect(find.byKey(const Key('firebase-sign-in')), findsOneWidget);
-    expect(find.byKey(const Key('firebase-sign-in-notice')), findsOneWidget);
     expect(find.text(kAccountRemovedNotice), findsOneWidget);
-    expect(await store.read(key: kFirebaseSessionKey), isNull);
-    expect(await store.read(key: kFirebaseGateKey), isNull);
+    final roster = FirebaseAccountRoster(
+      secure: store,
+      directory: MemoryAccountDirectory(),
+    );
+    expect(await roster.activeSession(), isNull);
   });
 
   testWidgets(
@@ -1457,16 +1286,24 @@ void main() {
       );
       expect(find.byKey(const Key('signed-in-home')), findsOneWidget);
       expect(find.byKey(const Key('firebase-sign-in-notice')), findsNothing);
-      expect(await store.read(key: kFirebaseSessionKey), isNotNull);
+      final roster = FirebaseAccountRoster(
+        secure: store,
+        directory: MemoryAccountDirectory(),
+      );
+      expect(await roster.activeSession(), isNotNull);
     },
   );
 
-  testWidgets('a revoked refresh while signed in signs out', (tester) async {
+  testWidgets('a revoked refresh while open shows the account list', (
+    tester,
+  ) async {
+    final directory = MemoryAccountDirectory();
     final store = MemorySecureKeyValueStore();
-    await _writeStoredSession(store);
+    await _writeStoredSession(store, directory: directory);
     await _pumpShell(
       tester,
       store: store,
+      directory: directory,
       library: true,
       client: _shellClient(
         tokenExpiresIn: '1',
@@ -1474,10 +1311,66 @@ void main() {
         onIdentity: _unusedIdentity,
       ),
     );
-    expect(find.byKey(const Key('firebase-sign-in')), findsOneWidget);
+    expect(find.byKey(const Key('account-chooser-title')), findsOneWidget);
     expect(find.byKey(const Key('auth-unauthorized')), findsNothing);
     expect(find.text(kAccountRemovedNotice), findsOneWidget);
-    expect(await store.read(key: kFirebaseSessionKey), isNull);
+    expect(find.text('a@example.com'), findsOneWidget);
+  });
+
+  testWidgets('a missing secure session prefills setup from the account list', (
+    tester,
+  ) async {
+    final directory = MemoryAccountDirectory();
+    await directory.upsert(
+      const SavedAccount(localId: 'uid-1', email: 'a@example.com'),
+    );
+    await _pumpShell(
+      tester,
+      directory: directory,
+      client: _shellClient(onIdentity: _unusedIdentity),
+    );
+    expect(find.byKey(const Key('account-chooser-title')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('account-choice-uid-1')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('firebase-sign-in')), findsOneWidget);
+    expect(find.text('Set up account'), findsOneWidget);
+    final email = tester.widget<TextField>(
+      find.byKey(const Key('firebase-email')),
+    );
+    expect(email.controller?.text, 'a@example.com');
+  });
+
+  testWidgets('picking an account with a saved session opens the library', (
+    tester,
+  ) async {
+    final directory = MemoryAccountDirectory();
+    await directory.upsert(
+      const SavedAccount(localId: 'uid-1', email: 'a@example.com'),
+    );
+    final store = MemorySecureKeyValueStore();
+    final session = FirebaseSession(
+      idToken: 'id-1',
+      refreshToken: 'refresh-1',
+      expiresAt: DateTime.now().toUtc().add(const Duration(hours: 1)),
+      localId: 'uid-1',
+      email: 'a@example.com',
+    );
+    await store.write(
+      key: kFirebaseSessionKey,
+      value: jsonEncode(session.toJson()),
+    );
+    await _pumpShell(
+      tester,
+      store: store,
+      directory: directory,
+      library: true,
+      client: _shellClient(onIdentity: _unusedIdentity),
+    );
+    expect(find.byKey(const Key('account-chooser-title')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('account-choice-uid-1')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('signed-in-home')), findsOneWidget);
+    expect(find.byKey(const Key('firebase-sign-in')), findsNothing);
   });
 }
 
@@ -1636,6 +1529,7 @@ Future<SecureKeyValueStore> _pumpShell(
   WidgetTester tester, {
   required http.Client client,
   SecureKeyValueStore? store,
+  AccountDirectory? directory,
   DesktopPrefs? prefs,
   bool library = false,
 }) async {
@@ -1658,6 +1552,8 @@ Future<SecureKeyValueStore> _pumpShell(
         securePersistorProvider.overrideWithValue(
           SecureStoragePersistor(store: memory),
         ),
+        if (directory != null)
+          accountDirectoryProvider.overrideWithValue(directory),
         if (prefs != null) desktopPrefsProvider.overrideWithValue(prefs),
         if (library) ...[
           itemsRepositoryProvider.overrideWithValue(FakeItemsRepository()),
@@ -1695,7 +1591,7 @@ Future<void> _createAccount(WidgetTester tester) async {
 
 Future<void> _writeStoredSession(
   SecureKeyValueStore store, {
-  String? marker,
+  AccountDirectory? directory,
 }) async {
   final session = FirebaseSession(
     idToken: 'id-1',
@@ -1704,13 +1600,10 @@ Future<void> _writeStoredSession(
     localId: 'uid-1',
     email: 'a@example.com',
   );
-  await store.write(
-    key: kFirebaseSessionKey,
-    value: jsonEncode(session.toJson()),
-  );
-  if (marker != null) {
-    await store.write(key: kFirebaseGateKey, value: marker);
-  }
+  await FirebaseAccountRoster(
+    secure: store,
+    directory: directory ?? MemoryAccountDirectory(),
+  ).remember(session);
 }
 
 /// Delete always fails. Read and write keep the entry, as a Keychain
@@ -1730,7 +1623,9 @@ class _ThrowingDeleteStore extends MemorySecureKeyValueStore {
 http.Response _totpFinalizeResponse(http.Request request, {String? code}) {
   final body = jsonDecode(request.body) as Map<String, dynamic>;
   final totp = body['totpVerificationInfo'];
-  final keys = totp is Map ? totp.keys.map((key) => '$key').toSet() : <String>{};
+  final keys = totp is Map
+      ? totp.keys.map((key) => '$key').toSet()
+      : <String>{};
   final enrollmentId = body['mfaEnrollmentId'];
   if (enrollmentId is! String ||
       enrollmentId.isEmpty ||

@@ -11,7 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 /// Shown when a stored session belonged to an account that was removed.
 const String kAccountRemovedNotice =
-    'That account was removed. Sign in again or create an account.';
+    'That account was removed. Set it up again.';
 
 /// Email/password Firebase sign-in, plus Google (macOS and Windows) when
 /// bootstrap carries a public Google client id.
@@ -24,6 +24,8 @@ class FirebaseSignInPage extends StatefulWidget {
     this.onAddAuthenticator,
     this.onAddPhone,
     this.notice,
+    this.initialEmail,
+    this.onCancel,
     this.onAttempt,
     this.httpClient,
   });
@@ -34,6 +36,13 @@ class FirebaseSignInPage extends StatefulWidget {
 
   /// One-shot line above the form, such as after a removed account.
   final String? notice;
+
+  /// Prefills the email when putting an account back after the secure-store
+  /// entry is gone.
+  final String? initialEmail;
+
+  /// Returns to the account list when this computer already has accounts.
+  final VoidCallback? onCancel;
 
   /// A sign-in attempt started. The shell clears [notice].
   final VoidCallback? onAttempt;
@@ -72,6 +81,13 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
   String? _smsSession;
   GoogleLoopback? _loopback;
   var _googleCancelled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final email = widget.initialEmail;
+    if (email != null && email.isNotEmpty) _email.text = email;
+  }
 
   @override
   void dispose() {
@@ -410,7 +426,7 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
                 ? 'Second factor'
                 : _emailCode
                 ? 'Check your email'
-                : (_signUp ? 'Create account' : 'Sign in'),
+                : (_signUp ? 'Create account' : 'Set up account'),
             style: Theme.of(context).textTheme.headlineSmall,
           ),
           const SizedBox(height: 16),
@@ -787,7 +803,7 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
               OutlinedButton(
                 key: const Key('firebase-submit'),
                 onPressed: _busy ? null : _submit,
-                child: Text(_signUp ? 'Create account' : 'Sign in'),
+                child: Text(_signUp ? 'Create account' : 'Continue'),
               )
             else
               OutlinedButton(
@@ -798,7 +814,7 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
                         _usePassword = true;
                         _error = null;
                       }),
-                child: const Text('Sign in with password'),
+                child: const Text('Use a password'),
               ),
             if (!_signUp) ...[
               const SizedBox(height: 8),
@@ -819,10 +835,18 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
                     }),
               child: Text(
                 _signUp
-                    ? 'Have an account? Sign in'
+                    ? 'Have an account? Use a password'
                     : 'New here? Create account',
               ),
             ),
+            if (widget.onCancel != null) ...[
+              const SizedBox(height: 8),
+              TextButton(
+                key: const Key('firebase-setup-cancel'),
+                onPressed: _busy ? null : widget.onCancel,
+                child: const Text('Back'),
+              ),
+            ],
           ],
         ],
       ),
