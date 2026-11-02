@@ -59,10 +59,14 @@ class WhereValuesText extends ConsumerStatefulWidget {
   const WhereValuesText({
     super.key,
     required this.values,
+    this.cities = const [],
     this.style,
   });
 
   final List<String> values;
+
+  /// Parallel to [values]. True when that tag is a city name.
+  final List<bool> cities;
   final TextStyle? style;
 
   @override
@@ -81,7 +85,8 @@ class _WhereValuesTextState extends ConsumerState<WhereValuesText> {
   @override
   void didUpdateWidget(covariant WhereValuesText oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!listEquals(oldWidget.values, widget.values)) {
+    if (!listEquals(oldWidget.values, widget.values) ||
+        !listEquals(oldWidget.cities, widget.cities)) {
       _labels = null;
       _resolve();
     }
@@ -89,8 +94,12 @@ class _WhereValuesTextState extends ConsumerState<WhereValuesText> {
 
   Future<void> _resolve() async {
     final raw = List<String>.from(widget.values);
+    final cities = List<bool>.from(widget.cities);
     final resolved = collapseWhereDisplays(
-      await ref.read(whereLabelResolverProvider).resolveAllDisplays(raw),
+      await ref.read(whereLabelResolverProvider).resolveTaggedAll([
+        for (var i = 0; i < raw.length; i++)
+          (value: raw[i], city: i < cities.length && cities[i]),
+      ]),
     );
     if (!mounted || !listEquals(widget.values, raw)) return;
     setState(() => _labels = [for (final e in resolved) e.label]);

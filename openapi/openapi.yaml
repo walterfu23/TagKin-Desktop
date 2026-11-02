@@ -3292,12 +3292,27 @@ components:
           description: >
             Optional face box for who detections from the VLM. Null for
             what/where/when and for who tags without a valid box.
+        placeKind:
+          allOf:
+            - $ref: "#/components/schemas/PlaceKind"
+          nullable: true
+          description: >
+            Where tags only. city is a place name (GPS pre-pass or a person).
+            scene is a setting (the model, or a person). Null on who/what/when.
+            A null where tag is still a city when source is metadata; otherwise
+            it is a scene.
         schemaVersion:
           type: integer
           minimum: 1
         createdAt:
           type: string
           format: date-time
+
+    PlaceKind:
+      type: string
+      description: >
+        Role of a where tag. city is a place name. scene is a setting.
+      enum: [city, scene]
 
     TagStatus:
       type: string
@@ -3323,6 +3338,13 @@ components:
           type: string
           format: uuid
           nullable: true
+        placeKind:
+          allOf:
+            - $ref: "#/components/schemas/PlaceKind"
+          nullable: true
+          description: >
+            Where only. city stores a place name; scene stores a setting.
+            Rejected on who, what, and when.
 
     EditTag:
       type: object

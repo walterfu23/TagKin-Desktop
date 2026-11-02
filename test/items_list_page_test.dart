@@ -285,6 +285,269 @@ void main() {
     expect(find.text('lake'), findsWidgets);
   });
 
+  testWidgets('Folders City field stores a city and leaves the scene', (
+    tester,
+  ) async {
+    final item = fixtureItem(
+      id: 'item_city',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {
+        'item_city': fixtureKnowledge(
+          item: item,
+          tags: [
+            fixtureTag(
+              id: 'scene_1',
+              itemId: 'item_city',
+              dimension: 'where',
+              value: 'restaurant',
+              placeKind: PlaceKind.scene,
+            ),
+          ],
+        ),
+      },
+    );
+    final corrections = FakeCorrectionsRepository(items: items);
+    await _pumpLibrary(tester, items: items, corrections: corrections);
+    await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('item-inline-where-city-field-item_city')),
+      'Taipei',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    expect(corrections.addTagCalls, hasLength(1));
+    expect(corrections.addTagCalls.single.input.placeKind, PlaceKind.city);
+    expect(corrections.addTagCalls.single.input.value, 'Taipei');
+    expect(
+      find.byKey(const Key('item-inline-where-field-scene_1')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('clicking a City suggestion fills the field', (tester) async {
+    final named = fixtureItem(
+      id: 'has_city',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final empty = fixtureItem(
+      id: 'no_city',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final items = FakeItemsRepository(
+      items: [named, empty],
+      knowledgeByItemId: {
+        'has_city': fixtureKnowledge(
+          item: named,
+          tags: [
+            fixtureTag(
+              id: 'city_kyoto',
+              itemId: 'has_city',
+              dimension: 'where',
+              value: 'Kyoto',
+              source: KnowledgeSource.human,
+              placeKind: PlaceKind.city,
+            ),
+          ],
+        ),
+        'no_city': fixtureKnowledge(
+          item: empty,
+          tags: [
+            fixtureTag(
+              id: 'scene_1',
+              itemId: 'no_city',
+              dimension: 'where',
+              value: 'restaurant',
+              placeKind: PlaceKind.scene,
+            ),
+          ],
+        ),
+      },
+    );
+    final corrections = FakeCorrectionsRepository(items: items);
+    await _pumpLibrary(tester, items: items, corrections: corrections);
+    await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const Key('item-inline-where-city-field-no_city')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const Key('item-inline-where-city-option-no_city-Kyoto')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(corrections.addTagCalls, hasLength(1));
+    expect(corrections.addTagCalls.single.itemId, 'no_city');
+    expect(corrections.addTagCalls.single.input.value, 'Kyoto');
+    expect(corrections.addTagCalls.single.input.placeKind, PlaceKind.city);
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const Key('item-inline-where-city-field-no_city')),
+          )
+          .controller!
+          .text,
+      'Kyoto',
+    );
+  });
+
+  testWidgets('two Where values are both shown', (tester) async {
+    final item = fixtureItem(
+      id: 'item_where_two',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(
+        items: [item],
+        knowledgeByItemId: {
+          'item_where_two': fixtureKnowledge(
+            item: item,
+            tags: [
+              fixtureTag(
+                id: 'city',
+                itemId: 'item_where_two',
+                dimension: 'where',
+                value: 'Taipei',
+                placeKind: PlaceKind.city,
+              ),
+              fixtureTag(
+                id: 'scene',
+                itemId: 'item_where_two',
+                dimension: 'where',
+                value: 'restaurant',
+                placeKind: PlaceKind.scene,
+              ),
+            ],
+          ),
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Taipei'), findsWidgets);
+    expect(find.text('restaurant'), findsWidgets);
+    expect(
+      find.byKey(const Key('item-where-more-item_where_two')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('three Where values keep +2 more', (tester) async {
+    final item = fixtureItem(
+      id: 'item_where_three',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(
+        items: [item],
+        knowledgeByItemId: {
+          'item_where_three': fixtureKnowledge(
+            item: item,
+            tags: [
+              fixtureTag(
+                id: 'city',
+                itemId: 'item_where_three',
+                dimension: 'where',
+                value: 'Taipei',
+                placeKind: PlaceKind.city,
+              ),
+              fixtureTag(
+                id: 'scene',
+                itemId: 'item_where_three',
+                dimension: 'where',
+                value: 'restaurant',
+                placeKind: PlaceKind.scene,
+              ),
+              fixtureTag(
+                id: 'scene2',
+                itemId: 'item_where_three',
+                dimension: 'where',
+                value: 'night market',
+                placeKind: PlaceKind.scene,
+              ),
+            ],
+          ),
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Taipei'), findsWidgets);
+    expect(find.text('+2 more'), findsOneWidget);
+    expect(find.text('restaurant'), findsNothing);
+  });
+
+  testWidgets('folder City fills only items that have no city', (
+    tester,
+  ) async {
+    const folder = 'file:///albums/20260506';
+    final withCity = fixtureItem(
+      id: 'has_city',
+      processingStatus: ProcessingStatus.tagged,
+      sourceRef: '$folder/a.jpg',
+    );
+    final without = fixtureItem(
+      id: 'no_city',
+      processingStatus: ProcessingStatus.tagged,
+      sourceRef: '$folder/b.jpg',
+    );
+    final items = FakeItemsRepository(
+      items: [withCity, without],
+      knowledgeByItemId: {
+        'has_city': fixtureKnowledge(
+          item: withCity,
+          tags: [
+            fixtureTag(
+              id: 'city_a',
+              itemId: 'has_city',
+              dimension: 'where',
+              value: 'Taipei',
+              source: KnowledgeSource.human,
+              placeKind: PlaceKind.city,
+            ),
+          ],
+        ),
+        'no_city': fixtureKnowledge(
+          item: without,
+          tags: [
+            fixtureTag(
+              id: 'scene_b',
+              itemId: 'no_city',
+              dimension: 'where',
+              value: 'restaurant',
+              placeKind: PlaceKind.scene,
+            ),
+          ],
+        ),
+      },
+    );
+    final corrections = FakeCorrectionsRepository(items: items);
+    await _pumpLibrary(tester, items: items, corrections: corrections);
+    await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('source-group-city-field-/albums/20260506')),
+      'Kyoto',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    expect(corrections.addTagCalls, hasLength(1));
+    expect(corrections.addTagCalls.single.itemId, 'no_city');
+    expect(corrections.addTagCalls.single.input.value, 'Kyoto');
+    expect(corrections.addTagCalls.single.input.placeKind, PlaceKind.city);
+  });
+
   testWidgets('Folders edit mode assigns a face to an existing person', (
     tester,
   ) async {

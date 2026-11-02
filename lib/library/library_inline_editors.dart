@@ -13,6 +13,8 @@ import 'package:tagkin_desktop/persons/person_assign_control.dart'
     show promptAssignPerson;
 import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 import 'package:tagkin_desktop/ui/alpha_order.dart';
+import 'package:tagkin_desktop/where/where_label_resolver.dart';
+import 'package:tagkin_desktop/where/where_place_label.dart';
 
 /// Face boxes for the enlarged thumb while Folders is in edit mode.
 List<HoverPreviewFace> folderHoverFaces({
@@ -84,11 +86,49 @@ class FolderInlineTags extends ConsumerWidget {
       dimension: dimension,
       period: period,
     );
+    final currentPeriod = period;
+    final periodTags = currentPeriod == null
+        ? const <Tag>[]
+        : groupPeriodTagsByDimension(currentPeriod)[dimension] ??
+            const <Tag>[];
+    final inherited = currentPeriod != null && periodTags.isEmpty;
+    final cityScope = dimension != 'where'
+        ? const <Tag>[]
+        : inherited
+            ? groupItemLevelTagsByDimension(knowledge.tags)['where'] ??
+                const <Tag>[]
+            : tags;
+    final city = dimension == 'where' ? cityWhereTag(cityScope) : null;
+    final scenes = dimension == 'where'
+        ? [for (final tag in tags) if (!whereTagIsCity(tag)) tag]
+        : tags;
+    final suggestions = dimension == 'where'
+        ? ref.read(libraryTableControllerProvider).cityNames()
+        : const <String>[];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (final tag in tags)
+        if (dimension == 'where')
+          _ResolvedCityField(
+            raw: city?.value ?? '',
+            field: (display) => FolderCityField(
+              key: Key('item-inline-where-city-$scopeId'),
+              fieldKey: Key('item-inline-where-city-field-$scopeId'),
+              optionKeyPrefix: 'item-inline-where-city-option-$scopeId',
+              value: display,
+              suggestions: suggestions,
+              onCommit: (next) => _commitCity(
+                ref,
+                context,
+                itemId: row.item.id,
+                period: inherited ? null : period,
+                city: city,
+                next: next,
+              ),
+            ),
+          ),
+        for (final tag in scenes)
           _CommitField(
             key: Key('item-inline-$dimension-${tag.id}'),
             fieldKey: Key('item-inline-$dimension-field-${tag.id}'),
@@ -118,6 +158,7 @@ class FolderInlineTags extends ConsumerWidget {
             period: period,
             tag: null,
             next: next,
+            placeKind: dimension == 'where' ? PlaceKind.scene : null,
           ),
         ),
       ],
@@ -133,6 +174,7 @@ Future<void> _commitTag(
   required KeyPeriodKnowledge? period,
   required Tag? tag,
   required String next,
+  PlaceKind? placeKind,
 }) async {
   final trimmed = next.trim();
   if (tag == null && trimmed.isEmpty) return;
@@ -147,6 +189,7 @@ Future<void> _commitTag(
       dimension: dimension,
       value: trimmed,
       keyPeriodId: period?.id,
+      placeKind: placeKind,
     );
   } else if (trimmed.isEmpty) {
     await review.removeTag(tag.id);
@@ -160,7 +203,321 @@ Future<void> _commitTag(
   }
 }
 
-/// Inline Comment field(s) for one Folders row.
+class _KeepExistingCity implements Exception {
+  const _KeepExistingCity();
+}
+
+Future<void> _commitCity(
+  WidgetRef ref,
+  BuildContext context, {
+  required String itemId,
+  required KeyPeriodKnowledge? period,
+  required Tag? city,
+  required String next,
+}) async {
+  final trimmed = next.trim();
+  if (city == null) {
+    if (trimmed.isEmpty) return;
+    await _commitTag(
+      ref,
+      context,
+      itemId: itemId,
+      dimension: 'where',
+      period: period,
+      tag: null,
+      next: trimmed,
+      placeKind: PlaceKind.city,
+    );
+    return;
+  }
+  if (trimmed == city.value.trim()) return;
+  if (trimmed.isEmpty) {
+    if (city.source == KnowledgeSource.metadata) {
+      throw const _KeepExistingCity();
+    }
+    await _commitTag(
+      ref,
+      context,
+      itemId: itemId,
+      dimension: 'where',
+      period: period,
+      tag: city,
+      next: '',
+    );
+    return;
+  }
+  await _commitTag(
+    ref,
+    context,
+    itemId: itemId,
+    dimension: 'where',
+    period: period,
+    tag: city,
+    next: trimmed,
+  );
+}
+
+/// Sets [name] on every item directly in [dir] that has no city yet.
+Future<void> applyFolderCity(
+  WidgetRef ref,
+  BuildContext context, {
+  required LibraryTableController controller,
+  required String dir,
+  required String name,
+}) async {
+  final trimmed = name.trim();
+  if (trimmed.isEmpty) return;
+  final messenger = ScaffoldMessenger.of(context);
+  final seen = <String>{};
+  for (final row in controller.allRows) {
+    if (row.sourceDir != dir) continue;
+    if (!seen.add(row.item.id)) continue;
+    final knowledge = row.knowledge;
+    if (knowledge == null) continue;
+    final existing = cityWhereTag(
+      groupItemLevelTagsByDimension(knowledge.tags)['where'] ?? const <Tag>[],
+    );
+    if (existing != null) continue;
+    final review = await ref.read(folderRowEditorProvider).open(row.item.id);
+    await review.addTag(
+      dimension: 'where',
+      value: trimmed,
+      placeKind: PlaceKind.city,
+    );
+    final error = review.mutationError;
+    if (error != null) {
+      messenger.showSnackBar(const SnackBar(content: Text('Could not save')));
+      throw error;
+    }
+  }
+}
+
+/// Shows a stored `lat,lng` city as its resolved label (`near <city>` or a name).
+class _ResolvedCityField extends ConsumerStatefulWidget {
+  const _ResolvedCityField({required this.raw, required this.field});
+
+  final String raw;
+  final Widget Function(String display) field;
+
+  @override
+  ConsumerState<_ResolvedCityField> createState() => _ResolvedCityFieldState();
+}
+
+class _ResolvedCityFieldState extends ConsumerState<_ResolvedCityField> {
+  String? _resolved;
+
+  @override
+  void initState() {
+    super.initState();
+    _load(widget.raw);
+  }
+
+  @override
+  void didUpdateWidget(_ResolvedCityField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.raw != widget.raw) {
+      _resolved = null;
+      _load(widget.raw);
+    }
+  }
+
+  void _load(String raw) {
+    if (parseLatLngTag(raw) == null) return;
+    ref.read(whereLabelResolverProvider).resolve(raw).then((label) {
+      if (!mounted || widget.raw != raw) return;
+      if (label.trim().isEmpty || label == raw) return;
+      setState(() => _resolved = label);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final display = parseLatLngTag(widget.raw) == null
+        ? widget.raw
+        : (_resolved ?? widget.raw);
+    return widget.field(display);
+  }
+}
+
+/// City name field. Suggestions are city names already in the open library.
+class FolderCityField extends StatefulWidget {
+  const FolderCityField({
+    super.key,
+    required this.fieldKey,
+    required this.optionKeyPrefix,
+    required this.value,
+    required this.suggestions,
+    required this.onCommit,
+    this.clearOnCommit = false,
+  });
+
+  final Key fieldKey;
+  final String optionKeyPrefix;
+  final String value;
+  final List<String> suggestions;
+  final Future<void> Function(String next) onCommit;
+  final bool clearOnCommit;
+
+  @override
+  State<FolderCityField> createState() => _FolderCityFieldState();
+}
+
+class _FolderCityFieldState extends State<FolderCityField> {
+  late final TextEditingController _controller;
+  late final FocusNode _focus;
+  bool _committing = false;
+  bool _picking = false;
+  Future<void>? _pickInFlight;
+  String? _committed;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.value);
+    _focus = FocusNode()..addListener(_onFocus);
+  }
+
+  @override
+  void didUpdateWidget(FolderCityField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.value == oldWidget.value) return;
+    if (widget.value.trim() == _committed) _committed = null;
+    if (!_focus.hasFocus) _controller.text = widget.value;
+  }
+
+  @override
+  void dispose() {
+    _focus.removeListener(_onFocus);
+    _focus.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onFocus() {
+    if (_focus.hasFocus || !_picking) setState(() {});
+    if (!_focus.hasFocus && !_picking) unawaited(_commit());
+  }
+
+  List<String> get _matches {
+    final query = _controller.text.trim().toLowerCase();
+    final out = <String>[];
+    for (final name in widget.suggestions) {
+      if (query.isNotEmpty && !name.toLowerCase().contains(query)) continue;
+      if (name.toLowerCase() == query) continue;
+      out.add(name);
+      if (out.length == 8) break;
+    }
+    return out;
+  }
+
+  Future<void> _commit() async {
+    if (_committing) return;
+    final next = _controller.text.trim();
+    if (next == widget.value.trim() || next == _committed) return;
+    _committing = true;
+    try {
+      await widget.onCommit(_controller.text);
+      _committed = next;
+      if (!mounted) return;
+      if (widget.clearOnCommit) {
+        _controller.text = '';
+        _committed = null;
+      }
+    } on _KeepExistingCity {
+      _committed = null;
+      if (!mounted) return;
+      _controller.text = widget.value;
+    } catch (_) {
+      _committed = null;
+      if (!mounted) return;
+      _controller.text = widget.value;
+    } finally {
+      _committing = false;
+    }
+  }
+
+  void _revert() {
+    _controller.text = widget.value;
+    _focus.unfocus();
+  }
+
+  void _beginPick(String name) {
+    if (_pickInFlight != null) return;
+    _picking = true;
+    _controller.text = name;
+    _pickInFlight = _finishPick();
+  }
+
+  Future<void> _finishPick() async {
+    try {
+      await _commit();
+    } finally {
+      _pickInFlight = null;
+      if (mounted) _focus.unfocus();
+      _picking = false;
+      if (mounted) setState(() {});
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final matches = _focus.hasFocus ? _matches : const <String>[];
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): _revert,
+      },
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              key: widget.fieldKey,
+              controller: _controller,
+              focusNode: _focus,
+              style: Theme.of(context).textTheme.bodySmall,
+              textInputAction: TextInputAction.done,
+              decoration: const InputDecoration(
+                isDense: true,
+                hintText: 'City',
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 6,
+                  vertical: 8,
+                ),
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (_) => setState(() {}),
+              onSubmitted: (_) {
+                unawaited(_commit());
+                _focus.unfocus();
+              },
+            ),
+            for (final name in matches)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Listener(
+                  onPointerDown: (_) => _beginPick(name),
+                  child: TextButton(
+                    key: Key('${widget.optionKeyPrefix}-$name'),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => _beginPick(name),
+                    child: Text(name),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class FolderInlineComment extends ConsumerWidget {
   const FolderInlineComment({
     super.key,

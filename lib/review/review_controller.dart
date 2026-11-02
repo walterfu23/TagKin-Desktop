@@ -9,6 +9,7 @@ import 'package:tagkin_desktop/app_shell.dart'
         correctionsRepositoryProvider,
         itemsRepositoryProvider;
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/undo/undo_controller.dart';
 import 'package:tagkin_desktop/undo/undoable_action.dart';
@@ -103,6 +104,7 @@ class ReviewController extends ChangeNotifier {
     required String dimension,
     required String value,
     String? keyPeriodId,
+    PlaceKind? placeKind,
   }) async {
     if (!canMutate) return;
     final snapshot = knowledge!;
@@ -114,6 +116,7 @@ class ReviewController extends ChangeNotifier {
       value: value,
       source: KnowledgeSource.human,
       status: TagStatus.active,
+      placeKind: placeKind,
       schemaVersion: 1,
       createdAt: DateTime.now().toUtc().toIso8601String(),
     );
@@ -125,7 +128,12 @@ class ReviewController extends ChangeNotifier {
     try {
       final result = await correctionsRepository.addTag(
         itemId,
-        AddTag(dimension: dimension, value: value, keyPeriodId: keyPeriodId),
+        AddTag(
+          dimension: dimension,
+          value: value,
+          keyPeriodId: keyPeriodId,
+          placeKind: placeKind,
+        ),
       );
       if (_disposed) return;
       await _reconcileKnowledge();
@@ -743,6 +751,8 @@ class ReviewController extends ChangeNotifier {
             confidence: t.confidence,
             provider: t.provider,
             modelId: t.modelId,
+            placeKind: t.placeKind ??
+                (whereTagIsCity(t) ? PlaceKind.city : null),
             schemaVersion: t.schemaVersion,
             createdAt: t.createdAt,
           )

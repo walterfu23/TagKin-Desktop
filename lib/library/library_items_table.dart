@@ -147,6 +147,16 @@ class LibraryItemsTable extends ConsumerWidget {
                                               count: count,
                                               collapsed: collapsed,
                                               depth: depth,
+                                              editMode: editMode,
+                                              citySuggestions: controller
+                                                  .cityNames(),
+                                              onCity: (name) => applyFolderCity(
+                                                ref,
+                                                context,
+                                                controller: controller,
+                                                dir: dir,
+                                                name: name,
+                                              ),
                                               failedCount: _failedCountUnder(
                                                 controller,
                                                 dir,
@@ -673,6 +683,9 @@ class _PathGroupHeader extends StatelessWidget {
     required this.count,
     required this.collapsed,
     required this.depth,
+    required this.editMode,
+    required this.citySuggestions,
+    required this.onCity,
     required this.failedCount,
     this.retryTooltip = 'Retry failed items',
     required this.onToggle,
@@ -691,6 +704,9 @@ class _PathGroupHeader extends StatelessWidget {
   final int count;
   final bool collapsed;
   final int depth;
+  final bool editMode;
+  final List<String> citySuggestions;
+  final Future<void> Function(String name) onCity;
   final int failedCount;
   final String retryTooltip;
   final VoidCallback onToggle;
@@ -715,9 +731,12 @@ class _PathGroupHeader extends StatelessWidget {
       color: zebra ? _kZebraRow : Colors.transparent,
       child: InkWell(
         key: Key('source-group-$dir'),
-        onTap: onToggle,
-        child: SizedBox(
-          height: 40,
+        onTap: editMode ? null : onToggle,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minHeight: editMode ? 52 : 40,
+            maxHeight: editMode ? double.infinity : 40,
+          ),
           child: Padding(
             padding: EdgeInsets.only(left: 4 + depth * _kPathIndent, right: 8),
             child: Row(
@@ -782,6 +801,22 @@ class _PathGroupHeader extends StatelessWidget {
                     },
                   ),
                 ),
+                if (editMode)
+                  SizedBox(
+                    width: _kColWhere,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: FolderCityField(
+                        key: Key('source-group-city-$dir'),
+                        fieldKey: Key('source-group-city-field-$dir'),
+                        optionKeyPrefix: 'source-group-city-option-$dir',
+                        value: '',
+                        suggestions: citySuggestions,
+                        clearOnCommit: true,
+                        onCommit: onCity,
+                      ),
+                    ),
+                  ),
                 removing
                     ? const SizedBox(
                         width: 32,
@@ -1215,8 +1250,9 @@ class _WhereValues extends ConsumerWidget {
       );
     }
     final familiarCsv = ref.watch(desktopPrefsProvider).familiarRegions;
-    final shown = expanded ? entries : entries.take(1).toList();
-    final more = entries.length - 1;
+    final collapse = !expanded && entries.length >= 3;
+    final shown = collapse ? entries.take(1).toList() : entries;
+    final more = entries.length >= 3 ? entries.length - 1 : 0;
     return ClipRect(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1376,6 +1412,7 @@ int _whoNamesFitting({
 }
 
 /// Library Who: as many names as fit, tooltip lists every name, +N more on overflow.
+/// Exactly two names are both shown.
 class _WhoValues extends StatelessWidget {
   const _WhoValues({
     required this.itemId,
@@ -1408,12 +1445,14 @@ class _WhoValues extends StatelessWidget {
       );
     }
     final style = DefaultTextStyle.of(context).style;
-    final collapsedFit = _whoNamesFitting(
-      names: values,
-      style: style,
-      maxWidth: _kWhoTextWidth,
-      maxLines: _kWhoCollapsedMaxLines,
-    );
+    final collapsedFit = values.length == 2
+        ? 2
+        : _whoNamesFitting(
+            names: values,
+            style: style,
+            maxWidth: _kWhoTextWidth,
+            maxLines: _kWhoCollapsedMaxLines,
+          );
     final overflowCount = values.length - collapsedFit;
     final shown = expanded ? values : values.take(collapsedFit).toList();
     final allNames = values.join(', ');
@@ -1496,8 +1535,9 @@ class _ExpandableValues extends StatelessWidget {
         style: Theme.of(context).textTheme.bodySmall,
       );
     }
-    final shown = expanded ? values : values.take(1).toList();
-    final more = values.length - 1;
+    final collapse = !expanded && values.length >= 3;
+    final shown = collapse ? values.take(1).toList() : values;
+    final more = values.length >= 3 ? values.length - 1 : 0;
     return ClipRect(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

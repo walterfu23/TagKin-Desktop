@@ -162,6 +162,23 @@ List<String> whatColumnValuesForPeriod(KeyPeriodKnowledge period) {
   ], (v) => v);
 }
 
+/// True when [tag] is a place name: explicit city, or a metadata where tag
+/// that predates [PlaceKind] (GPS pre-pass). Scene tags stay false.
+bool whereTagIsCity(Tag tag) {
+  if (tag.dimension != 'where' || tag.status != TagStatus.active) return false;
+  if (tag.placeKind == PlaceKind.scene) return false;
+  if (tag.placeKind == PlaceKind.city) return true;
+  return tag.source == KnowledgeSource.metadata;
+}
+
+/// First active city where tag in [tags], if any.
+Tag? cityWhereTag(Iterable<Tag> tags) {
+  for (final tag in tags) {
+    if (whereTagIsCity(tag)) return tag;
+  }
+  return null;
+}
+
 /// Raw where values for a period; falls back to [itemLevelWhereRaw] when the
 /// period has none (GPS/scene is often item-level).
 List<String> whereRawForPeriod(

@@ -25,15 +25,34 @@ class DefaultReverseGeocoder implements ReverseGeocoder {
 
   @override
   Future<PlaceParts?> reverse(double lat, double lng) async {
+    PlaceParts? parts;
     if (_supportsPlatformGeocoder) {
       try {
-        final parts = await _platformReverse(lat, lng);
-        if (parts != null) return parts;
+        parts = await _platformReverse(lat, lng);
       } catch (_) {
         // Fall through to Nominatim.
       }
     }
-    return _nominatimReverse(lat, lng);
+    if (_named(parts?.locality)) return parts;
+    final detailed = await _nominatimReverse(lat, lng);
+    if (_named(detailed?.locality)) return detailed;
+    final near = await _nominatimReverse(lat, lng, zoom: 10);
+    if (_named(near?.locality)) {
+      return PlaceParts(
+        locality: near!.locality,
+        administrativeArea: near.administrativeArea ?? parts?.administrativeArea,
+        country: near.country ?? detailed?.country ?? parts?.country,
+        isoCountryCode:
+            near.isoCountryCode ?? detailed?.isoCountryCode ?? parts?.isoCountryCode,
+        approximate: true,
+      );
+    }
+    return parts ?? detailed;
+  }
+
+  bool _named(String? value) {
+    final trimmed = value?.trim();
+    return trimmed != null && trimmed.isNotEmpty;
   }
 
   bool get _supportsPlatformGeocoder {
@@ -56,13 +75,19 @@ class DefaultReverseGeocoder implements ReverseGeocoder {
     );
   }
 
-  Future<PlaceParts?> _nominatimReverse(double lat, double lng) async {
-    final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
+  Future<PlaceParts?> _nominatimReverse(
+    double lat,
+    double lng, {
+    int? zoom,
+  }) async {
+    final query = <String, String>{
       'lat': lat.toString(),
       'lon': lng.toString(),
       'format': 'json',
       'addressdetails': '1',
-    });
+    };
+    if (zoom != null) query['zoom'] = '$zoom';
+    final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', query);
     final response = await _http.get(
       uri,
       headers: {
@@ -85,14 +110,7 @@ class DefaultReverseGeocoder implements ReverseGeocoder {
     }
 
     return PlaceParts(
-      locality: pick(const [
-        'city',
-        'town',
-        'village',
-        'municipality',
-        'hamlet',
-        'suburb',
-      ]),
+      locality: pick(const ['city', 'town', 'village', 'municipality']),
       administrativeArea: pick(const [
         'state',
         'province',

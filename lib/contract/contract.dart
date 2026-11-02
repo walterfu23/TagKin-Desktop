@@ -64,16 +64,19 @@ class AddTag {
     required this.dimension,
     required this.value,
     this.keyPeriodId,
+    this.placeKind,
   });
 
   final String dimension;
   final String value;
   final String? keyPeriodId;
+  final PlaceKind? placeKind;
 
   factory AddTag.fromJson(Map<String, dynamic> json) => AddTag(
         dimension: json['dimension'] as String,
         value: json['value'] as String,
         keyPeriodId: json['keyPeriodId'] == null ? null : json['keyPeriodId'] as String,
+        placeKind: json['placeKind'] == null ? null : PlaceKind.fromWire(json['placeKind'] as String),
       );
 
   Map<String, dynamic> toJson() {
@@ -81,6 +84,7 @@ class AddTag {
     json['dimension'] = dimension;
     json['value'] = value;
     if (keyPeriodId != null) json['keyPeriodId'] = keyPeriodId;
+    if (placeKind != null) json['placeKind'] = placeKind?.wire;
     return json;
   }
 }
@@ -2037,6 +2041,25 @@ class PersonDetail {
   }
 }
 
+enum PlaceKind {
+  city('city'),
+  scene('scene');
+
+  const PlaceKind(this.wire);
+
+  final String wire;
+
+  static PlaceKind fromWire(String value) {
+    for (final e in values) {
+      if (e.wire == value) return e;
+    }
+    throw FormatException('Unknown PlaceKind: $value');
+  }
+
+  @override
+  String toString() => wire;
+}
+
 class PrePassAppearanceInput {
   const PrePassAppearanceInput({
     this.keyPeriodIndex,
@@ -2538,6 +2561,7 @@ class Tag {
     this.provider,
     this.modelId,
     this.region,
+    this.placeKind,
     required this.schemaVersion,
     required this.createdAt,
   });
@@ -2554,6 +2578,7 @@ class Tag {
   final String? provider;
   final String? modelId;
   final TagRegion? region;
+  final PlaceKind? placeKind;
   final int schemaVersion;
   final String createdAt;
 
@@ -2570,6 +2595,7 @@ class Tag {
         provider: json['provider'] == null ? null : json['provider'] as String,
         modelId: json['modelId'] == null ? null : json['modelId'] as String,
         region: json['region'] == null ? null : TagRegion.fromJson(json['region'] as Map<String, dynamic>),
+        placeKind: json['placeKind'] == null ? null : PlaceKind.fromWire(json['placeKind'] as String),
         schemaVersion: (json['schemaVersion'] as num).toInt(),
         createdAt: json['createdAt'] as String,
       );
@@ -2588,6 +2614,7 @@ class Tag {
     if (provider != null) json['provider'] = provider;
     if (modelId != null) json['modelId'] = modelId;
     if (region != null) json['region'] = region?.toJson();
+    if (placeKind != null) json['placeKind'] = placeKind?.wire;
     json['schemaVersion'] = schemaVersion;
     json['createdAt'] = createdAt;
     return json;

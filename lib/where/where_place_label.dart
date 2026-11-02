@@ -3,6 +3,18 @@ import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 
+final RegExp _nearCityTag = RegExp(r'^near\s+(.+)$', caseSensitive: false);
+
+/// City inside a stored `near <city>` label. Null when [value] is not that form.
+String? parseNearCity(String value) {
+  final match = _nearCityTag.firstMatch(value.trim());
+  if (match == null) return null;
+  final city = match.group(1)!.trim();
+  if (city.isEmpty) return null;
+  if (!RegExp(r'\p{L}', unicode: true).hasMatch(city)) return null;
+  return city;
+}
+
 /// Parsed GPS where-tag (`"lat,lng"` as stored by pre-pass).
 class LatLng {
   const LatLng(this.lat, this.lng);
@@ -18,10 +30,14 @@ class PlaceParts {
     this.administrativeArea,
     this.country,
     this.isoCountryCode,
+    this.approximate = false,
   });
 
   /// City / town / village.
   final String? locality;
+
+  /// True when [locality] is the nearest city, not the place itself.
+  final bool approximate;
 
   /// State / province / region (geocoder `administrativeArea`).
   final String? administrativeArea;
@@ -204,6 +220,9 @@ WhereDisplay formatWhereDisplay(
   bool showStateWhenSameState = false,
 }) {
   final city = _clean(place.locality);
+  if (place.approximate && city != null) {
+    return WhereDisplay(label: 'near $city', locality: city);
+  }
   final regionName = _clean(place.administrativeArea);
   final country = _clean(place.country);
   final placeCountry = _normalizeCountryCode(place.isoCountryCode);
@@ -255,10 +274,11 @@ bool isWholeWordPrefix(String prefix, String full) {
   return !_unicodeLetter.hasMatch(f[p.length]);
 }
 
-/// Drops empty labels and case-insensitive exact duplicates. GPS city
-/// ([WhereDisplay.locality]) is never omitted; a scene that starts with that
-/// city loses the repeated city prefix instead. Other labels that are a
-/// whole-word prefix of a more specific remaining label are still omitted.
+/// Drops empty labels and case-insensitive exact duplicates. A city
+/// ([WhereDisplay.locality]) is shown first and is never omitted; a scene
+/// that starts with that city loses the repeated city prefix instead. Other
+/// labels that are a whole-word prefix of a more specific remaining label
+/// are still omitted.
 List<WhereDisplay> collapseWhereDisplays(Iterable<WhereDisplay> entries) {
   final unique = <WhereDisplay>[];
   final seen = <String>{};
@@ -287,7 +307,12 @@ List<WhereDisplay> collapseWhereDisplays(Iterable<WhereDisplay> entries) {
     if (!strippedSeen.add(label.toLowerCase())) continue;
     stripped.add(label == next.label ? next : next.copyWith(label: label));
   }
-  return stripped;
+  return [
+    for (final e in stripped)
+      if (_isCityDisplay(e, cities)) e,
+    for (final e in stripped)
+      if (!_isCityDisplay(e, cities)) e,
+  ];
 }
 
 bool _isCityDisplay(WhereDisplay e, Set<String> cities) {

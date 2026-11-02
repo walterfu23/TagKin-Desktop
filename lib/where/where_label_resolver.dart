@@ -60,6 +60,32 @@ class WhereLabelResolver {
     return out;
   }
 
+  /// A city name (typed or GPS metadata) keeps [WhereDisplay.locality] so
+  /// collapse retains it and strips a repeated prefix from a scene.
+  /// Coordinates still reverse-geocode.
+  Future<WhereDisplay> resolveTagged(String rawValue, {required bool city}) {
+    if (!city || parseLatLngTag(rawValue) != null) {
+      return resolveDisplay(rawValue);
+    }
+    final name = rawValue.trim();
+    if (name.isEmpty) return Future.value(WhereDisplay.plain(rawValue));
+    final near = parseNearCity(name);
+    if (near != null) {
+      return Future.value(WhereDisplay(label: name, locality: near));
+    }
+    return Future.value(WhereDisplay(label: name, locality: name));
+  }
+
+  Future<List<WhereDisplay>> resolveTaggedAll(
+    Iterable<({String value, bool city})> entries,
+  ) async {
+    final out = <WhereDisplay>[];
+    for (final entry in entries) {
+      out.add(await resolveTagged(entry.value, city: entry.city));
+    }
+    return out;
+  }
+
   Future<List<String>> resolveAll(Iterable<String> values) async {
     return [
       for (final d in await resolveAllDisplays(values)) d.label,

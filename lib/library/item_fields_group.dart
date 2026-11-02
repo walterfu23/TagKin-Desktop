@@ -241,6 +241,7 @@ class _KnowledgeField extends StatelessWidget {
       value = WhereValuesText(
         key: const Key('knowledge-where'),
         values: [for (final tag in tags) tag.value],
+        cities: [for (final tag in tags) whereTagIsCity(tag)],
       );
     } else {
       final shown = dimension == 'when'

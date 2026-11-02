@@ -1,6 +1,7 @@
 import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/api/corrections_repository.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
+import 'package:tagkin_desktop/review/knowledge_grouping.dart';
 
 import 'fake_items_repository.dart';
 
@@ -78,6 +79,7 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
       value: input.value,
       source: KnowledgeSource.human,
       status: TagStatus.active,
+      placeKind: input.placeKind,
       schemaVersion: 1,
       createdAt: '2026-07-20T12:00:00.000Z',
     );
@@ -87,12 +89,17 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
       previousValue: null,
       newValue: input.value,
     );
+    List<Tag> keepCitySingle(List<Tag> tags) {
+      if (input.placeKind != PlaceKind.city) return tags;
+      return [for (final existing in tags) if (!whereTagIsCity(existing)) existing];
+    }
+
     if (input.keyPeriodId == null) {
       items.setKnowledge(
         itemId,
         ItemKnowledge(
           item: knowledge.item,
-          tags: [...knowledge.tags, tag],
+          tags: [...keepCitySingle(knowledge.tags), tag],
           keyPeriods: knowledge.keyPeriods,
           appearances: knowledge.appearances,
           corrections: [...knowledge.corrections, correction],
@@ -113,7 +120,7 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
                   itemId: kp.itemId,
                   startMs: kp.startMs,
                   endMs: kp.endMs,
-                  tags: [...kp.tags, tag],
+                  tags: [...keepCitySingle(kp.tags), tag],
                 )
               else
                 kp,
@@ -145,6 +152,8 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
         value: input.value,
         source: KnowledgeSource.human,
         status: TagStatus.active,
+        placeKind: existing.placeKind ??
+            (whereTagIsCity(existing) ? PlaceKind.city : null),
         correctedFromTagId: existing.id,
         schemaVersion: 1,
         createdAt: '2026-07-20T12:00:00.000Z',

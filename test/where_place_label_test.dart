@@ -26,6 +26,21 @@ void main() {
     });
   });
 
+  group('near city', () {
+    test('parseNearCity reads the city', () {
+      expect(parseNearCity('near Taipei'), 'Taipei');
+      expect(parseNearCity('Taipei'), isNull);
+    });
+
+    test('approximate place displays near the city', () {
+      final display = formatWhereDisplay(
+        const PlaceParts(locality: 'Austin', approximate: true),
+      );
+      expect(display.label, 'near Austin');
+      expect(display.locality, 'Austin');
+    });
+  });
+
   group('formatWherePlaceLabel', () {
     const sf = PlaceParts(
       locality: 'San Francisco',
@@ -465,6 +480,25 @@ void main() {
       expect(await resolver.resolve('37.77,-122.42'), 'San Francisco, CA');
     });
 
+    test('shows near city when the place is approximate', () async {
+      final resolver = WhereLabelResolver(
+        geocoder: FakeReverseGeocoder({
+          FakeReverseGeocoder.key(30.27, -97.74): const PlaceParts(
+            locality: 'Austin',
+            approximate: true,
+          ),
+        }),
+        deviceCountryCodeProvider: () => 'US',
+      );
+      expect(await resolver.resolve('30.27,-97.74'), 'near Austin');
+      final tagged = await resolver.resolveTagged(
+        'near Taipei',
+        city: true,
+      );
+      expect(tagged.label, 'near Taipei');
+      expect(tagged.locality, 'Taipei');
+    });
+
     test('keeps raw coords when geocode returns nothing', () async {
       final resolver = WhereLabelResolver(
         geocoder: FakeReverseGeocoder({}),
@@ -475,6 +509,32 @@ void main() {
   });
 
   group('collapseWhereDisplays', () {
+    test('shows the city before a scene that was listed first', () {
+      expect(
+        [
+          for (final e in collapseWhereDisplays([
+            WhereDisplay.plain('restaurant'),
+            const WhereDisplay(label: 'Taipei', locality: 'Taipei'),
+          ]))
+            e.label,
+        ],
+        ['Taipei', 'restaurant'],
+      );
+    });
+
+    test('keeps near city and strips that city from the scene', () {
+      expect(
+        [
+          for (final e in collapseWhereDisplays([
+            const WhereDisplay(label: 'near Taipei', locality: 'Taipei'),
+            WhereDisplay.plain('Taipei restaurant'),
+          ]))
+            e.label,
+        ],
+        ['near Taipei', 'restaurant'],
+      );
+    });
+
     test('keeps city and strips that prefix from the scene', () {
       expect(
         [

@@ -250,6 +250,129 @@ void main() {
     expect(row.where, ['Los Altos, CA', 'parking lot']);
   });
 
+  test('typed city stays and scene loses the repeated city prefix', () async {
+    final item = fixtureItem(
+      id: 'g',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {
+        'g': fixtureKnowledge(
+          item: item,
+          tags: [
+            fixtureTag(
+              id: 'city',
+              itemId: 'g',
+              dimension: 'where',
+              value: 'Taipei',
+              source: KnowledgeSource.human,
+              placeKind: PlaceKind.city,
+            ),
+            fixtureTag(
+              id: 'scene',
+              itemId: 'g',
+              dimension: 'where',
+              value: 'Taipei restaurant',
+              placeKind: PlaceKind.scene,
+            ),
+          ],
+        ),
+      },
+    );
+    final controller = LibraryTableController(
+      itemsRepository: items,
+      commentsRepository: FakeCommentsRepository(),
+      thumbCache: LocalThumbCache(),
+    );
+    await controller.load();
+    await _awaitKnowledge(controller);
+
+    final row = controller.allRows.single;
+    expect(row.where, ['Taipei', 'restaurant']);
+  });
+
+  test('near city stays and the scene loses that city prefix', () async {
+    final item = fixtureItem(
+      id: 'g',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {
+        'g': fixtureKnowledge(
+          item: item,
+          tags: [
+            fixtureTag(
+              id: 'city',
+              itemId: 'g',
+              dimension: 'where',
+              value: 'near Taipei',
+              source: KnowledgeSource.metadata,
+              placeKind: PlaceKind.city,
+            ),
+            fixtureTag(
+              id: 'scene',
+              itemId: 'g',
+              dimension: 'where',
+              value: 'Taipei restaurant',
+              placeKind: PlaceKind.scene,
+            ),
+          ],
+        ),
+      },
+    );
+    final controller = LibraryTableController(
+      itemsRepository: items,
+      commentsRepository: FakeCommentsRepository(),
+      thumbCache: LocalThumbCache(),
+    );
+    await controller.load();
+    await _awaitKnowledge(controller);
+
+    final row = controller.allRows.single;
+    expect(row.where, ['near Taipei', 'restaurant']);
+  });
+
+  test('metadata where without placeKind is still a city', () async {
+    final item = fixtureItem(
+      id: 'g',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {
+        'g': fixtureKnowledge(
+          item: item,
+          tags: [
+            fixtureTag(
+              id: 'gps',
+              itemId: 'g',
+              dimension: 'where',
+              value: 'Taipei',
+              source: KnowledgeSource.metadata,
+            ),
+            fixtureTag(
+              id: 'scene',
+              itemId: 'g',
+              dimension: 'where',
+              value: 'Taipei night market',
+            ),
+          ],
+        ),
+      },
+    );
+    final controller = LibraryTableController(
+      itemsRepository: items,
+      commentsRepository: FakeCommentsRepository(),
+      thumbCache: LocalThumbCache(),
+    );
+    await controller.load();
+    await _awaitKnowledge(controller);
+
+    expect(controller.allRows.single.where, ['Taipei', 'night market']);
+  });
+
   test(
     'sort cycles asc → desc → none; multiColumn appends tie-break keys',
     () async {

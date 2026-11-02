@@ -1185,30 +1185,26 @@ class LibraryTableController extends ChangeNotifier {
     _notify();
   }
 
-  /// Re-resolve display where labels from [LibraryTableRow.whereRaw] (prefs change).
+  /// Re-resolve display where labels from loaded knowledge (prefs change).
   Future<void> refreshWhereLabels() async {
     final snapshot = List<LibraryTableRow>.from(_rows);
     for (final row in snapshot) {
       if (!row.knowledgeLoaded) continue;
-      if (row.whereRaw.isEmpty && row.periodSummaries.isEmpty) continue;
-      List<WhereDisplay>? itemWhere;
-      if (row.whereRaw.isNotEmpty) {
-        itemWhere = collapseWhereDisplays(
-          await _whereLabels.resolveAllDisplays(row.whereRaw),
-        );
-      }
+      final knowledge = row.knowledge;
+      if (knowledge == null) continue;
+      final itemTags = groupDisplayTagsByDimension(knowledge)['where']!;
+      final itemWhere = itemTags.isEmpty
+          ? null
+          : await _resolveWhereTags(itemTags);
       final periodSummaries = <PeriodFolderSummary>[];
       for (final summary in row.periodSummaries) {
-        if (summary.whereRaw.isEmpty) {
+        final tags = _whereTagsForPeriod(knowledge, summary.period);
+        if (tags.isEmpty) {
           periodSummaries.add(summary.copyWith(whereEntries: const []));
           continue;
         }
         periodSummaries.add(
-          summary.copyWith(
-            whereEntries: collapseWhereDisplays(
-              await _whereLabels.resolveAllDisplays(summary.whereRaw),
-            ),
-          ),
+          summary.copyWith(whereEntries: await _resolveWhereTags(tags)),
         );
       }
       _replaceRow(
@@ -1219,6 +1215,52 @@ class LibraryTableController extends ChangeNotifier {
         ),
       );
     }
+  }
+
+  /// City names already stored on loaded rows (suggestions for the City field).
+  List<String> cityNames() {
+    final seen = <String>{};
+    final out = <String>[];
+    void add(Tag tag) {
+      if (!whereTagIsCity(tag)) return;
+      if (parseLatLngTag(tag.value) != null) return;
+      final name = tag.value.trim();
+      if (name.isEmpty) return;
+      if (!seen.add(name.toLowerCase())) return;
+      out.add(name);
+    }
+
+    for (final row in _rows) {
+      final knowledge = row.knowledge;
+      if (knowledge == null) continue;
+      for (final tag in knowledge.tags) {
+        add(tag);
+      }
+      for (final period in knowledge.keyPeriods) {
+        for (final tag in period.tags) {
+          add(tag);
+        }
+      }
+    }
+    out.sort(compareLabelsAlpha);
+    return out;
+  }
+
+  Future<List<WhereDisplay>> _resolveWhereTags(List<Tag> tags) {
+    return _whereLabels
+        .resolveTaggedAll([
+          for (final tag in tags) (value: tag.value, city: whereTagIsCity(tag)),
+        ])
+        .then(collapseWhereDisplays);
+  }
+
+  List<Tag> _whereTagsForPeriod(
+    ItemKnowledge knowledge,
+    KeyPeriodKnowledge period,
+  ) {
+    final periodTags = groupPeriodTagsByDimension(period)['where']!;
+    if (periodTags.isNotEmpty) return periodTags;
+    return groupItemLevelTagsByDimension(knowledge.tags)['where']!;
   }
 
   void setPage(int index) {
@@ -1441,18 +1483,12 @@ class LibraryTableController extends ChangeNotifier {
           knowledgeSeq: seq,
         ),
       );
-      final whereEntries = collapseWhereDisplays(
-        await _whereLabels.resolveAllDisplays(whereRaw),
-      );
+      final whereEntries = await _resolveWhereTags(grouped['where']!);
       if (!_seqCurrent(_knowledgeSeq, id, seq, loadGen: loadGen)) return;
       final whereByPeriod = <String, List<WhereDisplay>>{};
       for (final period in foldersKeyPeriodTiles(knowledge.keyPeriods)) {
-        final periodWhereRaw = whereRawForPeriod(
-          period,
-          itemLevelWhereRaw: itemWhereRaw,
-        );
-        whereByPeriod[period.id] = collapseWhereDisplays(
-          await _whereLabels.resolveAllDisplays(periodWhereRaw),
+        whereByPeriod[period.id] = await _resolveWhereTags(
+          _whereTagsForPeriod(knowledge, period),
         );
         if (!_seqCurrent(_knowledgeSeq, id, seq, loadGen: loadGen)) return;
       }
