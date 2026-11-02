@@ -150,31 +150,41 @@ class CollectionUiState {
   const CollectionUiState({
     this.library = const CollectionLibraryUi(),
     this.faces = const CollectionFacesUi(),
+    this.themeId,
   });
 
   final CollectionLibraryUi library;
   final CollectionFacesUi faces;
+
+  /// Named color theme for this collection. Null uses the global theme
+  /// until Settings stamps one.
+  final String? themeId;
 
   static const empty = CollectionUiState();
 
   CollectionUiState copyWith({
     CollectionLibraryUi? library,
     CollectionFacesUi? faces,
+    String? themeId,
+    bool clearThemeId = false,
   }) {
     return CollectionUiState(
       library: library ?? this.library,
       faces: faces ?? this.faces,
+      themeId: clearThemeId ? null : (themeId ?? this.themeId),
     );
   }
 
   Map<String, Object?> toJson() => {
     if (library != const CollectionLibraryUi()) 'library': library.toJson(),
     if (faces != const CollectionFacesUi()) 'faces': faces.toJson(),
+    if (themeId != null && themeId!.isNotEmpty) 'themeId': themeId,
   };
 
   factory CollectionUiState.fromJson(Map<String, dynamic> json) {
     final lib = json['library'];
     final faces = json['faces'];
+    final theme = json['themeId'];
     return CollectionUiState(
       library: lib is Map
           ? CollectionLibraryUi.fromJson(
@@ -186,6 +196,7 @@ class CollectionUiState {
               faces.map((k, v) => MapEntry(k.toString(), v)),
             )
           : const CollectionFacesUi(),
+      themeId: theme is String && theme.isNotEmpty ? theme : null,
     );
   }
 
@@ -193,10 +204,11 @@ class CollectionUiState {
   bool operator ==(Object other) =>
       other is CollectionUiState &&
       other.library == library &&
-      other.faces == faces;
+      other.faces == faces &&
+      other.themeId == themeId;
 
   @override
-  int get hashCode => Object.hash(library, faces);
+  int get hashCode => Object.hash(library, faces, themeId);
 }
 
 class CollectionLibraryUi {

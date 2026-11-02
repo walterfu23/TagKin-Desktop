@@ -1,5 +1,6 @@
 import 'package:tagkin_desktop/item_lists/export_photo_transition.dart';
 import 'package:tagkin_desktop/item_lists/export_sequence_size.dart';
+import 'package:tagkin_desktop/theme/theme_palettes.dart';
 import 'package:tagkin_desktop/ui/format_local_datetime.dart';
 import 'package:tagkin_desktop/where/where_place_label.dart';
 
@@ -37,6 +38,8 @@ class DesktopPrefs {
     this.exportSoundtrackUnderVideoPercent = 5,
     this.exportMusicLoopCount = 2,
     this.requireSecondFactor = true,
+    this.themeId = kDefaultThemeId,
+    this.themeScope = ThemeScope.all,
   });
 
   /// When true, include country even if place country matches device locale.
@@ -103,6 +106,12 @@ class DesktopPrefs {
   /// stops until one is added. A saved session is not interrupted. An
   /// enrolled factor is still asked for when this is off.
   final bool requireSecondFactor;
+
+  /// Named color theme. Default Cream.
+  final String themeId;
+
+  /// All collections, or the open collection only. Default is all.
+  final ThemeScope themeScope;
 
   /// How Captured / Added / When / comment timestamps are shown.
   final DateTimeDisplayFormat dateTimeFormat;
@@ -305,6 +314,8 @@ class DesktopPrefs {
     int? exportSoundtrackUnderVideoPercent,
     int? exportMusicLoopCount,
     bool? requireSecondFactor,
+    String? themeId,
+    ThemeScope? themeScope,
   }) {
     return DesktopPrefs(
       showCountryWhenSameCountry:
@@ -352,6 +363,8 @@ class DesktopPrefs {
       exportMusicLoopCount:
           exportMusicLoopCount ?? exportMusicLoopCountOrDefault,
       requireSecondFactor: requireSecondFactor ?? this.requireSecondFactor,
+      themeId: canonicalThemeId(themeId ?? this.themeId),
+      themeScope: themeScope ?? this.themeScope,
     );
   }
 
@@ -387,6 +400,10 @@ class DesktopPrefs {
         exportSoundtrackUnderVideoPercentOrDefault,
     'export.musicLoopCount': exportMusicLoopCountOrDefault,
     'auth.requireSecondFactor': requireSecondFactor,
+    'ui.theme': canonicalThemeId(themeId),
+    'ui.themeScope': themeScope == ThemeScope.collection
+        ? 'collection'
+        : 'all',
   };
 
   factory DesktopPrefs.fromJson(Map<String, dynamic> json) {
@@ -556,6 +573,10 @@ class DesktopPrefs {
         max: exportMusicLoopCountMax,
       ),
       requireSecondFactor: flag('auth.requireSecondFactor', fallback: true),
+      themeId: canonicalThemeId(
+        json['ui.theme'] is String ? json['ui.theme'] as String : null,
+      ),
+      themeScope: themeScopeFromWire(json['ui.themeScope']),
     );
   }
 
@@ -594,7 +615,9 @@ class DesktopPrefs {
       other.exportSoundtrackUnderVideoPercentOrDefault ==
           exportSoundtrackUnderVideoPercentOrDefault &&
       other.exportMusicLoopCountOrDefault == exportMusicLoopCountOrDefault &&
-      other.requireSecondFactor == requireSecondFactor;
+      other.requireSecondFactor == requireSecondFactor &&
+      other.themeId == themeId &&
+      other.themeScope == themeScope;
 
   @override
   int get hashCode => Object.hashAll([
@@ -626,5 +649,7 @@ class DesktopPrefs {
     exportSoundtrackUnderVideoPercentOrDefault,
     exportMusicLoopCountOrDefault,
     requireSecondFactor,
+    themeId,
+    themeScope,
   ]);
 }

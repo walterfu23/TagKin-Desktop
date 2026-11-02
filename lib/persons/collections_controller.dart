@@ -4,6 +4,7 @@ import 'package:tagkin_desktop/persons/collection.dart';
 import 'package:tagkin_desktop/persons/collections_store.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
+import 'package:tagkin_desktop/theme/theme_choice.dart';
 import 'package:tagkin_desktop/ui/alpha_order.dart';
 import 'package:uuid/uuid.dart';
 
@@ -486,6 +487,64 @@ class CollectionsController extends ChangeNotifier {
     final base = _baseline;
     if (base != null) {
       _baseline = base.copyWith(ui: base.ui.copyWith(library: library));
+    }
+    _recomputeDirty();
+  }
+
+  /// Saves collection themes without marking the open collection unsaved.
+  ///
+  /// [stampMissing] fills collections that have no theme with [globalThemeId].
+  /// [openThemeId] is written onto [openCollectionId] when that collection
+  /// is in the catalog or is the open one.
+  Future<void> applyCollectionThemeScope({
+    required String globalThemeId,
+    required bool stampMissing,
+    String? openCollectionId,
+    String? openThemeId,
+  }) async {
+    final slots = <CollectionThemeSlot>[
+      for (final c in _catalog.collections)
+        CollectionThemeSlot(id: c.id, themeId: c.ui.themeId),
+    ];
+    final cur = _current;
+    if (cur != null && !slots.any((s) => s.id == cur.id)) {
+      slots.add(CollectionThemeSlot(id: cur.id, themeId: cur.ui.themeId));
+    }
+    final assigned = assignCollectionThemes(
+      collections: slots,
+      globalThemeId: globalThemeId,
+      stampMissing: stampMissing,
+      openCollectionId: openCollectionId,
+      openThemeId: openThemeId,
+    );
+    final byId = {for (final slot in assigned) slot.id: slot.themeId};
+    Collection paint(Collection c) {
+      final theme = byId[c.id];
+      if (theme == null) {
+        if (c.ui.themeId == null) return c;
+        return c.copyWith(ui: c.ui.copyWith(clearThemeId: true));
+      }
+      if (theme == c.ui.themeId) return c;
+      return c.copyWith(ui: c.ui.copyWith(themeId: theme));
+    }
+
+    final next = [for (final c in _catalog.collections) paint(c)];
+    if (cur != null && !next.any((c) => c.id == cur.id)) {
+      next.add(paint(cur));
+    }
+    _catalog = CollectionsFile(
+      collections: next,
+      currentCollectionId: _catalog.currentCollectionId,
+      recentCollectionIds: _catalog.recentCollectionIds,
+    );
+    await _store.save(_catalog);
+    if (cur != null) {
+      final painted = paint(cur);
+      _current = painted;
+      final base = _baseline;
+      if (base != null && base.id == painted.id) {
+        _baseline = base.copyWith(ui: base.ui.copyWith(themeId: painted.ui.themeId));
+      }
     }
     _recomputeDirty();
   }

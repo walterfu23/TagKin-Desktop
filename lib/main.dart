@@ -5,11 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:tagkin_desktop/app_shell.dart';
-import 'package:tagkin_desktop/auth/clerk_theme.dart';
 import 'package:tagkin_desktop/branding.g.dart';
 import 'package:tagkin_desktop/library/items_list_page.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/shell/app_navigator.dart';
 import 'package:tagkin_desktop/shell/tagkin_platform_menu.dart';
+import 'package:tagkin_desktop/theme/app_theme.dart';
+import 'package:tagkin_desktop/theme/theme_palettes.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 import 'package:tagkin_desktop/update/client_identity.dart';
 import 'package:tagkin_desktop/update/client_support_providers.dart';
@@ -49,21 +52,24 @@ Future<void> main() async {
   );
 }
 
-class TagKinDesktopApp extends StatelessWidget {
+class TagKinDesktopApp extends ConsumerWidget {
   const TagKinDesktopApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final prefs = ref.watch(desktopPrefsProvider);
+    final cols = ref.watch(collectionsControllerProvider);
+    final themeId = effectiveThemeId(
+      collectionScope: prefs.themeScope == ThemeScope.collection,
+      globalThemeId: prefs.themeId,
+      collectionThemeId: cols.hasCurrent ? cols.current.ui.themeId : null,
+    );
     return TagKinPlatformMenu(
       child: MaterialApp(
         navigatorKey: tagkinRootNavigatorKey,
         title: kAppTitle,
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: kTagKinClerkAccent),
-          useMaterial3: true,
-          extensions: <ThemeExtension<dynamic>>[tagKinClerkTheme()],
-        ),
+        theme: buildAppTheme(themeId: themeId),
         // Shortcuts must wrap the Navigator (builder), not only `home`.
         // A pushed route's FocusScope sits above that page's widgets; if
         // Cmd/Ctrl+Z is only registered on `home`, item detail beeps and

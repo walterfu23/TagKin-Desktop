@@ -17,7 +17,6 @@ import 'package:tagkin_desktop/review/key_period_offsets.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/where/where_label_resolver.dart';
 import 'package:tagkin_desktop/where/where_place_label.dart';
-import 'package:tagkin_desktop/ui/design_tokens.dart';
 import 'package:tagkin_desktop/widgets/sure_action_button.dart';
 
 const double _kThumbSize = 56;
@@ -45,7 +44,8 @@ const double _kTableMinWidth =
     _kColStatus;
 
 /// Slight grey for even (1-based) rows — index.isOdd in 0-based list.
-const Color _kZebraRow = TagKinTokens.zebraRow;
+Color _zebraRowColor(ColorScheme scheme) =>
+    scheme.onSurface.withValues(alpha: 0.04);
 
 /// Wide multi-column library table (D2 post-v1).
 class LibraryItemsTable extends ConsumerWidget {
@@ -286,165 +286,206 @@ class _HeaderRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final accent = scheme.primary;
+    final foreground = accent.computeLuminance() > 0.5
+        ? const Color(0xFF1A1A1A)
+        : Colors.white;
+    final menuStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      fontWeight: FontWeight.w600,
+      color: scheme.onSurface,
+    );
+    Widget closed(String text) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontWeight: FontWeight.w600, color: foreground),
+        ),
+      );
+    }
+
     return Material(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: SizedBox(
-        height: 40,
-        child: Row(
-          children: [
-            _SortHeader(
-              label: 'File',
-              width: _kColFile,
-              column: LibrarySortColumn.source,
-              controller: controller,
-              multiColumnSort: multiColumnSort,
-              onSort: () => record('Sort', () async {
-                controller.toggleSort(
-                  LibrarySortColumn.source,
-                  multiColumn: multiColumnSort,
-                );
-              }),
-            ),
-            SizedBox(
-              width: _kColVisibility,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<HiddenItemsFilter>(
-                    key: const Key('library-hidden-filter'),
-                    isDense: true,
-                    isExpanded: true,
-                    value: controller.hiddenItemsFilter,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).colorScheme.onSurface,
+      color: accent,
+      child: IconTheme(
+        data: IconThemeData(color: foreground),
+        child: DefaultTextStyle.merge(
+          style: TextStyle(color: foreground, fontWeight: FontWeight.w600),
+          child: SizedBox(
+            height: 40,
+            child: Row(
+              children: [
+                _SortHeader(
+                  label: 'File',
+                  width: _kColFile,
+                  column: LibrarySortColumn.source,
+                  controller: controller,
+                  multiColumnSort: multiColumnSort,
+                  onSort: () => record('Sort', () async {
+                    controller.toggleSort(
+                      LibrarySortColumn.source,
+                      multiColumn: multiColumnSort,
+                    );
+                  }),
+                ),
+                SizedBox(
+                  width: _kColVisibility,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<HiddenItemsFilter>(
+                        key: const Key('library-hidden-filter'),
+                        isDense: true,
+                        isExpanded: true,
+                        value: controller.hiddenItemsFilter,
+                        dropdownColor: scheme.surface,
+                        iconEnabledColor: foreground,
+                        style: menuStyle,
+                        selectedItemBuilder: (context) => [
+                          for (final label in const [
+                            'Visible',
+                            'Hidden',
+                            'Both',
+                          ])
+                            closed(label),
+                        ],
+                        items: const [
+                          DropdownMenuItem(
+                            value: HiddenItemsFilter.visible,
+                            child: Text('Visible'),
+                          ),
+                          DropdownMenuItem(
+                            value: HiddenItemsFilter.hidden,
+                            child: Text('Hidden'),
+                          ),
+                          DropdownMenuItem(
+                            value: HiddenItemsFilter.both,
+                            child: Text('Both'),
+                          ),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) controller.setHiddenItemsFilter(v);
+                        },
+                      ),
                     ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: HiddenItemsFilter.visible,
-                        child: Text('Visible'),
-                      ),
-                      DropdownMenuItem(
-                        value: HiddenItemsFilter.hidden,
-                        child: Text('Hidden'),
-                      ),
-                      DropdownMenuItem(
-                        value: HiddenItemsFilter.both,
-                        child: Text('Both'),
-                      ),
-                    ],
-                    onChanged: (v) {
-                      if (v != null) controller.setHiddenItemsFilter(v);
-                    },
                   ),
                 ),
-              ),
-            ),
-            const SizedBox(
-              width: _kColThumb,
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 8),
-                child: Text(
-                  'Thumb',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ),
-            ),
-            _SortHeader(
-              label: 'Who',
-              width: _kColWho,
-              column: LibrarySortColumn.who,
-              controller: controller,
-              multiColumnSort: multiColumnSort,
-              trailing: _WhoFilterButton(controller: controller),
-              onSort: () => record('Sort', () async {
-                controller.toggleSort(
-                  LibrarySortColumn.who,
-                  multiColumn: multiColumnSort,
-                );
-              }),
-            ),
-            _SortHeader(
-              label: 'What',
-              width: _kColWhat,
-              column: LibrarySortColumn.what,
-              controller: controller,
-              multiColumnSort: multiColumnSort,
-              onSort: () => record('Sort', () async {
-                controller.toggleSort(
-                  LibrarySortColumn.what,
-                  multiColumn: multiColumnSort,
-                );
-              }),
-            ),
-            _SortHeader(
-              label: 'Where',
-              width: _kColWhere,
-              column: LibrarySortColumn.where,
-              controller: controller,
-              multiColumnSort: multiColumnSort,
-              onSort: () => record('Sort', () async {
-                controller.toggleSort(
-                  LibrarySortColumn.where,
-                  multiColumn: multiColumnSort,
-                );
-              }),
-            ),
-            _SortHeader(
-              label: 'Comment',
-              width: _kColComment,
-              column: LibrarySortColumn.comment,
-              controller: controller,
-              multiColumnSort: multiColumnSort,
-              onSort: () => record('Sort', () async {
-                controller.toggleSort(
-                  LibrarySortColumn.comment,
-                  multiColumn: multiColumnSort,
-                );
-              }),
-            ),
-            SizedBox(
-              width: _kColStatus,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<ProcessingStatus?>(
-                    key: const Key('library-status-filter'),
-                    isDense: true,
-                    isExpanded: true,
-                    value: controller.statusFilter,
-                    hint: const Text(
-                      'All statuses',
+                const SizedBox(
+                  width: _kColThumb,
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Text(
+                      'Thumb',
                       style: TextStyle(fontWeight: FontWeight.w600),
                     ),
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
-                    items: [
-                      const DropdownMenuItem<ProcessingStatus?>(
-                        value: null,
-                        child: Text('All statuses'),
-                      ),
-                      ...ProcessingStatus.values.map(
-                        (s) => DropdownMenuItem<ProcessingStatus?>(
-                          value: s,
-                          child: Text(s.wire),
-                        ),
-                      ),
-                    ],
-                    onChanged: (v) {
-                      unawaited(
-                        record('Filter status', () async {
-                          await controller.setStatusFilter(v);
-                        }),
-                      );
-                    },
                   ),
                 ),
-              ),
+                _SortHeader(
+                  label: 'Who',
+                  width: _kColWho,
+                  column: LibrarySortColumn.who,
+                  controller: controller,
+                  multiColumnSort: multiColumnSort,
+                  trailing: _WhoFilterButton(controller: controller),
+                  onSort: () => record('Sort', () async {
+                    controller.toggleSort(
+                      LibrarySortColumn.who,
+                      multiColumn: multiColumnSort,
+                    );
+                  }),
+                ),
+                _SortHeader(
+                  label: 'What',
+                  width: _kColWhat,
+                  column: LibrarySortColumn.what,
+                  controller: controller,
+                  multiColumnSort: multiColumnSort,
+                  onSort: () => record('Sort', () async {
+                    controller.toggleSort(
+                      LibrarySortColumn.what,
+                      multiColumn: multiColumnSort,
+                    );
+                  }),
+                ),
+                _SortHeader(
+                  label: 'Where',
+                  width: _kColWhere,
+                  column: LibrarySortColumn.where,
+                  controller: controller,
+                  multiColumnSort: multiColumnSort,
+                  onSort: () => record('Sort', () async {
+                    controller.toggleSort(
+                      LibrarySortColumn.where,
+                      multiColumn: multiColumnSort,
+                    );
+                  }),
+                ),
+                _SortHeader(
+                  label: 'Comment',
+                  width: _kColComment,
+                  column: LibrarySortColumn.comment,
+                  controller: controller,
+                  multiColumnSort: multiColumnSort,
+                  onSort: () => record('Sort', () async {
+                    controller.toggleSort(
+                      LibrarySortColumn.comment,
+                      multiColumn: multiColumnSort,
+                    );
+                  }),
+                ),
+                SizedBox(
+                  width: _kColStatus,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<ProcessingStatus?>(
+                        key: const Key('library-status-filter'),
+                        isDense: true,
+                        isExpanded: true,
+                        value: controller.statusFilter,
+                        dropdownColor: scheme.surface,
+                        iconEnabledColor: foreground,
+                        hint: Text(
+                          'All statuses',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: foreground,
+                          ),
+                        ),
+                        style: menuStyle,
+                        selectedItemBuilder: (context) => [
+                          closed('All statuses'),
+                          for (final status in ProcessingStatus.values)
+                            closed(status.wire),
+                        ],
+                        items: [
+                          const DropdownMenuItem<ProcessingStatus?>(
+                            value: null,
+                            child: Text('All statuses'),
+                          ),
+                          ...ProcessingStatus.values.map(
+                            (s) => DropdownMenuItem<ProcessingStatus?>(
+                              value: s,
+                              child: Text(s.wire),
+                            ),
+                          ),
+                        ],
+                        onChanged: (v) {
+                          unawaited(
+                            record('Filter status', () async {
+                              await controller.setStatusFilter(v);
+                            }),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -510,7 +551,10 @@ class _SortHeader extends StatelessWidget {
                       if (multiColumnSort && keys.length > 1)
                         Text(
                           '${idx + 1}',
-                          style: Theme.of(context).textTheme.labelSmall,
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: DefaultTextStyle.of(context).style.color,
+                              ),
                         ),
                     ],
                   ],
@@ -534,7 +578,6 @@ class _WhoFilterButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final active = controller.whoFilterNames.isNotEmpty;
-    final color = active ? Theme.of(context).colorScheme.primary : null;
     final matchLabel = controller.whoFilterMatchAll ? 'Match All' : 'Match Any';
     final tooltip = active
         ? 'Who filter: ${controller.whoFilterNames.length} selected ($matchLabel)'
@@ -547,7 +590,6 @@ class _WhoFilterButton extends StatelessWidget {
         icon: Icon(
           active ? Icons.filter_alt : Icons.filter_alt_outlined,
           size: 18,
-          color: color,
         ),
         visualDensity: VisualDensity.compact,
         padding: EdgeInsets.zero,
@@ -728,7 +770,9 @@ class _PathGroupHeader extends StatelessWidget {
       style: labelStyle,
     );
     return Material(
-      color: zebra ? _kZebraRow : Colors.transparent,
+      color: zebra
+          ? _zebraRowColor(Theme.of(context).colorScheme)
+          : Colors.transparent,
       child: InkWell(
         key: Key('source-group-$dir'),
         onTap: editMode ? null : onToggle,
@@ -935,7 +979,9 @@ class _DataRow extends ConsumerWidget {
         controller.expandedComments.contains(scopeId);
     final grow = expanded || editMode;
     return Material(
-      color: zebra ? _kZebraRow : Colors.transparent,
+      color: zebra
+          ? _zebraRowColor(Theme.of(context).colorScheme)
+          : Colors.transparent,
       child: InkWell(
         key: Key('item-row-$scopeId'),
         onTap: editMode ? null : () => onOpenDetail(item),
@@ -1008,7 +1054,9 @@ class _DataRow extends ConsumerWidget {
                           : _WhoValues(
                               itemId: scopeId,
                               values: who,
-                              expanded: controller.expandedWho.contains(scopeId),
+                              expanded: controller.expandedWho.contains(
+                                scopeId,
+                              ),
                               loading: !row.knowledgeLoaded,
                               onToggle: () =>
                                   controller.toggleExpandWho(scopeId),
@@ -1046,28 +1094,33 @@ class _DataRow extends ConsumerWidget {
                               period: period,
                             )
                           : _WhereValues(
-                          itemId: scopeId,
-                          entries: whereEntries,
-                          expanded: controller.expandedWhere.contains(scopeId),
-                          loading: !row.knowledgeLoaded,
-                          onToggle: () => controller.toggleExpandWhere(scopeId),
-                          onAddFamiliar: (region) async {
-                            final added = await ref
-                                .read(desktopPrefsControllerProvider)
-                                .addFamiliarRegion(region);
-                            if (!added) return;
-                            ref.read(whereLabelResolverProvider).clearCache();
-                            await controller.refreshWhereLabels();
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Added “$region” to Familiar state/province',
-                                ),
+                              itemId: scopeId,
+                              entries: whereEntries,
+                              expanded: controller.expandedWhere.contains(
+                                scopeId,
                               ),
-                            );
-                          },
-                        ),
+                              loading: !row.knowledgeLoaded,
+                              onToggle: () =>
+                                  controller.toggleExpandWhere(scopeId),
+                              onAddFamiliar: (region) async {
+                                final added = await ref
+                                    .read(desktopPrefsControllerProvider)
+                                    .addFamiliarRegion(region);
+                                if (!added) return;
+                                ref
+                                    .read(whereLabelResolverProvider)
+                                    .clearCache();
+                                await controller.refreshWhereLabels();
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Added “$region” to Familiar state/province',
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
                     ),
                   ),
                   SizedBox(
@@ -1668,8 +1721,9 @@ class _PaginationBar extends StatelessWidget {
     final total = controller.totalFiltered;
     final pages = controller.pageCount;
     final page = controller.pageIndex;
+    final scheme = Theme.of(context).colorScheme;
     return Material(
-      elevation: 1,
+      color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Row(
