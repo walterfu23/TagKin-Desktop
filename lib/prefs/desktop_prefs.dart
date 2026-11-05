@@ -38,6 +38,7 @@ class DesktopPrefs {
     this.exportSoundtrackUnderVideoPercent = 5,
     this.exportMusicLoopCount = 2,
     this.requireSecondFactor = true,
+    this.allowAddAccount = false,
     this.themeId = kDefaultThemeId,
     this.themeScope = ThemeScope.all,
   });
@@ -106,6 +107,10 @@ class DesktopPrefs {
   /// stops until one is added. A saved session is not interrupted. An
   /// enrolled factor is still asked for when this is off.
   final bool requireSecondFactor;
+
+  /// When true, the account list can add another account.
+  /// Off by default. Saved sign-ins stay either way.
+  final bool allowAddAccount;
 
   /// Named color theme. Default Cream.
   final String themeId;
@@ -314,6 +319,7 @@ class DesktopPrefs {
     int? exportSoundtrackUnderVideoPercent,
     int? exportMusicLoopCount,
     bool? requireSecondFactor,
+    bool? allowAddAccount,
     String? themeId,
     ThemeScope? themeScope,
   }) {
@@ -363,6 +369,7 @@ class DesktopPrefs {
       exportMusicLoopCount:
           exportMusicLoopCount ?? exportMusicLoopCountOrDefault,
       requireSecondFactor: requireSecondFactor ?? this.requireSecondFactor,
+      allowAddAccount: allowAddAccount ?? this.allowAddAccount,
       themeId: canonicalThemeId(themeId ?? this.themeId),
       themeScope: themeScope ?? this.themeScope,
     );
@@ -400,10 +407,9 @@ class DesktopPrefs {
         exportSoundtrackUnderVideoPercentOrDefault,
     'export.musicLoopCount': exportMusicLoopCountOrDefault,
     'auth.requireSecondFactor': requireSecondFactor,
+    'auth.allowAddAccount': allowAddAccount,
     'ui.theme': canonicalThemeId(themeId),
-    'ui.themeScope': themeScope == ThemeScope.collection
-        ? 'collection'
-        : 'all',
+    'ui.themeScope': themeScope == ThemeScope.collection ? 'collection' : 'all',
   };
 
   factory DesktopPrefs.fromJson(Map<String, dynamic> json) {
@@ -573,6 +579,9 @@ class DesktopPrefs {
         max: exportMusicLoopCountMax,
       ),
       requireSecondFactor: flag('auth.requireSecondFactor', fallback: true),
+      allowAddAccount: json.containsKey('auth.allowAddAccount')
+          ? flag('auth.allowAddAccount', fallback: false)
+          : flag('auth.allowSignOut', fallback: false),
       themeId: canonicalThemeId(
         json['ui.theme'] is String ? json['ui.theme'] as String : null,
       ),
@@ -616,6 +625,7 @@ class DesktopPrefs {
           exportSoundtrackUnderVideoPercentOrDefault &&
       other.exportMusicLoopCountOrDefault == exportMusicLoopCountOrDefault &&
       other.requireSecondFactor == requireSecondFactor &&
+      other.allowAddAccount == allowAddAccount &&
       other.themeId == themeId &&
       other.themeScope == themeScope;
 
@@ -649,6 +659,7 @@ class DesktopPrefs {
     exportSoundtrackUnderVideoPercentOrDefault,
     exportMusicLoopCountOrDefault,
     requireSecondFactor,
+    allowAddAccount,
     themeId,
     themeScope,
   ]);

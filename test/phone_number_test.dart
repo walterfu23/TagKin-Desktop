@@ -53,7 +53,7 @@ void main() {
     expect(message('QUOTA_EXCEEDED'), 'Too many texts. Try again later.');
   });
 
-  const _config = FirebasePublicConfig(
+  const config = FirebasePublicConfig(
     apiKey: 'public-key',
     authDomain: 'app.firebaseapp.com',
     projectId: 'app',
@@ -65,7 +65,7 @@ void main() {
       expect(request.url.path, '/v2/recaptchaConfig');
       return http.Response('{"recaptchaKey":"site-key"}', 200);
     });
-    final setup = await recaptchaSetup(_config, httpClient: client);
+    final setup = await recaptchaSetup(config, httpClient: client);
     expect(setup.enterprise, isTrue);
     expect(setup.siteKey, 'site-key');
   });
@@ -85,7 +85,7 @@ void main() {
       expect(request.url.path, '/v1/recaptchaParams');
       return http.Response('{"recaptchaSiteKey":"classic-key"}', 200);
     });
-    final setup = await recaptchaSetup(_config, httpClient: client);
+    final setup = await recaptchaSetup(config, httpClient: client);
     expect(setup.enterprise, isFalse);
     expect(setup.siteKey, 'classic-key');
     expect(smsDispatchFields('a+b', enterprise: false), {
@@ -104,7 +104,7 @@ void main() {
       expect(request.url.path, '/v1/recaptchaParams');
       return http.Response('{"recaptchaSiteKey":"classic-key"}', 200);
     });
-    final setup = await recaptchaSetup(_config, httpClient: client);
+    final setup = await recaptchaSetup(config, httpClient: client);
     expect(setup.enterprise, isFalse);
     expect(
       smsDispatchFields('tok', enterprise: setup.enterprise),
@@ -130,7 +130,7 @@ void main() {
       );
     });
     final session = await startSmsEnrollment(
-      config: _config,
+      config: config,
       idToken: 'id-token',
       phoneNumber: '+16505550100',
       recaptchaToken: 'checkbox-token',
@@ -151,7 +151,7 @@ void main() {
       (_) async => http.Response('<!DOCTYPE html><p>no</p>', 200),
     );
     expect(
-      () => recaptchaSetup(_config, httpClient: client),
+      () => recaptchaSetup(config, httpClient: client),
       throwsA(
         isA<FirebaseAuthException>().having(
           (error) => error.message,

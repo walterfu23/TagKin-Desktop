@@ -55,9 +55,12 @@ class FlutterSecureKeyValueStore implements SecureKeyValueStore {
                 accountName: 'tagkin.desktop.secure',
                 accessibility: KeychainAccessibility.first_unlock,
               ),
-              // Unsigned/debug macOS: use login keychain (not data-protection),
-              // which needs keychain-access-groups in entitlements. Data-protection
-              // keychain alone → errSecMissingEntitlement (-34018).
+              // Login Keychain. The app-private Keychain needs
+              // keychain-access-groups, and that entitlement requires an
+              // Apple development certificate. Debug and Release here are
+              // ad-hoc signed (CODE_SIGN_IDENTITY = "-"), so that entitlement
+              // fails the build. The login Keychain can ask for the Mac
+              // password when a new build reads an older item.
               mOptions: MacOsOptions(
                 accountName: 'tagkin.desktop.secure',
                 accessibility: KeychainAccessibility.first_unlock,

@@ -10,11 +10,13 @@ class UpdateRequiredPage extends StatelessWidget {
     super.key,
     this.support,
     this.onSignOut,
+    this.leaveLabel = 'Sign out',
     this.launchUrl,
   });
 
   final ClientSupport? support;
   final Future<void> Function()? onSignOut;
+  final String leaveLabel;
   final CheckoutUrlLauncher? launchUrl;
 
   @override
@@ -64,7 +66,7 @@ class UpdateRequiredPage extends StatelessWidget {
                     TextButton(
                       key: const Key('update-required-sign-out'),
                       onPressed: () => onSignOut!(),
-                      child: const Text('Sign out'),
+                      child: Text(leaveLabel),
                     ),
                   ],
                 ],

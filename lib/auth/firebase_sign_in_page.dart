@@ -426,7 +426,7 @@ class _FirebaseSignInPageState extends State<FirebaseSignInPage> {
                 ? 'Second factor'
                 : _emailCode
                 ? 'Check your email'
-                : (_signUp ? 'Create account' : 'Set up account'),
+                : (_signUp ? 'Create account' : 'Sign in'),
             style: Theme.of(context).textTheme.headlineSmall,
           ),
           const SizedBox(height: 16),

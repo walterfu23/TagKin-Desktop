@@ -17,10 +17,12 @@ class CollectionStartGate extends ConsumerWidget {
     super.key,
     required this.libraryFolders,
     this.onSignOut,
+    this.leaveLabel = 'Sign out',
   });
 
   final List<String> libraryFolders;
   final Future<void> Function()? onSignOut;
+  final String leaveLabel;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -114,7 +116,7 @@ class CollectionStartGate extends ConsumerWidget {
                   TextButton(
                     key: const Key('collection-start-sign-out'),
                     onPressed: () => onSignOut!(),
-                    child: const Text('Sign out'),
+                    child: Text(leaveLabel),
                   ),
                 ],
               ],

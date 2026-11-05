@@ -6,8 +6,8 @@ import 'package:tagkin_desktop/auth/provider_session.dart';
 import 'package:tagkin_desktop/auth/secure_persistor.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_store.dart';
 
-/// Secure-store key for every Firebase session on this computer, plus which
-/// one is active. Tokens stay here. The email list lives in Application Support.
+/// Secure-store key for every Firebase account on this computer.
+/// Tokens stay here. Emails live in Application Support.
 const String kFirebaseRosterKey = 'tagkin.firebase.roster';
 
 /// An account this computer has set up. No tokens.
@@ -289,19 +289,12 @@ class FirebaseAccountRoster {
     return null;
   }
 
-  Future<FirebaseSession?> activeSession() async {
-    final blob = await _readBlob();
-    final id = blob.activeLocalId;
-    if (id == null) return null;
-    return blob.sessions[id];
-  }
-
   Future<FirebaseSession?> sessionFor(String localId) async {
     final blob = await _readBlob();
     return blob.sessions[localId];
   }
 
-  /// Saves [session], makes it active, and records it in the directory.
+  /// Adds [session] and makes it the last one opened. Other saved accounts stay.
   Future<void> remember(FirebaseSession session) async {
     final blob = await _readBlob();
     final sessions = Map<String, FirebaseSession>.of(blob.sessions);
@@ -312,17 +305,65 @@ class FirebaseAccountRoster {
     await directory.upsert(
       SavedAccount(localId: session.localId, email: session.email),
     );
+    await secure.delete(key: kFirebaseSessionKey);
   }
 
-  /// Makes a stored session active. Returns null when that session is gone.
-  Future<FirebaseSession?> makeActive(String localId) async {
+  /// Marks [localId] as the last account opened. The token is unchanged.
+  Future<bool> makeActive(String localId) async {
     final blob = await _readBlob();
-    final session = blob.sessions[localId];
-    if (session == null) return null;
+    if (!blob.sessions.containsKey(localId)) return false;
     await _writeBlob(
       _RosterBlob(activeLocalId: localId, sessions: blob.sessions),
     );
-    return session;
+    return true;
+  }
+
+  /// Deletes the saved sign-in for [localId]. The directory email stays so
+  /// the form can prefill it. The server account is not touched.
+  Future<void> removeFromComputer(String localId) async {
+    final blob = await _readBlob();
+    final session = blob.sessions[localId];
+    if (session != null) {
+      await directory.upsert(
+        SavedAccount(localId: session.localId, email: session.email),
+      );
+    }
+    final sessions = Map<String, FirebaseSession>.of(blob.sessions);
+    sessions.remove(localId);
+    final active = blob.activeLocalId == localId ? null : blob.activeLocalId;
+    await _writeBlob(_RosterBlob(activeLocalId: active, sessions: sessions));
+    await _dropLegacyIf(localId);
+  }
+
+  /// The last account opened, or the only saved one. Null when several are
+  /// saved and none has been opened, or when none are saved.
+  Future<FirebaseSession?> activeSession() async {
+    await _adoptLegacy();
+    final blob = await _readBlob();
+    final id = blob.activeLocalId;
+    final active = id == null ? null : blob.sessions[id];
+    if (active != null) return active;
+    if (blob.sessions.length == 1) {
+      final only = blob.sessions.values.single;
+      await _writeBlob(
+        _RosterBlob(activeLocalId: only.localId, sessions: blob.sessions),
+      );
+      return only;
+    }
+    final legacy = await _readLegacy();
+    if (legacy == null) return null;
+    await remember(legacy);
+    return legacy;
+  }
+
+  Future<FirebaseSession?> _readLegacy() async {
+    final raw = await secure.read(key: kFirebaseSessionKey);
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      return FirebaseSession.tryParse(jsonDecode(raw));
+    } on FormatException {
+      return null;
+    }
   }
 
   /// Drops the secure session after the server rejects it. The directory
@@ -334,22 +375,6 @@ class FirebaseAccountRoster {
     final active = blob.activeLocalId == localId ? null : blob.activeLocalId;
     await _writeBlob(_RosterBlob(activeLocalId: active, sessions: sessions));
     await _dropLegacyIf(localId);
-  }
-
-  /// Removes the account from this computer. Does not revoke it on the server.
-  /// Returns the session that should become active, if any.
-  Future<FirebaseSession?> removeFromComputer(String localId) async {
-    final blob = await _readBlob();
-    final sessions = Map<String, FirebaseSession>.of(blob.sessions);
-    sessions.remove(localId);
-    await directory.remove(localId);
-    String? active = blob.activeLocalId;
-    if (active == localId) {
-      active = sessions.isEmpty ? null : sessions.keys.first;
-    }
-    await _writeBlob(_RosterBlob(activeLocalId: active, sessions: sessions));
-    if (active == null) return null;
-    return sessions[active];
   }
 
   Future<void> clear() async {

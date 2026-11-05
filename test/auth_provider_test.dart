@@ -1,8 +1,6 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -633,6 +631,12 @@ void main() {
 
   test('require a second factor defaults on', () {
     expect(const DesktopPrefs().requireSecondFactor, isTrue);
+    expect(const DesktopPrefs().allowAddAccount, isFalse);
+    expect(DesktopPrefs.fromJson(const {}).allowAddAccount, isFalse);
+    expect(
+      DesktopPrefs.fromJson(const {'auth.allowSignOut': true}).allowAddAccount,
+      isTrue,
+    );
     expect(DesktopPrefs.fromJson(const {}).requireSecondFactor, isTrue);
     expect(
       DesktopPrefs.fromJson(const {
@@ -1235,8 +1239,108 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('signed-in-home')), findsOneWidget);
     expect(find.text('Add a second factor'), findsNothing);
+    expect(find.byKey(const Key('switch-account')), findsNothing);
+    expect(find.byKey(const Key('sign-out')), findsNothing);
+  });
+
+  testWidgets('Switch account keeps every saved sign-in', (tester) async {
+    final directory = MemoryAccountDirectory();
+    final store = MemorySecureKeyValueStore();
+    await _writeStoredSession(store, directory: directory);
+    await _writeStoredSession(
+      store,
+      directory: directory,
+      localId: 'uid-2',
+      email: 'b@example.com',
+      idToken: 'id-2',
+      refreshToken: 'refresh-2',
+    );
+    await _pumpShell(
+      tester,
+      store: store,
+      directory: directory,
+      library: true,
+      prefs: const DesktopPrefs(allowAddAccount: true),
+      client: _shellClient(onIdentity: _unusedIdentity),
+    );
+    expect(find.byKey(const Key('account-chooser-title')), findsOneWidget);
+    expect(find.byKey(const Key('account-add')), findsOneWidget);
+    expect(find.byKey(const Key('signed-in-home')), findsNothing);
+    await tester.tap(find.byKey(const Key('account-open-uid-1')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('signed-in-home')), findsOneWidget);
     expect(find.byKey(const Key('switch-account')), findsOneWidget);
     expect(find.byKey(const Key('sign-out')), findsNothing);
+    await tester.tap(find.byKey(const Key('switch-account')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('account-chooser-title')), findsOneWidget);
+    expect(find.text('b@example.com'), findsOneWidget);
+    final roster = FirebaseAccountRoster(secure: store, directory: directory);
+    expect((await roster.accounts()).where((a) => a.hasSession).length, 2);
+  });
+
+  testWidgets('Add account shows only after the setting is saved', (
+    tester,
+  ) async {
+    final directory = MemoryAccountDirectory();
+    final store = MemorySecureKeyValueStore();
+    await _writeStoredSession(store, directory: directory);
+    await _pumpShell(
+      tester,
+      store: store,
+      directory: directory,
+      library: true,
+      prefs: const DesktopPrefs(allowAddAccount: true),
+      client: _shellClient(onIdentity: _unusedIdentity),
+    );
+    expect(find.byKey(const Key('switch-account')), findsOneWidget);
+    expect(find.byKey(const Key('sign-out')), findsNothing);
+    await tester.tap(find.byKey(const Key('switch-account')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('account-add')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('account-add')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('firebase-sign-in')), findsOneWidget);
+    expect(find.text('Sign in'), findsOneWidget);
+    final roster = FirebaseAccountRoster(secure: store, directory: directory);
+    expect(await roster.activeSession(), isNotNull);
+  });
+
+  testWidgets('Remove from this computer keeps the account to sign in again', (
+    tester,
+  ) async {
+    final directory = MemoryAccountDirectory();
+    final store = MemorySecureKeyValueStore();
+    await _writeStoredSession(store, directory: directory);
+    await _pumpShell(
+      tester,
+      store: store,
+      directory: directory,
+      library: true,
+      prefs: const DesktopPrefs(allowAddAccount: true),
+      client: _shellClient(onIdentity: _unusedIdentity),
+    );
+    await tester.tap(find.byKey(const Key('switch-account')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('account-remove-uid-1')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('account-remove-dialog')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('account-remove-cancel')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('account-chooser-title')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('account-remove-uid-1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('account-remove-confirm')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('firebase-sign-in')), findsOneWidget);
+    final email = tester.widget<TextField>(
+      find.byKey(const Key('firebase-email')),
+    );
+    expect(email.controller?.text, 'a@example.com');
+    final roster = FirebaseAccountRoster(secure: store, directory: directory);
+    expect(await roster.sessionFor('uid-1'), isNull);
+    final saved = await directory.read();
+    expect(saved.single.email, 'a@example.com');
   });
 
   testWidgets('a saved session opens the library', (tester) async {
@@ -1294,7 +1398,7 @@ void main() {
     },
   );
 
-  testWidgets('a revoked refresh while open shows the account list', (
+  testWidgets('a revoked refresh while open shows the sign-in form', (
     tester,
   ) async {
     final directory = MemoryAccountDirectory();
@@ -1311,13 +1415,17 @@ void main() {
         onIdentity: _unusedIdentity,
       ),
     );
-    expect(find.byKey(const Key('account-chooser-title')), findsOneWidget);
+    expect(find.byKey(const Key('firebase-sign-in')), findsOneWidget);
+    expect(find.byKey(const Key('account-chooser-title')), findsNothing);
     expect(find.byKey(const Key('auth-unauthorized')), findsNothing);
     expect(find.text(kAccountRemovedNotice), findsOneWidget);
-    expect(find.text('a@example.com'), findsOneWidget);
+    final email = tester.widget<TextField>(
+      find.byKey(const Key('firebase-email')),
+    );
+    expect(email.controller?.text, 'a@example.com');
   });
 
-  testWidgets('a missing secure session prefills setup from the account list', (
+  testWidgets('a missing saved account prefills the sign-in form', (
     tester,
   ) async {
     final directory = MemoryAccountDirectory();
@@ -1329,20 +1437,16 @@ void main() {
       directory: directory,
       client: _shellClient(onIdentity: _unusedIdentity),
     );
-    expect(find.byKey(const Key('account-chooser-title')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('account-choice-uid-1')));
-    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('account-chooser-title')), findsNothing);
     expect(find.byKey(const Key('firebase-sign-in')), findsOneWidget);
-    expect(find.text('Set up account'), findsOneWidget);
+    expect(find.text('Sign in'), findsOneWidget);
     final email = tester.widget<TextField>(
       find.byKey(const Key('firebase-email')),
     );
     expect(email.controller?.text, 'a@example.com');
   });
 
-  testWidgets('picking an account with a saved session opens the library', (
-    tester,
-  ) async {
+  testWidgets('a legacy saved account opens the library', (tester) async {
     final directory = MemoryAccountDirectory();
     await directory.upsert(
       const SavedAccount(localId: 'uid-1', email: 'a@example.com'),
@@ -1366,11 +1470,9 @@ void main() {
       library: true,
       client: _shellClient(onIdentity: _unusedIdentity),
     );
-    expect(find.byKey(const Key('account-chooser-title')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('account-choice-uid-1')));
-    await tester.pumpAndSettle();
     expect(find.byKey(const Key('signed-in-home')), findsOneWidget);
     expect(find.byKey(const Key('firebase-sign-in')), findsNothing);
+    expect(find.byKey(const Key('account-chooser-title')), findsNothing);
   });
 }
 
@@ -1592,30 +1694,22 @@ Future<void> _createAccount(WidgetTester tester) async {
 Future<void> _writeStoredSession(
   SecureKeyValueStore store, {
   AccountDirectory? directory,
+  String localId = 'uid-1',
+  String email = 'a@example.com',
+  String idToken = 'id-1',
+  String refreshToken = 'refresh-1',
 }) async {
   final session = FirebaseSession(
-    idToken: 'id-1',
-    refreshToken: 'refresh-1',
+    idToken: idToken,
+    refreshToken: refreshToken,
     expiresAt: DateTime.now().toUtc().add(const Duration(hours: 1)),
-    localId: 'uid-1',
-    email: 'a@example.com',
+    localId: localId,
+    email: email,
   );
   await FirebaseAccountRoster(
     secure: store,
     directory: directory ?? MemoryAccountDirectory(),
   ).remember(session);
-}
-
-/// Delete always fails. Read and write keep the entry, as a Keychain
-/// failure that did not remove the saved sign-in would.
-class _ThrowingDeleteStore extends MemorySecureKeyValueStore {
-  @override
-  Future<void> delete({required String key}) async {
-    throw PlatformException(
-      code: 'Unexpected security result code',
-      message: 'Code: -1, Message: denied',
-    );
-  }
 }
 
 /// Firebase accepts only a top-level enrollment id and a code object whose

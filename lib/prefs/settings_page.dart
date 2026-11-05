@@ -64,6 +64,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   late int _exportSoundtrackUnderVideoPercent;
   late int _exportMusicLoopCount;
   late bool _requireSecondFactor;
+  late bool _allowAddAccount;
   late String _globalThemeId;
   late ThemeScope _themeScope;
   String? _openThemeDraft;
@@ -117,6 +118,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         prefs.exportSoundtrackUnderVideoPercentOrDefault;
     _exportMusicLoopCount = prefs.exportMusicLoopCountOrDefault;
     _requireSecondFactor = prefs.requireSecondFactor;
+    _allowAddAccount = prefs.allowAddAccount;
     _globalThemeId = prefs.themeId;
     _themeScope = prefs.themeScope;
     final cols = ref.read(collectionsControllerProvider);
@@ -195,6 +197,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         prefs.exportSoundtrackUnderVideoPercentOrDefault;
     _exportMusicLoopCount = prefs.exportMusicLoopCountOrDefault;
     _requireSecondFactor = prefs.requireSecondFactor;
+    _allowAddAccount = prefs.allowAddAccount;
     _familiarSeen = _familiarRegions.text;
     _suppressFamiliarUndo = false;
   }
@@ -263,6 +266,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       'export.soundtrackUnderVideoPercent': _exportSoundtrackUnderVideoPercent,
       'export.musicLoopCount': _exportMusicLoopCount,
       'auth.requireSecondFactor': _requireSecondFactor,
+      'auth.allowAddAccount': _allowAddAccount,
       'ui.theme': _globalThemeId,
       'ui.themeScope': _themeScope == ThemeScope.collection
           ? 'collection'
@@ -1351,6 +1355,28 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                               }
                             },
                           ),
+                      ],
+                    ),
+                    _settingsGroup(
+                      title: 'Account',
+                      subtitle:
+                          'Saved accounts on this computer open without a '
+                          'password. Turning this on shows Add account after '
+                          'Save.',
+                      children: [
+                        SwitchListTile(
+                          key: const Key('pref-allow-add-account'),
+                          title: const Text('Allow adding another account'),
+                          subtitle: const Text(
+                            'Off (default): a restart opens the only saved '
+                            'account, or a list when there are two or more. '
+                            'On: that list can add an account. Remove from '
+                            'this computer forgets the saved sign-in only.',
+                          ),
+                          value: _allowAddAccount,
+                          onChanged: (v) =>
+                              _mutateDraft(() => _allowAddAccount = v),
+                        ),
                       ],
                     ),
                   ],
