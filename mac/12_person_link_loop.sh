@@ -6,6 +6,10 @@
 #   TAGKIN_API_TOKEN       Bearer JWT from a logged-in desktop/API session
 #   TAGKIN_LOOP_ITEM_IDS   comma-separated photo item UUIDs (typically 3)
 #
+# The photos must not have finished analyze yet. A tagged photo no longer
+# keeps a readable remote file, so analyze on it fails until that local file
+# is uploaded again.
+#
 # Optional:
 #   TAGKIN_API_URL                    default http://localhost:8787
 #   TAGKIN_LOOP_MAX                   default 20

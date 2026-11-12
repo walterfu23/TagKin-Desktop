@@ -39,7 +39,7 @@ Do **not** reuse the API `sN` ids (those are the `tagkin` repo's `TagKin/mac/`);
 | [`118_clear_secure_store.sh`](./118_clear_secure_store.sh) | Delete `session.json` and leftover Keychain items for `tagkin.desktop.secure` (D1; force a clean sign-in). |
 | [`122_wipe_Devtime.sh`](./122_wipe_Devtime.sh) | **Devtime only.** Wipe `session.json`, collections, prefs, bookmarks, and leftover Keychain items (`CONFIRM=1`). Pair with `TagKin/mac/122_wipe_Devtime.sh` for Postgres. Does not delete media or face models. |
 | [`11_dev.sh`](./11_dev.sh) | Keep the saved session, lsregister the debug app (Safari Allow for `tagkindesktop://`), then run on macOS. A clean sign-in is `./118_clear_secure_store.sh` first. |
-| [`12_person_link_loop.sh`](./12_person_link_loop.sh) | Ops: delete suggested persons → re-analyze item ids → who-face link; repeat until Persons consolidate (max 20). Needs `TAGKIN_API_TOKEN` + `TAGKIN_LOOP_ITEM_IDS`. |
+| [`12_person_link_loop.sh`](./12_person_link_loop.sh) | Ops: delete suggested persons → re-analyze item ids → who-face link; repeat until Persons consolidate (max 20). Needs `TAGKIN_API_TOKEN` + `TAGKIN_LOOP_ITEM_IDS`. Use photos that have not finished analyze; a tagged photo no longer keeps a readable remote file. |
 | [`51_test_all.sh`](./51_test_all.sh) | All completed desktop subsystem bars in order (`106_test_d0`, `107_test_d1`, `108_test_d2`, …). Before a PR. |
 | [`106_test_d0.sh`](./106_test_d0.sh) | D0 Foundation regression bar alone. |
 | [`107_test_d1.sh`](./107_test_d1.sh) | D1 Auth & Account regression bar alone. |
