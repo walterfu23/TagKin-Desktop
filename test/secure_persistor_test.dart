@@ -1,6 +1,10 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:tagkin_desktop/auth/secure_persistor.dart';
 
 void main() {
@@ -90,6 +94,95 @@ void main() {
       await expectLater(
         store.delete(key: 'tagkin.firebase.session'),
         throwsA(missing),
+      );
+    });
+  });
+
+  group('FileSecureKeyValueStore', () {
+    late Directory dir;
+
+    setUp(() async {
+      dir = await Directory.systemTemp.createTemp('tagkin-session');
+    });
+
+    tearDown(() async {
+      if (dir.existsSync()) await dir.delete(recursive: true);
+    });
+
+    test('round-trips and restricts the file to the owner', () async {
+      final store = FileSecureKeyValueStore(supportDir: dir);
+      await store.write(key: 'token', value: 'jwt-value');
+      expect(await store.read(key: 'token'), 'jwt-value');
+
+      final file = File(p.join(dir.path, kSessionFileName));
+      expect(file.statSync().mode & 0x1ff, 0x180);
+      expect(dir.statSync().mode & 0x1ff, 0x1c0);
+
+      await store.write(key: 'token', value: null);
+      expect(file.existsSync(), isFalse);
+    });
+
+    test('keeps every key when writes overlap', () async {
+      final store = FileSecureKeyValueStore(supportDir: dir);
+      await Future.wait([
+        for (var i = 0; i < 30; i++) store.write(key: 'k$i', value: 'v$i'),
+      ]);
+      final raw = jsonDecode(
+        await File(p.join(dir.path, kSessionFileName)).readAsString(),
+      );
+      expect(raw, isA<Map<String, dynamic>>());
+      final map = raw as Map<String, dynamic>;
+      expect(map.length, 30);
+      for (var i = 0; i < 30; i++) {
+        expect(await store.read(key: 'k$i'), 'v$i');
+      }
+    });
+
+    test('a missing, empty, or corrupt file reads as empty', () async {
+      final store = FileSecureKeyValueStore(supportDir: dir);
+      expect(await store.read(key: 'token'), isNull);
+
+      final file = File(p.join(dir.path, kSessionFileName));
+      await file.writeAsString('');
+      expect(await store.read(key: 'token'), isNull);
+
+      await file.writeAsString('{not json');
+      expect(await store.read(key: 'token'), isNull);
+
+      await store.write(key: 'token', value: 'recovered');
+      expect(await store.read(key: 'token'), 'recovered');
+    });
+
+    test('deletes the file when the last key is removed', () async {
+      final store = FileSecureKeyValueStore(supportDir: dir);
+      await store.write(key: 'a', value: '1');
+      await store.write(key: 'b', value: '2');
+      await store.delete(key: 'a');
+      final file = File(p.join(dir.path, kSessionFileName));
+      expect(file.existsSync(), isTrue);
+      await store.delete(key: 'b');
+      expect(file.existsSync(), isFalse);
+    });
+
+    test('SecureStoragePersistor reloads from the file', () async {
+      final first = SecureStoragePersistor(
+        store: FileSecureKeyValueStore(supportDir: dir),
+      );
+      await first.initialize();
+      await first.write('session_token', 'jwt-value');
+      await first.write('client', {'id': 'c1'});
+
+      final again = SecureStoragePersistor(
+        store: FileSecureKeyValueStore(supportDir: dir),
+      );
+      await again.initialize();
+      expect(await again.read<String>('session_token'), 'jwt-value');
+      expect((await again.read<Map<String, dynamic>>('client'))?['id'], 'c1');
+
+      await again.clearAll();
+      expect(
+        File(p.join(dir.path, kSessionFileName)).existsSync(),
+        isFalse,
       );
     });
   });

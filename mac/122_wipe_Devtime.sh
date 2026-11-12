@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 122_wipe_Devtime.sh — DEVELOPMENT ONLY. Wipe desktop residuals so the next
-# launch starts from scratch: Clerk/secure session, collections (collections.json),
-# prefs, and folder bookmarks under Application Support/tagkin_desktop.
+# launch starts from scratch: session.json, leftover Keychain items,
+# collections (collections.json), prefs, and folder bookmarks under
+# Application Support/tagkin_desktop.
 #
 # Does NOT delete: user media files, third_party/, face models under
 # ~/Library/Application Support/tagkin/models, or API/Postgres data
@@ -21,8 +22,8 @@ SERVICE="tagkin.desktop.secure"
 
 echo "==> 122_wipe_Devtime (desktop) — DEVELOPMENT ONLY"
 echo "    Wipes:"
-echo "      - Keychain session (${SERVICE})"
-echo "      - ${SUPPORT_DIR} (collections.json, prefs, bookmarks, …)"
+echo "      - leftover Keychain items (${SERVICE})"
+echo "      - ${SUPPORT_DIR} (session.json, collections.json, prefs, bookmarks, …)"
 echo "    Does not delete original media or face models."
 echo "    API/Postgres: TagKin/mac/122_wipe_Devtime.sh"
 echo ""

@@ -1,9 +1,22 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:clerk_auth/clerk_auth.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:path/path.dart' as p;
+import 'package:tagkin_desktop/prefs/desktop_prefs_store.dart';
+
+/// File name for the macOS session, next to `accounts.json`.
+const String kSessionFileName = 'session.json';
+
+/// macOS keeps the session in Application Support. Other platforms use
+/// Credential Manager. Launch on macOS does not open the login Keychain.
+SecureKeyValueStore defaultSecureStore() {
+  if (Platform.isMacOS) return FileSecureKeyValueStore();
+  return FlutterSecureKeyValueStore();
+}
 
 /// Key prefix so Clerk session data is namespaced in the OS secure store.
 const String kSecurePersistorPrefix = 'tagkin.clerk.';
@@ -42,7 +55,10 @@ bool isSecureStoreMissingEntitlement(Object error) {
       message.contains('required entitlement is not present');
 }
 
-/// Production store → OS Keychain / Credential Manager via [FlutterSecureStorage].
+/// Windows (and any non-macOS) store → Credential Manager via [FlutterSecureStorage].
+///
+/// macOS does not use this. Ad-hoc signed builds cannot read the login
+/// Keychain without a password prompt, so they use [FileSecureKeyValueStore].
 class FlutterSecureKeyValueStore implements SecureKeyValueStore {
   FlutterSecureKeyValueStore([FlutterSecureStorage? storage])
       : _storage = storage ??
@@ -113,6 +129,105 @@ class FlutterSecureKeyValueStore implements SecureKeyValueStore {
   }
 }
 
+/// macOS session file under Application Support (`session.json`).
+///
+/// Directory mode 0700, file mode 0600. Writes are serialized and replaced
+/// by rename so two overlapping updates cannot drop a key. A missing, empty,
+/// or unreadable file is an empty store and does not throw.
+class FileSecureKeyValueStore implements SecureKeyValueStore {
+  FileSecureKeyValueStore({Directory? supportDir, String? fileName})
+      : _supportDirOverride = supportDir,
+        _fileName = fileName ?? kSessionFileName;
+
+  final Directory? _supportDirOverride;
+  final String _fileName;
+  Future<void> _tail = Future<void>.value();
+
+  Future<T> _serialized<T>(Future<T> Function() action) {
+    final result = _tail.then((_) => action());
+    _tail = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return result;
+  }
+
+  Future<File> _file({required bool restrict}) async {
+    final dir = await tagkinAppSupportDir(override: _supportDirOverride);
+    if (restrict) await _chmod(dir.path, '700');
+    return File(p.join(dir.path, _fileName));
+  }
+
+  /// Missing, empty, and unreadable files are an empty map.
+  Future<Map<String, String>> _load() async {
+    try {
+      final file = await _file(restrict: false);
+      if (!file.existsSync()) return <String, String>{};
+      final raw = await file.readAsString();
+      if (raw.trim().isEmpty) return <String, String>{};
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return <String, String>{};
+      final out = <String, String>{};
+      for (final entry in decoded.entries) {
+        final value = entry.value;
+        if (value is String) out[entry.key.toString()] = value;
+      }
+      return out;
+    } catch (_) {
+      return <String, String>{};
+    }
+  }
+
+  Future<void> _store(Map<String, String> map) async {
+    final file = await _file(restrict: true);
+    if (map.isEmpty) {
+      if (file.existsSync()) await file.delete();
+      return;
+    }
+    final tmp = File('${file.path}.$pid.tmp');
+    try {
+      await tmp.writeAsString(jsonEncode(map), flush: true);
+      await _chmod(tmp.path, '600');
+      await tmp.rename(file.path);
+      await _chmod(file.path, '600');
+    } catch (_) {
+      if (tmp.existsSync()) await tmp.delete();
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> write({required String key, required String? value}) {
+    return _serialized(() async {
+      final map = await _load();
+      if (value == null) {
+        map.remove(key);
+      } else {
+        map[key] = value;
+      }
+      await _store(map);
+    });
+  }
+
+  @override
+  Future<String?> read({required String key}) {
+    return _serialized(() async {
+      final map = await _load();
+      return map[key];
+    });
+  }
+
+  @override
+  Future<void> delete({required String key}) {
+    return write(key: key, value: null);
+  }
+}
+
+Future<void> _chmod(String path, String mode) async {
+  if (Platform.isWindows) return;
+  final result = await Process.run('chmod', [mode, path]);
+  if (result.exitCode != 0) {
+    throw StateError('chmod $mode failed: ${result.stderr}');
+  }
+}
+
 /// In-memory store for unit tests (never hits the OS secure store).
 class MemorySecureKeyValueStore implements SecureKeyValueStore {
   final Map<String, String> entries = <String, String>{};
@@ -135,13 +250,15 @@ class MemorySecureKeyValueStore implements SecureKeyValueStore {
   }
 }
 
-/// [Persistor] backed by a [SecureKeyValueStore] (Keychain / Credential Manager).
+/// [Persistor] backed by a [SecureKeyValueStore].
 ///
-/// Tokens and Clerk client state never land in plaintext prefs or a cache file
-/// (D1 regression + R8).
+/// Windows keeps the token in Credential Manager. macOS keeps it in
+/// Application Support `session.json` (mode 0600) so launch does not prompt
+/// for the login Keychain. A process running as the same user can read that
+/// file. Tokens are not written to prefs or logs.
 class SecureStoragePersistor implements Persistor {
   SecureStoragePersistor({SecureKeyValueStore? store})
-      : _store = store ?? FlutterSecureKeyValueStore();
+      : _store = store ?? defaultSecureStore();
 
   final SecureKeyValueStore _store;
   final Set<String> _knownKeys = <String>{};

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 11_dev.sh — run the desktop app on macOS (foreground, live console). Band 11-49 = ops.
-# Keeps the Keychain login so a saved account opens Folders on the next launch.
+# Keeps Application Support session.json so a saved account opens Folders on the next launch.
 # A clean sign-in is ./118_clear_secure_store.sh, then this script.
 # Loads CLERK_PUBLISHABLE_KEY / TAGKIN_API_URL from .env and passes them via
 # --dart-define (App Sandbox cannot read the repo .env from inside the .app).

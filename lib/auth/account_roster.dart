@@ -163,7 +163,10 @@ class _RosterBlob {
   static const empty = _RosterBlob(activeLocalId: null, sessions: {});
 }
 
-/// Firebase sessions in the OS secure store, plus the non-secret directory.
+/// Firebase sessions in the secure store, plus the non-secret directory.
+///
+/// On macOS the store is Application Support `session.json`. On Windows it
+/// is Credential Manager.
 class FirebaseAccountRoster {
   FirebaseAccountRoster({required this.secure, required this.directory});
 

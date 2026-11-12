@@ -83,7 +83,7 @@ final securePersistorProvider = Provider<SecureStoragePersistor>((ref) {
   if (Platform.environment['FLUTTER_TEST'] == 'true') {
     return SecureStoragePersistor(store: MemorySecureKeyValueStore());
   }
-  return SecureStoragePersistor();
+  return SecureStoragePersistor(store: defaultSecureStore());
 });
 
 /// Optional override: when non-null, the shell skips live auth and uses this
@@ -771,7 +771,7 @@ class _FirebaseSignedInHostState extends ConsumerState<_FirebaseSignedInHost> {
 /// Signed-out Clerk form, or a spinner while FAPI env is still empty.
 ///
 /// `clerk_auth` times out the *first* `/environment` + `/client` fetch at 1s.
-/// A cold Keychain (first launch, or after `./118_clear_secure_store.sh`)
+/// A missing session (first launch, or after `./118_clear_secure_store.sh`)
 /// makes a slightly slow Clerk reply leave [ClerkAuthentication] with
 /// `isNotAvailable` (blank widget) and only retries every 10s — still with
 /// that 1s cap. Refresh here uses the 15s HTTP timeout instead.
