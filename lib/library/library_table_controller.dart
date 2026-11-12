@@ -93,6 +93,7 @@ class PeriodFolderSummary {
     required this.period,
     this.who = const [],
     this.what = const [],
+    this.whatLabels = const [],
     this.whereRaw = const [],
     this.whereEntries = const [],
     this.comments = const [],
@@ -101,6 +102,9 @@ class PeriodFolderSummary {
   final KeyPeriodKnowledge period;
   final List<String> who;
   final List<String> what;
+
+  /// `Person.name — activity` for the What cell. [what] stays the raw words.
+  final List<String> whatLabels;
   final List<String> whereRaw;
   final List<WhereDisplay> whereEntries;
   final List<String> comments;
@@ -109,6 +113,7 @@ class PeriodFolderSummary {
     KeyPeriodKnowledge? period,
     List<String>? who,
     List<String>? what,
+    List<String>? whatLabels,
     List<String>? whereRaw,
     List<WhereDisplay>? whereEntries,
     List<String>? comments,
@@ -117,6 +122,7 @@ class PeriodFolderSummary {
       period: period ?? this.period,
       who: who ?? this.who,
       what: what ?? this.what,
+      whatLabels: whatLabels ?? this.whatLabels,
       whereRaw: whereRaw ?? this.whereRaw,
       whereEntries: whereEntries ?? this.whereEntries,
       comments: comments ?? this.comments,
@@ -130,6 +136,7 @@ class LibraryTableRow {
     required this.item,
     this.who = const [],
     this.what = const [],
+    this.whatLabels = const [],
     this.whereEntries = const [],
     this.whereRaw = const [],
     this.comments = const [],
@@ -148,6 +155,9 @@ class LibraryTableRow {
   final Item item;
   final List<String> who;
   final List<String> what;
+
+  /// `Person.name — activity` for the What cell. [what] stays the raw words.
+  final List<String> whatLabels;
 
   /// Structured where labels (GPS reverse-geocoded when applicable).
   final List<WhereDisplay> whereEntries;
@@ -229,6 +239,7 @@ class LibraryTableRow {
     Item? item,
     List<String>? who,
     List<String>? what,
+    List<String>? whatLabels,
     List<WhereDisplay>? whereEntries,
     List<String>? whereRaw,
     List<String>? comments,
@@ -247,6 +258,7 @@ class LibraryTableRow {
       item: item ?? this.item,
       who: who ?? this.who,
       what: what ?? this.what,
+      whatLabels: whatLabels ?? this.whatLabels,
       whereEntries: whereEntries ?? this.whereEntries,
       whereRaw: whereRaw ?? this.whereRaw,
       comments: comments ?? this.comments,
@@ -819,6 +831,9 @@ class LibraryTableController extends ChangeNotifier {
         what: grouped == null
             ? null
             : grouped['what']!.map((tag) => tag.value).toList(),
+        whatLabels: grouped == null
+            ? null
+            : whatColumnLabels(grouped['what']!, _personNamesById),
         whereRaw: grouped == null
             ? null
             : grouped['where']!.map((tag) => tag.value).toList(),
@@ -1360,11 +1375,15 @@ class LibraryTableController extends ChangeNotifier {
     return name;
   }
 
+  /// Person id → name for What labels. Empty until the persons list loads.
+  Map<String, String> get personNamesById => _personNamesById;
+
   Future<void> _refreshPersonNames() async {
     if (_disposed) return;
     final repo = personsRepository;
     if (repo == null) {
       _personNamesById = {};
+      _recomputeWhatLabels();
       return;
     }
     try {
@@ -1375,6 +1394,38 @@ class LibraryTableController extends ChangeNotifier {
       if (_disposed) return;
       _personNamesById = {};
     }
+    _recomputeWhatLabels();
+  }
+
+  /// Rebuild What display labels from the current person names. The stored
+  /// activity words in [LibraryTableRow.what] stay unchanged.
+  void _recomputeWhatLabels() {
+    if (_rows.isEmpty) return;
+    var changed = false;
+    final next = <LibraryTableRow>[];
+    for (final row in _rows) {
+      final knowledge = row.knowledge;
+      if (knowledge == null) {
+        next.add(row);
+        continue;
+      }
+      final grouped = groupDisplayTagsByDimension(knowledge);
+      final labels = whatColumnLabels(grouped['what']!, _personNamesById);
+      final summaries = [
+        for (final summary in row.periodSummaries)
+          summary.copyWith(
+            whatLabels: whatColumnLabelsForPeriod(
+              summary.period,
+              _personNamesById,
+            ),
+          ),
+      ];
+      changed = true;
+      next.add(row.copyWith(whatLabels: labels, periodSummaries: summaries));
+    }
+    if (!changed) return;
+    _rows = next;
+    _notify();
   }
 
   Future<void> _warmThumbs(int gen) async {
@@ -1440,6 +1491,7 @@ class LibraryTableController extends ChangeNotifier {
           period: period,
           who: whoColumnValuesForPeriod(knowledge, period, _personNamesById),
           what: whatColumnValuesForPeriod(period),
+          whatLabels: whatColumnLabelsForPeriod(period, _personNamesById),
           whereRaw: whereRawForPeriod(period, itemLevelWhereRaw: itemWhereRaw),
           whereEntries: whereEntriesByPeriodId[period.id] ?? const [],
           comments: periodComments[period.id] ?? const [],
@@ -1463,6 +1515,7 @@ class LibraryTableController extends ChangeNotifier {
         (r) => r.copyWith(
           who: whoColumnValues(knowledge, _personNamesById),
           what: grouped['what']!.map((t) => t.value).toList(),
+          whatLabels: whatColumnLabels(grouped['what']!, _personNamesById),
           whereRaw: whereRaw,
           keyPeriods: knowledge.keyPeriods,
           periodThumbs: const {},

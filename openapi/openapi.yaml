@@ -3301,6 +3301,14 @@ components:
             scene is a setting (the model, or a person). Null on who/what/when.
             A null where tag is still a city when source is metadata; otherwise
             it is a scene.
+        personId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >
+            What tags only. The library person this activity is about.
+            Null when unlinked, and always null on who, when, and where.
+            The stored value stays the activity word.
         schemaVersion:
           type: integer
           minimum: 1
@@ -3345,6 +3353,13 @@ components:
           description: >
             Where only. city stores a place name; scene stores a setting.
             Rejected on who, what, and when.
+        personId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >
+            What only. A person in the same account. Rejected on who, when,
+            and where. Omit or null to leave the activity unlinked.
 
     EditTag:
       type: object
@@ -3353,6 +3368,13 @@ components:
         value:
           type: string
           minLength: 1
+        personId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >
+            What only. Omit to leave the link unchanged. Null clears it.
+            A uuid sets it to a person in the same account.
 
     CorrectCapturedAt:
       type: object

@@ -640,6 +640,7 @@ Tag fixtureTag({
   String? provider = 'stub',
   String? modelId = 'stub-model',
   TagRegion? region,
+  String? personId,
 }) {
   return Tag(
     id: id,
@@ -654,6 +655,7 @@ Tag fixtureTag({
     provider: provider,
     modelId: modelId,
     region: region,
+    personId: personId,
     schemaVersion: 1,
     createdAt: '2026-07-19T00:00:00.000Z',
   );

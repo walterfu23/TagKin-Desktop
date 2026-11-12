@@ -155,11 +155,43 @@ List<String> whoColumnValuesForPeriod(
   ], (v) => v);
 }
 
-/// Folders What for one key period (A–Z, case-insensitive).
+/// Folders What for one key period (A–Z, case-insensitive). The activity word
+/// only, so sort, filter, and export stay on the word.
 List<String> whatColumnValuesForPeriod(KeyPeriodKnowledge period) {
   return sortedAlphaBy([
     for (final tag in groupPeriodTagsByDimension(period)['what']!) tag.value,
   ], (v) => v);
+}
+
+/// `Person.name — activity` when [tag] links a person, otherwise the word.
+String whatTagLabel(Tag tag, Map<String, String> namesById) {
+  final personId = tag.personId;
+  if (personId == null || personId.isEmpty) return tag.value;
+  final name = namesById[personId]?.trim();
+  if (name == null || name.isEmpty) return tag.value;
+  return '$name — ${tag.value}';
+}
+
+/// Display labels for What, sorted A–Z. Two tags with the same word and
+/// different people stay two labels.
+List<String> whatColumnLabels(
+  Iterable<Tag> tags,
+  Map<String, String> namesById,
+) {
+  return sortedAlphaBy(
+    [for (final tag in tags) whatTagLabel(tag, namesById)],
+    (label) => label,
+  );
+}
+
+List<String> whatColumnLabelsForPeriod(
+  KeyPeriodKnowledge period,
+  Map<String, String> namesById,
+) {
+  return whatColumnLabels(
+    groupPeriodTagsByDimension(period)['what'] ?? const <Tag>[],
+    namesById,
+  );
 }
 
 /// True when [tag] is a place name: explicit city, or a metadata where tag

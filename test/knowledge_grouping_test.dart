@@ -708,4 +708,34 @@ void main() {
       expect(itemLevelWhoFaceCropTags(knowledge), isEmpty);
     },
   );
+
+  test('a linked activity shows the person name and a rename does not change the word', () {
+    final linked = fixtureTag(
+      id: 'swim',
+      value: 'swimming',
+      personId: 'p_sam',
+    );
+    final bare = fixtureTag(id: 'hike', value: 'hiking');
+    expect(whatTagLabel(linked, const {'p_sam': 'Sam'}), 'Sam — swimming');
+    expect(whatTagLabel(linked, const {'p_sam': 'Samantha'}), 'Samantha — swimming');
+    expect(linked.value, 'swimming');
+    expect(whatTagLabel(bare, const {'p_sam': 'Sam'}), 'hiking');
+    expect(whatTagLabel(linked, const {}), 'swimming');
+    expect(
+      whatColumnLabels([linked, bare], const {'p_sam': 'Sam'}),
+      ['hiking', 'Sam — swimming'],
+    );
+    expect(
+      whatColumnValuesForPeriod(
+        KeyPeriodKnowledge(
+          id: 'kp',
+          itemId: 'item_1',
+          startMs: 0,
+          endMs: 1000,
+          tags: [linked],
+        ),
+      ),
+      ['swimming'],
+    );
+  });
 }

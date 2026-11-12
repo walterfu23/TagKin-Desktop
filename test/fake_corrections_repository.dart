@@ -135,7 +135,11 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
   }
 
   @override
-  Future<TagMutationResult> editTag(String tagId, EditTag input) async {
+  Future<TagMutationResult> editTag(
+    String tagId,
+    EditTag input, {
+    bool clearPersonId = false,
+  }) async {
     editTagCalls.add((tagId: tagId, input: input));
     if (editTagError != null) throw editTagError!;
     // Find which item owns this tag.
@@ -154,6 +158,7 @@ class FakeCorrectionsRepository implements CorrectionsRepository {
         status: TagStatus.active,
         placeKind: existing.placeKind ??
             (whereTagIsCity(existing) ? PlaceKind.city : null),
+        personId: clearPersonId ? null : (input.personId ?? existing.personId),
         correctedFromTagId: existing.id,
         schemaVersion: 1,
         createdAt: '2026-07-20T12:00:00.000Z',

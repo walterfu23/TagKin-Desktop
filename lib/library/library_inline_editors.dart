@@ -56,7 +56,12 @@ List<Tag> _dimensionTags({
   final seen = <String>{};
   return [
     for (final tag in source)
-      if (seen.add(tag.value.toLowerCase())) tag,
+      if (seen.add(
+        dimension == 'what'
+            ? '${tag.personId ?? ''}|${tag.value.toLowerCase()}'
+            : tag.value.toLowerCase(),
+      ))
+        tag,
   ];
 }
 
@@ -129,7 +134,42 @@ class FolderInlineTags extends ConsumerWidget {
             ),
           ),
         for (final tag in scenes)
-          _CommitField(
+          if (dimension == 'what')
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _WhatPersonMenu(
+                  tag: tag,
+                  namesById: ref.watch(libraryTableControllerProvider).personNamesById,
+                  onChanged: (personId) => _commitWhatPerson(
+                    ref,
+                    context,
+                    itemId: row.item.id,
+                    tag: tag,
+                    personId: personId,
+                  ),
+                ),
+                Expanded(
+                  child: _CommitField(
+                    key: Key('item-inline-$dimension-${tag.id}'),
+                    fieldKey: Key('item-inline-$dimension-field-${tag.id}'),
+                    value: tag.value,
+                    hint: 'What',
+                    onCommit: (next) => _commitTag(
+                      ref,
+                      context,
+                      itemId: row.item.id,
+                      dimension: dimension,
+                      period: period,
+                      tag: tag,
+                      next: next,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          else
+            _CommitField(
             key: Key('item-inline-$dimension-${tag.id}'),
             fieldKey: Key('item-inline-$dimension-field-${tag.id}'),
             value: tag.value,
@@ -200,6 +240,78 @@ Future<void> _commitTag(
   if (error != null) {
     messenger.showSnackBar(const SnackBar(content: Text('Could not save')));
     throw error;
+  }
+}
+
+Future<void> _commitWhatPerson(
+  WidgetRef ref,
+  BuildContext context, {
+  required String itemId,
+  required Tag tag,
+  required String? personId,
+}) async {
+  if (personId == tag.personId) return;
+  final messenger = ScaffoldMessenger.of(context);
+  final review = await ref.read(folderRowEditorProvider).open(itemId);
+  await review.editTag(
+    tag.id,
+    tag.value,
+    personId: personId,
+    updatePerson: true,
+  );
+  final error = review.mutationError;
+  if (error != null) {
+    messenger.showSnackBar(const SnackBar(content: Text('Could not save')));
+    throw error;
+  }
+}
+
+/// Optional person for one What tag. Null clears the link.
+class _WhatPersonMenu extends StatelessWidget {
+  const _WhatPersonMenu({
+    required this.tag,
+    required this.namesById,
+    required this.onChanged,
+  });
+
+  final Tag tag;
+  final Map<String, String> namesById;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final names = namesById.entries.toList()
+      ..sort((a, b) => a.value.toLowerCase().compareTo(b.value.toLowerCase()));
+    final selected = tag.personId;
+    final known = selected == null || namesById.containsKey(selected);
+    return SizedBox(
+      width: 112,
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String?>(
+          key: Key('item-inline-what-person-${tag.id}'),
+          isDense: true,
+          isExpanded: true,
+          value: selected,
+          items: [
+            const DropdownMenuItem<String?>(
+              value: null,
+              child: Text('—'),
+            ),
+            if (!known)
+              DropdownMenuItem<String?>(
+                value: selected,
+                child: Text(selected),
+              ),
+            for (final person in names)
+              DropdownMenuItem<String?>(
+                value: person.key,
+                child: Text(person.value),
+              ),
+          ],
+          onChanged: onChanged,
+        ),
+      ),
+    );
   }
 }
 

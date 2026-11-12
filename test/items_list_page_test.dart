@@ -223,6 +223,61 @@ void main() {
     );
   });
 
+  testWidgets('What shows the linked person and the editor can change it', (
+    tester,
+  ) async {
+    final item = fixtureItem(
+      id: 'item_swim',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {
+        'item_swim': fixtureKnowledge(
+          item: item,
+          tags: [
+            fixtureTag(
+              id: 'what_swim',
+              itemId: 'item_swim',
+              dimension: 'what',
+              value: 'swimming',
+              personId: 'p_sam',
+            ),
+            fixtureTag(
+              id: 'what_hike',
+              itemId: 'item_swim',
+              dimension: 'what',
+              value: 'hiking',
+            ),
+          ],
+        ),
+      },
+    );
+    final corrections = FakeCorrectionsRepository(items: items);
+    await _pumpLibrary(
+      tester,
+      items: items,
+      corrections: corrections,
+      persons: FakePersonsRepository(
+        persons: [fixturePersonDetail(id: 'p_sam', name: 'Sam')],
+      ),
+    );
+
+    expect(find.text('hiking, Sam — swimming'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+    await tester.pumpAndSettle();
+    final menu = find.byKey(const Key('item-inline-what-person-what_swim'));
+    expect(menu, findsOneWidget);
+    await tester.tap(menu);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('—').last);
+    await tester.pumpAndSettle();
+    expect(corrections.editTagCalls, isNotEmpty);
+    expect(corrections.editTagCalls.last.input.value, 'swimming');
+    expect(corrections.editTagCalls.last.input.personId, isNull);
+  });
+
   testWidgets('Folders edit mode saves a comment and a where tag', (
     tester,
   ) async {

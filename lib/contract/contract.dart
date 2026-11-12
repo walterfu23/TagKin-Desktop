@@ -65,18 +65,21 @@ class AddTag {
     required this.value,
     this.keyPeriodId,
     this.placeKind,
+    this.personId,
   });
 
   final String dimension;
   final String value;
   final String? keyPeriodId;
   final PlaceKind? placeKind;
+  final String? personId;
 
   factory AddTag.fromJson(Map<String, dynamic> json) => AddTag(
         dimension: json['dimension'] as String,
         value: json['value'] as String,
         keyPeriodId: json['keyPeriodId'] == null ? null : json['keyPeriodId'] as String,
         placeKind: json['placeKind'] == null ? null : PlaceKind.fromWire(json['placeKind'] as String),
+        personId: json['personId'] == null ? null : json['personId'] as String,
       );
 
   Map<String, dynamic> toJson() {
@@ -85,6 +88,7 @@ class AddTag {
     json['value'] = value;
     if (keyPeriodId != null) json['keyPeriodId'] = keyPeriodId;
     if (placeKind != null) json['placeKind'] = placeKind?.wire;
+    if (personId != null) json['personId'] = personId;
     return json;
   }
 }
@@ -1000,17 +1004,21 @@ class EditComment {
 class EditTag {
   const EditTag({
     required this.value,
+    this.personId,
   });
 
   final String value;
+  final String? personId;
 
   factory EditTag.fromJson(Map<String, dynamic> json) => EditTag(
         value: json['value'] as String,
+        personId: json['personId'] == null ? null : json['personId'] as String,
       );
 
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{};
     json['value'] = value;
+    if (personId != null) json['personId'] = personId;
     return json;
   }
 }
@@ -2562,6 +2570,7 @@ class Tag {
     this.modelId,
     this.region,
     this.placeKind,
+    this.personId,
     required this.schemaVersion,
     required this.createdAt,
   });
@@ -2579,6 +2588,7 @@ class Tag {
   final String? modelId;
   final TagRegion? region;
   final PlaceKind? placeKind;
+  final String? personId;
   final int schemaVersion;
   final String createdAt;
 
@@ -2596,6 +2606,7 @@ class Tag {
         modelId: json['modelId'] == null ? null : json['modelId'] as String,
         region: json['region'] == null ? null : TagRegion.fromJson(json['region'] as Map<String, dynamic>),
         placeKind: json['placeKind'] == null ? null : PlaceKind.fromWire(json['placeKind'] as String),
+        personId: json['personId'] == null ? null : json['personId'] as String,
         schemaVersion: (json['schemaVersion'] as num).toInt(),
         createdAt: json['createdAt'] as String,
       );
@@ -2615,6 +2626,7 @@ class Tag {
     if (modelId != null) json['modelId'] = modelId;
     if (region != null) json['region'] = region?.toJson();
     if (placeKind != null) json['placeKind'] = placeKind?.wire;
+    if (personId != null) json['personId'] = personId;
     json['schemaVersion'] = schemaVersion;
     json['createdAt'] = createdAt;
     return json;

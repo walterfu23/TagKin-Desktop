@@ -971,6 +971,8 @@ class _DataRow extends ConsumerWidget {
     final summary = row.summaryFor(period);
     final who = summary?.who ?? row.who;
     final what = summary?.what ?? row.what;
+    final whatLabels = summary?.whatLabels ?? row.whatLabels;
+    final shownWhat = whatLabels.isNotEmpty || what.isEmpty ? whatLabels : what;
     final whereEntries = summary?.whereEntries ?? row.whereEntries;
     final comments = summary?.comments ?? row.comments;
     final expanded =
@@ -1077,7 +1079,7 @@ class _DataRow extends ConsumerWidget {
                           : _WhatCell(
                               item: item,
                               scopeId: scopeId,
-                              values: what,
+                              values: shownWhat,
                               loading: !row.knowledgeLoaded,
                             ),
                     ),

@@ -148,10 +148,21 @@ class ReviewController extends ChangeNotifier {
   }
 
   /// Non-destructive edit: optimistic value swap then reconcile.
-  Future<void> editTag(String tagId, String value) async {
+  Future<void> editTag(
+    String tagId,
+    String value, {
+    String? personId,
+    bool updatePerson = false,
+  }) async {
     if (!canMutate) return;
     final snapshot = knowledge!;
-    knowledge = _withTagValue(snapshot, tagId, value);
+    knowledge = _withTagValue(
+      snapshot,
+      tagId,
+      value,
+      personId: personId,
+      updatePerson: updatePerson,
+    );
     phase = ReviewPhase.busy;
     mutationError = null;
     notifyListeners();
@@ -159,7 +170,8 @@ class ReviewController extends ChangeNotifier {
     try {
       final result = await correctionsRepository.editTag(
         tagId,
-        EditTag(value: value),
+        EditTag(value: value, personId: updatePerson ? personId : null),
+        clearPersonId: updatePerson && (personId == null || personId.isEmpty),
       );
       if (_disposed) return;
       await _reconcileKnowledge();
@@ -736,8 +748,10 @@ class ReviewController extends ChangeNotifier {
   static ItemKnowledge _withTagValue(
     ItemKnowledge base,
     String tagId,
-    String value,
-  ) {
+    String value, {
+    String? personId,
+    bool updatePerson = false,
+  }) {
     Tag mapTag(Tag t) => t.id == tagId
         ? Tag(
             id: t.id,
@@ -753,6 +767,7 @@ class ReviewController extends ChangeNotifier {
             modelId: t.modelId,
             placeKind: t.placeKind ??
                 (whereTagIsCity(t) ? PlaceKind.city : null),
+            personId: updatePerson ? personId : t.personId,
             schemaVersion: t.schemaVersion,
             createdAt: t.createdAt,
           )

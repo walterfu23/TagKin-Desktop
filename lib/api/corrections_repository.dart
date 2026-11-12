@@ -22,10 +22,16 @@ class CorrectionsRepository {
   }
 
   /// `PATCH /tags/{tagId}` — non-destructive edit (supersede; R6).
-  Future<TagMutationResult> editTag(String tagId, EditTag input) async {
+  Future<TagMutationResult> editTag(
+    String tagId,
+    EditTag input, {
+    bool clearPersonId = false,
+  }) async {
+    final body = input.toJson();
+    if (clearPersonId) body['personId'] = null;
     final response = await _client.patch(
       '/tags/$tagId',
-      body: input.toJson(),
+      body: body,
     );
     return _tagMutation(response, 'edit-tag');
   }
