@@ -272,6 +272,22 @@ String _retryTooltipUnder(LibraryTableController controller, String dir) {
   return messages.join('\n');
 }
 
+String? _refusalHover(LibraryTableRow row, KeyPeriodKnowledge? period) {
+  final periodReason = period?.refusalReason;
+  if (periodReason != null) {
+    return refusalReasonSentence(periodReason);
+  }
+  if (row.item.processingStatus != ProcessingStatus.refused) return null;
+  final own = row.item.refusalReason;
+  if (own != null) return refusalReasonSentence(own);
+  final parts = [
+    for (final kp in row.keyPeriods)
+      if (kp.refusalReason != null) refusalReasonSentence(kp.refusalReason!),
+  ];
+  if (parts.isEmpty) return null;
+  return parts.join('\n');
+}
+
 class _HeaderRow extends StatelessWidget {
   const _HeaderRow({
     required this.controller,
@@ -1158,8 +1174,12 @@ class _DataRow extends ConsumerWidget {
                           fit: BoxFit.scaleDown,
                           alignment: Alignment.centerLeft,
                           child: ProcessingStatusBadge(
-                            status: row.foldersBadgeStatus,
+                            status: foldersRowStatus(
+                              row.foldersBadgeStatus,
+                              period?.refusalReason,
+                            ),
                             processingError: item.processingError,
+                            refusalMessage: _refusalHover(row, period),
                           ),
                         ),
                       ),

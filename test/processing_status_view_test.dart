@@ -49,6 +49,46 @@ void main() {
       ProcessingStatusView.of(ProcessingStatus.cancelled).label,
       'cancelled',
     );
+    expect(
+      ProcessingStatusView.of(ProcessingStatus.refused).label,
+      'refused',
+    );
+  });
+
+  testWidgets('refused badge tooltip shows the reason', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: ProcessingStatusBadge(
+            status: ProcessingStatus.refused,
+            refusalMessage:
+                'The model host refused this as prohibited content.',
+          ),
+        ),
+      ),
+    );
+    final tooltip = tester.widget<Tooltip>(
+      find.byKey(const Key('processing-status-error-tooltip')),
+    );
+    expect(
+      tooltip.message,
+      'Refused: The model host refused this as prohibited content.',
+    );
+  });
+
+  test('a tagged video segment with a refusal shows the refused marker', () {
+    expect(
+      foldersRowStatus(ProcessingStatus.tagged, RefusalReason.blocked),
+      ProcessingStatus.refused,
+    );
+    expect(
+      refusalReasonSentence(RefusalReason.blocked),
+      'The model host blocked this.',
+    );
+    expect(
+      foldersRowStatus(ProcessingStatus.tagged, null),
+      ProcessingStatus.tagged,
+    );
   });
 
   testWidgets('failed badge tooltip shows processingError', (tester) async {

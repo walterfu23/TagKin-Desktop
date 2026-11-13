@@ -910,6 +910,7 @@ class LibraryTableController extends ChangeNotifier {
       case ProcessingStatus.tagged:
       case ProcessingStatus.failed:
       case ProcessingStatus.cancelled:
+      case ProcessingStatus.refused:
         return 3;
     }
   }

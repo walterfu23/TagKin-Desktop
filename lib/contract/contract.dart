@@ -1320,6 +1320,7 @@ class Item {
     this.capturedAt,
     required this.processingStatus,
     this.processingError,
+    this.refusalReason,
     required this.schemaVersion,
     required this.createdAt,
     required this.isHidden,
@@ -1337,6 +1338,7 @@ class Item {
   final String? capturedAt;
   final ProcessingStatus processingStatus;
   final String? processingError;
+  final RefusalReason? refusalReason;
   final int schemaVersion;
   final String createdAt;
   final bool isHidden;
@@ -1354,6 +1356,7 @@ class Item {
         capturedAt: json['capturedAt'] == null ? null : json['capturedAt'] as String,
         processingStatus: ProcessingStatus.fromWire(json['processingStatus'] as String),
         processingError: json['processingError'] == null ? null : json['processingError'] as String,
+        refusalReason: json['refusalReason'] == null ? null : RefusalReason.fromWire(json['refusalReason'] as String),
         schemaVersion: (json['schemaVersion'] as num).toInt(),
         createdAt: json['createdAt'] as String,
         isHidden: json['isHidden'] as bool,
@@ -1373,6 +1376,7 @@ class Item {
     if (capturedAt != null) json['capturedAt'] = capturedAt;
     json['processingStatus'] = processingStatus.wire;
     if (processingError != null) json['processingError'] = processingError;
+    if (refusalReason != null) json['refusalReason'] = refusalReason?.wire;
     json['schemaVersion'] = schemaVersion;
     json['createdAt'] = createdAt;
     json['isHidden'] = isHidden;
@@ -1748,6 +1752,7 @@ class KeyPeriod {
     required this.startMs,
     required this.endMs,
     this.sampleTimestampMs,
+    this.refusalReason,
   });
 
   final String id;
@@ -1755,6 +1760,7 @@ class KeyPeriod {
   final int startMs;
   final int endMs;
   final int? sampleTimestampMs;
+  final RefusalReason? refusalReason;
 
   factory KeyPeriod.fromJson(Map<String, dynamic> json) => KeyPeriod(
         id: json['id'] as String,
@@ -1762,6 +1768,7 @@ class KeyPeriod {
         startMs: (json['startMs'] as num).toInt(),
         endMs: (json['endMs'] as num).toInt(),
         sampleTimestampMs: json['sampleTimestampMs'] == null ? null : (json['sampleTimestampMs'] as num).toInt(),
+        refusalReason: json['refusalReason'] == null ? null : RefusalReason.fromWire(json['refusalReason'] as String),
       );
 
   Map<String, dynamic> toJson() {
@@ -1771,6 +1778,7 @@ class KeyPeriod {
     json['startMs'] = startMs;
     json['endMs'] = endMs;
     if (sampleTimestampMs != null) json['sampleTimestampMs'] = sampleTimestampMs;
+    if (refusalReason != null) json['refusalReason'] = refusalReason?.wire;
     return json;
   }
 }
@@ -1808,6 +1816,7 @@ class KeyPeriodKnowledge {
     required this.startMs,
     required this.endMs,
     this.sampleTimestampMs,
+    this.refusalReason,
     required this.tags,
   });
 
@@ -1816,6 +1825,7 @@ class KeyPeriodKnowledge {
   final int startMs;
   final int endMs;
   final int? sampleTimestampMs;
+  final RefusalReason? refusalReason;
   final List<Tag> tags;
 
   factory KeyPeriodKnowledge.fromJson(Map<String, dynamic> json) => KeyPeriodKnowledge(
@@ -1824,6 +1834,7 @@ class KeyPeriodKnowledge {
         startMs: (json['startMs'] as num).toInt(),
         endMs: (json['endMs'] as num).toInt(),
         sampleTimestampMs: json['sampleTimestampMs'] == null ? null : (json['sampleTimestampMs'] as num).toInt(),
+        refusalReason: json['refusalReason'] == null ? null : RefusalReason.fromWire(json['refusalReason'] as String),
         tags: (json['tags'] as List<dynamic>).map((e) => Tag.fromJson(e as Map<String, dynamic>)).toList(),
       );
 
@@ -1834,6 +1845,7 @@ class KeyPeriodKnowledge {
     json['startMs'] = startMs;
     json['endMs'] = endMs;
     if (sampleTimestampMs != null) json['sampleTimestampMs'] = sampleTimestampMs;
+    if (refusalReason != null) json['refusalReason'] = refusalReason?.wire;
     json['tags'] = tags.map((e) => e.toJson()).toList();
     return json;
   }
@@ -2216,7 +2228,8 @@ enum ProcessingStatus {
   processing('processing'),
   tagged('tagged'),
   failed('failed'),
-  cancelled('cancelled');
+  cancelled('cancelled'),
+  refused('refused');
 
   const ProcessingStatus(this.wire);
 
@@ -2477,6 +2490,25 @@ class RedoCorrectionResultRestored {
     if (keyPeriod != null) json['keyPeriod'] = keyPeriod?.toJson();
     return json;
   }
+}
+
+enum RefusalReason {
+  prohibited('prohibited'),
+  blocked('blocked');
+
+  const RefusalReason(this.wire);
+
+  final String wire;
+
+  static RefusalReason fromWire(String value) {
+    for (final e in values) {
+      if (e.wire == value) return e;
+    }
+    throw FormatException('Unknown RefusalReason: $value');
+  }
+
+  @override
+  String toString() => wire;
 }
 
 class RenamePerson {

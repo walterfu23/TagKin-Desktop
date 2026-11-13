@@ -52,6 +52,12 @@ class ProcessingStatusView {
           icon: Icons.cancel_outlined,
           color: Color(0xFF6B7280),
         );
+      case ProcessingStatus.refused:
+        return const ProcessingStatusView(
+          label: 'refused',
+          icon: Icons.block,
+          color: Color(0xFFB45309),
+        );
     }
   }
 }
@@ -62,10 +68,15 @@ class ProcessingStatusBadge extends StatelessWidget {
     super.key,
     required this.status,
     this.processingError,
+    this.refusalMessage,
   });
 
   final ProcessingStatus status;
   final String? processingError;
+
+  /// Hover text for a model-host refusal. Shown for [ProcessingStatus.refused]
+  /// and for a tagged video segment that was refused.
+  final String? refusalMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -83,14 +94,40 @@ class ProcessingStatusBadge extends StatelessWidget {
       ],
     );
     final err = processingError?.trim();
-    if (status == ProcessingStatus.failed && err != null && err.isNotEmpty) {
+    final refusal = refusalMessage?.trim();
+    final tip = status == ProcessingStatus.refused
+        ? (refusal != null && refusal.isNotEmpty ? 'Refused: $refusal' : null)
+        : status == ProcessingStatus.failed && err != null && err.isNotEmpty
+            ? err
+            : refusal != null && refusal.isNotEmpty
+                ? 'Refused: $refusal'
+                : null;
+    if (tip != null) {
       return Tooltip(
         key: const Key('processing-status-error-tooltip'),
-        message: err,
+        message: tip,
         waitDuration: Duration.zero,
         child: badge,
       );
     }
     return badge;
+  }
+}
+
+/// A refused video segment shows Refused on its own row while the item stays tagged.
+ProcessingStatus foldersRowStatus(
+  ProcessingStatus itemStatus,
+  RefusalReason? periodReason,
+) {
+  if (periodReason != null) return ProcessingStatus.refused;
+  return itemStatus;
+}
+
+String refusalReasonSentence(RefusalReason reason) {
+  switch (reason) {
+    case RefusalReason.prohibited:
+      return 'The model host refused this as prohibited content.';
+    case RefusalReason.blocked:
+      return 'The model host blocked this.';
   }
 }

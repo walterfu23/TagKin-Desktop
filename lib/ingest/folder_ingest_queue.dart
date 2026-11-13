@@ -440,6 +440,7 @@ class FolderIngestQueue extends ChangeNotifier {
         return true;
       case ProcessingStatus.tagged:
       case ProcessingStatus.cancelled:
+      case ProcessingStatus.refused:
         return false;
     }
   }

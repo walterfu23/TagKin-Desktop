@@ -2434,6 +2434,17 @@ components:
         - tagged
         - failed
         - cancelled
+        - refused
+
+    RefusalReason:
+      type: string
+      description: >
+        Why the model host refused an item or a video segment. Vendor-neutral.
+        prohibited is the host's non-configurable prohibited-content block.
+        blocked is any other explicit block, with no category named.
+      enum:
+        - prohibited
+        - blocked
 
     JobState:
       type: string
@@ -2586,6 +2597,13 @@ components:
           description: >
             Why the last analyze attempt failed (when processingStatus is
             failed). Null otherwise. Never media bytes (R1).
+        refusalReason:
+          allOf:
+            - $ref: "#/components/schemas/RefusalReason"
+          nullable: true
+          description: >
+            Set when processingStatus is refused. Null when the item is tagged
+            or failed, including a video that has some refused segments.
         schemaVersion:
           type: integer
           minimum: 1
@@ -3220,6 +3238,11 @@ components:
           minimum: 0
           nullable: true
           description: Representative sample-frame timestamp used for analyze / face crop.
+        refusalReason:
+          allOf:
+            - $ref: "#/components/schemas/RefusalReason"
+          nullable: true
+          description: Set when the model host refused this segment.
 
     TagRegion:
       type: object
@@ -3451,6 +3474,11 @@ components:
           minimum: 0
           nullable: true
           description: Representative sample-frame timestamp used for analyze / face crop.
+        refusalReason:
+          allOf:
+            - $ref: "#/components/schemas/RefusalReason"
+          nullable: true
+          description: Set when the model host refused this segment.
         tags:
           type: array
           items:
