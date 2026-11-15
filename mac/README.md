@@ -56,6 +56,15 @@ Do **not** reuse the API `sN` ids (those are the `tagkin` repo's `TagKin/mac/`);
 | [`121_test_d11.sh`](./121_test_d11.sh) | D11 Packaging / client version / Update required regression bar alone. |
 | [`123_test_d13.sh`](./123_test_d13.sh) | D13 Item List Export regression bar alone. |
 
+## Expected macOS test messages
+
+The bars that run `integration_test/` on macOS print two notices that are **not** failures; the scripts say so before each run:
+
+- `Failed to foreground app; open returned 1` (red) — Flutter could not bring the test app to the front. The run continues.
+- A Swift Package Manager notice listing plugins such as `window_manager` — third-party plugins have not adopted it yet.
+
+Judge a run by `All tests passed!`, the `==> Dn regression complete` line, and the exit code.
+
 ## Pick up a code change
 
 After an agent or local edit, load the new code before verifying in the UI:

@@ -18,6 +18,6 @@ flutter test
 tagkin_r8_secret_scan
 
 echo "==> integration smoke (library list/detail on macOS)"
-flutter test integration_test/items_test.dart -d macos
+tagkin_macos_integration_test integration_test/items_test.dart
 
 echo "==> D2 regression complete"

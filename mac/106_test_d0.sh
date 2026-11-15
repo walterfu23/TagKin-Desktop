@@ -31,6 +31,6 @@ echo "==> flutter test (unit/widget + D0 terminology-parity)"
 flutter test
 
 echo "==> integration smoke (foundation boot on macOS)"
-flutter test integration_test/app_test.dart -d macos
+tagkin_macos_integration_test integration_test/app_test.dart
 
 echo "==> D0 regression complete"

@@ -17,6 +17,6 @@ flutter test
 tagkin_r8_secret_scan
 
 echo "==> integration smoke (knowledge corrections UI on macOS)"
-flutter test integration_test/knowledge_corrections_test.dart -d macos
+tagkin_macos_integration_test integration_test/knowledge_corrections_test.dart
 
 echo "==> D10 regression complete"

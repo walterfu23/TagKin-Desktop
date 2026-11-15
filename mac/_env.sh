@@ -47,3 +47,13 @@ tagkin_r8_secret_scan() {
     exit 1
   fi
 }
+
+# macOS integration run. Flutter prints "Failed to foreground app; open returned 1"
+# (app launched in the background) and a Swift Package Manager plugin notice; neither
+# is a test result, so say so up front instead of hiding them.
+tagkin_macos_integration_test() {
+  echo "note: 'Failed to foreground app; open returned 1' and the Swift Package Manager"
+  echo "      plugin notice are harmless Flutter/macOS messages. Judge the run by"
+  echo "      'All tests passed!' and the exit code."
+  flutter test "$1" -d macos
+}

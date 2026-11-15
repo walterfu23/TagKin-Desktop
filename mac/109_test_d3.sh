@@ -18,6 +18,6 @@ flutter test
 tagkin_r8_secret_scan
 
 echo "==> integration smoke (folder ingest on macOS)"
-flutter test integration_test/folder_ingest_test.dart -d macos
+tagkin_macos_integration_test integration_test/folder_ingest_test.dart
 
 echo "==> D3 regression complete"

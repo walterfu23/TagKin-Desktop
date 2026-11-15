@@ -18,6 +18,6 @@ flutter test
 tagkin_r8_secret_scan
 
 echo "==> integration smoke (prepass on macOS)"
-flutter test integration_test/prepass_test.dart -d macos
+tagkin_macos_integration_test integration_test/prepass_test.dart
 
 echo "==> D4 regression complete"

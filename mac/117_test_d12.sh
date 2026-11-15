@@ -17,6 +17,6 @@ flutter test test/undo/undo_controller_test.dart test/undo/undo_depth_badge_test
 tagkin_r8_secret_scan
 
 echo "==> integration smoke (knowledge corrections + screen undo on macOS)"
-flutter test integration_test/knowledge_corrections_test.dart -d macos
+tagkin_macos_integration_test integration_test/knowledge_corrections_test.dart
 
 echo "==> D12 regression complete"

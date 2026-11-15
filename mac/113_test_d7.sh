@@ -16,6 +16,6 @@ flutter test
 tagkin_r8_secret_scan
 
 echo "==> integration smoke (jobs lifecycle on macOS)"
-flutter test integration_test/jobs_lifecycle_test.dart -d macos
+tagkin_macos_integration_test integration_test/jobs_lifecycle_test.dart
 
 echo "==> D7 regression complete"

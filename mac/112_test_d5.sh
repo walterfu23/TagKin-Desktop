@@ -17,6 +17,6 @@ flutter test
 tagkin_r8_secret_scan
 
 echo "==> integration smoke (upload on macOS)"
-flutter test integration_test/upload_test.dart -d macos
+tagkin_macos_integration_test integration_test/upload_test.dart
 
 echo "==> D5 regression complete"

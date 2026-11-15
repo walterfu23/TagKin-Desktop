@@ -16,6 +16,6 @@ flutter test
 tagkin_r8_secret_scan
 
 echo "==> integration smoke (signed-in foundation boot on macOS)"
-flutter test integration_test/app_test.dart -d macos
+tagkin_macos_integration_test integration_test/app_test.dart
 
 echo "==> D1 regression complete"
