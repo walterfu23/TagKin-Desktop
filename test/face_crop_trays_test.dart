@@ -1056,9 +1056,8 @@ void main() {
     },
   );
 
-  testWidgets(
-    'face crop trays: Set name greys a person already on this photo',
-    (tester) async {
+  group('Set name for a person already on this photo', () {
+    Future<FakePersonsRepository> openWithConflict(WidgetTester tester) async {
       final persons = FakePersonsRepository(
         persons: [
           fixturePersonDetail(
@@ -1084,7 +1083,6 @@ void main() {
           region: const TagRegion(yMin: 0.2, xMin: 0.5, yMax: 0.5, xMax: 0.8),
         ),
       );
-
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
@@ -1097,22 +1095,52 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('face-crop-set-name-ap_b')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('person-picker-option-person_1')));
+      await tester.pumpAndSettle();
+      return persons;
+    }
+
+    testWidgets('opens the chooser instead of refusing', (tester) async {
+      final persons = await openWithConflict(tester);
+      expect(find.byKey(const Key('face-name-conflict-dialog')), findsOneWidget);
+      expect(find.text('Sam is already on another face'), findsOneWidget);
+      expect(persons.reassignCalls, isEmpty);
+      expect(find.byKey(const Key('face-crop-already-on-photo')), findsNothing);
+    });
+
+    testWidgets('choosing the face being named moves Sam to it', (
+      tester,
+    ) async {
+      final persons = await openWithConflict(tester);
+      await tester.tap(find.byKey(const Key('face-name-conflict-pick-tag_b')));
+      await tester.pumpAndSettle();
+
+      expect(persons.unlinkCalls, ['ap_a']);
+      expect(persons.reassignCalls.map((c) => c.appearanceId), ['ap_b']);
+      expect(persons.reassignCalls.single.personId, 'person_1');
+    });
+
+    testWidgets('choosing the other face or Cancel changes nothing', (
+      tester,
+    ) async {
+      final persons = await openWithConflict(tester);
+      await tester.tap(find.byKey(const Key('face-name-conflict-pick-tag_a')));
+      await tester.pumpAndSettle();
+      expect(persons.unlinkCalls, isEmpty);
+      expect(persons.reassignCalls, isEmpty);
 
       await tester.tap(find.byKey(const Key('face-crop-set-name-ap_b')));
       await tester.pumpAndSettle();
-
-      final tile = tester.widget<ListTile>(
-        find.byKey(const Key('person-picker-option-person_1')),
-      );
-      expect(tile.enabled, isFalse);
-      expect(find.text('already on this photo'), findsOneWidget);
       await tester.tap(find.byKey(const Key('person-picker-option-person_1')));
       await tester.pumpAndSettle();
-      expect(persons.reassignCalls, isEmpty);
-      await tester.tap(find.byKey(const Key('person-picker-cancel')));
+      await tester.tap(find.byKey(const Key('face-name-conflict-cancel')));
       await tester.pumpAndSettle();
-    },
-  );
+      expect(persons.unlinkCalls, isEmpty);
+      expect(persons.reassignCalls, isEmpty);
+    });
+  });
 
   testWidgets('face crop trays: click selects; Cmd+click multi-selects', (
     tester,
@@ -5140,64 +5168,79 @@ void main() {
     },
   );
 
+  // Two loose faces in Unassigned, Cmd-selected, then Group.
+  Future<FakePersonsRepository> groupTwoLooseFaces(
+    WidgetTester tester, {
+    required String itemId1,
+    required String itemId2,
+    String? keyPeriod1,
+    String? keyPeriod2,
+  }) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final persons = FakePersonsRepository(persons: const []);
+    persons.unassignedAppearances.addAll([
+      fixtureAppearance(
+        id: 'ap_same_1',
+        personId: null,
+        itemId: itemId1,
+        keyPeriodId: keyPeriod1,
+        tagId: 'tag_same_1',
+        region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
+      ),
+      fixtureAppearance(
+        id: 'ap_same_2',
+        personId: null,
+        itemId: itemId2,
+        keyPeriodId: keyPeriod2,
+        tagId: 'tag_same_2',
+        region: const TagRegion(yMin: 0.1, xMin: 0.5, yMax: 0.4, xMax: 0.8),
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          itemsRepositoryProvider.overrideWithValue(
+            _itemsInAlbum({itemId1, itemId2}.toList()),
+          ),
+        ],
+        child: const MaterialApp(home: FaceCropTraysPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final g1 = tester.getRect(
+      find.byKey(const Key('face-crop-appearance-ap_same_1')),
+    );
+    await tester.tapAt(Offset(g1.left + 10, g1.bottom - 10));
+    await tester.pumpAndSettle();
+    debugFaceCropMetaPressed = () => true;
+    final g2 = tester.getRect(
+      find.byKey(const Key('face-crop-appearance-ap_same_2')),
+    );
+    await tester.tapAt(Offset(g2.left + 10, g2.bottom - 10));
+    await tester.pumpAndSettle();
+    debugFaceCropMetaPressed = null;
+
+    expect(find.byKey(const Key('face-crop-group-selection')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('face-crop-group-selection')));
+    await tester.pumpAndSettle();
+    return persons;
+  }
+
   testWidgets(
     'face crop trays: Group of two faces from the same photo shows why',
     (tester) async {
-      tester.view.physicalSize = const Size(1400, 900);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-
-      final persons = FakePersonsRepository(persons: const []);
-      persons.unassignedAppearances.addAll([
-        fixtureAppearance(
-          id: 'ap_same_1',
-          personId: null,
-          itemId: 'item_same',
-          tagId: 'tag_same_1',
-          region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
-        ),
-        fixtureAppearance(
-          id: 'ap_same_2',
-          personId: null,
-          itemId: 'item_same',
-          tagId: 'tag_same_2',
-          region: const TagRegion(yMin: 0.1, xMin: 0.5, yMax: 0.4, xMax: 0.8),
-        ),
-      ]);
-
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            personsRepositoryProvider.overrideWithValue(persons),
-            itemsRepositoryProvider.overrideWithValue(
-              _itemsInAlbum(['item_same']),
-            ),
-          ],
-          child: const MaterialApp(home: FaceCropTraysPage()),
-        ),
+      final persons = await groupTwoLooseFaces(
+        tester,
+        itemId1: 'item_same',
+        itemId2: 'item_same',
       );
-      await tester.pumpAndSettle();
-
-      final g1 = tester.getRect(
-        find.byKey(const Key('face-crop-appearance-ap_same_1')),
-      );
-      await tester.tapAt(Offset(g1.left + 10, g1.bottom - 10));
-      await tester.pumpAndSettle();
-      debugFaceCropMetaPressed = () => true;
-      final g2 = tester.getRect(
-        find.byKey(const Key('face-crop-appearance-ap_same_2')),
-      );
-      await tester.tapAt(Offset(g2.left + 10, g2.bottom - 10));
-      await tester.pumpAndSettle();
-      debugFaceCropMetaPressed = null;
-
-      expect(
-        find.byKey(const Key('face-crop-group-selection')),
-        findsOneWidget,
-      );
-      await tester.tap(find.byKey(const Key('face-crop-group-selection')));
-      await tester.pumpAndSettle();
 
       expect(persons.assembleAppearancesCalls, isEmpty);
       expect(
@@ -5208,7 +5251,44 @@ void main() {
   );
 
   testWidgets(
-    'face crop trays: drop onto a person skips a face already sharing that photo',
+    'face crop trays: Group of two faces from the same key period shows why',
+    (tester) async {
+      final persons = await groupTwoLooseFaces(
+        tester,
+        itemId1: 'vid_1',
+        itemId2: 'vid_1',
+        keyPeriod1: 'kp_1',
+        keyPeriod2: 'kp_1',
+      );
+
+      expect(persons.assembleAppearancesCalls, isEmpty);
+      expect(
+        find.byKey(const Key('face-crop-group-same-photo')),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'face crop trays: Group of two faces from different key periods of one video is allowed',
+    (tester) async {
+      final persons = await groupTwoLooseFaces(
+        tester,
+        itemId1: 'vid_1',
+        itemId2: 'vid_1',
+        keyPeriod1: 'kp_1',
+        keyPeriod2: 'kp_2',
+      );
+
+      expect(find.byKey(const Key('face-crop-group-same-photo')), findsNothing);
+      expect(persons.assembleAppearancesCalls, [
+        containsAll(['ap_same_1', 'ap_same_2']),
+      ]);
+    },
+  );
+
+  testWidgets(
+    'face crop trays: drop onto a person opens the chooser for a face already sharing that photo',
     (tester) async {
       tester.view.physicalSize = const Size(1400, 900);
       tester.view.devicePixelRatio = 1.0;
@@ -5275,11 +5355,18 @@ void main() {
       await gesture.up();
       await tester.pumpAndSettle();
 
+      expect(find.byKey(const Key('face-name-conflict-dialog')), findsOneWidget);
       expect(persons.reassignCalls, isEmpty);
-      expect(
-        find.byKey(const Key('face-crop-already-on-photo')),
-        findsOneWidget,
+      expect(find.byKey(const Key('face-crop-already-on-photo')), findsNothing);
+
+      await tester.tap(
+        find.byKey(const Key('face-name-conflict-pick-tag_other')),
       );
+      await tester.pumpAndSettle();
+
+      expect(persons.unlinkCalls, ['ap_maya']);
+      expect(persons.reassignCalls.map((c) => c.appearanceId), ['ap_other']);
+      expect(persons.reassignCalls.single.personId, 'person_maya');
     },
   );
 }

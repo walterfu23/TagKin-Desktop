@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/person_detail_page.dart';
@@ -433,6 +434,290 @@ void main() {
       expect(persons.reassignCalls.single.name, isNull);
     },
   );
+
+  group('person detail: reassign to a person already on the photo', () {
+    FakePersonsRepository twoFacesOnOnePhoto() => FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: 'Sam',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_1',
+              personId: 'person_1',
+              itemId: 'item_x',
+              tagId: 'tag_1',
+            ),
+          ],
+        ),
+        fixturePersonDetail(
+          id: 'person_2',
+          name: 'Alex',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_9',
+              personId: 'person_2',
+              itemId: 'item_x',
+              tagId: 'tag_9',
+            ),
+          ],
+        ),
+      ],
+    );
+
+    // Face thumbs resolve their item; without these the fake API 404s.
+    FakeItemsRepository thumbItems() => FakeItemsRepository(
+      items: [
+        fixtureItem(id: 'item_x'),
+        fixtureItem(id: 'item_v', type: ItemType.video),
+      ],
+    );
+
+    Future<void> startReassign(
+      WidgetTester tester,
+      FakePersonsRepository persons,
+    ) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            personsRepositoryProvider.overrideWithValue(persons),
+            itemsRepositoryProvider.overrideWithValue(thumbItems()),
+          ],
+          child: const MaterialApp(
+            home: PersonDetailPage(personId: 'person_1'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('appearance-thumb-ap_1')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('appearance-reassign-select-ap_1')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Alex').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('appearance-reassign-ap_1')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('choosing the moved face releases the other one', (
+      tester,
+    ) async {
+      final persons = twoFacesOnOnePhoto();
+      await startReassign(tester, persons);
+
+      expect(
+        find.byKey(const Key('face-name-conflict-dialog')),
+        findsOneWidget,
+      );
+      expect(find.text('Alex is already on another face'), findsOneWidget);
+      expect(find.byKey(const Key('person-already-on-photo')), findsNothing);
+      expect(persons.reassignCalls, isEmpty);
+
+      await tester.tap(find.byKey(const Key('face-name-conflict-pick-tag_1')));
+      await tester.pumpAndSettle();
+
+      expect(persons.unlinkCalls, ['ap_9']);
+      expect(persons.reassignCalls.single.appearanceId, 'ap_1');
+      expect(persons.reassignCalls.single.personId, 'person_2');
+    });
+
+    testWidgets('choosing the other face or Cancel changes nothing', (
+      tester,
+    ) async {
+      final persons = twoFacesOnOnePhoto();
+      await startReassign(tester, persons);
+
+      await tester.tap(find.byKey(const Key('face-name-conflict-pick-tag_9')));
+      await tester.pumpAndSettle();
+      expect(persons.unlinkCalls, isEmpty);
+      expect(persons.reassignCalls, isEmpty);
+
+      await tester.tap(find.byKey(const Key('appearance-reassign-ap_1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('face-name-conflict-cancel')));
+      await tester.pumpAndSettle();
+      expect(persons.unlinkCalls, isEmpty);
+      expect(persons.reassignCalls, isEmpty);
+    });
+
+    Future<void> cmdZ(WidgetTester tester, {bool shift = false}) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.meta);
+      if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shift);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+      if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shift);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.meta);
+      await tester.pumpAndSettle();
+    }
+
+    List<String> faces(FakePersonsRepository persons, String id) => [
+      for (final a
+          in persons.personDetails.firstWhere((p) => p.id == id).appearances)
+        a.id,
+    ];
+
+    testWidgets('undo puts both faces back; redo moves the name again', (
+      tester,
+    ) async {
+      final persons = twoFacesOnOnePhoto();
+      await startReassign(tester, persons);
+      await tester.tap(find.byKey(const Key('face-name-conflict-pick-tag_1')));
+      await tester.pumpAndSettle();
+      expect(faces(persons, 'person_2'), ['ap_1']);
+      expect(faces(persons, 'person_1'), isEmpty);
+
+      await cmdZ(tester);
+      expect(faces(persons, 'person_1'), ['ap_1']);
+      expect(faces(persons, 'person_2'), ['ap_9']);
+
+      await cmdZ(tester, shift: true);
+      expect(faces(persons, 'person_2'), ['ap_1']);
+      expect(faces(persons, 'person_1'), isEmpty);
+      expect(persons.unassignedAppearances.map((a) => a.id), ['ap_9']);
+    });
+
+    testWidgets('a failed reassign gives the other face its name back', (
+      tester,
+    ) async {
+      final persons = twoFacesOnOnePhoto();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            personsRepositoryProvider.overrideWithValue(persons),
+            itemsRepositoryProvider.overrideWithValue(thumbItems()),
+          ],
+          child: const MaterialApp(
+            home: PersonDetailPage(personId: 'person_1'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('appearance-thumb-ap_1')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('appearance-reassign-select-ap_1')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Alex').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('appearance-reassign-ap_1')));
+      await tester.pumpAndSettle();
+      persons.reassignErrorOnce = ApiException(
+        statusCode: 500,
+        message: 'boom',
+      );
+      await tester.tap(find.byKey(const Key('face-name-conflict-pick-tag_1')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('person-reassign-error')), findsOneWidget);
+      expect(persons.unlinkCalls, ['ap_9']);
+      expect(persons.reassignCalls.map((c) => c.appearanceId), [
+        'ap_1',
+        'ap_9',
+      ]);
+      expect(faces(persons, 'person_2'), ['ap_9']);
+      expect(faces(persons, 'person_1'), ['ap_1']);
+
+      // The failed move recorded no undo step.
+      await cmdZ(tester);
+      expect(persons.reassignCalls, hasLength(2));
+    });
+
+    testWidgets('a face with no tag keeps the plain already-on-photo refusal', (
+      tester,
+    ) async {
+      final persons = FakePersonsRepository(
+        persons: [
+          fixturePersonDetail(
+            id: 'person_1',
+            name: 'Sam',
+            appearances: [
+              fixtureAppearance(
+                id: 'ap_1',
+                personId: 'person_1',
+                itemId: 'item_x',
+              ),
+            ],
+          ),
+          fixturePersonDetail(
+            id: 'person_2',
+            name: 'Alex',
+            appearances: [
+              fixtureAppearance(
+                id: 'ap_9',
+                personId: 'person_2',
+                itemId: 'item_x',
+                tagId: 'tag_9',
+              ),
+            ],
+          ),
+        ],
+      );
+      await startReassign(tester, persons);
+
+      expect(find.byKey(const Key('face-name-conflict-dialog')), findsNothing);
+      expect(find.byKey(const Key('person-already-on-photo')), findsOneWidget);
+      expect(persons.unlinkCalls, isEmpty);
+    });
+
+    FakePersonsRepository videoFaces({required String otherPeriod}) =>
+        FakePersonsRepository(
+          persons: [
+            fixturePersonDetail(
+              id: 'person_1',
+              name: 'Sam',
+              appearances: [
+                fixtureAppearance(
+                  id: 'ap_1',
+                  personId: 'person_1',
+                  itemId: 'item_v',
+                  keyPeriodId: 'kp_1',
+                  tagId: 'tag_1',
+                ),
+              ],
+            ),
+            fixturePersonDetail(
+              id: 'person_2',
+              name: 'Alex',
+              appearances: [
+                fixtureAppearance(
+                  id: 'ap_9',
+                  personId: 'person_2',
+                  itemId: 'item_v',
+                  keyPeriodId: otherPeriod,
+                  tagId: 'tag_9',
+                ),
+              ],
+            ),
+          ],
+        );
+
+    testWidgets('video: the same key period opens the chooser', (tester) async {
+      final persons = videoFaces(otherPeriod: 'kp_1');
+      await startReassign(tester, persons);
+      expect(
+        find.byKey(const Key('face-name-conflict-dialog')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('face-name-conflict-pick-tag_1')));
+      await tester.pumpAndSettle();
+      expect(persons.unlinkCalls, ['ap_9']);
+      expect(persons.reassignCalls.single.appearanceId, 'ap_1');
+    });
+
+    testWidgets('video: another key period reassigns with no chooser', (
+      tester,
+    ) async {
+      final persons = videoFaces(otherPeriod: 'kp_2');
+      await startReassign(tester, persons);
+      expect(find.byKey(const Key('face-name-conflict-dialog')), findsNothing);
+      expect(find.byKey(const Key('person-already-on-photo')), findsNothing);
+      expect(persons.unlinkCalls, isEmpty);
+      expect(persons.reassignCalls.single.appearanceId, 'ap_1');
+      expect(faces(persons, 'person_2'), containsAll(['ap_1', 'ap_9']));
+    });
+  });
 
   testWidgets('person detail: reassign undo restores swept alike faces', (
     tester,

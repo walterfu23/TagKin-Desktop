@@ -23,6 +23,7 @@ import 'package:tagkin_desktop/persons/person_picker_dialog.dart';
 import 'package:tagkin_desktop/persons/person_search.dart';
 import 'package:tagkin_desktop/persons/who_exclusion_crop_thumb.dart';
 import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
+import 'package:tagkin_desktop/review/face_name_conflict_dialog.dart';
 import 'package:tagkin_desktop/undo/undo_controller.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 import 'package:tagkin_desktop/undo/undoable_action.dart';
@@ -1477,20 +1478,26 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         break;
       }
     }
-    final disabledPersonIds = <String>{
-      for (final a in _assignedOverview)
-        if (a.itemId != null &&
-            a.itemId == found?.itemId &&
-            a.personId != null)
-          a.personId!,
-    };
-    final resolved = await _promptSetNamePerson(
-      disabledPersonIds: disabledPersonIds,
-    );
+    final resolved = await _promptSetNamePerson();
     if (resolved == null || !mounted) return;
-    if (resolved.personId != null &&
+    PersonAppearance? takeFrom;
+    final holder = resolved.personId == null || found == null
+        ? null
+        : _holderOnSamePhoto(found, resolved.personId!);
+    if (holder != null) {
+      final takes = await showFaceNameConflictDialog(
+        context,
+        personName: resolved.name ?? _nameForPersonId(resolved.personId) ?? '',
+        target: _conflictFace(found!),
+        holder: _conflictFace(holder),
+      );
+      if (!takes || !mounted) return;
+      takeFrom = holder;
+    } else if (resolved.personId != null &&
         found?.itemId != null &&
-        _itemsClaimedByPerson(resolved.personId!).contains(found!.itemId)) {
+        _claimsByPerson(
+          resolved.personId!,
+        ).contains(_claimKey(found!.itemId, found.keyPeriodId))) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           key: const Key('face-crop-already-on-photo'),
@@ -1506,11 +1513,30 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     setState(() => _busy = true);
     try {
       final persons = ref.read(personsRepositoryProvider);
-      final result = await persons.reassignAppearance(
-        appearanceId,
-        name: resolved.name,
-        personId: resolved.personId,
-      );
+      final taken = takeFrom;
+      final takenPersonId = taken?.personId;
+      if (taken != null) await persons.unlinkAppearance(taken.id);
+      final ReassignAppearanceResponse result;
+      try {
+        result = await persons.reassignAppearance(
+          appearanceId,
+          name: resolved.name,
+          personId: resolved.personId,
+        );
+      } catch (_) {
+        if (taken != null && takenPersonId != null) {
+          try {
+            await persons.reassignAppearance(
+              taken.id,
+              personId: takenPersonId,
+              propagateAlike: false,
+            );
+          } catch (_) {
+            // Keep the original failure.
+          }
+        }
+        rethrow;
+      }
       final updated = result.appearance;
       final newId = updated.personId;
       if (newId != null) {
@@ -1524,10 +1550,18 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           label: 'Set name',
           onUndo: () async {
             await persons.unlinkAppearance(appearanceId);
+            if (taken != null && takenPersonId != null) {
+              await persons.reassignAppearance(
+                taken.id,
+                personId: takenPersonId,
+                propagateAlike: false,
+              );
+            }
             _markCollectionDirty();
             await _reload();
           },
           onRedo: () async {
+            if (taken != null) await persons.unlinkAppearance(taken.id);
             final restored = await persons.reassignAppearance(
               appearanceId,
               name: resolved.name,
@@ -2349,10 +2383,53 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
 
   bool _exclusionInScope(WhoExclusion e) => _scopedItemIds.contains(e.itemId);
 
-  Set<String> _itemsClaimedByPerson(String personId) => {
+  /// Another Assigned face on [face]'s photo (or key period) holding
+  /// [personId], when both faces can be shown in the name-conflict chooser.
+  PersonAppearance? _holderOnSamePhoto(PersonAppearance face, String personId) {
+    if (face.itemId == null || face.tagId == null) return null;
+    for (final a in _assignedOverview) {
+      if (a.id != face.id &&
+          a.personId == personId &&
+          a.itemId == face.itemId &&
+          a.keyPeriodId == face.keyPeriodId &&
+          a.tagId != null) {
+        return a;
+      }
+    }
+    return null;
+  }
+
+  ConflictFace _conflictFace(PersonAppearance a) => ConflictFace(
+    itemId: a.itemId!,
+    tagId: a.tagId!,
+    name: _nameForPersonId(a.personId),
+    region: a.region,
+  );
+
+  PersonAppearance? _appearanceById(String? id) {
+    if (id == null) return null;
+    for (final a in [..._unassigned, ..._assignedOverview]) {
+      if (a.id == id) return a;
+    }
+    return null;
+  }
+
+  /// A person holds one face per photo, or per video key period.
+  static String _claimKey(String? itemId, String? keyPeriodId) =>
+      '$itemId|${keyPeriodId ?? ''}';
+
+  Set<String> _claimsByPerson(String personId) => {
     for (final a in _assignedOverview)
-      if (a.personId == personId && a.itemId != null) a.itemId!,
+      if (a.personId == personId && a.itemId != null)
+        _claimKey(a.itemId, a.keyPeriodId),
   };
+
+  String _dropClaimKey(FaceCropDragData d) => _claimKey(
+    d.itemId,
+    d.appearanceId == null
+        ? null
+        : _appearanceById(d.appearanceId)?.keyPeriodId,
+  );
 
   String? _nameForPersonId(String? personId) {
     if (personId == null) return null;
@@ -2368,7 +2445,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       final pool = [..._unassigned, ..._assignedOverview];
       for (final id in _selectedIds) {
         for (final a in pool) {
-          if (a.id == id && a.itemId != null && !seen.add(a.itemId!)) {
+          if (a.id == id &&
+              a.itemId != null &&
+              !seen.add(_claimKey(a.itemId, a.keyPeriodId))) {
             return true;
           }
         }
@@ -2736,6 +2815,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
     setState(() => _busy = true);
     var failed = 0;
     var groupSkipped = 0;
+    var choiceDeclined = false;
     Object? lastError;
     final applied = <_FaceMoveResult>[];
     final undoSteps = <_FaceDropUndoStep>[];
@@ -2854,7 +2934,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
             }
           }
           final claimedItems = <String>{
-            if (personId != null) ..._itemsClaimedByPerson(personId),
+            if (personId != null) ..._claimsByPerson(personId),
           };
           for (final entry in byFaceGroup.entries) {
             try {
@@ -2889,7 +2969,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
               createName = null;
               groupSkipped += result.skippedAppearances.length;
               for (final a in detail.appearances) {
-                if (a.itemId != null) claimedItems.add(a.itemId!);
+                if (a.itemId != null) {
+                  claimedItems.add(_claimKey(a.itemId, a.keyPeriodId));
+                }
               }
               final byId = {for (final a in detail.appearances) a.id: a};
               // Mutable: reminted across undo/redo (assignFaceGroup consumes FG).
@@ -3046,18 +3128,65 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
             }
           }
           for (final data in singles) {
-            if (personId != null && claimedItems.contains(data.itemId)) {
-              failed++;
-              lastError = ApiException(
-                statusCode: 409,
-                code: 'person_already_on_item',
-                message: personAlreadyOnPhotoMessage(
-                  createName ?? _nameForPersonId(personId),
-                ),
+            PersonAppearance? takeFrom;
+            final claimKey = _dropClaimKey(data);
+            if (personId != null && claimedItems.contains(claimKey)) {
+              final face = _appearanceById(data.appearanceId);
+              final holder =
+                  face != null &&
+                      toApply.length == 1 &&
+                      singles.length == 1 &&
+                      byFaceGroup.isEmpty
+                  ? _holderOnSamePhoto(face, personId)
+                  : null;
+              if (face == null || holder == null) {
+                failed++;
+                lastError = ApiException(
+                  statusCode: 409,
+                  code: 'person_already_on_item',
+                  message: personAlreadyOnPhotoMessage(
+                    createName ?? _nameForPersonId(personId),
+                  ),
+                );
+                continue;
+              }
+              if (!mounted) return;
+              final takes = await showFaceNameConflictDialog(
+                context,
+                personName: createName ?? _nameForPersonId(personId) ?? '',
+                target: _conflictFace(face),
+                holder: _conflictFace(holder),
               );
-              continue;
+              if (!mounted) return;
+              if (!takes) {
+                choiceDeclined = true;
+                continue;
+              }
+              takeFrom = holder;
             }
+            _FaceMoveResult? holderResult;
+            _FaceDropUndoStep? holderStep;
             try {
+              if (takeFrom != null) {
+                final persons = ref.read(personsRepositoryProvider);
+                final takenId = takeFrom.id;
+                final takenPersonId = takeFrom.personId!;
+                final unlinked = await persons.unlinkAppearance(takenId);
+                holderStep = _FaceDropUndoStep(
+                  undo: () => persons.reassignAppearance(
+                    takenId,
+                    personId: takenPersonId,
+                    propagateAlike: false,
+                  ),
+                  redo: () => persons.unlinkAppearance(takenId),
+                );
+                holderResult = _FaceMoveResult(
+                  removedAppearanceId: takenId,
+                  addedAppearance: unlinked,
+                );
+                undoSteps.add(holderStep);
+                applied.add(holderResult);
+              }
               final nameForThis = createName;
               final sweepAlike =
                   data.source == FaceCropTray.assigned &&
@@ -3073,7 +3202,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                 propagateAlike: sweepAlike ? null : false,
               );
               applied.add(result);
-              claimedItems.add(data.itemId);
+              claimedItems.add(claimKey);
               final newPid = result.addedAppearance?.personId;
               if (newPid != null) {
                 personId = newPid;
@@ -3082,6 +3211,17 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
             } catch (e) {
               failed++;
               lastError = e;
+              final step = holderStep;
+              if (step != null) {
+                // The face did not move: put the holder back, drop its step.
+                undoSteps.remove(step);
+                applied.remove(holderResult);
+                try {
+                  await step.undo();
+                } catch (_) {
+                  // Keep the original failure.
+                }
+              }
             }
           }
 
@@ -3161,8 +3301,9 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                       tagId: tagId,
                       fallbackExclusionId: liveExclusionId,
                     );
-                    final match =
-                        await persons.findUnassignedAppearanceByTagId(tagId);
+                    final match = await persons.findUnassignedAppearanceByTagId(
+                      tagId,
+                    );
                     if (match == null) {
                       throw StateError(
                         'Could not find appearance after undo exclude',
@@ -3174,10 +3315,12 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                     );
                   },
                   redo: () async {
-                    var match =
-                        await persons.findUnassignedAppearanceByTagId(tagId);
-                    match ??=
-                        await persons.findAssignedAppearanceByTagId(tagId);
+                    var match = await persons.findUnassignedAppearanceByTagId(
+                      tagId,
+                    );
+                    match ??= await persons.findAssignedAppearanceByTagId(
+                      tagId,
+                    );
                     if (match == null) {
                       throw StateError(
                         'Could not find appearance after redo exclude',
@@ -3232,6 +3375,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
       }
 
       if (!mounted) return;
+      if (choiceDeclined && applied.isEmpty && failed == 0) return;
       if (applied.isNotEmpty) {
         final selectionRestore = _applyMoveResults(
           applied,

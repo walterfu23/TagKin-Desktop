@@ -30,13 +30,15 @@ class FakePersonsRepository implements PersonsRepository {
     required String personId,
     required String? itemId,
     String? exceptAppearanceId,
+    String? keyPeriodId,
   }) {
     if (itemId == null) return;
     for (final p in _persons) {
       if (p.id != personId) continue;
       for (final a in p.appearances) {
         if (a.id == exceptAppearanceId) continue;
-        if (a.itemId == itemId) {
+        // A video allows the same person once per key period.
+        if (a.itemId == itemId && a.keyPeriodId == keyPeriodId) {
           throw ApiException(
             statusCode: 409,
             code: 'person_already_on_item',
@@ -52,7 +54,7 @@ class FakePersonsRepository implements PersonsRepository {
     for (final a in members) {
       final itemId = a.itemId;
       if (itemId == null) continue;
-      if (!seen.add(itemId)) {
+      if (!seen.add('$itemId|${a.keyPeriodId ?? ''}')) {
         throw ApiException(
           statusCode: 409,
           code: 'same_photo_faces',
@@ -86,6 +88,9 @@ class FakePersonsRepository implements PersonsRepository {
   }
 
   final List<String> unlinkCalls = <String>[];
+
+  /// Test hook: runs for each unlink (e.g. to project it into item knowledge).
+  void Function(String appearanceId)? onUnlinked;
   final List<
     ({
       String appearanceId,
@@ -108,6 +113,9 @@ class FakePersonsRepository implements PersonsRepository {
   /// target as unconfirmed (mirrors the API sweep). Off by default so existing
   /// tray tests keep moving a single face.
   bool sweepSiblingsOnReassign = false;
+
+  /// Thrown by the next [reassignAppearance] only, then cleared.
+  Object? reassignErrorOnce;
 
   final Map<String, String> _autoMovedFromPersonId = <String, String>{};
   final List<String> confirmAppearanceCalls = <String>[];
@@ -414,6 +422,7 @@ class FakePersonsRepository implements PersonsRepository {
   @override
   Future<PersonAppearance> unlinkAppearance(String appearanceId) async {
     unlinkCalls.add(appearanceId);
+    onUnlinked?.call(appearanceId);
     for (var i = 0; i < _persons.length; i++) {
       final person = _persons[i];
       final idx = person.appearances.indexWhere((a) => a.id == appearanceId);
@@ -470,6 +479,11 @@ class FakePersonsRepository implements PersonsRepository {
       name: name,
       propagateAlike: propagateAlike,
     ));
+    final once = reassignErrorOnce;
+    if (once != null) {
+      reassignErrorOnce = null;
+      throw once;
+    }
     PersonAppearance? found;
     String? previousPersonId;
     for (var i = 0; i < _persons.length; i++) {
@@ -535,6 +549,7 @@ class FakePersonsRepository implements PersonsRepository {
       personId: targetPersonId,
       itemId: found.itemId,
       exceptAppearanceId: found.id,
+      keyPeriodId: found.keyPeriodId,
     );
     final moved = PersonAppearance(
       id: found.id,

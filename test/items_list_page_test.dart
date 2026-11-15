@@ -1,4 +1,8 @@
+import 'dart:io';
+
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as img;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,6 +15,8 @@ import 'package:tagkin_desktop/ingest/model_host_uploader.dart';
 import 'package:tagkin_desktop/ingest/upload_controller.dart';
 import 'package:tagkin_desktop/library/folder_remove_queue.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
+import 'package:tagkin_desktop/library/item_hover_preview.dart';
+import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 import 'package:tagkin_desktop/library/items_list_page.dart';
 import 'package:tagkin_desktop/library/library_membership_sync.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
@@ -165,6 +171,87 @@ FolderIngestQueue _continueQueue({
     ),
     whoFaceLinkerFactory: () => WhoFaceLinker(items: items),
   );
+}
+
+ItemKnowledge _faceKnowledge(Item item, {String tagId = 'face_1'}) {
+  return fixtureKnowledge(
+    item: item,
+    tags: [
+      fixtureTag(
+        id: tagId,
+        itemId: item.id,
+        dimension: 'who',
+        value: 'person',
+        region: const TagRegion(yMin: 0.1, xMin: 0.2, yMax: 0.4, xMax: 0.5),
+      ),
+    ],
+  );
+}
+
+Directory _tempDir(WidgetTester tester) {
+  final dir = Directory.systemTemp.createTempSync('tagkin_hover_who_');
+  addTearDown(() {
+    if (dir.existsSync()) dir.deleteSync(recursive: true);
+  });
+  return dir;
+}
+
+File _localPhoto(WidgetTester tester, {required String name}) {
+  final dir = _tempDir(tester);
+  final file = File('${dir.path}/$name');
+  final image = img.Image(width: 64, height: 48);
+  img.fill(image, color: img.ColorRgb8(40, 80, 160));
+  file.writeAsBytesSync(img.encodeJpg(image));
+  return file;
+}
+
+Future<TestGesture> _hoverThumb(WidgetTester tester, String itemId) async {
+  final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+  addTearDown(gesture.removePointer);
+  await gesture.addPointer(location: Offset.zero);
+  await tester.pump();
+  final thumb = find.byKey(Key('item-hover-preview-$itemId'));
+  if (thumb.evaluate().isEmpty) {
+    final toggles = find.byWidgetPredicate((widget) {
+      final key = widget.key;
+      return key is ValueKey<String> &&
+          key.value.startsWith('source-group-toggle-');
+    });
+    for (var i = 0; i < toggles.evaluate().length; i++) {
+      await tester.tap(toggles.at(i));
+      await tester.pump();
+      if (thumb.evaluate().isNotEmpty) break;
+    }
+  }
+  await gesture.moveTo(tester.getCenter(thumb));
+  await tester.pump();
+  await tester.pump(kHoverPreviewDelay);
+  await tester.runAsync(() async {
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+  });
+  for (var i = 0; i < 20; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    if (find.byKey(const Key('hover-face-label-1')).evaluate().isNotEmpty) {
+      return gesture;
+    }
+  }
+  fail('Hover preview did not show a face box');
+}
+
+Future<void> _pickNewPerson(
+  WidgetTester tester, {
+  required String scopeId,
+  required String name,
+}) async {
+  await tester.tap(find.byKey(Key('item-inline-who-field-$scopeId-0')));
+  await tester.pumpAndSettle();
+  await tester.tap(
+    find.byKey(Key('item-inline-who-option-$scopeId-0-new')).last,
+  );
+  await tester.pumpAndSettle();
+  await tester.enterText(find.byKey(const Key('person-name-field')), name);
+  await tester.tap(find.byKey(const Key('person-name-save')));
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -541,9 +628,7 @@ void main() {
     expect(find.text('restaurant'), findsNothing);
   });
 
-  testWidgets('folder City fills only items that have no city', (
-    tester,
-  ) async {
+  testWidgets('folder City fills only items that have no city', (tester) async {
     const folder = 'file:///albums/20260506';
     final withCity = fixtureItem(
       id: 'has_city',
@@ -736,6 +821,617 @@ void main() {
     await tester.pumpAndSettle();
     expect(items.assignPersonCalls.single.name, 'Rio');
     expect(items.assignPersonCalls.single.personId, isNull);
+  });
+
+  testWidgets('Folders edit mode lists a new person on other rows', (
+    tester,
+  ) async {
+    final first = fixtureItem(
+      id: 'item_a',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final second = fixtureItem(
+      id: 'item_b',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final persons = FakePersonsRepository();
+    final items = FakeItemsRepository(
+      items: [first, second],
+      linkedPersons: persons,
+      knowledgeByItemId: {
+        'item_a': _faceKnowledge(first),
+        'item_b': _faceKnowledge(second, tagId: 'face_b'),
+      },
+    );
+    await _pumpLibrary(tester, items: items, persons: persons);
+    await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+    await tester.pumpAndSettle();
+
+    await _pickNewPerson(tester, scopeId: 'item_a', name: 'Rio');
+    expect(items.assignPersonCalls.single.name, 'Rio');
+
+    await tester.tap(find.byKey(const Key('item-inline-who-field-item_b-0')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('item-inline-who-option-item_b-0-person_rio')),
+      findsWidgets,
+    );
+
+    await tester.tap(
+      find.byKey(const Key('item-inline-who-option-item_b-0-new')).last,
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('person-name-field')), 'Rio');
+    await tester.tap(find.byKey(const Key('person-name-save')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('face-crop-rename-collision')), findsOneWidget);
+    expect(find.text('Rio already exists'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const Key('face-crop-rename-collision-cancel')),
+    );
+    await tester.pumpAndSettle();
+    expect(items.assignPersonCalls, hasLength(1));
+  });
+
+  testWidgets('Redo of New person assigns the same person', (tester) async {
+    final item = fixtureItem(
+      id: 'item_face',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final persons = FakePersonsRepository();
+    final items = FakeItemsRepository(
+      items: [item],
+      linkedPersons: persons,
+      knowledgeByItemId: {'item_face': _faceKnowledge(item)},
+    );
+    await _pumpLibrary(tester, items: items, persons: persons);
+    await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+    await tester.pumpAndSettle();
+
+    await _pickNewPerson(tester, scopeId: 'item_face', name: 'Rio');
+    expect(items.assignPersonCalls.single.personId, isNull);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.control);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.control);
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.control);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shift);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shift);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.control);
+    await tester.pumpAndSettle();
+
+    expect(items.assignPersonCalls, hasLength(2));
+    expect(items.assignPersonCalls[1].personId, 'person_rio');
+    expect(items.assignPersonCalls[1].name, isNull);
+    expect(persons.deleteCalls, isEmpty);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('item-inline-who-field-item_face-0')),
+        matching: find.text('Rio'),
+      ),
+      findsWidgets,
+    );
+  });
+
+  testWidgets('Folders edit hover box assigns that face and undoes', (
+    tester,
+  ) async {
+    final photo = _localPhoto(tester, name: 'item_face.jpg');
+    final item = fixtureItem(
+      id: 'item_face',
+      processingStatus: ProcessingStatus.tagged,
+      sourceRef: Uri.file(photo.path).toString(),
+      contentHash: '',
+    );
+    final persons = FakePersonsRepository(
+      persons: [fixturePersonDetail(id: 'p_maya', name: 'Maya')],
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      linkedPersons: persons,
+      knowledgeByItemId: {'item_face': _faceKnowledge(item)},
+    );
+    await _pumpLibrary(tester, items: items, persons: persons);
+    await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+    await tester.pumpAndSettle();
+
+    await _hoverThumb(tester, 'item_face');
+    await tester.tap(find.byKey(const Key('hover-face-label-1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('hover-who-face_1-p_maya')));
+    await tester.pumpAndSettle();
+
+    expect(items.assignPersonCalls.single.personId, 'p_maya');
+    expect(items.assignPersonCalls.single.tagId, 'face_1');
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('item-inline-who-field-item_face-0')),
+        matching: find.text('Maya'),
+      ),
+      findsWidgets,
+    );
+    // The number on the still now carries the assigned name.
+    expect(find.text('1 Maya'), findsOneWidget);
+
+    Actions.invoke(
+      tester.element(find.byKey(const Key('folders-edit-toggle'))),
+      const ScreenUndoIntent(),
+    );
+    await tester.pumpAndSettle();
+    expect(persons.unlinkCalls, isNotEmpty);
+  });
+
+  group('Folders edit name already on another number', () {
+    ({FakeItemsRepository items, FakePersonsRepository persons}) twoFaces(
+      Item item,
+    ) {
+      const regionOne = TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4);
+      const regionTwo = TagRegion(yMin: 0.1, xMin: 0.5, yMax: 0.4, xMax: 0.8);
+      final mayaOn1 = fixtureAppearance(
+        id: 'ap_1',
+        personId: 'p_maya',
+        itemId: item.id,
+        tagId: 'face_1',
+        region: regionOne,
+      );
+      final persons = FakePersonsRepository(
+        persons: [
+          fixturePersonDetail(
+            id: 'p_maya',
+            name: 'Maya',
+            appearances: [mayaOn1],
+          ),
+        ],
+      );
+      final items = FakeItemsRepository(
+        items: [item],
+        linkedPersons: persons,
+        knowledgeByItemId: {
+          item.id: fixtureKnowledge(
+            item: item,
+            tags: [
+              fixtureTag(
+                id: 'face_1',
+                itemId: item.id,
+                dimension: 'who',
+                value: 'person',
+                region: regionOne,
+              ),
+              fixtureTag(
+                id: 'face_2',
+                itemId: item.id,
+                dimension: 'who',
+                value: 'person',
+                region: regionTwo,
+              ),
+            ],
+            appearances: [
+              mayaOn1,
+              fixtureAppearance(
+                id: 'ap_2',
+                personId: null,
+                itemId: item.id,
+                tagId: 'face_2',
+                region: regionTwo,
+              ),
+            ],
+          ),
+        },
+      );
+      persons.onUnlinked = items.clearAppearancePerson;
+      return (items: items, persons: persons);
+    }
+
+    Future<void> ctrlZ(WidgetTester tester, {bool shift = false}) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.control);
+      if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shift);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+      if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shift);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.control);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> pickMaya(WidgetTester tester, String scope, int index) async {
+      await tester.tap(find.byKey(Key('item-inline-who-field-$scope-$index')));
+      await tester.pumpAndSettle();
+      // Tap the label: the keyed DropdownMenuItem itself is not on the hit path.
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(Key('item-inline-who-option-$scope-$index-p_maya')),
+          matching: find.byType(Text),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Finder whoField(int index) =>
+        find.byKey(Key('item-inline-who-field-item_face-$index'));
+
+    Finder hasName(int index, String name) =>
+        find.descendant(of: whoField(index), matching: find.text(name));
+
+    testWidgets('row dropdown asks which number keeps the name', (
+      tester,
+    ) async {
+      final item = fixtureItem(
+        id: 'item_face',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final fakes = twoFaces(item);
+      await _pumpLibrary(tester, items: fakes.items, persons: fakes.persons);
+      await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+      await tester.pumpAndSettle();
+      expect(hasName(0, 'Maya'), findsWidgets);
+
+      await pickMaya(tester, 'item_face', 1);
+
+      expect(
+        find.byKey(const Key('face-name-conflict-dialog')),
+        findsOneWidget,
+      );
+      expect(find.text('Maya is already on another face'), findsOneWidget);
+      expect(find.text('2 Unassigned'), findsOneWidget);
+      expect(find.text('1 Maya'), findsOneWidget);
+      expect(fakes.items.assignPersonCalls, isEmpty);
+
+      // Cancel changes nothing.
+      await tester.tap(find.byKey(const Key('face-name-conflict-cancel')));
+      await tester.pumpAndSettle();
+      expect(fakes.persons.unlinkCalls, isEmpty);
+      expect(fakes.items.assignPersonCalls, isEmpty);
+
+      // Choosing the other number keeps Maya where she is.
+      await pickMaya(tester, 'item_face', 1);
+      await tester.tap(find.byKey(const Key('face-name-conflict-pick-face_1')));
+      await tester.pumpAndSettle();
+      expect(fakes.persons.unlinkCalls, isEmpty);
+      expect(fakes.items.assignPersonCalls, isEmpty);
+      expect(hasName(0, 'Maya'), findsWidgets);
+    });
+
+    testWidgets('choosing this number moves the name; one undo restores', (
+      tester,
+    ) async {
+      final item = fixtureItem(
+        id: 'item_face',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final fakes = twoFaces(item);
+      await _pumpLibrary(tester, items: fakes.items, persons: fakes.persons);
+      await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+      await tester.pumpAndSettle();
+
+      await pickMaya(tester, 'item_face', 1);
+      await tester.tap(find.byKey(const Key('face-name-conflict-pick-face_2')));
+      await tester.pumpAndSettle();
+
+      expect(fakes.persons.unlinkCalls, ['ap_1']);
+      expect(fakes.items.assignPersonCalls, hasLength(1));
+      expect(fakes.items.assignPersonCalls.single.personId, 'p_maya');
+      expect(fakes.items.assignPersonCalls.single.tagId, 'face_2');
+      expect(hasName(1, 'Maya'), findsWidgets);
+      expect(hasName(0, 'Maya'), findsNothing);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.control);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.control);
+      await tester.pumpAndSettle();
+
+      // One undo: the second face is released and the first gets Maya back.
+      expect(fakes.items.assignPersonCalls, hasLength(2));
+      expect(fakes.items.assignPersonCalls.last.tagId, 'face_1');
+      expect(fakes.items.assignPersonCalls.last.personId, 'p_maya');
+      expect(hasName(0, 'Maya'), findsWidgets);
+      expect(hasName(1, 'Maya'), findsNothing);
+    });
+
+    testWidgets('hover box menu opens the same chooser', (tester) async {
+      final photo = _localPhoto(tester, name: 'item_face.jpg');
+      final item = fixtureItem(
+        id: 'item_face',
+        processingStatus: ProcessingStatus.tagged,
+        sourceRef: Uri.file(photo.path).toString(),
+        contentHash: '',
+      );
+      final fakes = twoFaces(item);
+      await _pumpLibrary(tester, items: fakes.items, persons: fakes.persons);
+      await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+      await tester.pumpAndSettle();
+
+      await _hoverThumb(tester, 'item_face');
+      await tester.tap(find.byKey(const Key('hover-face-label-2')));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await tester.tap(find.byKey(const Key('hover-who-face_2-p_maya')));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      expect(
+        find.byKey(const Key('face-name-conflict-dialog')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('face-name-conflict-pick-face_2')));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      expect(fakes.persons.unlinkCalls, ['ap_1']);
+      expect(fakes.items.assignPersonCalls.single.tagId, 'face_2');
+      expect(hasName(1, 'Maya'), findsWidgets);
+    });
+
+    testWidgets('undo then redo of a moved name unlinks the holder again', (
+      tester,
+    ) async {
+      final item = fixtureItem(
+        id: 'item_face',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final fakes = twoFaces(item);
+      await _pumpLibrary(tester, items: fakes.items, persons: fakes.persons);
+      await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+      await tester.pumpAndSettle();
+
+      await pickMaya(tester, 'item_face', 1);
+      await tester.tap(find.byKey(const Key('face-name-conflict-pick-face_2')));
+      await tester.pumpAndSettle();
+      expect(fakes.persons.unlinkCalls, ['ap_1']);
+
+      await ctrlZ(tester);
+      expect(hasName(0, 'Maya'), findsWidgets);
+      expect(hasName(1, 'Maya'), findsNothing);
+      final unlinksAfterUndo = fakes.persons.unlinkCalls.length;
+
+      await ctrlZ(tester, shift: true);
+      // Redo releases the holder first, then gives the name to face 2.
+      expect(fakes.persons.unlinkCalls.length, greaterThan(unlinksAfterUndo));
+      expect(fakes.items.assignPersonCalls.last.tagId, 'face_2');
+      expect(fakes.items.assignPersonCalls.last.personId, 'p_maya');
+      expect(hasName(1, 'Maya'), findsWidgets);
+      expect(hasName(0, 'Maya'), findsNothing);
+    });
+
+    testWidgets('a failed move gives the name back and records no undo', (
+      tester,
+    ) async {
+      final item = fixtureItem(
+        id: 'item_face',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final fakes = twoFaces(item);
+      await _pumpLibrary(tester, items: fakes.items, persons: fakes.persons);
+      await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+      await tester.pumpAndSettle();
+
+      fakes.items.assignPersonErrorOnce = ApiException(
+        statusCode: 500,
+        message: 'boom',
+      );
+      await pickMaya(tester, 'item_face', 1);
+      await tester.tap(find.byKey(const Key('face-name-conflict-pick-face_2')));
+      await tester.pumpAndSettle();
+
+      // Holder was released, the assign failed, the holder got Maya back.
+      expect(fakes.persons.unlinkCalls, ['ap_1']);
+      expect(fakes.items.assignPersonCalls, hasLength(2));
+      expect(fakes.items.assignPersonCalls.last.tagId, 'face_1');
+      expect(fakes.items.assignPersonCalls.last.personId, 'p_maya');
+      expect(find.text('Could not save'), findsOneWidget);
+      expect(hasName(0, 'Maya'), findsWidgets);
+      expect(hasName(1, 'Maya'), findsNothing);
+
+      // No undo step was recorded for the failed move.
+      await ctrlZ(tester);
+      expect(fakes.items.assignPersonCalls, hasLength(2));
+      expect(fakes.persons.unlinkCalls, ['ap_1']);
+    });
+
+    group('video key periods', () {
+      const faceA1 = TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4);
+      const faceA2 = TagRegion(yMin: 0.1, xMin: 0.5, yMax: 0.4, xMax: 0.8);
+      const faceB1 = TagRegion(yMin: 0.2, xMin: 0.2, yMax: 0.5, xMax: 0.5);
+
+      ({FakeItemsRepository items, FakePersonsRepository persons}) video() {
+        final item = fixtureItem(
+          id: 'vid_face',
+          type: ItemType.video,
+          processingStatus: ProcessingStatus.tagged,
+        );
+        final mayaA1 = fixtureAppearance(
+          id: 'ap_a1',
+          personId: 'p_maya',
+          itemId: item.id,
+          keyPeriodId: 'kp-a',
+          tagId: 'face_a1',
+          region: faceA1,
+        );
+        Tag face(String id, String period, TagRegion region) => fixtureTag(
+          id: id,
+          itemId: item.id,
+          keyPeriodId: period,
+          dimension: 'who',
+          value: 'person',
+          region: region,
+        );
+        final persons = FakePersonsRepository(
+          persons: [
+            fixturePersonDetail(
+              id: 'p_maya',
+              name: 'Maya',
+              appearances: [mayaA1],
+            ),
+          ],
+        );
+        final items = FakeItemsRepository(
+          items: [item],
+          linkedPersons: persons,
+          knowledgeByItemId: {
+            item.id: fixtureKnowledge(
+              item: item,
+              tags: const [],
+              keyPeriods: [
+                KeyPeriodKnowledge(
+                  id: 'kp-a',
+                  itemId: item.id,
+                  startMs: 0,
+                  endMs: 1000,
+                  tags: [
+                    face('face_a1', 'kp-a', faceA1),
+                    face('face_a2', 'kp-a', faceA2),
+                  ],
+                ),
+                KeyPeriodKnowledge(
+                  id: 'kp-b',
+                  itemId: item.id,
+                  startMs: 2000,
+                  endMs: 3000,
+                  tags: [face('face_b1', 'kp-b', faceB1)],
+                ),
+              ],
+              appearances: [
+                mayaA1,
+                fixtureAppearance(
+                  id: 'ap_a2',
+                  personId: null,
+                  itemId: item.id,
+                  keyPeriodId: 'kp-a',
+                  tagId: 'face_a2',
+                  region: faceA2,
+                ),
+                fixtureAppearance(
+                  id: 'ap_b1',
+                  personId: null,
+                  itemId: item.id,
+                  keyPeriodId: 'kp-b',
+                  tagId: 'face_b1',
+                  region: faceB1,
+                ),
+              ],
+            ),
+          },
+        );
+        persons.onUnlinked = items.clearAppearancePerson;
+        return (items: items, persons: persons);
+      }
+
+      testWidgets('same period: chooser numbers the period faces', (
+        tester,
+      ) async {
+        final fakes = video();
+        await _pumpLibrary(tester, items: fakes.items, persons: fakes.persons);
+        await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+        await tester.pumpAndSettle();
+
+        await pickMaya(tester, 'vid_face-kp-kp-a', 1);
+
+        expect(
+          find.byKey(const Key('face-name-conflict-dialog')),
+          findsOneWidget,
+        );
+        expect(find.text('1 Maya'), findsOneWidget);
+        expect(find.text('2 Unassigned'), findsOneWidget);
+        expect(fakes.items.assignPersonCalls, isEmpty);
+
+        await tester.tap(
+          find.byKey(const Key('face-name-conflict-pick-face_a2')),
+        );
+        await tester.pumpAndSettle();
+        expect(fakes.persons.unlinkCalls, ['ap_a1']);
+        expect(fakes.items.assignPersonCalls.single.tagId, 'face_a2');
+        expect(fakes.items.assignPersonCalls.single.personId, 'p_maya');
+      });
+
+      testWidgets('same period: Cancel leaves both faces alone', (
+        tester,
+      ) async {
+        final fakes = video();
+        await _pumpLibrary(tester, items: fakes.items, persons: fakes.persons);
+        await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+        await tester.pumpAndSettle();
+
+        await pickMaya(tester, 'vid_face-kp-kp-a', 1);
+        await tester.tap(find.byKey(const Key('face-name-conflict-cancel')));
+        await tester.pumpAndSettle();
+        expect(fakes.persons.unlinkCalls, isEmpty);
+        expect(fakes.items.assignPersonCalls, isEmpty);
+      });
+
+      testWidgets('other period: no chooser, name is assigned directly', (
+        tester,
+      ) async {
+        final fakes = video();
+        await _pumpLibrary(tester, items: fakes.items, persons: fakes.persons);
+        await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+        await tester.pumpAndSettle();
+
+        await pickMaya(tester, 'vid_face-kp-kp-b', 0);
+
+        expect(find.byKey(const Key('face-name-conflict-dialog')), findsNothing);
+        expect(fakes.persons.unlinkCalls, isEmpty);
+        expect(fakes.items.assignPersonCalls.single.tagId, 'face_b1');
+        expect(fakes.items.assignPersonCalls.single.personId, 'p_maya');
+      });
+    });
+  });
+
+  testWidgets('Folders edit hover box New person shows on other rows', (
+    tester,
+  ) async {
+    final dir = _tempDir(tester);
+    final photo = File('${dir.path}/a.jpg');
+    final image = img.Image(width: 64, height: 48);
+    img.fill(image, color: img.ColorRgb8(40, 80, 160));
+    photo.writeAsBytesSync(img.encodeJpg(image));
+    File('${dir.path}/b.jpg').writeAsBytesSync(const [1, 2, 3]);
+    final first = fixtureItem(
+      id: 'item_a',
+      processingStatus: ProcessingStatus.tagged,
+      sourceRef: Uri.file(photo.path).toString(),
+      contentHash: '',
+    );
+    final second = fixtureItem(
+      id: 'item_b',
+      processingStatus: ProcessingStatus.tagged,
+      sourceRef: Uri.file('${dir.path}/b.jpg').toString(),
+      contentHash: '',
+    );
+    final persons = FakePersonsRepository();
+    final items = FakeItemsRepository(
+      items: [first, second],
+      linkedPersons: persons,
+      knowledgeByItemId: {
+        'item_a': _faceKnowledge(first),
+        'item_b': _faceKnowledge(second, tagId: 'face_b'),
+      },
+    );
+    await _pumpLibrary(tester, items: items, persons: persons);
+    await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+    await tester.pumpAndSettle();
+
+    final hover = await _hoverThumb(tester, 'item_a');
+    await tester.tap(find.byKey(const Key('hover-face-label-1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('hover-who-face_1-new')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('person-name-field')), 'Rio');
+    await tester.tap(find.byKey(const Key('person-name-save')));
+    await tester.pumpAndSettle();
+
+    expect(items.assignPersonCalls.single.name, 'Rio');
+    await hover.moveTo(const Offset(4, 4));
+    await tester.pump(kHoverPreviewFaceHideDelay);
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('item-inline-who-field-item_b-0')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('item-inline-who-option-item_b-0-person_rio')),
+      findsWidgets,
+    );
   });
 
   testWidgets('Folders edit mode excludes an unassigned face', (tester) async {
@@ -1114,6 +1810,20 @@ void main() {
     expect(find.text('early note'), findsOneWidget);
     expect(find.text('late note'), findsOneWidget);
     expect(find.text('park'), findsNWidgets(2));
+
+    // Rows of one video say so: position under the icon, span under the thumb.
+    String textOf(String key) => tester
+        .widget<Text>(
+          find.descendant(
+            of: find.byKey(Key(key)),
+            matching: find.byType(Text),
+          ),
+        )
+        .data!;
+    expect(textOf('item-period-position-vid_multi-kp-kp-early'), '1/2');
+    expect(textOf('item-period-position-vid_multi-kp-kp-late'), '2/2');
+    expect(textOf('item-period-time-vid_multi-kp-kp-early'), '0:01–0:03');
+    expect(textOf('item-period-time-vid_multi-kp-kp-late'), '0:04–0:08');
   });
 
   testWidgets('video with one key period keeps a single thumb', (tester) async {
@@ -1154,6 +1864,9 @@ void main() {
       find.byKey(const Key('item-thumb-placeholder-vid_one-kp-kp1')),
       findsNothing,
     );
+    // One row for the whole video: no period cues.
+    expect(find.byKey(const Key('item-period-position-vid_one')), findsNothing);
+    expect(find.byKey(const Key('item-period-time-vid_one')), findsNothing);
   });
 
   testWidgets('source control does not open detail', (tester) async {
@@ -1492,6 +2205,50 @@ void main() {
     expect(find.byKey(const Key('item-source-b')), findsOneWidget);
     expect(find.text('a.jpg'), findsNothing);
     expect(find.text('b.jpg'), findsNothing);
+  });
+
+  testWidgets('Folders edit mode collapses and expands a folder', (
+    tester,
+  ) async {
+    const shared = '/users/w/test';
+    final a = fixtureItem(
+      id: 'a',
+      sourceRef: 'file://$shared/a.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    final b = fixtureItem(
+      id: 'b',
+      sourceRef: 'file://$shared/b.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(
+        items: [a, b],
+        knowledgeByItemId: {
+          'a': fixtureKnowledge(item: a, tags: const []),
+          'b': fixtureKnowledge(item: b, tags: const []),
+        },
+      ),
+    );
+    await tester.tap(find.byKey(const Key('folders-edit-toggle')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('item-row-a')), findsNothing);
+    await tester.tap(find.byKey(const Key('source-group-toggle-$shared')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('item-row-a')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-b')), findsOneWidget);
+
+    final what = find.byKey(const Key('item-inline-what-add-field-a'));
+    await tester.enterText(what, 'hike');
+    await tester.tap(find.byKey(const Key('source-group-toggle-$shared')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('item-row-a')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('source-group-toggle-$shared')));
+    await tester.pumpAndSettle();
+    expect(find.text('hike'), findsWidgets);
   });
 
   testWidgets(

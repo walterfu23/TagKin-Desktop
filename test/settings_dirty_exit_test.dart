@@ -9,16 +9,22 @@ import 'package:tagkin_desktop/prefs/desktop_prefs_store.dart';
 import 'package:tagkin_desktop/prefs/settings_page.dart';
 import 'package:tagkin_desktop/ui/format_local_datetime.dart';
 
+import 'fake_credits_repository.dart';
 import 'fake_usage_repository.dart';
 
 List<Override> _overrides(DesktopPrefsController prefsController) {
   return [
     desktopPrefsControllerProvider.overrideWith((ref) => prefsController),
     usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+    creditsRepositoryProvider.overrideWithValue(FakeCreditsRepository()),
   ];
 }
 
 Future<void> _openSettings(WidgetTester tester) async {
+  // Settings is a lazy list; a tall window builds every group.
+  tester.view.physicalSize = const Size(1000, 4000);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
   await tester.tap(find.byKey(const Key('open-settings')));
   await tester.pumpAndSettle();
 }
@@ -198,6 +204,7 @@ void main() {
               summary: fixtureUsageSummary(remainingCredits: 1234),
             ),
           ),
+          creditsRepositoryProvider.overrideWithValue(FakeCreditsRepository()),
         ],
         child: _host(),
       ),

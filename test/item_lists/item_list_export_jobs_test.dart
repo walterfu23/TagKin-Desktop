@@ -521,9 +521,12 @@ ItemListMp4Renderer _gatedRender({
 }
 
 Future<void> _until(bool Function() done) async {
-  for (var i = 0; i < 50; i++) {
+  // Jobs write real files, so wait on the wall clock (a fixed count of
+  // microtask turns is too few when other suites load the machine).
+  final deadline = DateTime.now().add(const Duration(seconds: 10));
+  while (DateTime.now().isBefore(deadline)) {
     if (done()) return;
-    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(const Duration(milliseconds: 5));
   }
   fail('timed out waiting for export jobs');
 }

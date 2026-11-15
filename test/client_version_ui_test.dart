@@ -13,6 +13,7 @@ import 'package:tagkin_desktop/prefs/settings_page.dart';
 import 'package:tagkin_desktop/update/client_identity.dart';
 import 'package:tagkin_desktop/update/client_support_providers.dart';
 
+import 'fake_credits_repository.dart';
 import 'fake_items_repository.dart';
 import 'fake_jobs_repository.dart';
 import 'fake_persons_repository.dart';
@@ -101,6 +102,7 @@ void main() {
         overrides: [
           desktopPrefsControllerProvider.overrideWith((ref) => prefsController),
           usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          creditsRepositoryProvider.overrideWithValue(FakeCreditsRepository()),
           clientIdentityProvider.overrideWithValue(
             const ClientIdentity(version: '1.0.0+1', platform: 'test'),
           ),

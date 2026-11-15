@@ -15,6 +15,7 @@ import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/persons/person_detail_page.dart';
 import 'package:tagkin_desktop/persons/person_name.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
+import 'package:tagkin_desktop/review/face_name_conflict_dialog.dart';
 import 'package:tagkin_desktop/review/key_period_scrubber.dart';
 import 'package:tagkin_desktop/review/knowledge_view.dart';
 import 'package:tagkin_desktop/review/knowledge_grouping.dart';
@@ -82,6 +83,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
   final Map<String, PersonAssignIntent> _exclusionIntents = {};
   final List<PersonAssignIntent> _pendingItemAssigns = [];
   bool _baselineReady = false;
+  final FaceTapBridge _itemFaceTap = FaceTapBridge();
 
   @override
   void initState() {
@@ -392,6 +394,42 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
         }
       }
     }
+    final holderTagId = knowledge == null
+        ? null
+        : whoCropHoldingPerson(
+            knowledge: knowledge,
+            tagId: tagId,
+            personId: personId,
+            name: name,
+            cropIntents: _cropIntents,
+            personNamesById: _personNamesById,
+          )?.id;
+    if (knowledge != null && holderTagId != null) {
+      final takes = await _chooseFaceForName(
+        knowledge: knowledge,
+        tagId: tagId,
+        holderTagId: holderTagId,
+        personId: personId,
+        name: name,
+      );
+      if (!takes || !mounted) return;
+      _mutateDraft(() {
+        // Holder first: Save applies crop intents in this order.
+        _cropIntents.remove(tagId);
+        _cropIntents.remove(holderTagId);
+        // A holder that only has a drafted name has no saved link to release.
+        final savedHolder = appearanceForWhoTag(knowledge, holderTagId);
+        if (savedHolder?.personId?.isNotEmpty ?? false) {
+          _cropIntents[holderTagId] = const PersonAssignIntent(unassign: true);
+        }
+        _cropIntents[tagId] = PersonAssignIntent(
+          personId: personId,
+          name: name,
+        );
+        _assignError = null;
+      }, label: 'Assign face');
+      return;
+    }
     if (_refuseIfPersonOccupied(
       personId: personId,
       name: name,
@@ -403,6 +441,43 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     _mutateDraft(() {
       _cropIntents[tagId] = PersonAssignIntent(personId: personId, name: name);
     }, label: 'Assign face');
+  }
+
+  Future<bool> _chooseFaceForName({
+    required ItemKnowledge knowledge,
+    required String tagId,
+    required String holderTagId,
+    String? personId,
+    String? name,
+  }) {
+    String? draftName(String id) {
+      final held = effectiveAssignedPerson(
+        intent: _cropIntents[id],
+        baselinePersonId: appearanceForWhoTag(knowledge, id)?.personId,
+        personNamesById: _personNamesById,
+      );
+      return held.personName;
+    }
+
+    final resolved = name?.trim().isNotEmpty == true
+        ? name!.trim()
+        : (personId != null ? _personNamesById[personId] : null);
+    return showFaceNameConflictDialog(
+      context,
+      personName: resolved ?? draftName(holderTagId) ?? '',
+      target: ConflictFace(
+        itemId: widget.itemId,
+        tagId: tagId,
+        name: draftName(tagId),
+        knowledge: knowledge,
+      ),
+      holder: ConflictFace(
+        itemId: widget.itemId,
+        tagId: holderTagId,
+        name: draftName(holderTagId),
+        knowledge: knowledge,
+      ),
+    );
   }
 
   Future<void> _assignItem({String? personId, String? name}) async {
@@ -1069,6 +1144,16 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     );
   }
 
+  Set<String> _tappableOverlayTagIds(ItemKnowledge knowledge) {
+    final crops = knowledge.item.type == ItemType.video
+        ? itemLevelWhoFaceCropTags(knowledge)
+        : whoFaceCropTags(knowledge);
+    return {
+      for (final tag in crops)
+        if (_cropIntents[tag.id]?.exclude != true) tag.id,
+    };
+  }
+
   KnowledgeView _faceAssignView({
     Key? key,
     required ItemKnowledge knowledge,
@@ -1077,6 +1162,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
     bool allowItemAssign = true,
     Key faceGridKey = const Key('item-face-assign-grid'),
     Key faceHintKey = const Key('item-face-hint'),
+    FaceTapBridge? faceTapBridge,
   }) {
     return KnowledgeView(
       key: key,
@@ -1094,6 +1180,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
       allowItemAssign: allowItemAssign,
       faceGridKey: faceGridKey,
       faceHintKey: faceHintKey,
+      faceTapBridge: faceTapBridge,
       onPersonTap: _openPerson,
       onAssignCrop: _assignCrop,
       onAssignItem: _assignItem,
@@ -1208,6 +1295,7 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
                         ? itemLevelWhoFaceCropTags(knowledge)
                         : null,
                     allowItemAssign: !itemHasWhoFaceCrops(knowledge),
+                    faceTapBridge: _itemFaceTap,
                   ),
                   Builder(
                     builder: (context) {
@@ -1292,6 +1380,10 @@ class _ItemReviewSectionState extends ConsumerState<ItemReviewSection> {
                               .toList()
                         : const [],
                     personNameByWhoTagId: _whoOverlayNames(knowledge),
+                    onWhoFaceTap: showFaceOverlays ? _itemFaceTap.tap : null,
+                    tappableWhoTagIds: showFaceOverlays
+                        ? _tappableOverlayTagIds(knowledge)
+                        : const {},
                   ),
                   if (_assignError != null) ...[
                     const SizedBox(height: 8),

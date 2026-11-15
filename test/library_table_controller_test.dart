@@ -105,6 +105,106 @@ void main() {
     expect(rowA.commentsLoaded, isTrue);
   });
 
+  group('faceStillPath', () {
+    late Directory tmp;
+    final seenArgs = <List<String>>[];
+
+    setUp(() {
+      tmp = Directory.systemTemp.createTempSync('face_still_ctrl_');
+      seenArgs.clear();
+    });
+    tearDown(() {
+      if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+    });
+
+    Future<LibraryTableController> load(
+      List<KeyPeriodKnowledge> periods,
+    ) async {
+      final video = File('${tmp.path}/clip.mp4')..writeAsBytesSync([1, 2, 3]);
+      final item = fixtureItem(
+        id: 'v1',
+        type: ItemType.video,
+        contentHash: 'abc',
+        sourceRef: Uri.file(video.path).toString(),
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final controller = LibraryTableController(
+        itemsRepository: FakeItemsRepository(
+          items: [item],
+          knowledgeByItemId: {
+            'v1': fixtureKnowledge(
+              item: item,
+              tags: const [],
+              keyPeriods: periods,
+            ),
+          },
+        ),
+        commentsRepository: FakeCommentsRepository(),
+        thumbCache: LocalThumbCache(
+          cacheRoot: Directory('${tmp.path}/cache'),
+          runFfmpeg: (ffmpeg, args) async {
+            seenArgs.add(args);
+            File(args.last).writeAsBytesSync([0xFF, 0xD8, 0xFF]);
+            return const [];
+          },
+        ),
+        knowledgeConcurrency: 1,
+      );
+      addTearDown(controller.dispose);
+      await controller.load();
+      await _awaitKnowledge(controller);
+      return controller;
+    }
+
+    test('a period still comes from its sample time', () async {
+      const period = KeyPeriodKnowledge(
+        id: 'kp1',
+        itemId: 'v1',
+        startMs: 2000,
+        endMs: 9000,
+        sampleTimestampMs: 5000,
+        tags: [],
+      );
+      final controller = await load([period]);
+      final path = await controller.faceStillPath('v1', period);
+      expect(path, contains('_kp_kp1_5000.jpg'));
+      // Pick this still's ffmpeg call; a row thumbnail may also be extracted.
+      final call = seenArgs.firstWhere((args) => args.last == path);
+      expect(call, containsAllInOrder(['-ss', '5.000']));
+    });
+
+    test(
+      'a video with one period uses that period when none is given',
+      () async {
+        const period = KeyPeriodKnowledge(
+          id: 'kp1',
+          itemId: 'v1',
+          startMs: 2000,
+          endMs: 9000,
+          sampleTimestampMs: 5000,
+          tags: [],
+        );
+        final controller = await load([period]);
+        expect(
+          await controller.faceStillPath('v1', null),
+          contains('_kp_kp1_5000.jpg'),
+        );
+      },
+    );
+
+    test('no sample time means no still', () async {
+      const period = KeyPeriodKnowledge(
+        id: 'kp1',
+        itemId: 'v1',
+        startMs: 2000,
+        endMs: 9000,
+        tags: [],
+      );
+      final controller = await load([period]);
+      expect(await controller.faceStillPath('v1', period), isNull);
+    });
+  });
+
   test('refreshRowCellsQuiet swaps values without blanking the row', () async {
     final a = fixtureItem(id: 'a', processingStatus: ProcessingStatus.tagged);
     final items = FakeItemsRepository(

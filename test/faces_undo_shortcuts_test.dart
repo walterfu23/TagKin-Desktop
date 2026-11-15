@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tagkin_desktop/api/api_client.dart';
 import 'package:tagkin_desktop/app_shell.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/face_crop_folder_scope.dart';
@@ -372,6 +373,55 @@ void main() {
       persons.unassignedAppearances.any((a) => a.id == 'ap_u'),
       isTrue,
     );
+  });
+
+  testWidgets(
+      'Set name onto a person already on the photo, choosing this face, then Cmd+Z puts them back',
+      (tester) async {
+    final persons = FakePersonsRepository(
+      persons: [
+        fixturePersonDetail(
+          id: 'person_1',
+          name: 'Sam',
+          appearances: [
+            fixtureAppearance(
+              id: 'ap_a',
+              personId: 'person_1',
+              itemId: 'item_same',
+              tagId: 'tag_a',
+            ),
+          ],
+        ),
+      ],
+    );
+    persons.unassignedAppearances.add(
+      fixtureAppearance(
+        id: 'ap_b',
+        personId: null,
+        itemId: 'item_same',
+        tagId: 'tag_b',
+        region: const TagRegion(yMin: 0.2, xMin: 0.5, yMax: 0.5, xMax: 0.8),
+      ),
+    );
+    await _pumpFacesUndoHost(
+      tester,
+      persons: persons,
+      itemIds: const ['item_same'],
+    );
+
+    await tester.tap(find.byKey(const Key('face-crop-set-name-ap_b')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('person-picker-option-person_1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('face-name-conflict-pick-tag_b')));
+    await tester.pumpAndSettle();
+    expect(persons.unlinkCalls, ['ap_a']);
+
+    await _cmdZ(tester);
+
+    final sam = await persons.getPerson('person_1');
+    expect([for (final a in sam.appearances) a.id], ['ap_a']);
+    expect(persons.unassignedAppearances.map((a) => a.id), ['ap_b']);
   });
 
   testWidgets(
@@ -1670,6 +1720,312 @@ void main() {
     expect(find.textContaining('Not found'), findsNothing);
     expect(find.textContaining('Face group not found'), findsNothing);
   });
+
+  group('same-name chooser on Faces', () {
+    const regionA = TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4);
+    const regionB = TagRegion(yMin: 0.2, xMin: 0.5, yMax: 0.5, xMax: 0.8);
+
+    FakePersonsRepository samOnA({
+      String itemId = 'item_same',
+      String? periodA,
+      String? periodB,
+    }) {
+      final persons = FakePersonsRepository(
+        persons: [
+          fixturePersonDetail(
+            id: 'person_1',
+            name: 'Sam',
+            appearances: [
+              fixtureAppearance(
+                id: 'ap_a',
+                personId: 'person_1',
+                itemId: itemId,
+                keyPeriodId: periodA,
+                tagId: 'tag_a',
+                region: regionA,
+              ),
+            ],
+          ),
+        ],
+      );
+      persons.unassignedAppearances.add(
+        fixtureAppearance(
+          id: 'ap_b',
+          personId: null,
+          itemId: itemId,
+          keyPeriodId: periodB,
+          tagId: 'tag_b',
+          region: regionB,
+        ),
+      );
+      return persons;
+    }
+
+    Future<void> setNameSam(WidgetTester tester, String appearanceId) async {
+      await tester.tap(find.byKey(Key('face-crop-set-name-$appearanceId')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('person-picker-option-person_1')));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> dragTo(
+      WidgetTester tester,
+      String fromKey,
+      String toKey,
+    ) async {
+      final from = tester.getCenter(find.byKey(Key(fromKey)));
+      final to = tester.getCenter(find.byKey(Key(toKey)));
+      final gesture = await tester.startGesture(from);
+      await tester.pump(const Duration(milliseconds: 50));
+      await gesture.moveTo(to);
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+    }
+
+    Future<List<String>> samFaces(FakePersonsRepository persons) async => [
+      for (final a in (await persons.getPerson('person_1')).appearances) a.id,
+    ];
+
+    testWidgets('Set name: Cmd+Z then Cmd+Y moves the name again', (
+      tester,
+    ) async {
+      final persons = samOnA();
+      await _pumpFacesUndoHost(
+        tester,
+        persons: persons,
+        itemIds: const ['item_same'],
+      );
+      await setNameSam(tester, 'ap_b');
+      await tester.tap(find.byKey(const Key('face-name-conflict-pick-tag_b')));
+      await tester.pumpAndSettle();
+      expect(await samFaces(persons), ['ap_b']);
+
+      await _cmdZ(tester);
+      expect(await samFaces(persons), ['ap_a']);
+
+      await _cmdY(tester);
+      expect(await samFaces(persons), ['ap_b']);
+      expect(persons.unassignedAppearances.map((a) => a.id), ['ap_a']);
+    });
+
+    testWidgets('Set name: a failed assign gives Sam back, no undo step', (
+      tester,
+    ) async {
+      final persons = samOnA();
+      await _pumpFacesUndoHost(
+        tester,
+        persons: persons,
+        itemIds: const ['item_same'],
+      );
+      await setNameSam(tester, 'ap_b');
+      persons.reassignErrorOnce = ApiException(
+        statusCode: 500,
+        message: 'boom',
+      );
+      await tester.tap(find.byKey(const Key('face-name-conflict-pick-tag_b')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('face-crop-trays-error')), findsOneWidget);
+      expect(persons.unlinkCalls, ['ap_a']);
+      expect(persons.reassignCalls.map((c) => c.appearanceId), [
+        'ap_b',
+        'ap_a',
+      ]);
+      expect(await samFaces(persons), ['ap_a']);
+      expect(persons.unassignedAppearances.map((a) => a.id), ['ap_b']);
+
+      await _cmdZ(tester);
+      expect(persons.reassignCalls, hasLength(2));
+      expect(persons.unlinkCalls, ['ap_a']);
+    });
+
+    testWidgets('Set name on a video: same period asks, other period does not', (
+      tester,
+    ) async {
+      final persons = samOnA(
+        itemId: 'vid_1',
+        periodA: 'kp_1',
+        periodB: 'kp_1',
+      );
+      persons.unassignedAppearances.add(
+        fixtureAppearance(
+          id: 'ap_c',
+          personId: null,
+          itemId: 'vid_1',
+          keyPeriodId: 'kp_2',
+          tagId: 'tag_c',
+          region: regionB,
+        ),
+      );
+      await _pumpFacesUndoHost(
+        tester,
+        persons: persons,
+        itemIds: const ['vid_1'],
+      );
+
+      // Same key period: the chooser opens.
+      await setNameSam(tester, 'ap_b');
+      expect(
+        find.byKey(const Key('face-name-conflict-dialog')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('face-name-conflict-cancel')));
+      await tester.pumpAndSettle();
+      expect(persons.reassignCalls, isEmpty);
+
+      // Another key period of the same video: assigned directly.
+      await setNameSam(tester, 'ap_c');
+      expect(find.byKey(const Key('face-name-conflict-dialog')), findsNothing);
+      expect(find.byKey(const Key('face-crop-already-on-photo')), findsNothing);
+      expect(persons.unlinkCalls, isEmpty);
+      expect(persons.reassignCalls.map((c) => c.appearanceId), ['ap_c']);
+      expect(await samFaces(persons), containsAll(['ap_a', 'ap_c']));
+    });
+
+    testWidgets('single-face drop: Cmd+Z restores Sam, Cmd+Y moves again', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      final persons = samOnA();
+      await _pumpFacesUndoHost(
+        tester,
+        persons: persons,
+        itemIds: const ['item_same'],
+        initialPersonId: 'person_1',
+      );
+
+      await dragTo(
+        tester,
+        'face-crop-appearance-ap_b',
+        'face-crop-tray-assigned',
+      );
+      expect(
+        find.byKey(const Key('face-name-conflict-dialog')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('face-name-conflict-pick-tag_b')));
+      await tester.pumpAndSettle();
+      expect(await samFaces(persons), ['ap_b']);
+
+      await _cmdZ(tester);
+      expect(await samFaces(persons), ['ap_a']);
+      expect(persons.unassignedAppearances.map((a) => a.id), ['ap_b']);
+
+      await _cmdY(tester);
+      expect(await samFaces(persons), ['ap_b']);
+    });
+
+    testWidgets('single-face drop: a failed assign puts Sam back', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      final persons = samOnA();
+      await _pumpFacesUndoHost(
+        tester,
+        persons: persons,
+        itemIds: const ['item_same'],
+        initialPersonId: 'person_1',
+      );
+
+      await dragTo(
+        tester,
+        'face-crop-appearance-ap_b',
+        'face-crop-tray-assigned',
+      );
+      persons.reassignErrorOnce = ApiException(
+        statusCode: 500,
+        message: 'boom',
+      );
+      await tester.tap(find.byKey(const Key('face-name-conflict-pick-tag_b')));
+      await tester.pumpAndSettle();
+
+      expect(await samFaces(persons), ['ap_a']);
+      expect(persons.unassignedAppearances.map((a) => a.id), ['ap_b']);
+
+      // Nothing to undo: the failed drop recorded no step.
+      final reassignsBefore = persons.reassignCalls.length;
+      await _cmdZ(tester);
+      expect(persons.reassignCalls, hasLength(reassignsBefore));
+      expect(await samFaces(persons), ['ap_a']);
+    });
+
+    testWidgets('video drop: another key period assigns with no chooser', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      final persons = samOnA(itemId: 'vid_1', periodA: 'kp_1', periodB: 'kp_2');
+      await _pumpFacesUndoHost(
+        tester,
+        persons: persons,
+        itemIds: const ['vid_1'],
+        initialPersonId: 'person_1',
+      );
+
+      await dragTo(
+        tester,
+        'face-crop-appearance-ap_b',
+        'face-crop-tray-assigned',
+      );
+
+      expect(find.byKey(const Key('face-name-conflict-dialog')), findsNothing);
+      expect(find.byKey(const Key('face-crop-already-on-photo')), findsNothing);
+      expect(persons.unlinkCalls, isEmpty);
+      expect(await samFaces(persons), containsAll(['ap_a', 'ap_b']));
+    });
+
+    testWidgets('multi-face drop still skips the clash with no chooser', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      final persons = samOnA();
+      persons.unassignedAppearances.add(
+        fixtureAppearance(
+          id: 'ap_c',
+          personId: null,
+          itemId: 'item_other',
+          tagId: 'tag_c',
+          region: regionA,
+        ),
+      );
+      await _pumpFacesUndoHost(
+        tester,
+        persons: persons,
+        itemIds: const ['item_same', 'item_other'],
+        initialPersonId: 'person_1',
+      );
+
+      final b = tester.getRect(
+        find.byKey(const Key('face-crop-appearance-ap_b')),
+      );
+      await tester.tapAt(Offset(b.left + 10, b.bottom - 10));
+      await tester.pumpAndSettle();
+      debugFaceCropMetaPressed = () => true;
+      final c = tester.getRect(
+        find.byKey(const Key('face-crop-appearance-ap_c')),
+      );
+      await tester.tapAt(Offset(c.left + 10, c.bottom - 10));
+      await tester.pumpAndSettle();
+      debugFaceCropMetaPressed = null;
+
+      await dragTo(
+        tester,
+        'face-crop-appearance-ap_c',
+        'face-crop-tray-assigned',
+      );
+
+      expect(find.byKey(const Key('face-name-conflict-dialog')), findsNothing);
+      expect(persons.unlinkCalls, isEmpty);
+      expect(await samFaces(persons), containsAll(['ap_a', 'ap_c']));
+      expect(await samFaces(persons), isNot(contains('ap_b')));
+    });
+  });
 }
-
-

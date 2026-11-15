@@ -18,10 +18,10 @@ class FakeItemsRepository implements ItemsRepository {
     this.onListItems,
     this.onGetKnowledge,
     this.linkedPersons,
-  })  : _items = List<Item>.from(items ?? const []),
-        _knowledgeByItemId = Map<String, ItemKnowledge>.from(
-          knowledgeByItemId ?? const {},
-        );
+  }) : _items = List<Item>.from(items ?? const []),
+       _knowledgeByItemId = Map<String, ItemKnowledge>.from(
+         knowledgeByItemId ?? const {},
+       );
 
   final List<Item> _items;
   final Map<String, ItemKnowledge> _knowledgeByItemId;
@@ -51,7 +51,7 @@ class FakeItemsRepository implements ItemsRepository {
 
   /// Optional grant factory; defaults to a non-expiring stub URL.
   final UploadGrant Function(String itemId, CreateUploadGrant input)?
-      grantFactory;
+  grantFactory;
 
   /// When set, [createUploadGrant] throws this (after optional first success
   /// via [grantSequence]).
@@ -230,15 +230,14 @@ class FakeItemsRepository implements ItemsRepository {
     return UploadGrant(
       uploadUrl:
           'https://stub.tagkin.test/upload?mime=${Uri.encodeComponent(input.mimeType)}',
-      expiresAt: DateTime.now().add(const Duration(minutes: 15)).toIso8601String(),
+      expiresAt: DateTime.now()
+          .add(const Duration(minutes: 15))
+          .toIso8601String(),
     );
   }
 
   @override
-  Future<Item> recordAnalysisRef(
-    String itemId,
-    RecordAnalysisRef input,
-  ) async {
+  Future<Item> recordAnalysisRef(String itemId, RecordAnalysisRef input) async {
     if (analysisRefError != null) throw analysisRefError!;
     analysisRefRecorded.add((itemId: itemId, input: input));
     final index = _items.indexWhere((i) => i.id == itemId);
@@ -309,6 +308,50 @@ class FakeItemsRepository implements ItemsRepository {
 
   Object? assignPersonError;
 
+  /// Thrown by the next [assignPersonToItem] only, then cleared.
+  Object? assignPersonErrorOnce;
+
+  /// Mirrors a person unlink into stored knowledge (the API projects it).
+  void clearAppearancePerson(String appearanceId) {
+    for (final entry in _knowledgeByItemId.entries.toList()) {
+      final knowledge = entry.value;
+      if (!knowledge.appearances.any((a) => a.id == appearanceId)) continue;
+      _knowledgeByItemId[entry.key] = ItemKnowledge(
+        item: knowledge.item,
+        tags: knowledge.tags,
+        keyPeriods: knowledge.keyPeriods,
+        appearances: [
+          for (final a in knowledge.appearances)
+            if (a.id != appearanceId)
+              a
+            else
+              PersonAppearance(
+                id: a.id,
+                itemId: a.itemId,
+                keyPeriodId: a.keyPeriodId,
+                tagId: a.tagId,
+                region: a.region,
+                createdAt: a.createdAt,
+              ),
+        ],
+        corrections: knowledge.corrections,
+        whoExclusions: knowledge.whoExclusions,
+      );
+    }
+  }
+
+  static String? _keyPeriodOfTag(ItemKnowledge knowledge, String tagId) {
+    for (final t in knowledge.tags) {
+      if (t.id == tagId) return t.keyPeriodId;
+    }
+    for (final period in knowledge.keyPeriods) {
+      for (final t in period.tags) {
+        if (t.id == tagId) return period.id;
+      }
+    }
+    return null;
+  }
+
   /// Extra appearances returned as [AssignPersonResponse.alsoMoved].
   List<PersonAppearance> assignPersonAlsoMoved = const [];
 
@@ -328,6 +371,11 @@ class FakeItemsRepository implements ItemsRepository {
       tagId: tagId,
       propagateAlike: propagateAlike,
     ));
+    final once = assignPersonErrorOnce;
+    if (once != null) {
+      assignPersonErrorOnce = null;
+      throw once;
+    }
     if (assignPersonError != null) throw assignPersonError!;
     final existing = _knowledgeByItemId[itemId];
     if (tagId == null && existing != null) {
@@ -338,10 +386,7 @@ class FakeItemsRepository implements ItemsRepository {
             t.region != null,
       );
       if (hasCrop) {
-        throw ApiException(
-          statusCode: 409,
-          message: 'item_has_face_crops',
-        );
+        throw ApiException(statusCode: 409, message: 'item_has_face_crops');
       }
     }
     var pid = personId;
@@ -349,17 +394,36 @@ class FakeItemsRepository implements ItemsRepository {
       final n = name ?? 'Person';
       pid = 'person_${n.toLowerCase().replaceAll(' ', '_')}';
       final linked = linkedPersons;
-      if (linked != null &&
-          !linked.personDetails.any((p) => p.id == pid)) {
+      if (linked != null && !linked.personDetails.any((p) => p.id == pid)) {
         linked.personDetails.add(
           fixturePersonDetail(id: pid, name: n, appearances: const []),
         );
       }
     }
     if (existing != null) {
-      final clash = existing.appearances.any(
-        (a) => a.personId == pid && tagId != null && a.tagId != tagId,
+      // With linked persons, their live links decide (unlink updates them).
+      // One person per face per photo, or per video key period.
+      final periodId = tagId == null ? null : _keyPeriodOfTag(existing, tagId);
+      final linkedClash = linkedPersons?.personDetails.any(
+        (p) =>
+            p.id == pid &&
+            p.appearances.any(
+              (a) =>
+                  a.itemId == itemId &&
+                  tagId != null &&
+                  a.tagId != tagId &&
+                  a.keyPeriodId == periodId,
+            ),
       );
+      final clash =
+          linkedClash ??
+          existing.appearances.any(
+            (a) =>
+                a.personId == pid &&
+                tagId != null &&
+                a.tagId != tagId &&
+                a.keyPeriodId == periodId,
+          );
       if (clash) {
         throw ApiException(
           statusCode: 409,
@@ -372,10 +436,30 @@ class FakeItemsRepository implements ItemsRepository {
       id: 'ap_assign_${tagId ?? itemId}_$pid',
       personId: pid,
       itemId: itemId,
+      keyPeriodId: existing == null || tagId == null
+          ? null
+          : _keyPeriodOfTag(existing, tagId),
       tagId: tagId,
       assignmentState: 'confirmed',
       createdAt: '2026-08-13T00:00:00.000Z',
     );
+    final linked = linkedPersons;
+    if (linked != null) {
+      final index = linked.personDetails.indexWhere((p) => p.id == pid);
+      if (index >= 0) {
+        final person = linked.personDetails[index];
+        linked.personDetails[index] = PersonDetail(
+          id: person.id,
+          name: person.name,
+          createdAt: person.createdAt,
+          appearances: [
+            for (final a in person.appearances)
+              if (a.id != appearance.id) a,
+            appearance,
+          ],
+        );
+      }
+    }
     if (existing != null) {
       final next = [
         for (final a in existing.appearances)
@@ -439,8 +523,12 @@ class FakeItemsRepository implements ItemsRepository {
 
     String? faceGroupId;
     FaceGroupKind? faceGroupKind;
-    TagRegion region =
-        const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.5, xMax: 0.5);
+    TagRegion region = const TagRegion(
+      yMin: 0.1,
+      xMin: 0.1,
+      yMax: 0.5,
+      xMax: 0.5,
+    );
 
     final persons = linkedPersons;
     if (persons != null) {
@@ -476,16 +564,14 @@ class FakeItemsRepository implements ItemsRepository {
         item: existing.item,
         tags: existing.tags.where((t) => t.id != tagId).toList(),
         keyPeriods: existing.keyPeriods,
-        appearances:
-            existing.appearances.where((a) => a.tagId != tagId).toList(),
+        appearances: existing.appearances
+            .where((a) => a.tagId != tagId)
+            .toList(),
         corrections: existing.corrections,
         whoExclusions: [...existing.whoExclusions, exclusion],
       );
     }
-    return CreateWhoExclusionResult(
-      exclusion: exclusion,
-      removedTagId: tagId,
-    );
+    return CreateWhoExclusionResult(exclusion: exclusion, removedTagId: tagId);
   }
 
   @override
@@ -517,7 +603,8 @@ class FakeItemsRepository implements ItemsRepository {
           createdAt: found.createdAt,
         );
       }
-      final alreadyHasTag = restoredTag != null &&
+      final alreadyHasTag =
+          restoredTag != null &&
           existing.tags.any((t) => t.id == restoredTag!.id);
       _knowledgeByItemId[itemId] = ItemKnowledge(
         item: existing.item,
@@ -528,15 +615,17 @@ class FakeItemsRepository implements ItemsRepository {
         keyPeriods: existing.keyPeriods,
         appearances: existing.appearances,
         corrections: existing.corrections,
-        whoExclusions:
-            existing.whoExclusions.where((e) => e.id != exclusionId).toList(),
+        whoExclusions: existing.whoExclusions
+            .where((e) => e.id != exclusionId)
+            .toList(),
       );
     }
 
     final persons = linkedPersons;
     if (persons != null) {
-      final idx =
-          persons.accountExclusions.indexWhere((e) => e.id == exclusionId);
+      final idx = persons.accountExclusions.indexWhere(
+        (e) => e.id == exclusionId,
+      );
       if (idx >= 0) {
         found ??= persons.accountExclusions[idx];
         persons.accountExclusions.removeAt(idx);
@@ -670,10 +759,12 @@ ItemKnowledge fixtureKnowledge({
   List<Correction>? corrections,
   List<WhoExclusion>? whoExclusions,
 }) {
-  final resolved = item ?? fixtureItem(processingStatus: ProcessingStatus.tagged);
+  final resolved =
+      item ?? fixtureItem(processingStatus: ProcessingStatus.tagged);
   return ItemKnowledge(
     item: resolved,
-    tags: tags ??
+    tags:
+        tags ??
         [
           fixtureTag(id: 'tag_who', dimension: 'who', value: 'Sam'),
           fixtureTag(id: 'tag_what', dimension: 'what', value: 'picnic'),

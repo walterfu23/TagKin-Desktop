@@ -54,18 +54,48 @@ class FolderWhoEditor {
     String? name,
     PersonAppearance? existing,
     String? destName,
+    PersonAppearance? takeFrom,
   }) async {
-    final result = await items.assignPersonToItem(
-      itemId,
-      personId: personId,
-      name: name,
-      tagId: tagId,
-    );
+    // takeFrom: another face of this photo / key period that holds the
+    // person. It is unlinked first and put back by undo, in one undo step.
+    final takenPersonId = takeFrom?.personId;
+    final takenTagId = takeFrom?.tagId;
+    var takenAppearanceId = takeFrom?.id;
+    if (takeFrom != null) await persons.unlinkAppearance(takeFrom.id);
+    final AssignPersonResponse result;
+    try {
+      result = await items.assignPersonToItem(
+        itemId,
+        personId: takeFrom != null ? takenPersonId : personId,
+        name: takeFrom != null ? null : name,
+        tagId: tagId,
+      );
+    } catch (_) {
+      if (takenPersonId != null) {
+        try {
+          await items.assignPersonToItem(
+            itemId,
+            personId: takenPersonId,
+            tagId: takenTagId,
+            propagateAlike: false,
+          );
+        } catch (_) {
+          // Keep the original failure.
+        }
+      }
+      rethrow;
+    }
     final affected = _affected(itemId, result.alsoMoved);
     final named = destName ?? name;
     var appearanceId = result.appearance.id;
     var movedIds = [for (final a in result.alsoMoved) a.id];
     final priorPersonId = existing?.personId;
+    // A new name creates a person that undo does not delete. Redo must
+    // assign that person by id; sending the name again is rejected.
+    final createdPersonId = personId == null
+        ? result.appearance.personId
+        : null;
+    final redoPersonId = personId ?? createdPersonId;
     undo.push(
       CallbackUndoableAction(
         label: 'Assign person',
@@ -82,13 +112,24 @@ class FolderWhoEditor {
           if (movedIds.isNotEmpty) {
             await persons.declineAutoAssignAppearances(movedIds);
           }
+          if (takenPersonId != null) {
+            final back = await items.assignPersonToItem(
+              itemId,
+              personId: takenPersonId,
+              tagId: takenTagId,
+              propagateAlike: false,
+            );
+            takenAppearanceId = back.appearance.id;
+          }
           await refresh(affected);
         },
         onRedo: () async {
+          final taken = takenAppearanceId;
+          if (taken != null) await persons.unlinkAppearance(taken);
           final again = await items.assignPersonToItem(
             itemId,
-            personId: personId,
-            name: name,
+            personId: redoPersonId,
+            name: personId == null && redoPersonId != null ? null : name,
             tagId: tagId,
           );
           appearanceId = again.appearance.id;
@@ -172,18 +213,23 @@ class FolderWhoEditor {
   }
 }
 
-final folderWhoEditorProvider = Provider<FolderWhoEditor>((ref) {
-  return FolderWhoEditor(
-    items: ref.watch(itemsRepositoryProvider),
-    persons: ref.watch(personsRepositoryProvider),
-    undo: ref.watch(foldersUndoProvider).stack,
-    refresh: (ids) {
-      return ref.read(libraryTableControllerProvider).refreshRowCellsQuiet(ids);
-    },
-  );
-}, dependencies: [
-  itemsRepositoryProvider,
-  personsRepositoryProvider,
-  foldersUndoProvider,
-  libraryTableControllerProvider,
-]);
+final folderWhoEditorProvider = Provider<FolderWhoEditor>(
+  (ref) {
+    return FolderWhoEditor(
+      items: ref.watch(itemsRepositoryProvider),
+      persons: ref.watch(personsRepositoryProvider),
+      undo: ref.watch(foldersUndoProvider).stack,
+      refresh: (ids) {
+        return ref
+            .read(libraryTableControllerProvider)
+            .refreshRowCellsQuiet(ids);
+      },
+    );
+  },
+  dependencies: [
+    itemsRepositoryProvider,
+    personsRepositoryProvider,
+    foldersUndoProvider,
+    libraryTableControllerProvider,
+  ],
+);

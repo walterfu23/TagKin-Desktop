@@ -16,6 +16,7 @@ import 'package:tagkin_desktop/ingest/ingest_io.dart';
 import 'package:tagkin_desktop/ingest/folder_ingest_queue.dart';
 import 'package:tagkin_desktop/ingest/folder_picker.dart';
 import 'package:tagkin_desktop/main.dart';
+import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 
 import '../test/fake_items_repository.dart';
@@ -64,6 +65,10 @@ void main() {
               itemsRepository: repo,
               jobsRepository: ref.read(jobsRepositoryProvider),
               isUsageBlocked: () => false,
+              currentCollectionId: () {
+                final cols = ref.read(collectionsControllerProvider);
+                return cols.sessionReady ? cols.current.id : null;
+              },
               enumerateFolder: ref.read(mediaEnumeratorProvider),
               contentHasher: ref.read(contentHasherProvider),
               perceptualHasher: ref.read(perceptualHasherProvider),

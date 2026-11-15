@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/item_hover_preview.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
@@ -31,9 +32,35 @@ class _FakeVideoSession implements HoverPreviewVideoSession {
   var playCount = 0;
   var disposed = false;
 
+  final List<bool> loops = <bool>[];
+  final List<bool> showStillOffered = <bool>[];
+  final StreamController<void> ended = StreamController<void>.broadcast();
+
   @override
-  Widget get view =>
-      const ColoredBox(key: Key('fake-hover-video'), color: Colors.black);
+  Widget buildView({VoidCallback? onShowStill}) {
+    showStillOffered.add(onShowStill != null);
+    return Stack(
+      children: [
+        const Positioned.fill(
+          child: ColoredBox(key: Key('fake-hover-video'), color: Colors.black),
+        ),
+        if (onShowStill != null)
+          Positioned(
+            right: 8,
+            bottom: 8,
+            child: GestureDetector(
+              key: const Key('hover-show-still'),
+              behavior: HitTestBehavior.opaque,
+              onTap: onShowStill,
+              child: const SizedBox(width: 60, height: 24),
+            ),
+          ),
+      ],
+    );
+  }
+
+  @override
+  Stream<void> get clipEnded => ended.stream;
 
   @override
   Stream<Size> get videoSize => Stream<Size>.value(const Size(1920, 1080));
@@ -44,8 +71,13 @@ class _FakeVideoSession implements HoverPreviewVideoSession {
   }
 
   @override
-  Future<void> setClip(Duration start, Duration stopAt) async {
+  Future<void> setClip(
+    Duration start,
+    Duration stopAt, {
+    bool loop = true,
+  }) async {
     calls.add('setClip');
+    loops.add(loop);
     clips.add((start: start, stopAt: stopAt));
   }
 
@@ -299,12 +331,7 @@ void main() {
               faces: const [
                 HoverPreviewFace(
                   number: 1,
-                  region: TagRegion(
-                    yMin: 0.1,
-                    xMin: 0.2,
-                    yMax: 0.5,
-                    xMax: 0.6,
-                  ),
+                  region: TagRegion(yMin: 0.1, xMin: 0.2, yMax: 0.5, xMax: 0.6),
                   personName: 'Maya',
                 ),
               ],
@@ -330,7 +357,464 @@ void main() {
     expect(find.byKey(const Key('hover-face-label-1')), findsOneWidget);
     expect(find.text('1 Maya'), findsOneWidget);
     await hover.moveTo(const Offset(-80, -80));
+    await tester.pump(kHoverPreviewFaceHideDelay);
+  });
+
+  testWidgets('face hover card stays open while the pointer is on it', (
+    tester,
+  ) async {
+    final item = fixtureItem(id: 'p1', type: ItemType.photo);
+    final controller = _controller(FakeItemsRepository(items: [item]));
+    addTearDown(controller.dispose);
+    final dummy = File('/tmp/unused.jpg');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: ItemHoverPreview(
+              item: item,
+              controller: controller,
+              hoverDelay: Duration.zero,
+              faces: const [
+                HoverPreviewFace(
+                  number: 1,
+                  region: TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
+                  personName: 'Maya',
+                ),
+              ],
+              resolveMedia: (_) async => LocalMediaResolution(
+                status: LocalMediaStatus.available,
+                file: dummy,
+                path: dummy.path,
+              ),
+              buildPhoto: (_) => const SizedBox(
+                key: Key('item-hover-preview-photo'),
+                width: 400,
+                height: 300,
+              ),
+              child: const SizedBox(width: 56, height: 56),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final hover = await _hoverThumb(tester, 'p1');
+    await tester.pump();
+    final card = find.byKey(const Key('item-hover-preview-card'));
+    expect(card, findsOneWidget);
+
+    await hover.moveTo(tester.getCenter(card));
+    await tester.pump();
+    await tester.pump(kHoverPreviewFaceHideDelay);
+    expect(card, findsOneWidget);
+
+    await hover.moveTo(const Offset(780, 580));
+    await tester.pump();
     await tester.pump(kHoverPreviewHideDelay);
+    expect(card, findsOneWidget);
+    await tester.pump(kHoverPreviewFaceHideDelay - kHoverPreviewHideDelay);
+    expect(card, findsNothing);
+  });
+
+  testWidgets('tapping a numbered hover box reports that face', (tester) async {
+    final item = fixtureItem(id: 'p1', type: ItemType.photo);
+    final controller = _controller(FakeItemsRepository(items: [item]));
+    addTearDown(controller.dispose);
+    final dummy = File('/tmp/unused.jpg');
+    HoverPreviewFace? tapped;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: ItemHoverPreview(
+              item: item,
+              controller: controller,
+              hoverDelay: Duration.zero,
+              faces: const [
+                HoverPreviewFace(
+                  number: 1,
+                  tagId: 'face_1',
+                  region: TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.5, xMax: 0.5),
+                ),
+              ],
+              onFaceTap: (face, _) async {
+                tapped = face;
+              },
+              resolveMedia: (_) async => LocalMediaResolution(
+                status: LocalMediaStatus.available,
+                file: dummy,
+                path: dummy.path,
+              ),
+              buildPhoto: (_) => const SizedBox(
+                key: Key('item-hover-preview-photo'),
+                width: 400,
+                height: 300,
+              ),
+              child: const SizedBox(width: 56, height: 56),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final hover = await _hoverThumb(tester, 'p1');
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('hover-face-label-1')));
+    await tester.pump();
+    expect(tapped?.number, 1);
+    expect(tapped?.tagId, 'face_1');
+    await hover.moveTo(const Offset(-80, -80));
+    await tester.pump(kHoverPreviewFaceHideDelay);
+  });
+
+  group('hoverFaceBoxRect', () {
+    const size = Size(400, 300);
+
+    test('places a normal region in the frame', () {
+      final rect = hoverFaceBoxRect(
+        const TagRegion(yMin: 0.1, xMin: 0.2, yMax: 0.5, xMax: 0.6),
+        size,
+      )!;
+      expect(rect, const Rect.fromLTRB(80, 30, 240, 150));
+    });
+
+    test('grows a tiny box around its center to the minimum', () {
+      final rect = hoverFaceBoxRect(
+        const TagRegion(yMin: 0.5, xMin: 0.5, yMax: 0.501, xMax: 0.501),
+        size,
+      )!;
+      expect(rect.width, kHoverFaceMinBox);
+      expect(rect.height, kHoverFaceMinBox);
+      expect(rect.center.dx, closeTo(200.2, 0.5));
+    });
+
+    test('keeps a grown box inside the frame at an edge', () {
+      final rect = hoverFaceBoxRect(
+        const TagRegion(yMin: 0, xMin: 0.999, yMax: 0.001, xMax: 1),
+        size,
+      )!;
+      expect(rect.right, lessThanOrEqualTo(size.width));
+      expect(rect.left, greaterThanOrEqualTo(0));
+    });
+
+    test('has no place for an empty or off-frame region', () {
+      expect(
+        hoverFaceBoxRect(
+          const TagRegion(yMin: 0.1, xMin: 0.5, yMax: 0.4, xMax: 0.5),
+          size,
+        ),
+        isNull,
+      );
+      expect(
+        hoverFaceBoxRect(
+          const TagRegion(yMin: 0.1, xMin: 1.5, yMax: 0.4, xMax: 1.8),
+          size,
+        ),
+        isNull,
+      );
+      expect(
+        hoverFaceBoxRect(
+          TagRegion(yMin: 0.1, xMin: double.nan, yMax: 0.4, xMax: 0.8),
+          size,
+        ),
+        isNull,
+      );
+    });
+  });
+
+  testWidgets('every numbered face has a box with its name on the still', (
+    tester,
+  ) async {
+    final item = fixtureItem(id: 'p1', type: ItemType.photo);
+    final controller = _controller(FakeItemsRepository(items: [item]));
+    addTearDown(controller.dispose);
+    final dir = Directory.systemTemp.createTempSync('face_boxes_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final photo = File('${dir.path}/still.jpg')
+      ..writeAsBytesSync(img.encodeJpg(img.Image(width: 64, height: 48)));
+    HoverPreviewFace? tapped;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: ItemHoverPreview(
+              item: item,
+              controller: controller,
+              hoverDelay: Duration.zero,
+              faces: const [
+                HoverPreviewFace(
+                  number: 1,
+                  tagId: 'f1',
+                  region: TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
+                  personName: 'Maya',
+                ),
+                HoverPreviewFace(
+                  number: 2,
+                  tagId: 'f2',
+                  region: TagRegion(yMin: 0.1, xMin: 0.5, yMax: 0.4, xMax: 0.5),
+                  personName: 'Sam',
+                ),
+                HoverPreviewFace(
+                  number: 3,
+                  tagId: 'f3',
+                  region: TagRegion(yMin: 0.1, xMin: 1.5, yMax: 0.4, xMax: 1.8),
+                ),
+                HoverPreviewFace(
+                  number: 4,
+                  tagId: 'f4',
+                  region: TagRegion(
+                    yMin: 0.6,
+                    xMin: 0.5,
+                    yMax: 0.601,
+                    xMax: 0.501,
+                  ),
+                  personName: 'Margaret Elizabeth',
+                ),
+              ],
+              onFaceTap: (face, _) async => tapped = face,
+              resolveMedia: (_) async => LocalMediaResolution(
+                status: LocalMediaStatus.available,
+                file: photo,
+                path: photo.path,
+              ),
+              child: const SizedBox(width: 56, height: 56),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final hover = await _hoverThumb(tester, 'p1');
+    for (var i = 0; i < 40; i++) {
+      if (find.byKey(const Key('hover-face-label-4')).evaluate().isNotEmpty) {
+        break;
+      }
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+
+    expect(find.text('1 Maya'), findsOneWidget);
+    expect(find.text('2 Sam'), findsOneWidget);
+    expect(find.text('3 Unassigned'), findsOneWidget);
+    // A tiny box still carries the whole name.
+    expect(find.text('4 Margaret Elizabeth'), findsOneWidget);
+    // Placed boxes sit on the face; the two that cannot be placed are stacked.
+    expect(find.byKey(const Key('hover-face-unplaced-1')), findsNothing);
+    expect(find.byKey(const Key('hover-face-unplaced-2')), findsOneWidget);
+    expect(find.byKey(const Key('hover-face-unplaced-3')), findsOneWidget);
+    expect(find.byKey(const Key('hover-face-unplaced-4')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('hover-face-label-3')));
+    await tester.pump();
+    expect(tapped?.tagId, 'f3');
+
+    await hover.moveTo(const Offset(-80, -80));
+    await tester.pump(kHoverPreviewFaceHideDelay);
+  });
+
+  group('video face still', () {
+    const period = KeyPeriodKnowledge(
+      id: 'kp1',
+      itemId: 'v1',
+      startMs: 2000,
+      endMs: 9000,
+      sampleTimestampMs: 5000,
+      tags: [],
+    );
+    const faces = [
+      HoverPreviewFace(
+        number: 1,
+        tagId: 'face_1',
+        region: TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.5, xMax: 0.5),
+        personName: 'Maya',
+      ),
+    ];
+
+    Future<void> pumpHover(
+      WidgetTester tester, {
+      required Item item,
+      required LibraryTableController controller,
+      required _FakeVideoSession session,
+      required Future<File?> Function()? faceStill,
+      HoverFaceTap? onFaceTap,
+    }) async {
+      final dummy = File('/tmp/unused.mp4');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: ItemHoverPreview(
+                item: item,
+                controller: controller,
+                period: period,
+                hoverDelay: Duration.zero,
+                faces: faces,
+                onFaceTap: onFaceTap,
+                faceStill: faceStill,
+                resolveMedia: (_) async => LocalMediaResolution(
+                  status: LocalMediaStatus.available,
+                  file: dummy,
+                  path: dummy.path,
+                ),
+                openVideo: (_) async => session,
+                child: const SizedBox(width: 56, height: 56),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    Future<void> pumpUntil(WidgetTester tester, Finder finder) async {
+      for (var i = 0; i < 40 && finder.evaluate().isEmpty; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+    }
+
+    testWidgets('opens on the still with squares and plays on request', (
+      tester,
+    ) async {
+      final item = fixtureItem(id: 'v1', type: ItemType.video);
+      final controller = _controller(FakeItemsRepository(items: [item]));
+      addTearDown(controller.dispose);
+      final dir = Directory.systemTemp.createTempSync('face_still_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final still = File('${dir.path}/still.jpg')
+        ..writeAsBytesSync(img.encodeJpg(img.Image(width: 64, height: 48)));
+      final session = _FakeVideoSession();
+      HoverPreviewFace? tapped;
+
+      await pumpHover(
+        tester,
+        item: item,
+        controller: controller,
+        session: session,
+        faceStill: () async => still,
+        onFaceTap: (face, _) async => tapped = face,
+      );
+
+      final hover = await _hoverThumb(tester, 'v1', periodId: 'kp1');
+      await pumpUntil(tester, find.byKey(const Key('hover-play-period')));
+      expect(find.byKey(const Key('item-hover-preview-photo')), findsOneWidget);
+      expect(find.byKey(const Key('item-hover-preview-video')), findsNothing);
+      expect(find.byKey(const Key('hover-play-period')), findsOneWidget);
+      expect(session.playCount, 0);
+
+      await tester.tap(find.byKey(const Key('hover-face-label-1')));
+      await tester.pump();
+      expect(tapped?.tagId, 'face_1');
+
+      await tester.tap(find.byKey(const Key('hover-play-period')));
+      await pumpUntil(
+        tester,
+        find.byKey(const Key('item-hover-preview-video')),
+      );
+      expect(find.byKey(const Key('item-hover-preview-video')), findsOneWidget);
+      expect(find.byKey(const Key('hover-show-still')), findsOneWidget);
+      expect(find.byKey(const Key('hover-face-label-1')), findsOneWidget);
+      expect(session.playCount, 1);
+      expect(session.clips.single.start, const Duration(milliseconds: 2000));
+      expect(session.clips.single.stopAt, const Duration(milliseconds: 9000));
+      // The still-based preview plays once and offers Show still in the
+      // player's own controls (the bar itself stays).
+      expect(session.loops, [false]);
+      expect(session.showStillOffered.last, isTrue);
+
+      await tester.tap(find.byKey(const Key('hover-show-still')));
+      await tester.pump();
+      expect(session.disposed, isTrue);
+      expect(find.byKey(const Key('item-hover-preview-video')), findsNothing);
+      expect(find.byKey(const Key('hover-play-period')), findsOneWidget);
+      await hover.moveTo(const Offset(-80, -80));
+      await tester.pump(kHoverPreviewFaceHideDelay);
+    });
+
+    testWidgets('returns to the still when the segment ends, and replays', (
+      tester,
+    ) async {
+      final item = fixtureItem(id: 'v1', type: ItemType.video);
+      final controller = _controller(FakeItemsRepository(items: [item]));
+      addTearDown(controller.dispose);
+      final dir = Directory.systemTemp.createTempSync('face_still_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final still = File('${dir.path}/still.jpg')
+        ..writeAsBytesSync(img.encodeJpg(img.Image(width: 64, height: 48)));
+      final session = _FakeVideoSession();
+
+      await pumpHover(
+        tester,
+        item: item,
+        controller: controller,
+        session: session,
+        faceStill: () async => still,
+        onFaceTap: (_, _) async {},
+      );
+
+      final hover = await _hoverThumb(tester, 'v1', periodId: 'kp1');
+      await pumpUntil(tester, find.byKey(const Key('hover-play-period')));
+      await tester.tap(find.byKey(const Key('hover-play-period')));
+      await pumpUntil(
+        tester,
+        find.byKey(const Key('item-hover-preview-video')),
+      );
+      expect(find.byKey(const Key('item-hover-preview-video')), findsOneWidget);
+
+      session.ended.add(null);
+      await tester.pump();
+      expect(find.byKey(const Key('item-hover-preview-video')), findsNothing);
+      expect(find.byKey(const Key('item-hover-preview-photo')), findsOneWidget);
+      expect(find.byKey(const Key('hover-play-period')), findsOneWidget);
+      expect(session.disposed, isTrue);
+
+      await tester.tap(find.byKey(const Key('hover-play-period')));
+      await pumpUntil(
+        tester,
+        find.byKey(const Key('item-hover-preview-video')),
+      );
+      expect(find.byKey(const Key('item-hover-preview-video')), findsOneWidget);
+      expect(session.playCount, 2);
+
+      await hover.moveTo(const Offset(-80, -80));
+      await tester.pump(kHoverPreviewFaceHideDelay);
+    });
+
+    testWidgets('without a still it plays the clip with the name line', (
+      tester,
+    ) async {
+      final item = fixtureItem(id: 'v1', type: ItemType.video);
+      final controller = _controller(FakeItemsRepository(items: [item]));
+      addTearDown(controller.dispose);
+      final session = _FakeVideoSession();
+
+      await pumpHover(
+        tester,
+        item: item,
+        controller: controller,
+        session: session,
+        faceStill: () async => null,
+        onFaceTap: (_, _) async {},
+      );
+
+      final hover = await _hoverThumb(tester, 'v1', periodId: 'kp1');
+      await pumpUntil(
+        tester,
+        find.byKey(const Key('item-hover-preview-video')),
+      );
+      expect(find.byKey(const Key('item-hover-preview-video')), findsOneWidget);
+      expect(find.byKey(const Key('hover-play-period')), findsNothing);
+      expect(find.byKey(const Key('hover-show-still')), findsNothing);
+      expect(session.showStillOffered.last, isFalse);
+      expect(session.loops, [true]);
+      expect(find.byKey(const Key('hover-face-label-1')), findsOneWidget);
+      expect(session.playCount, 1);
+
+      await hover.moveTo(const Offset(-80, -80));
+      await tester.pump(kHoverPreviewFaceHideDelay);
+    });
   });
 
   testWidgets('video hover plays until the first key period end', (

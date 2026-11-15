@@ -563,3 +563,46 @@ bool personOccupiedOnItem({
   if (resolved == null || resolved.isEmpty) return false;
   return occupied.nameKeys.contains(personNameKey(resolved));
 }
+
+/// The other who-face crop in [tagId]'s photo (or key period) that already
+/// holds [personId] / [name], or null. [cropIntents] makes it draft-aware.
+Tag? whoCropHoldingPerson({
+  required ItemKnowledge knowledge,
+  required String tagId,
+  String? personId,
+  String? name,
+  Map<String, PersonAssignIntent> cropIntents = const {},
+  Map<String, String> personNamesById = const {},
+}) {
+  final crops = whoFaceCropTags(knowledge);
+  Tag? target;
+  for (final tag in crops) {
+    if (tag.id == tagId) target = tag;
+  }
+  if (target == null) return null;
+  final wantedName = name?.trim().isNotEmpty == true
+      ? name!.trim()
+      : (personId != null ? personNamesById[personId]?.trim() : null);
+  for (final tag in crops) {
+    if (tag.id == tagId || tag.keyPeriodId != target.keyPeriodId) continue;
+    final intent = cropIntents[tag.id];
+    if (intent?.unassign == true || intent?.exclude == true) continue;
+    final held = effectiveAssignedPerson(
+      intent: intent,
+      baselinePersonId: appearanceForWhoTag(knowledge, tag.id)?.personId,
+      personNamesById: personNamesById,
+    );
+    if (personId != null && personId.isNotEmpty && held.personId == personId) {
+      return tag;
+    }
+    final heldName = held.personName;
+    if (wantedName != null &&
+        wantedName.isNotEmpty &&
+        heldName != null &&
+        heldName.isNotEmpty &&
+        personNameKey(heldName) == personNameKey(wantedName)) {
+      return tag;
+    }
+  }
+  return null;
+}

@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as img;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -73,8 +76,9 @@ void _syncKnowledgeAppearancesFromPersons(
 }
 
 void main() {
-  testWidgets('KnowledgeView renders who/what/when/where as CSV',
-      (tester) async {
+  testWidgets('KnowledgeView renders who/what/when/where as CSV', (
+    tester,
+  ) async {
     final item = fixtureItem(
       id: 'item_1',
       processingStatus: ProcessingStatus.tagged,
@@ -100,9 +104,7 @@ void main() {
             FakeJobsRepository(itemId: 'item_1', item: item),
           ),
         ],
-        child: const MaterialApp(
-          home: ItemDetailPage(itemId: 'item_1'),
-        ),
+        child: const MaterialApp(home: ItemDetailPage(itemId: 'item_1')),
       ),
     );
     await tester.pumpAndSettle();
@@ -120,9 +122,7 @@ void main() {
     expect(
       tester.getTopLeft(find.text('Status')).dx,
       lessThan(
-        tester
-            .getTopLeft(find.byKey(const Key('knowledge-dimension-who')))
-            .dx,
+        tester.getTopLeft(find.byKey(const Key('knowledge-dimension-who'))).dx,
       ),
     );
     expect(
@@ -130,9 +130,7 @@ void main() {
       lessThan(tester.getTopLeft(find.byKey(const Key('item-type'))).dy),
     );
     expect(
-      tester
-          .getTopLeft(find.byKey(const Key('knowledge-dimension-who')))
-          .dy,
+      tester.getTopLeft(find.byKey(const Key('knowledge-dimension-who'))).dy,
       lessThan(
         tester
             .getTopLeft(find.byKey(const Key('knowledge-dimension-where')))
@@ -172,8 +170,9 @@ void main() {
     expect(find.textContaining('Filter'), findsNothing);
   });
 
-  testWidgets('Video item shows key-period scrubber with start/end',
-      (tester) async {
+  testWidgets('Video item shows key-period scrubber with start/end', (
+    tester,
+  ) async {
     final item = fixtureItem(
       id: 'item_v',
       type: ItemType.video,
@@ -231,9 +230,9 @@ void main() {
     expect(find.text('party'), findsOneWidget);
   });
 
-  testWidgets(
-      'Video faces sit on each key period; no combined top grid',
-      (tester) async {
+  testWidgets('Video faces sit on each key period; no combined top grid', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1200, 2400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -340,212 +339,219 @@ void main() {
   });
 
   testWidgets(
-      'Same-still overlap in one period excludes the later face; same box on two periods stays',
-      (tester) async {
-    tester.view.physicalSize = const Size(1200, 2400);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
+    'Same-still overlap in one period excludes the later face; same box on two periods stays',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
 
-    const region = TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4);
-    final item = fixtureItem(
-      id: 'item_v',
-      type: ItemType.video,
-      processingStatus: ProcessingStatus.tagged,
-    );
-    final knowledge = fixtureKnowledge(
-      item: item,
-      tags: const [],
-      keyPeriods: [
-        KeyPeriodKnowledge(
-          id: 'kp_a',
-          itemId: item.id,
-          startMs: 0,
-          endMs: 2000,
-          sampleTimestampMs: 500,
-          tags: [
-            fixtureTag(
-              id: 'keep',
-              itemId: item.id,
-              keyPeriodId: 'kp_a',
-              dimension: 'who',
-              value: 'First',
-              region: region,
-            ),
-            fixtureTag(
-              id: 'drop',
-              itemId: item.id,
-              keyPeriodId: 'kp_a',
-              dimension: 'who',
-              value: 'Dup',
-              region: region,
-            ),
-          ],
-        ),
-        KeyPeriodKnowledge(
-          id: 'kp_b',
-          itemId: item.id,
-          startMs: 2000,
-          endMs: 4000,
-          sampleTimestampMs: 3000,
-          tags: [
-            fixtureTag(
-              id: 'other_frame',
-              itemId: item.id,
-              keyPeriodId: 'kp_b',
-              dimension: 'who',
-              value: 'Later',
-              region: region,
-            ),
-          ],
-        ),
-      ],
-    );
-    final items = FakeItemsRepository(
-      items: [item],
-      knowledgeByItemId: {'item_v': knowledge},
-    );
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          itemsRepositoryProvider.overrideWithValue(items),
-          personsRepositoryProvider.overrideWithValue(
-            FakePersonsRepository(persons: const []),
+      const region = TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4);
+      final item = fixtureItem(
+        id: 'item_v',
+        type: ItemType.video,
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final knowledge = fixtureKnowledge(
+        item: item,
+        tags: const [],
+        keyPeriods: [
+          KeyPeriodKnowledge(
+            id: 'kp_a',
+            itemId: item.id,
+            startMs: 0,
+            endMs: 2000,
+            sampleTimestampMs: 500,
+            tags: [
+              fixtureTag(
+                id: 'keep',
+                itemId: item.id,
+                keyPeriodId: 'kp_a',
+                dimension: 'who',
+                value: 'First',
+                region: region,
+              ),
+              fixtureTag(
+                id: 'drop',
+                itemId: item.id,
+                keyPeriodId: 'kp_a',
+                dimension: 'who',
+                value: 'Dup',
+                region: region,
+              ),
+            ],
           ),
-          correctionsRepositoryProvider.overrideWithValue(
-            FakeCorrectionsRepository(items: items),
-          ),
-          commentsRepositoryProvider.overrideWithValue(
-            FakeCommentsRepository(),
-          ),
-          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
-          jobsRepositoryProvider.overrideWithValue(
-            FakeJobsRepository(itemId: 'item_v', item: item),
+          KeyPeriodKnowledge(
+            id: 'kp_b',
+            itemId: item.id,
+            startMs: 2000,
+            endMs: 4000,
+            sampleTimestampMs: 3000,
+            tags: [
+              fixtureTag(
+                id: 'other_frame',
+                itemId: item.id,
+                keyPeriodId: 'kp_b',
+                dimension: 'who',
+                value: 'Later',
+                region: region,
+              ),
+            ],
           ),
         ],
-        child: const MaterialApp(
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: ItemReviewSection(itemId: 'item_v', openVideo: false),
+      );
+      final items = FakeItemsRepository(
+        items: [item],
+        knowledgeByItemId: {'item_v': knowledge},
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            itemsRepositoryProvider.overrideWithValue(items),
+            personsRepositoryProvider.overrideWithValue(
+              FakePersonsRepository(persons: const []),
+            ),
+            correctionsRepositoryProvider.overrideWithValue(
+              FakeCorrectionsRepository(items: items),
+            ),
+            commentsRepositoryProvider.overrideWithValue(
+              FakeCommentsRepository(),
+            ),
+            usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+            jobsRepositoryProvider.overrideWithValue(
+              FakeJobsRepository(itemId: 'item_v', item: item),
+            ),
+          ],
+          child: const MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: ItemReviewSection(itemId: 'item_v', openVideo: false),
+              ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('item-face-tile-keep')), findsOneWidget);
-    expect(find.byKey(const Key('item-face-tile-drop')), findsNothing);
-    expect(find.byKey(const Key('who-exclusion-draft-drop')), findsOneWidget);
-    expect(find.byKey(const Key('item-face-tile-other_frame')), findsOneWidget);
-    expect(find.byKey(const Key('item-detail-save')), findsOneWidget);
-    expect(
-      tester.widget<FilledButton>(find.byKey(const Key('item-detail-save'))).onPressed,
-      isNotNull,
-    );
-  });
+      expect(find.byKey(const Key('item-face-tile-keep')), findsOneWidget);
+      expect(find.byKey(const Key('item-face-tile-drop')), findsNothing);
+      expect(find.byKey(const Key('who-exclusion-draft-drop')), findsOneWidget);
+      expect(
+        find.byKey(const Key('item-face-tile-other_frame')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('item-detail-save')), findsOneWidget);
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const Key('item-detail-save')))
+            .onPressed,
+        isNotNull,
+      );
+    },
+  );
 
   testWidgets(
-      'Assign face crop to a new person; no whole-item assign when crops exist',
-      (tester) async {
-    tester.view.physicalSize = const Size(1200, 2000);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
+    'Assign face crop to a new person; no whole-item assign when crops exist',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 2000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
 
-    final item = fixtureItem(
-      id: 'item_1',
-      processingStatus: ProcessingStatus.tagged,
-    );
-    final knowledge = fixtureKnowledge(
-      item: item,
-      tags: [
-        fixtureTag(
-          id: 'tag_who',
-          dimension: 'who',
-          value: 'toddler',
-          region: const TagRegion(
-            yMin: 0.1,
-            xMin: 0.1,
-            yMax: 0.4,
-            xMax: 0.4,
-          ),
-        ),
-      ],
-    );
-    final items = FakeItemsRepository(
-      items: [item],
-      knowledgeByItemId: {'item_1': knowledge},
-    );
-    final persons = FakePersonsRepository(persons: const []);
-    items.linkedPersons = persons;
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          itemsRepositoryProvider.overrideWithValue(items),
-          personsRepositoryProvider.overrideWithValue(persons),
-          correctionsRepositoryProvider.overrideWithValue(
-            FakeCorrectionsRepository(items: items),
-          ),
-          commentsRepositoryProvider.overrideWithValue(
-            FakeCommentsRepository(),
-          ),
-          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
-          jobsRepositoryProvider.overrideWithValue(
-            FakeJobsRepository(itemId: 'item_1', item: item),
+      final item = fixtureItem(
+        id: 'item_1',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final knowledge = fixtureKnowledge(
+        item: item,
+        tags: [
+          fixtureTag(
+            id: 'tag_who',
+            dimension: 'who',
+            value: 'toddler',
+            region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
           ),
         ],
-        child: const MaterialApp(
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: ItemReviewSection(itemId: 'item_1', openVideo: false),
+      );
+      final items = FakeItemsRepository(
+        items: [item],
+        knowledgeByItemId: {'item_1': knowledge},
+      );
+      final persons = FakePersonsRepository(persons: const []);
+      items.linkedPersons = persons;
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            itemsRepositoryProvider.overrideWithValue(items),
+            personsRepositoryProvider.overrideWithValue(persons),
+            correctionsRepositoryProvider.overrideWithValue(
+              FakeCorrectionsRepository(items: items),
+            ),
+            commentsRepositoryProvider.overrideWithValue(
+              FakeCommentsRepository(),
+            ),
+            usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+            jobsRepositoryProvider.overrideWithValue(
+              FakeJobsRepository(itemId: 'item_1', item: item),
+            ),
+          ],
+          child: const MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: ItemReviewSection(itemId: 'item_1', openVideo: false),
+              ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('item-link-people')), findsNothing);
-    expect(find.byKey(const Key('item-assign-person')), findsNothing);
-    expect(find.byKey(const Key('item-assign-face-tag_who')), findsNothing);
-    await _selectItemFace(tester, 'tag_who');
-    await tester.ensureVisible(find.byKey(const Key('item-assign-face-tag_who')));
-    await tester.tap(find.byKey(const Key('item-assign-face-tag_who')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('New person').last);
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('person-name-field')), 'Maya');
-    await tester.tap(find.byKey(const Key('person-name-save')));
-    await tester.pumpAndSettle();
+      expect(find.byKey(const Key('item-link-people')), findsNothing);
+      expect(find.byKey(const Key('item-assign-person')), findsNothing);
+      expect(find.byKey(const Key('item-assign-face-tag_who')), findsNothing);
+      await _selectItemFace(tester, 'tag_who');
+      await tester.ensureVisible(
+        find.byKey(const Key('item-assign-face-tag_who')),
+      );
+      await tester.tap(find.byKey(const Key('item-assign-face-tag_who')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('New person').last);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('person-name-field')),
+        'Maya',
+      );
+      await tester.tap(find.byKey(const Key('person-name-save')));
+      await tester.pumpAndSettle();
 
-    expect(items.assignPersonCalls, isEmpty);
-    expect(
-      _assignFieldState(tester, const Key('item-assign-face-tag_who')).value,
-      PersonAssignControl.draftValue('Maya'),
-    );
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('item-assign-face-tag_who')),
-        matching: find.text('Maya'),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('item-assign-face-tag_who')),
-        matching: find.text('New person'),
-      ),
-      findsNothing,
-    );
-    await tester.ensureVisible(find.byKey(const Key('item-detail-save')));
-    await tester.tap(find.byKey(const Key('item-detail-save')));
-    await tester.pumpAndSettle();
+      expect(items.assignPersonCalls, isEmpty);
+      expect(
+        _assignFieldState(tester, const Key('item-assign-face-tag_who')).value,
+        PersonAssignControl.draftValue('Maya'),
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('item-assign-face-tag_who')),
+          matching: find.text('Maya'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('item-assign-face-tag_who')),
+          matching: find.text('New person'),
+        ),
+        findsNothing,
+      );
+      await tester.ensureVisible(find.byKey(const Key('item-detail-save')));
+      await tester.tap(find.byKey(const Key('item-detail-save')));
+      await tester.pumpAndSettle();
 
-    expect(items.assignPersonCalls, hasLength(1));
-    expect(items.assignPersonCalls.single.tagId, 'tag_who');
-    expect(items.assignPersonCalls.single.name, 'Maya');
-  });
+      expect(items.assignPersonCalls, hasLength(1));
+      expect(items.assignPersonCalls.single.tagId, 'tag_who');
+      expect(items.assignPersonCalls.single.name, 'Maya');
+    },
+  );
 
   testWidgets('Exclude from photo is draft until Save', (tester) async {
     tester.view.physicalSize = const Size(1200, 2000);
@@ -563,12 +569,7 @@ void main() {
           id: 'tag_who',
           dimension: 'who',
           value: 'toddler',
-          region: const TagRegion(
-            yMin: 0.1,
-            xMin: 0.1,
-            yMax: 0.4,
-            xMax: 0.4,
-          ),
+          region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
         ),
       ],
     );
@@ -621,7 +622,10 @@ void main() {
 
     expect(items.createWhoExclusionCalls, isEmpty);
     expect(find.byKey(const Key('item-assign-face-tag_who')), findsNothing);
-    expect(find.byKey(const Key('who-exclusion-draft-tag_who')), findsOneWidget);
+    expect(
+      find.byKey(const Key('who-exclusion-draft-tag_who')),
+      findsOneWidget,
+    );
 
     await tester.ensureVisible(find.byKey(const Key('item-detail-save')));
     await tester.tap(find.byKey(const Key('item-detail-save')));
@@ -631,7 +635,10 @@ void main() {
     expect(items.createWhoExclusionCalls.single.tagId, 'tag_who');
     expect(find.byKey(const Key('item-assign-face-tag_who')), findsNothing);
     expect(find.byKey(const Key('who-exclusion-draft-tag_who')), findsNothing);
-    expect(find.byKey(const Key('who-exclusion-excl_tag_who_1')), findsOneWidget);
+    expect(
+      find.byKey(const Key('who-exclusion-excl_tag_who_1')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('Exclude others from photo is draft until Save', (tester) async {
@@ -643,12 +650,8 @@ void main() {
       id: 'item_1',
       processingStatus: ProcessingStatus.tagged,
     );
-    TagRegion box(double x) => TagRegion(
-          yMin: 0.1,
-          xMin: x,
-          yMax: 0.4,
-          xMax: x + 0.2,
-        );
+    TagRegion box(double x) =>
+        TagRegion(yMin: 0.1, xMin: x, yMax: 0.4, xMax: x + 0.2);
     final knowledge = fixtureKnowledge(
       item: item,
       tags: [
@@ -718,23 +721,29 @@ void main() {
     expect(find.byKey(const Key('item-face-tile-keep')), findsOneWidget);
     expect(find.byKey(const Key('item-face-tile-other_a')), findsNothing);
     expect(find.byKey(const Key('item-face-tile-other_b')), findsNothing);
-    expect(find.byKey(const Key('who-exclusion-draft-other_a')), findsOneWidget);
-    expect(find.byKey(const Key('who-exclusion-draft-other_b')), findsOneWidget);
+    expect(
+      find.byKey(const Key('who-exclusion-draft-other_a')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('who-exclusion-draft-other_b')),
+      findsOneWidget,
+    );
 
     await tester.ensureVisible(find.byKey(const Key('item-detail-save')));
     await tester.tap(find.byKey(const Key('item-detail-save')));
     await tester.pumpAndSettle();
 
-    expect(
-      items.createWhoExclusionCalls.map((c) => c.tagId).toSet(),
-      {'other_a', 'other_b'},
-    );
+    expect(items.createWhoExclusionCalls.map((c) => c.tagId).toSet(), {
+      'other_a',
+      'other_b',
+    });
     expect(find.byKey(const Key('item-face-tile-keep')), findsOneWidget);
   });
 
-  testWidgets(
-      'Exclude others from video drafts faces on every key period',
-      (tester) async {
+  testWidgets('Exclude others from video drafts faces on every key period', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1200, 2400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -866,15 +875,15 @@ void main() {
     await tester.tap(find.byKey(const Key('item-detail-save')));
     await tester.pumpAndSettle();
 
-    expect(
-      items.createWhoExclusionCalls.map((c) => c.tagId).toSet(),
-      {'same_period', 'other_period'},
-    );
+    expect(items.createWhoExclusionCalls.map((c) => c.tagId).toSet(), {
+      'same_period',
+      'other_period',
+    });
   });
 
-  testWidgets(
-      'Exclude then Cmd+Z under SelectableScope restores the crop',
-      (tester) async {
+  testWidgets('Exclude then Cmd+Z under SelectableScope restores the crop', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1200, 2000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -890,12 +899,7 @@ void main() {
           id: 'tag_who',
           dimension: 'who',
           value: 'toddler',
-          region: const TagRegion(
-            yMin: 0.1,
-            xMin: 0.1,
-            yMax: 0.4,
-            xMax: 0.4,
-          ),
+          region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
         ),
       ],
     );
@@ -924,9 +928,7 @@ void main() {
         ],
         child: MaterialApp(
           builder: (context, child) {
-            return ActiveUndoShortcuts(
-              child: child ?? const SizedBox.shrink(),
-            );
+            return ActiveUndoShortcuts(child: child ?? const SizedBox.shrink());
           },
           home: const UndoSelectableRoute(
             child: ItemDetailPage(itemId: 'item_1'),
@@ -943,7 +945,10 @@ void main() {
     await tester.tap(find.byKey(const Key('item-exclude-face-tag_who')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('who-exclusion-draft-tag_who')), findsOneWidget);
+    expect(
+      find.byKey(const Key('who-exclusion-draft-tag_who')),
+      findsOneWidget,
+    );
     expect(find.byKey(const Key('undo-depth')), findsOneWidget);
     expect(
       find.descendant(
@@ -968,8 +973,9 @@ void main() {
     expect(items.createWhoExclusionCalls, isEmpty);
   });
 
-  testWidgets('Include on a draft exclude restores the crop with no API',
-      (tester) async {
+  testWidgets('Include on a draft exclude restores the crop with no API', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1200, 2000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -985,12 +991,7 @@ void main() {
           id: 'tag_who',
           dimension: 'who',
           value: 'toddler',
-          region: const TagRegion(
-            yMin: 0.1,
-            xMin: 0.1,
-            yMax: 0.4,
-            xMax: 0.4,
-          ),
+          region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
         ),
       ],
     );
@@ -1049,266 +1050,286 @@ void main() {
     expect(find.byKey(const Key('who-exclusion-draft-tag_who')), findsNothing);
     expect(find.byKey(const Key('item-detail-save')), findsOneWidget);
     expect(
-      tester.widget<FilledButton>(find.byKey(const Key('item-detail-save'))).onPressed,
+      tester
+          .widget<FilledButton>(find.byKey(const Key('item-detail-save')))
+          .onPressed,
       isNull,
     );
   });
 
   testWidgets(
-      'Include on a saved exclusion is draft; assign then Save undoes exclude',
-      (tester) async {
-    tester.view.physicalSize = const Size(1200, 2000);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
+    'Include on a saved exclusion is draft; assign then Save undoes exclude',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 2000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
 
-    final item = fixtureItem(
-      id: 'item_1',
-      processingStatus: ProcessingStatus.tagged,
-    );
-    final knowledge = fixtureKnowledge(
-      item: item,
-      tags: const [],
-      whoExclusions: [
-        const WhoExclusion(
-          id: 'ex_1',
-          itemId: 'item_1',
-          region: TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
-          createdFromTagId: 'tag_who',
-          createdAt: '2026-07-26T00:00:00.000Z',
-        ),
-      ],
-    );
-    final items = FakeItemsRepository(
-      items: [item],
-      knowledgeByItemId: {'item_1': knowledge},
-    );
-    final persons = FakePersonsRepository(persons: const []);
-    items.linkedPersons = persons;
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          itemsRepositoryProvider.overrideWithValue(items),
-          personsRepositoryProvider.overrideWithValue(persons),
-          correctionsRepositoryProvider.overrideWithValue(
-            FakeCorrectionsRepository(items: items),
-          ),
-          commentsRepositoryProvider.overrideWithValue(
-            FakeCommentsRepository(),
-          ),
-          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
-          jobsRepositoryProvider.overrideWithValue(
-            FakeJobsRepository(itemId: 'item_1', item: item),
+      final item = fixtureItem(
+        id: 'item_1',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final knowledge = fixtureKnowledge(
+        item: item,
+        tags: const [],
+        whoExclusions: [
+          const WhoExclusion(
+            id: 'ex_1',
+            itemId: 'item_1',
+            region: TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
+            createdFromTagId: 'tag_who',
+            createdAt: '2026-07-26T00:00:00.000Z',
           ),
         ],
-        child: const MaterialApp(
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: ItemReviewSection(itemId: 'item_1', openVideo: false),
+      );
+      final items = FakeItemsRepository(
+        items: [item],
+        knowledgeByItemId: {'item_1': knowledge},
+      );
+      final persons = FakePersonsRepository(persons: const []);
+      items.linkedPersons = persons;
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            itemsRepositoryProvider.overrideWithValue(items),
+            personsRepositoryProvider.overrideWithValue(persons),
+            correctionsRepositoryProvider.overrideWithValue(
+              FakeCorrectionsRepository(items: items),
+            ),
+            commentsRepositoryProvider.overrideWithValue(
+              FakeCommentsRepository(),
+            ),
+            usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+            jobsRepositoryProvider.overrideWithValue(
+              FakeJobsRepository(itemId: 'item_1', item: item),
+            ),
+          ],
+          child: const MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: ItemReviewSection(itemId: 'item_1', openVideo: false),
+              ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('item-include-exclusion-ex_1')), findsOneWidget);
-    await tester.ensureVisible(
-      find.byKey(const Key('item-include-exclusion-ex_1')),
-    );
-    await tester.tap(find.byKey(const Key('item-include-exclusion-ex_1')));
-    await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('item-include-exclusion-ex_1')),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(
+        find.byKey(const Key('item-include-exclusion-ex_1')),
+      );
+      await tester.tap(find.byKey(const Key('item-include-exclusion-ex_1')));
+      await tester.pumpAndSettle();
 
-    expect(items.undoWhoExclusionCalls, isEmpty);
-    expect(find.byKey(const Key('who-exclusion-ex_1')), findsNothing);
-    expect(
-      find.byKey(const Key('who-exclusion-included-ex_1')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const Key('item-assign-included-ex_1')), findsNothing);
-    await _selectIncludedFace(tester, 'ex_1');
-    expect(find.byKey(const Key('item-assign-included-ex_1')), findsOneWidget);
+      expect(items.undoWhoExclusionCalls, isEmpty);
+      expect(find.byKey(const Key('who-exclusion-ex_1')), findsNothing);
+      expect(
+        find.byKey(const Key('who-exclusion-included-ex_1')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('item-assign-included-ex_1')), findsNothing);
+      await _selectIncludedFace(tester, 'ex_1');
+      expect(
+        find.byKey(const Key('item-assign-included-ex_1')),
+        findsOneWidget,
+      );
 
-    await tester.ensureVisible(
-      find.byKey(const Key('item-assign-included-ex_1')),
-    );
-    await tester.tap(find.byKey(const Key('item-assign-included-ex_1')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('New person').last);
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('person-name-field')), 'Maya');
-    await tester.tap(find.byKey(const Key('person-name-save')));
-    await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const Key('item-assign-included-ex_1')),
+      );
+      await tester.tap(find.byKey(const Key('item-assign-included-ex_1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('New person').last);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('person-name-field')),
+        'Maya',
+      );
+      await tester.tap(find.byKey(const Key('person-name-save')));
+      await tester.pumpAndSettle();
 
-    expect(items.assignPersonCalls, isEmpty);
-    expect(
-      _assignFieldState(tester, const Key('item-assign-included-ex_1')).value,
-      PersonAssignControl.draftValue('Maya'),
-    );
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('item-assign-included-ex_1')),
-        matching: find.text('Maya'),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('item-assign-included-ex_1')),
-        matching: find.text('New person'),
-      ),
-      findsNothing,
-    );
-    await tester.ensureVisible(find.byKey(const Key('item-detail-save')));
-    await tester.tap(find.byKey(const Key('item-detail-save')));
-    await tester.pumpAndSettle();
+      expect(items.assignPersonCalls, isEmpty);
+      expect(
+        _assignFieldState(tester, const Key('item-assign-included-ex_1')).value,
+        PersonAssignControl.draftValue('Maya'),
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('item-assign-included-ex_1')),
+          matching: find.text('Maya'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('item-assign-included-ex_1')),
+          matching: find.text('New person'),
+        ),
+        findsNothing,
+      );
+      await tester.ensureVisible(find.byKey(const Key('item-detail-save')));
+      await tester.tap(find.byKey(const Key('item-detail-save')));
+      await tester.pumpAndSettle();
 
-    expect(items.undoWhoExclusionCalls, hasLength(1));
-    expect(items.undoWhoExclusionCalls.single.exclusionId, 'ex_1');
-    expect(items.assignPersonCalls, hasLength(1));
-    expect(items.assignPersonCalls.single.tagId, 'tag_who');
-    expect(items.assignPersonCalls.single.name, 'Maya');
-  });
+      expect(items.undoWhoExclusionCalls, hasLength(1));
+      expect(items.undoWhoExclusionCalls.single.exclusionId, 'ex_1');
+      expect(items.assignPersonCalls, hasLength(1));
+      expect(items.assignPersonCalls.single.tagId, 'tag_who');
+      expect(items.assignPersonCalls.single.name, 'Maya');
+    },
+  );
 
   testWidgets(
-      'Second included face can pick a draft New person name before Save',
-      (tester) async {
-    tester.view.physicalSize = const Size(1200, 2000);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
+    'Second included face can pick a draft New person name before Save',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 2000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
 
-    final item = fixtureItem(
-      id: 'item_1',
-      processingStatus: ProcessingStatus.tagged,
-    );
-    final knowledge = fixtureKnowledge(
-      item: item,
-      tags: const [],
-      whoExclusions: [
-        const WhoExclusion(
-          id: 'ex_1',
-          itemId: 'item_1',
-          region: TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
-          createdFromTagId: 'tag_a',
-          createdAt: '2026-07-26T00:00:00.000Z',
-        ),
-        const WhoExclusion(
-          id: 'ex_2',
-          itemId: 'item_1',
-          region: TagRegion(yMin: 0.5, xMin: 0.5, yMax: 0.8, xMax: 0.8),
-          createdFromTagId: 'tag_b',
-          createdAt: '2026-07-26T00:00:00.000Z',
-        ),
-      ],
-    );
-    final items = FakeItemsRepository(
-      items: [item],
-      knowledgeByItemId: {'item_1': knowledge},
-    );
-    final persons = FakePersonsRepository(persons: const []);
-    items.linkedPersons = persons;
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          itemsRepositoryProvider.overrideWithValue(items),
-          personsRepositoryProvider.overrideWithValue(persons),
-          correctionsRepositoryProvider.overrideWithValue(
-            FakeCorrectionsRepository(items: items),
+      final item = fixtureItem(
+        id: 'item_1',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final knowledge = fixtureKnowledge(
+        item: item,
+        tags: const [],
+        whoExclusions: [
+          const WhoExclusion(
+            id: 'ex_1',
+            itemId: 'item_1',
+            region: TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
+            createdFromTagId: 'tag_a',
+            createdAt: '2026-07-26T00:00:00.000Z',
           ),
-          commentsRepositoryProvider.overrideWithValue(
-            FakeCommentsRepository(),
-          ),
-          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
-          jobsRepositoryProvider.overrideWithValue(
-            FakeJobsRepository(itemId: 'item_1', item: item),
+          const WhoExclusion(
+            id: 'ex_2',
+            itemId: 'item_1',
+            region: TagRegion(yMin: 0.5, xMin: 0.5, yMax: 0.8, xMax: 0.8),
+            createdFromTagId: 'tag_b',
+            createdAt: '2026-07-26T00:00:00.000Z',
           ),
         ],
-        child: const MaterialApp(
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: ItemReviewSection(itemId: 'item_1', openVideo: false),
+      );
+      final items = FakeItemsRepository(
+        items: [item],
+        knowledgeByItemId: {'item_1': knowledge},
+      );
+      final persons = FakePersonsRepository(persons: const []);
+      items.linkedPersons = persons;
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            itemsRepositoryProvider.overrideWithValue(items),
+            personsRepositoryProvider.overrideWithValue(persons),
+            correctionsRepositoryProvider.overrideWithValue(
+              FakeCorrectionsRepository(items: items),
+            ),
+            commentsRepositoryProvider.overrideWithValue(
+              FakeCommentsRepository(),
+            ),
+            usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+            jobsRepositoryProvider.overrideWithValue(
+              FakeJobsRepository(itemId: 'item_1', item: item),
+            ),
+          ],
+          child: const MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: ItemReviewSection(itemId: 'item_1', openVideo: false),
+              ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    await tester.ensureVisible(
-      find.byKey(const Key('item-include-exclusion-ex_1')),
-    );
-    await tester.tap(find.byKey(const Key('item-include-exclusion-ex_1')));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(
-      find.byKey(const Key('item-include-exclusion-ex_2')),
-    );
-    await tester.tap(find.byKey(const Key('item-include-exclusion-ex_2')));
-    await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const Key('item-include-exclusion-ex_1')),
+      );
+      await tester.tap(find.byKey(const Key('item-include-exclusion-ex_1')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const Key('item-include-exclusion-ex_2')),
+      );
+      await tester.tap(find.byKey(const Key('item-include-exclusion-ex_2')));
+      await tester.pumpAndSettle();
 
-    await _selectIncludedFace(tester, 'ex_1');
-    await tester.ensureVisible(
-      find.byKey(const Key('item-assign-included-ex_1')),
-    );
-    await tester.tap(find.byKey(const Key('item-assign-included-ex_1')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('New person').last);
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('person-name-field')), 'test');
-    await tester.tap(find.byKey(const Key('person-name-save')));
-    await tester.pumpAndSettle();
+      await _selectIncludedFace(tester, 'ex_1');
+      await tester.ensureVisible(
+        find.byKey(const Key('item-assign-included-ex_1')),
+      );
+      await tester.tap(find.byKey(const Key('item-assign-included-ex_1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('New person').last);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('person-name-field')),
+        'test',
+      );
+      await tester.tap(find.byKey(const Key('person-name-save')));
+      await tester.pumpAndSettle();
 
-    expect(
-      _assignFieldState(tester, const Key('item-assign-included-ex_1')).value,
-      PersonAssignControl.draftValue('test'),
-    );
+      expect(
+        _assignFieldState(tester, const Key('item-assign-included-ex_1')).value,
+        PersonAssignControl.draftValue('test'),
+      );
 
-    await tester.ensureVisible(
-      find.byKey(const Key('item-face-tile-included-ex_2')),
-    );
-    await _selectIncludedFace(tester, 'ex_2');
-    await tester.ensureVisible(
-      find.byKey(const Key('item-assign-included-ex_2')),
-    );
-    await tester.tap(find.byKey(const Key('item-assign-included-ex_2')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('person-assign-draft-test')), findsWidgets);
-    await tester.tap(find.text('test').last);
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('item-assign-error')), findsOneWidget);
-    expect(
-      find.text('test is already on another face in this photo.'),
-      findsOneWidget,
-    );
+      await tester.ensureVisible(
+        find.byKey(const Key('item-face-tile-included-ex_2')),
+      );
+      await _selectIncludedFace(tester, 'ex_2');
+      await tester.ensureVisible(
+        find.byKey(const Key('item-assign-included-ex_2')),
+      );
+      await tester.tap(find.byKey(const Key('item-assign-included-ex_2')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('person-assign-draft-test')), findsWidgets);
+      await tester.tap(find.text('test').last);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('item-assign-error')), findsOneWidget);
+      expect(
+        find.text('test is already on another face in this photo.'),
+        findsOneWidget,
+      );
 
-    await tester.tap(find.byKey(const Key('item-assign-included-ex_2')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('New person').last);
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('person-name-field')), 'other');
-    await tester.tap(find.byKey(const Key('person-name-save')));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('item-assign-included-ex_2')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('New person').last);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('person-name-field')),
+        'other',
+      );
+      await tester.tap(find.byKey(const Key('person-name-save')));
+      await tester.pumpAndSettle();
 
-    expect(
-      _assignFieldState(tester, const Key('item-assign-included-ex_2')).value,
-      PersonAssignControl.draftValue('other'),
-    );
-    expect(items.assignPersonCalls, isEmpty);
+      expect(
+        _assignFieldState(tester, const Key('item-assign-included-ex_2')).value,
+        PersonAssignControl.draftValue('other'),
+      );
+      expect(items.assignPersonCalls, isEmpty);
 
-    await tester.ensureVisible(find.byKey(const Key('item-detail-save')));
-    await tester.tap(find.byKey(const Key('item-detail-save')));
-    await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('item-detail-save')));
+      await tester.tap(find.byKey(const Key('item-detail-save')));
+      await tester.pumpAndSettle();
 
-    expect(items.undoWhoExclusionCalls, hasLength(2));
-    expect(items.assignPersonCalls, hasLength(2));
-    expect(
-      items.assignPersonCalls.map((c) => c.name).toList(),
-      ['test', 'other'],
-    );
-  });
+      expect(items.undoWhoExclusionCalls, hasLength(2));
+      expect(items.assignPersonCalls, hasLength(2));
+      expect(items.assignPersonCalls.map((c) => c.name).toList(), [
+        'test',
+        'other',
+      ]);
+    },
+  );
 
-  testWidgets('Assign item to a person when there are no face crops',
-      (tester) async {
+  testWidgets('Assign item to a person when there are no face crops', (
+    tester,
+  ) async {
     final item = fixtureItem(
       id: 'item_1',
       processingStatus: ProcessingStatus.tagged,
@@ -1368,8 +1389,9 @@ void main() {
     expect(items.assignPersonCalls.single.name, 'Dad');
   });
 
-  testWidgets('Who lists person names then original who-tag values',
-      (tester) async {
+  testWidgets('Who lists person names then original who-tag values', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1200, 2000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -1385,12 +1407,7 @@ void main() {
           id: 'tag_who',
           dimension: 'who',
           value: 'toddler',
-          region: const TagRegion(
-            yMin: 0.1,
-            xMin: 0.1,
-            yMax: 0.4,
-            xMax: 0.4,
-          ),
+          region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
         ),
         fixtureTag(id: 'tag_what', dimension: 'what', value: 'picnic'),
       ],
@@ -1454,7 +1471,9 @@ void main() {
     expect(find.byKey(const Key('knowledge-who')), findsOneWidget);
     expect(find.text('Alex, toddler'), findsOneWidget);
     expect(
-      tester.widget<Text>(find.byKey(const Key('appearance-crop-tag_who'))).data,
+      tester
+          .widget<Text>(find.byKey(const Key('appearance-crop-tag_who')))
+          .data,
       'Alex',
     );
     expect(find.text('Alex toddler'), findsNothing);
@@ -1462,9 +1481,9 @@ void main() {
     expect(find.byKey(const Key('tag-provenance-tag_who')), findsNothing);
   });
 
-  testWidgets(
-      'face box label is person name when assigned; live from draft',
-      (tester) async {
+  testWidgets('face box label is person name when assigned; live from draft', (
+    tester,
+  ) async {
     final knowledge = fixtureKnowledge(
       item: fixtureItem(
         id: 'item_1',
@@ -1475,12 +1494,7 @@ void main() {
           id: 'tag_who',
           dimension: 'who',
           value: 'toddler',
-          region: const TagRegion(
-            yMin: 0.1,
-            xMin: 0.1,
-            yMax: 0.4,
-            xMax: 0.4,
-          ),
+          region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
         ),
       ],
       appearances: [
@@ -1588,8 +1602,9 @@ void main() {
     );
   });
 
-  testWidgets('Face-person cells sit in a compact row under File/Comment',
-      (tester) async {
+  testWidgets('Face-person cells sit in a compact row under File/Comment', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1200, 2000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -1653,14 +1668,19 @@ void main() {
 
     expect(find.byKey(const Key('item-assign-face-tag_a')), findsNothing);
     expect(find.byKey(const Key('item-face-hint')), findsOneWidget);
-    final left = tester.getTopLeft(find.byKey(const Key('item-face-tile-tag_a')));
-    final right =
-        tester.getTopLeft(find.byKey(const Key('item-face-tile-tag_b')));
+    final left = tester.getTopLeft(
+      find.byKey(const Key('item-face-tile-tag_a')),
+    );
+    final right = tester.getTopLeft(
+      find.byKey(const Key('item-face-tile-tag_b')),
+    );
     expect(left.dx, lessThan(right.dx));
     expect((left.dy - right.dy).abs(), lessThan(24));
     expect(
       left.dy,
-      greaterThan(tester.getTopLeft(find.byKey(const Key('item-comment-field'))).dy),
+      greaterThan(
+        tester.getTopLeft(find.byKey(const Key('item-comment-field'))).dy,
+      ),
     );
     expect(
       tester.widget<Text>(find.byKey(const Key('appearance-crop-tag_a'))).data,
@@ -1672,8 +1692,9 @@ void main() {
     );
   });
 
-  testWidgets('item face tiles sort A–Z by caption case-insensitive',
-      (tester) async {
+  testWidgets('item face tiles sort A–Z by caption case-insensitive', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1200, 2000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -1735,16 +1756,19 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final ada =
-        tester.getTopLeft(find.byKey(const Key('item-face-tile-tag_ada')));
-    final sam =
-        tester.getTopLeft(find.byKey(const Key('item-face-tile-tag_sam')));
+    final ada = tester.getTopLeft(
+      find.byKey(const Key('item-face-tile-tag_ada')),
+    );
+    final sam = tester.getTopLeft(
+      find.byKey(const Key('item-face-tile-tag_sam')),
+    );
     expect(ada.dx, lessThan(sam.dx));
     expect((ada.dy - sam.dy).abs(), lessThan(24));
   });
 
-  testWidgets('unsaved item edits prompt Save/Discard/Cancel on back',
-      (tester) async {
+  testWidgets('unsaved item edits prompt Save/Discard/Cancel on back', (
+    tester,
+  ) async {
     final item = fixtureItem(
       id: 'item_1',
       processingStatus: ProcessingStatus.tagged,
@@ -1814,336 +1838,694 @@ void main() {
   });
 
   testWidgets(
-      'item detail Save reassign sweeps alike faces; undo restores cohort',
-      (tester) async {
-    tester.view.physicalSize = const Size(1200, 2000);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
+    'item detail Save reassign sweeps alike faces; undo restores cohort',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 2000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
 
-    final item = fixtureItem(
-      id: 'item_1',
-      sourceRef: 'file:///albums/x/item_1.jpg',
-      processingStatus: ProcessingStatus.tagged,
-    );
-    final item2 = fixtureItem(
-      id: 'item_2',
-      sourceRef: 'file:///albums/x/item_2.jpg',
-      processingStatus: ProcessingStatus.tagged,
-    );
-    final knowledge = fixtureKnowledge(
-      item: item,
-      tags: [
-        fixtureTag(
-          id: 'tag_who',
-          dimension: 'who',
-          value: 'toddler',
-          region: const TagRegion(
-            yMin: 0.1,
-            xMin: 0.1,
-            yMax: 0.4,
-            xMax: 0.4,
+      final item = fixtureItem(
+        id: 'item_1',
+        sourceRef: 'file:///albums/x/item_1.jpg',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final item2 = fixtureItem(
+        id: 'item_2',
+        sourceRef: 'file:///albums/x/item_2.jpg',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final knowledge = fixtureKnowledge(
+        item: item,
+        tags: [
+          fixtureTag(
+            id: 'tag_who',
+            dimension: 'who',
+            value: 'toddler',
+            region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
           ),
-        ),
-      ],
-      appearances: [
-        fixtureAppearance(
-          id: 'ap_1',
-          personId: 'person_2',
-          itemId: 'item_1',
-          tagId: 'tag_who',
-        ),
-      ],
-    );
-    final knowledge2 = fixtureKnowledge(
-      item: item2,
-      tags: [
-        fixtureTag(
-          id: 'tag_who_2',
-          itemId: 'item_2',
-          dimension: 'who',
-          value: 'toddler',
-          region: const TagRegion(
-            yMin: 0.1,
-            xMin: 0.1,
-            yMax: 0.4,
-            xMax: 0.4,
+        ],
+        appearances: [
+          fixtureAppearance(
+            id: 'ap_1',
+            personId: 'person_2',
+            itemId: 'item_1',
+            tagId: 'tag_who',
           ),
-        ),
-      ],
-      appearances: [
-        fixtureAppearance(
-          id: 'ap_2',
-          personId: 'person_2',
-          itemId: 'item_2',
-          tagId: 'tag_who_2',
-        ),
-      ],
-    );
-    final comments = FakeCommentsRepository();
-    final items = FakeItemsRepository(
-      items: [item, item2],
-      knowledgeByItemId: {
-        'item_1': knowledge,
-        'item_2': knowledge2,
-      },
-    );
-    final persons = FakePersonsRepository(
-      persons: [
-        fixturePersonDetail(
-          id: 'person_2',
-          name: 'Sam',
-          appearances: [
-            fixtureAppearance(
-              id: 'ap_1',
-              personId: 'person_2',
-              itemId: 'item_1',
-              tagId: 'tag_who',
+        ],
+      );
+      final knowledge2 = fixtureKnowledge(
+        item: item2,
+        tags: [
+          fixtureTag(
+            id: 'tag_who_2',
+            itemId: 'item_2',
+            dimension: 'who',
+            value: 'toddler',
+            region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
+          ),
+        ],
+        appearances: [
+          fixtureAppearance(
+            id: 'ap_2',
+            personId: 'person_2',
+            itemId: 'item_2',
+            tagId: 'tag_who_2',
+          ),
+        ],
+      );
+      final comments = FakeCommentsRepository();
+      final items = FakeItemsRepository(
+        items: [item, item2],
+        knowledgeByItemId: {'item_1': knowledge, 'item_2': knowledge2},
+      );
+      final persons = FakePersonsRepository(
+        persons: [
+          fixturePersonDetail(
+            id: 'person_2',
+            name: 'Sam',
+            appearances: [
+              fixtureAppearance(
+                id: 'ap_1',
+                personId: 'person_2',
+                itemId: 'item_1',
+                tagId: 'tag_who',
+              ),
+              fixtureAppearance(
+                id: 'ap_2',
+                personId: 'person_2',
+                itemId: 'item_2',
+                tagId: 'tag_who_2',
+              ),
+            ],
+          ),
+          fixturePersonDetail(
+            id: 'person_3',
+            name: 'Pat',
+            appearances: const [],
+          ),
+        ],
+      )..sweepSiblingsOnReassign = true;
+      items.linkedPersons = persons;
+      items.onGetKnowledge = (id) async {
+        _syncKnowledgeAppearancesFromPersons(items, persons, id);
+      };
+      final table = LibraryTableController(
+        itemsRepository: items,
+        commentsRepository: comments,
+        personsRepository: persons,
+        thumbCache: LocalThumbCache(),
+        knowledgeConcurrency: 1,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            itemsRepositoryProvider.overrideWithValue(items),
+            personsRepositoryProvider.overrideWithValue(persons),
+            correctionsRepositoryProvider.overrideWithValue(
+              FakeCorrectionsRepository(items: items),
             ),
-            fixtureAppearance(
-              id: 'ap_2',
-              personId: 'person_2',
-              itemId: 'item_2',
-              tagId: 'tag_who_2',
+            commentsRepositoryProvider.overrideWithValue(comments),
+            usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+            jobsRepositoryProvider.overrideWithValue(
+              FakeJobsRepository(itemId: 'item_1', item: item),
+            ),
+            libraryTableControllerProvider.overrideWith((ref) => table),
+          ],
+          child: Consumer(
+            builder: (context, ref, child) {
+              ref.watch(libraryTableControllerProvider);
+              return child!;
+            },
+            child: MaterialApp(
+              builder: (context, child) {
+                return ActiveUndoShortcuts(
+                  child: child ?? const SizedBox.shrink(),
+                );
+              },
+              home: const Scaffold(
+                body: SingleChildScrollView(
+                  child: ItemReviewSection(itemId: 'item_1', openVideo: false),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await table.load();
+      await tester.pumpAndSettle();
+      expect(table.allRows.firstWhere((r) => r.item.id == 'item_2').who, [
+        'Sam',
+      ]);
+
+      await _selectItemFace(tester, 'tag_who');
+      await tester.ensureVisible(
+        find.byKey(const Key('item-assign-face-tag_who')),
+      );
+      await tester.tap(find.byKey(const Key('item-assign-face-tag_who')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Pat').last);
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.byKey(const Key('item-detail-save')));
+      await tester.tap(find.byKey(const Key('item-detail-save')));
+      await tester.pumpAndSettle();
+
+      expect(items.assignPersonCalls, isEmpty);
+      expect(persons.reassignCalls, isNotEmpty);
+      expect(persons.reassignCalls.first.appearanceId, 'ap_1');
+      expect(persons.reassignCalls.first.personId, 'person_3');
+      expect(persons.reassignCalls.first.propagateAlike, isNull);
+      expect(
+        persons.personDetails
+            .firstWhere((p) => p.id == 'person_3')
+            .appearances
+            .map((a) => a.id),
+        containsAll(['ap_1', 'ap_2']),
+      );
+      expect(find.byKey(const Key('item-also-moved')), findsOneWidget);
+      expect(find.textContaining('Pat'), findsWidgets);
+      expect(table.allRows.firstWhere((r) => r.item.id == 'item_2').who, [
+        'Pat',
+      ]);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.meta);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.meta);
+      await tester.pumpAndSettle();
+
+      expect(persons.declineAutoAssignAppearancesCalls, [
+        ['ap_2'],
+      ]);
+      expect(persons.reassignCalls.last.appearanceId, 'ap_1');
+      expect(persons.reassignCalls.last.personId, 'person_2');
+      expect(persons.reassignCalls.last.propagateAlike, isFalse);
+      expect(
+        persons.personDetails
+            .firstWhere((p) => p.id == 'person_2')
+            .appearances
+            .map((a) => a.id),
+        containsAll(['ap_1', 'ap_2']),
+      );
+      expect(
+        persons.personDetails.firstWhere((p) => p.id == 'person_3').appearances,
+        isEmpty,
+      );
+      expect(table.allRows.firstWhere((r) => r.item.id == 'item_2').who, [
+        'Sam',
+      ]);
+    },
+  );
+
+  testWidgets(
+    'item detail opens a chooser when a second face gets a person already on the photo',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 2000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      const regionA = TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4);
+      const regionB = TagRegion(yMin: 0.1, xMin: 0.5, yMax: 0.4, xMax: 0.8);
+      final item = fixtureItem(
+        id: 'item_1',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final knowledge = fixtureKnowledge(
+        item: item,
+        tags: [
+          fixtureTag(
+            id: 'tag_a',
+            dimension: 'who',
+            value: 'left',
+            region: regionA,
+          ),
+          fixtureTag(
+            id: 'tag_b',
+            dimension: 'who',
+            value: 'right',
+            region: regionB,
+          ),
+        ],
+        appearances: [
+          fixtureAppearance(
+            id: 'ap_a',
+            personId: 'person_maya',
+            itemId: 'item_1',
+            tagId: 'tag_a',
+          ),
+          fixtureAppearance(
+            id: 'ap_b',
+            personId: null,
+            itemId: 'item_1',
+            tagId: 'tag_b',
+          ),
+        ],
+      );
+      final items = FakeItemsRepository(
+        items: [item],
+        knowledgeByItemId: {'item_1': knowledge},
+      );
+      final persons = FakePersonsRepository(
+        persons: [
+          fixturePersonDetail(
+            id: 'person_maya',
+            name: 'Maya',
+            appearances: [
+              fixtureAppearance(
+                id: 'ap_a',
+                personId: 'person_maya',
+                itemId: 'item_1',
+                tagId: 'tag_a',
+              ),
+            ],
+          ),
+        ],
+      );
+      items.linkedPersons = persons;
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            itemsRepositoryProvider.overrideWithValue(items),
+            personsRepositoryProvider.overrideWithValue(persons),
+            correctionsRepositoryProvider.overrideWithValue(
+              FakeCorrectionsRepository(items: items),
+            ),
+            commentsRepositoryProvider.overrideWithValue(
+              FakeCommentsRepository(),
+            ),
+            usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+            jobsRepositoryProvider.overrideWithValue(
+              FakeJobsRepository(itemId: 'item_1', item: item),
             ),
           ],
-        ),
-        fixturePersonDetail(
-          id: 'person_3',
-          name: 'Pat',
-          appearances: const [],
-        ),
-      ],
-    )..sweepSiblingsOnReassign = true;
-    items.linkedPersons = persons;
-    items.onGetKnowledge = (id) async {
-      _syncKnowledgeAppearancesFromPersons(items, persons, id);
-    };
-    final table = LibraryTableController(
-      itemsRepository: items,
-      commentsRepository: comments,
-      personsRepository: persons,
-      thumbCache: LocalThumbCache(),
-      knowledgeConcurrency: 1,
-    );
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          itemsRepositoryProvider.overrideWithValue(items),
-          personsRepositoryProvider.overrideWithValue(persons),
-          correctionsRepositoryProvider.overrideWithValue(
-            FakeCorrectionsRepository(items: items),
-          ),
-          commentsRepositoryProvider.overrideWithValue(comments),
-          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
-          jobsRepositoryProvider.overrideWithValue(
-            FakeJobsRepository(itemId: 'item_1', item: item),
-          ),
-          libraryTableControllerProvider.overrideWith((ref) => table),
-        ],
-        child: Consumer(
-          builder: (context, ref, child) {
-            ref.watch(libraryTableControllerProvider);
-            return child!;
-          },
-          child: MaterialApp(
-            builder: (context, child) {
-              return ActiveUndoShortcuts(
-                child: child ?? const SizedBox.shrink(),
-              );
-            },
-            home: const Scaffold(
+          child: const MaterialApp(
+            home: Scaffold(
               body: SingleChildScrollView(
                 child: ItemReviewSection(itemId: 'item_1', openVideo: false),
               ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await table.load();
-    await tester.pumpAndSettle();
-    expect(
-      table.allRows.firstWhere((r) => r.item.id == 'item_2').who,
-      ['Sam'],
-    );
+      );
+      await tester.pumpAndSettle();
 
-    await _selectItemFace(tester, 'tag_who');
-    await tester.ensureVisible(
-      find.byKey(const Key('item-assign-face-tag_who')),
-    );
-    await tester.tap(find.byKey(const Key('item-assign-face-tag_who')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Pat').last);
-    await tester.pumpAndSettle();
+      await _selectItemFace(tester, 'tag_b');
+      await tester.ensureVisible(
+        find.byKey(const Key('item-assign-face-tag_b')),
+      );
+      await tester.tap(find.byKey(const Key('item-assign-face-tag_b')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Maya').last);
+      await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.byKey(const Key('item-detail-save')));
-    await tester.tap(find.byKey(const Key('item-detail-save')));
-    await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('face-name-conflict-dialog')),
+        findsOneWidget,
+      );
+      expect(find.text('Maya is already on another face'), findsOneWidget);
+      expect(find.byKey(const Key('item-assign-error')), findsNothing);
 
-    expect(items.assignPersonCalls, isEmpty);
-    expect(persons.reassignCalls, isNotEmpty);
-    expect(persons.reassignCalls.first.appearanceId, 'ap_1');
-    expect(persons.reassignCalls.first.personId, 'person_3');
-    expect(persons.reassignCalls.first.propagateAlike, isNull);
-    expect(
-      persons.personDetails
-          .firstWhere((p) => p.id == 'person_3')
-          .appearances
-          .map((a) => a.id),
-      containsAll(['ap_1', 'ap_2']),
-    );
-    expect(find.byKey(const Key('item-also-moved')), findsOneWidget);
-    expect(find.textContaining('Pat'), findsWidgets);
-    expect(
-      table.allRows.firstWhere((r) => r.item.id == 'item_2').who,
-      ['Pat'],
-    );
+      // Cancel leaves the draft untouched.
+      await tester.tap(find.byKey(const Key('face-name-conflict-cancel')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('face-name-conflict-dialog')), findsNothing);
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('appearance-crop-tag_a')))
+            .data,
+        contains('Maya'),
+      );
 
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.meta);
-    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.meta);
-    await tester.pumpAndSettle();
+      // Choosing the face being assigned moves Maya to it in the draft.
+      await tester.ensureVisible(
+        find.byKey(const Key('item-assign-face-tag_b')),
+      );
+      await tester.tap(find.byKey(const Key('item-assign-face-tag_b')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Maya').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('face-name-conflict-pick-tag_b')));
+      await tester.pumpAndSettle();
 
-    expect(persons.declineAutoAssignAppearancesCalls, [
-      ['ap_2'],
-    ]);
-    expect(persons.reassignCalls.last.appearanceId, 'ap_1');
-    expect(persons.reassignCalls.last.personId, 'person_2');
-    expect(persons.reassignCalls.last.propagateAlike, isFalse);
-    expect(
-      persons.personDetails
-          .firstWhere((p) => p.id == 'person_2')
-          .appearances
-          .map((a) => a.id),
-      containsAll(['ap_1', 'ap_2']),
-    );
-    expect(
-      persons.personDetails
-          .firstWhere((p) => p.id == 'person_3')
-          .appearances,
-      isEmpty,
-    );
-    expect(
-      table.allRows.firstWhere((r) => r.item.id == 'item_2').who,
-      ['Sam'],
-    );
-  });
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('appearance-crop-tag_b')))
+            .data,
+        contains('Maya'),
+      );
+      expect(
+        tester
+            .widget<Text>(find.byKey(const Key('appearance-crop-tag_a')))
+            .data,
+        isNot(contains('Maya')),
+      );
+      // Nothing is saved until Save.
+      expect(items.assignPersonCalls, isEmpty);
+      expect(persons.reassignCalls, isEmpty);
+      expect(persons.unlinkCalls, isEmpty);
 
-  testWidgets(
-      'item detail refuses assigning a second face to a person already on the photo',
-      (tester) async {
-    tester.view.physicalSize = const Size(1200, 2000);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
+      // Save releases Maya from the first face before the second takes her.
+      await tester.ensureVisible(find.byKey(const Key('item-detail-save')));
+      await tester.tap(find.byKey(const Key('item-detail-save')));
+      await tester.pumpAndSettle();
+      expect(persons.unlinkCalls, ['ap_a']);
+      expect(persons.reassignCalls.map((c) => c.appearanceId), ['ap_b']);
+      expect(persons.reassignCalls.single.personId, 'person_maya');
+    },
+  );
 
+  group('item detail same-name chooser', () {
     const regionA = TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4);
     const regionB = TagRegion(yMin: 0.1, xMin: 0.5, yMax: 0.4, xMax: 0.8);
-    final item = fixtureItem(
-      id: 'item_1',
-      processingStatus: ProcessingStatus.tagged,
-    );
-    final knowledge = fixtureKnowledge(
-      item: item,
-      tags: [
-        fixtureTag(
-          id: 'tag_a',
-          dimension: 'who',
-          value: 'left',
-          region: regionA,
+
+    Future<void> pumpDetail(
+      WidgetTester tester, {
+      required FakeItemsRepository items,
+      required FakePersonsRepository persons,
+      required Item item,
+    }) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      items.linkedPersons = persons;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            itemsRepositoryProvider.overrideWithValue(items),
+            personsRepositoryProvider.overrideWithValue(persons),
+            correctionsRepositoryProvider.overrideWithValue(
+              FakeCorrectionsRepository(items: items),
+            ),
+            commentsRepositoryProvider.overrideWithValue(
+              FakeCommentsRepository(),
+            ),
+            usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+            jobsRepositoryProvider.overrideWithValue(
+              FakeJobsRepository(itemId: item.id, item: item),
+            ),
+          ],
+          child: MaterialApp(
+            builder: (context, child) =>
+                ActiveUndoShortcuts(child: child ?? const SizedBox.shrink()),
+            home: UndoSelectableRoute(child: ItemDetailPage(itemId: item.id)),
+          ),
         ),
-        fixtureTag(
-          id: 'tag_b',
-          dimension: 'who',
-          value: 'right',
-          region: regionB,
-        ),
-      ],
-      appearances: [
-        fixtureAppearance(
-          id: 'ap_a',
-          personId: 'person_maya',
-          itemId: 'item_1',
-          tagId: 'tag_a',
-        ),
-        fixtureAppearance(
-          id: 'ap_b',
-          personId: null,
-          itemId: 'item_1',
-          tagId: 'tag_b',
-        ),
-      ],
-    );
-    final items = FakeItemsRepository(
-      items: [item],
-      knowledgeByItemId: {'item_1': knowledge},
-    );
-    final persons = FakePersonsRepository(
-      persons: [
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> assignFace(WidgetTester tester, String tagId) async {
+      await _selectItemFace(tester, tagId);
+      await tester.ensureVisible(find.byKey(Key('item-assign-face-$tagId')));
+      await tester.tap(find.byKey(Key('item-assign-face-$tagId')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Maya').last);
+      await tester.pumpAndSettle();
+    }
+
+    String cropLabel(WidgetTester tester, String tagId) => tester
+        .widget<Text>(find.byKey(Key('appearance-crop-$tagId')))
+        .data!;
+
+    Future<void> undoKey(WidgetTester tester, {bool shift = false}) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.meta);
+      if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shift);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+      if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shift);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.meta);
+      await tester.pumpAndSettle();
+    }
+
+    PersonDetail maya(List<PersonAppearance> appearances) =>
         fixturePersonDetail(
           id: 'person_maya',
           name: 'Maya',
-          appearances: [
-            fixtureAppearance(
-              id: 'ap_a',
-              personId: 'person_maya',
-              itemId: 'item_1',
-              tagId: 'tag_a',
+          appearances: appearances,
+        );
+
+    testWidgets('a moved name is one draft undo step; redo moves it again', (
+      tester,
+    ) async {
+      final item = fixtureItem(
+        id: 'item_1',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final mayaOnA = fixtureAppearance(
+        id: 'ap_a',
+        personId: 'person_maya',
+        itemId: 'item_1',
+        tagId: 'tag_a',
+      );
+      final items = FakeItemsRepository(
+        items: [item],
+        knowledgeByItemId: {
+          'item_1': fixtureKnowledge(
+            item: item,
+            tags: [
+              fixtureTag(
+                id: 'tag_a',
+                dimension: 'who',
+                value: 'left',
+                region: regionA,
+              ),
+              fixtureTag(
+                id: 'tag_b',
+                dimension: 'who',
+                value: 'right',
+                region: regionB,
+              ),
+            ],
+            appearances: [
+              mayaOnA,
+              fixtureAppearance(
+                id: 'ap_b',
+                personId: null,
+                itemId: 'item_1',
+                tagId: 'tag_b',
+              ),
+            ],
+          ),
+        },
+      );
+      await pumpDetail(
+        tester,
+        items: items,
+        persons: FakePersonsRepository(persons: [maya([mayaOnA])]),
+        item: item,
+      );
+
+      await assignFace(tester, 'tag_b');
+      await tester.tap(find.byKey(const Key('face-name-conflict-pick-tag_b')));
+      await tester.pumpAndSettle();
+      expect(cropLabel(tester, 'tag_b'), contains('Maya'));
+      expect(cropLabel(tester, 'tag_a'), isNot(contains('Maya')));
+
+      await undoKey(tester);
+      expect(cropLabel(tester, 'tag_a'), contains('Maya'));
+      expect(cropLabel(tester, 'tag_b'), isNot(contains('Maya')));
+
+      await undoKey(tester, shift: true);
+      expect(cropLabel(tester, 'tag_b'), contains('Maya'));
+      expect(cropLabel(tester, 'tag_a'), isNot(contains('Maya')));
+      expect(items.assignPersonCalls, isEmpty);
+    });
+
+    testWidgets('a name drafted on another face also opens the chooser', (
+      tester,
+    ) async {
+      final item = fixtureItem(
+        id: 'item_1',
+        processingStatus: ProcessingStatus.tagged,
+      );
+      final items = FakeItemsRepository(
+        items: [item],
+        knowledgeByItemId: {
+          'item_1': fixtureKnowledge(
+            item: item,
+            tags: [
+              fixtureTag(
+                id: 'tag_a',
+                dimension: 'who',
+                value: 'left',
+                region: regionA,
+              ),
+              fixtureTag(
+                id: 'tag_b',
+                dimension: 'who',
+                value: 'right',
+                region: regionB,
+              ),
+            ],
+            appearances: [
+              fixtureAppearance(
+                id: 'ap_a',
+                personId: null,
+                itemId: 'item_1',
+                tagId: 'tag_a',
+              ),
+              fixtureAppearance(
+                id: 'ap_b',
+                personId: null,
+                itemId: 'item_1',
+                tagId: 'tag_b',
+              ),
+            ],
+          ),
+        },
+      );
+      final persons = FakePersonsRepository(persons: [maya(const [])]);
+      await pumpDetail(tester, items: items, persons: persons, item: item);
+
+      // Draft Maya on the first face; nothing is saved yet.
+      await assignFace(tester, 'tag_a');
+      expect(cropLabel(tester, 'tag_a'), contains('Maya'));
+      expect(find.byKey(const Key('face-name-conflict-dialog')), findsNothing);
+
+      await assignFace(tester, 'tag_b');
+      expect(
+        find.byKey(const Key('face-name-conflict-dialog')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('face-name-conflict-pick-tag_b')));
+      await tester.pumpAndSettle();
+      expect(cropLabel(tester, 'tag_b'), contains('Maya'));
+      expect(cropLabel(tester, 'tag_a'), isNot(contains('Maya')));
+
+      // Save assigns only the second face; the first never had a link.
+      await tester.ensureVisible(find.byKey(const Key('item-detail-save')));
+      await tester.tap(find.byKey(const Key('item-detail-save')));
+      await tester.pumpAndSettle();
+      expect(persons.unlinkCalls, isEmpty);
+      final saved = [
+        ...items.assignPersonCalls.map((c) => c.tagId),
+        ...persons.reassignCalls.map((c) => c.appearanceId),
+      ];
+      expect(saved, hasLength(1));
+      expect(saved.single, anyOf('tag_b', 'ap_b'));
+    });
+
+    group('video key periods', () {
+      Future<
+        ({FakeItemsRepository items, FakePersonsRepository persons, Item item})
+      >
+      video(WidgetTester tester) async {
+        final item = fixtureItem(
+          id: 'item_v',
+          type: ItemType.video,
+          processingStatus: ProcessingStatus.tagged,
+        );
+        Tag face(String id, String period, TagRegion region) => fixtureTag(
+          id: id,
+          itemId: item.id,
+          keyPeriodId: period,
+          dimension: 'who',
+          value: 'person',
+          region: region,
+        );
+        final mayaA1 = fixtureAppearance(
+          id: 'ap_a1',
+          personId: 'person_maya',
+          itemId: item.id,
+          keyPeriodId: 'kp_a',
+          tagId: 'face_a1',
+        );
+        final items = FakeItemsRepository(
+          items: [item],
+          knowledgeByItemId: {
+            item.id: fixtureKnowledge(
+              item: item,
+              tags: const [],
+              keyPeriods: [
+                KeyPeriodKnowledge(
+                  id: 'kp_a',
+                  itemId: item.id,
+                  startMs: 0,
+                  endMs: 2000,
+                  sampleTimestampMs: 500,
+                  tags: [
+                    face('face_a1', 'kp_a', regionA),
+                    face('face_a2', 'kp_a', regionB),
+                  ],
+                ),
+                KeyPeriodKnowledge(
+                  id: 'kp_b',
+                  itemId: item.id,
+                  startMs: 2000,
+                  endMs: 4000,
+                  sampleTimestampMs: 3000,
+                  tags: [face('face_b1', 'kp_b', regionA)],
+                ),
+              ],
+              appearances: [
+                mayaA1,
+                fixtureAppearance(
+                  id: 'ap_a2',
+                  personId: null,
+                  itemId: item.id,
+                  keyPeriodId: 'kp_a',
+                  tagId: 'face_a2',
+                ),
+                fixtureAppearance(
+                  id: 'ap_b1',
+                  personId: null,
+                  itemId: item.id,
+                  keyPeriodId: 'kp_b',
+                  tagId: 'face_b1',
+                ),
+              ],
             ),
-          ],
-        ),
-      ],
-    );
-    items.linkedPersons = persons;
+          },
+        );
+        final persons = FakePersonsRepository(persons: [maya([mayaA1])]);
+        await pumpDetail(tester, items: items, persons: persons, item: item);
+        return (items: items, persons: persons, item: item);
+      }
 
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          itemsRepositoryProvider.overrideWithValue(items),
-          personsRepositoryProvider.overrideWithValue(persons),
-          correctionsRepositoryProvider.overrideWithValue(
-            FakeCorrectionsRepository(items: items),
-          ),
-          commentsRepositoryProvider.overrideWithValue(
-            FakeCommentsRepository(),
-          ),
-          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
-          jobsRepositoryProvider.overrideWithValue(
-            FakeJobsRepository(itemId: 'item_1', item: item),
-          ),
-        ],
-        child: const MaterialApp(
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: ItemReviewSection(itemId: 'item_1', openVideo: false),
-            ),
-          ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      testWidgets('same period opens the chooser; the other period does not', (
+        tester,
+      ) async {
+        await video(tester);
 
-    await _selectItemFace(tester, 'tag_b');
-    await tester.ensureVisible(
-      find.byKey(const Key('item-assign-face-tag_b')),
-    );
-    await tester.tap(find.byKey(const Key('item-assign-face-tag_b')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Maya').last);
-    await tester.pumpAndSettle();
+        // Another face of the same period already has Maya.
+        await assignFace(tester, 'face_a2');
+        expect(
+          find.byKey(const Key('face-name-conflict-dialog')),
+          findsOneWidget,
+        );
+        await tester.tap(
+          find.byKey(const Key('face-name-conflict-pick-face_a2')),
+        );
+        await tester.pumpAndSettle();
+        expect(cropLabel(tester, 'face_a2'), contains('Maya'));
+        expect(cropLabel(tester, 'face_a1'), isNot(contains('Maya')));
 
-    expect(find.byKey(const Key('item-assign-error')), findsOneWidget);
-    expect(
-      find.text('Maya is already on another face in this photo.'),
-      findsOneWidget,
-    );
-    expect(items.assignPersonCalls, isEmpty);
-    expect(persons.reassignCalls, isEmpty);
+        // A face in a different period may carry the same person.
+        await assignFace(tester, 'face_b1');
+        expect(
+          find.byKey(const Key('face-name-conflict-dialog')),
+          findsNothing,
+        );
+        expect(find.byKey(const Key('item-assign-error')), findsNothing);
+        expect(cropLabel(tester, 'face_b1'), contains('Maya'));
+        expect(cropLabel(tester, 'face_a2'), contains('Maya'));
+      });
+
+      testWidgets('Cancel in a period leaves the draft alone', (tester) async {
+        await video(tester);
+        await assignFace(tester, 'face_a2');
+        await tester.tap(find.byKey(const Key('face-name-conflict-cancel')));
+        await tester.pumpAndSettle();
+        expect(cropLabel(tester, 'face_a1'), contains('Maya'));
+        expect(cropLabel(tester, 'face_a2'), isNot(contains('Maya')));
+      });
+    });
   });
 
-  testWidgets('Open person from an assigned face opens person detail',
-      (tester) async {
+  testWidgets('Open person from an assigned face opens person detail', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1200, 2000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -2159,12 +2541,7 @@ void main() {
           id: 'tag_who',
           dimension: 'who',
           value: 'toddler',
-          region: const TagRegion(
-            yMin: 0.1,
-            xMin: 0.1,
-            yMax: 0.4,
-            xMax: 0.4,
-          ),
+          region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
         ),
       ],
       appearances: [
@@ -2214,9 +2591,7 @@ void main() {
             FakeJobsRepository(itemId: 'item_1', item: item),
           ),
         ],
-        child: const MaterialApp(
-          home: ItemDetailPage(itemId: 'item_1'),
-        ),
+        child: const MaterialApp(home: ItemDetailPage(itemId: 'item_1')),
       ),
     );
     await tester.pumpAndSettle();
@@ -2235,8 +2610,9 @@ void main() {
     );
   });
 
-  testWidgets('Double-click an assigned face opens person detail',
-      (tester) async {
+  testWidgets('Double-click an assigned face opens person detail', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1200, 2000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -2252,12 +2628,7 @@ void main() {
           id: 'tag_who',
           dimension: 'who',
           value: 'toddler',
-          region: const TagRegion(
-            yMin: 0.1,
-            xMin: 0.1,
-            yMax: 0.4,
-            xMax: 0.4,
-          ),
+          region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
         ),
       ],
       appearances: [
@@ -2307,9 +2678,7 @@ void main() {
             FakeJobsRepository(itemId: 'item_1', item: item),
           ),
         ],
-        child: const MaterialApp(
-          home: ItemDetailPage(itemId: 'item_1'),
-        ),
+        child: const MaterialApp(home: ItemDetailPage(itemId: 'item_1')),
       ),
     );
     await tester.pumpAndSettle();
@@ -2327,8 +2696,9 @@ void main() {
     );
   });
 
-  testWidgets('Open person is absent when the face is unassigned',
-      (tester) async {
+  testWidgets('Open person is absent when the face is unassigned', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1200, 2000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -2344,12 +2714,7 @@ void main() {
           id: 'tag_who',
           dimension: 'who',
           value: 'toddler',
-          region: const TagRegion(
-            yMin: 0.1,
-            xMin: 0.1,
-            yMax: 0.4,
-            xMax: 0.4,
-          ),
+          region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
         ),
       ],
     );
@@ -2376,9 +2741,7 @@ void main() {
             FakeJobsRepository(itemId: 'item_1', item: item),
           ),
         ],
-        child: const MaterialApp(
-          home: ItemDetailPage(itemId: 'item_1'),
-        ),
+        child: const MaterialApp(home: ItemDetailPage(itemId: 'item_1')),
       ),
     );
     await tester.pumpAndSettle();
@@ -2407,12 +2770,7 @@ void main() {
           id: 'tag_who',
           dimension: 'who',
           value: 'toddler',
-          region: const TagRegion(
-            yMin: 0.1,
-            xMin: 0.1,
-            yMax: 0.4,
-            xMax: 0.4,
-          ),
+          region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
         ),
       ],
     );
@@ -2439,9 +2797,7 @@ void main() {
             FakeJobsRepository(itemId: 'item_1', item: item),
           ),
         ],
-        child: const MaterialApp(
-          home: ItemDetailPage(itemId: 'item_1'),
-        ),
+        child: const MaterialApp(home: ItemDetailPage(itemId: 'item_1')),
       ),
     );
     await tester.pumpAndSettle();
@@ -2456,4 +2812,186 @@ void main() {
     expect(find.byKey(const Key('item-face-selected-tag_who')), findsOneWidget);
     expect(find.byKey(const Key('item-face-actions')), findsOneWidget);
   });
+
+  testWidgets(
+    'tapping the photo face square selects the face and a second tap opens the person',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 2000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      final item = _itemWithLocalPhoto(tester, id: 'item_1');
+      final knowledge = fixtureKnowledge(
+        item: item,
+        tags: [
+          fixtureTag(
+            id: 'tag_who',
+            dimension: 'who',
+            value: 'toddler',
+            region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
+          ),
+        ],
+        appearances: [
+          fixtureAppearance(
+            id: 'ap_1',
+            personId: 'person_alex',
+            itemId: 'item_1',
+            tagId: 'tag_who',
+          ),
+        ],
+      );
+      final items = FakeItemsRepository(
+        items: [item],
+        knowledgeByItemId: {'item_1': knowledge},
+      );
+      final persons = FakePersonsRepository(
+        persons: [
+          fixturePersonDetail(
+            id: 'person_alex',
+            name: 'Alex',
+            appearances: [
+              fixtureAppearance(
+                id: 'ap_1',
+                personId: 'person_alex',
+                itemId: 'item_1',
+                tagId: 'tag_who',
+              ),
+            ],
+          ),
+        ],
+      );
+      items.linkedPersons = persons;
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            itemsRepositoryProvider.overrideWithValue(items),
+            personsRepositoryProvider.overrideWithValue(persons),
+            correctionsRepositoryProvider.overrideWithValue(
+              FakeCorrectionsRepository(items: items),
+            ),
+            commentsRepositoryProvider.overrideWithValue(
+              FakeCommentsRepository(),
+            ),
+            usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+            jobsRepositoryProvider.overrideWithValue(
+              FakeJobsRepository(itemId: 'item_1', item: item),
+            ),
+          ],
+          child: const MaterialApp(home: ItemDetailPage(itemId: 'item_1')),
+        ),
+      );
+      await _pumpUntilFound(
+        tester,
+        find.byKey(const Key('who-face-overlay-tag_who')),
+      );
+
+      final square = find.byKey(const Key('who-face-overlay-tag_who'));
+      expect(square, findsOneWidget);
+      await tester.tap(square);
+      await tester.pump();
+      expect(
+        find.byKey(const Key('item-face-selected-tag_who')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('item-face-actions')), findsOneWidget);
+
+      await tester.tap(square);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byKey(const Key('person-detail')), findsOneWidget);
+      expect(
+        tester.widget<Text>(find.byKey(const Key('person-detail-name'))).data,
+        'Alex',
+      );
+    },
+  );
+
+  testWidgets('a draft-excluded face square is not tappable', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final item = _itemWithLocalPhoto(tester, id: 'item_1');
+    final knowledge = fixtureKnowledge(
+      item: item,
+      tags: [
+        fixtureTag(
+          id: 'tag_who',
+          dimension: 'who',
+          value: 'toddler',
+          region: const TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4),
+        ),
+      ],
+    );
+    final items = FakeItemsRepository(
+      items: [item],
+      knowledgeByItemId: {'item_1': knowledge},
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          itemsRepositoryProvider.overrideWithValue(items),
+          personsRepositoryProvider.overrideWithValue(
+            FakePersonsRepository(persons: const []),
+          ),
+          correctionsRepositoryProvider.overrideWithValue(
+            FakeCorrectionsRepository(items: items),
+          ),
+          commentsRepositoryProvider.overrideWithValue(
+            FakeCommentsRepository(),
+          ),
+          usageRepositoryProvider.overrideWithValue(FakeUsageRepository()),
+          jobsRepositoryProvider.overrideWithValue(
+            FakeJobsRepository(itemId: 'item_1', item: item),
+          ),
+        ],
+        child: const MaterialApp(home: ItemDetailPage(itemId: 'item_1')),
+      ),
+    );
+    await _pumpUntilFound(
+      tester,
+      find.byKey(const Key('item-face-tile-tag_who')),
+    );
+
+    final tile = find.byKey(const Key('item-face-tile-tag_who'));
+    await tester.ensureVisible(tile);
+    await tester.tap(tile);
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('item-exclude-face-tag_who')));
+    await tester.pump();
+
+    final square = find.byKey(const Key('who-face-overlay-tag_who'));
+    expect(square, findsOneWidget);
+    expect(
+      find.descendant(of: square, matching: find.byType(GestureDetector)),
+      findsNothing,
+    );
+    expect(find.byKey(const Key('item-face-tile-tag_who')), findsNothing);
+  });
+}
+
+Future<void> _pumpUntilFound(WidgetTester tester, Finder finder) async {
+  for (var i = 0; i < 40; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    if (finder.evaluate().isNotEmpty) return;
+  }
+  fail('Timed out waiting for $finder');
+}
+
+Item _itemWithLocalPhoto(WidgetTester tester, {required String id}) {
+  final dir = Directory.systemTemp.createTempSync('tagkin_face_box_');
+  addTearDown(() {
+    if (dir.existsSync()) dir.deleteSync(recursive: true);
+  });
+  final file = File('${dir.path}/$id.jpg');
+  final image = img.Image(width: 64, height: 48);
+  img.fill(image, color: img.ColorRgb8(30, 90, 160));
+  file.writeAsBytesSync(img.encodeJpg(image));
+  return fixtureItem(
+    id: id,
+    processingStatus: ProcessingStatus.tagged,
+    sourceRef: Uri.file(file.path).toString(),
+    contentHash: '',
+  );
 }

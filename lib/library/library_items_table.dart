@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/folders_undo_recorder.dart';
 import 'package:tagkin_desktop/library/item_hover_preview.dart';
+import 'package:tagkin_desktop/item_lists/item_list_csv.dart'
+    show formatKeyPeriodMs;
 import 'package:tagkin_desktop/library/library_inline_editors.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
@@ -166,6 +168,10 @@ class LibraryItemsTable extends ConsumerWidget {
                                                 dir,
                                               ),
                                               onToggle: () {
+                                                FocusManager
+                                                    .instance
+                                                    .primaryFocus
+                                                    ?.unfocus();
                                                 final expanded = controller
                                                     .expandedSourceDirs
                                                     .contains(dir);
@@ -801,64 +807,79 @@ class _PathGroupHeader extends StatelessWidget {
             padding: EdgeInsets.only(left: 4 + depth * _kPathIndent, right: 8),
             child: Row(
               children: [
-                Icon(
-                  key: Key('source-group-toggle-$dir'),
-                  collapsed ? Icons.chevron_right : Icons.expand_more,
-                  size: 18,
-                ),
-                const SizedBox(width: 2),
-                // Full-width row; path + (count) clustered on the left.
                 Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      // Reserve space so (count) never ellipsizes away.
-                      const countReserve = 48.0;
-                      final pathMax = (constraints.maxWidth - countReserve)
-                          .clamp(0.0, constraints.maxWidth);
-                      final path = Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: labelStyle,
-                      );
-                      final pathChild = depth > 0
-                          ? Stack(
-                              alignment: Alignment.centerLeft,
-                              children: [
-                                path,
-                                Positioned(
-                                  left: 0,
-                                  top: 0,
-                                  bottom: 0,
-                                  width: pathMax.clamp(0.0, 220.0),
-                                  child: Tooltip(
-                                    message: dir,
-                                    preferBelow: true,
-                                    verticalOffset: 4,
-                                    waitDuration: Duration.zero,
-                                    child: const ColoredBox(
-                                      color: Colors.transparent,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            )
-                          : path;
-                      return Align(
-                        alignment: Alignment.centerLeft,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            ConstrainedBox(
-                              constraints: BoxConstraints(maxWidth: pathMax),
-                              child: pathChild,
-                            ),
-                            const SizedBox(width: 8),
-                            countText,
-                          ],
+                  child: InkWell(
+                    onTap: onToggle,
+                    child: Row(
+                      children: [
+                        Icon(
+                          key: Key('source-group-toggle-$dir'),
+                          collapsed ? Icons.chevron_right : Icons.expand_more,
+                          size: 18,
                         ),
-                      );
-                    },
+                        const SizedBox(width: 2),
+                        // Path + (count) clustered on the left. This target
+                        // stays tappable in Edit; City and the buttons do not.
+                        Expanded(
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              // Reserve space so (count) never ellipsizes away.
+                              const countReserve = 48.0;
+                              final pathMax =
+                                  (constraints.maxWidth - countReserve).clamp(
+                                    0.0,
+                                    constraints.maxWidth,
+                                  );
+                              final path = Text(
+                                label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: labelStyle,
+                              );
+                              final pathChild = depth > 0
+                                  ? Stack(
+                                      alignment: Alignment.centerLeft,
+                                      children: [
+                                        path,
+                                        Positioned(
+                                          left: 0,
+                                          top: 0,
+                                          bottom: 0,
+                                          width: pathMax.clamp(0.0, 220.0),
+                                          child: Tooltip(
+                                            message: dir,
+                                            preferBelow: true,
+                                            verticalOffset: 4,
+                                            waitDuration: Duration.zero,
+                                            child: const ColoredBox(
+                                              color: Colors.transparent,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : path;
+                              return Align(
+                                alignment: Alignment.centerLeft,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxWidth: pathMax,
+                                      ),
+                                      child: pathChild,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    countText,
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 if (editMode)
@@ -984,6 +1005,7 @@ class _DataRow extends ConsumerWidget {
     final item = row.item;
     final zebra = index.isOdd;
     final scopeId = foldersRowScopeId(item.id, period);
+    final periodPosition = _periodPosition(row, period);
     final summary = row.summaryFor(period);
     final who = summary?.who ?? row.who;
     final what = summary?.what ?? row.what;
@@ -1016,10 +1038,20 @@ class _DataRow extends ConsumerWidget {
                 children: [
                   SizedBox(
                     width: _kColFile,
-                    child: _FileReveal(
-                      item: item,
-                      path: row.sourceLabel,
-                      onReveal: () => onRevealSource(item),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _FileReveal(
+                          item: item,
+                          path: row.sourceLabel,
+                          onReveal: () => onRevealSource(item),
+                        ),
+                        if (periodPosition != null)
+                          _PeriodCue(
+                            key: Key('item-period-position-$scopeId'),
+                            text: periodPosition,
+                          ),
+                      ],
                     ),
                   ),
                   SizedBox(
@@ -1050,12 +1082,23 @@ class _DataRow extends ConsumerWidget {
                     width: _kColThumb,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: _ThumbCell(
-                        row: row,
-                        period: period,
-                        controller: controller,
-                        editMode: editMode,
-                        onOpen: editMode ? () => onOpenDetail(item) : null,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _ThumbCell(
+                            row: row,
+                            period: period,
+                            controller: controller,
+                            editMode: editMode,
+                            onOpen: editMode ? () => onOpenDetail(item) : null,
+                          ),
+                          if (period != null)
+                            _PeriodCue(
+                              key: Key('item-period-time-$scopeId'),
+                              text:
+                                  '${formatKeyPeriodMs(period!.startMs)}–${formatKeyPeriodMs(period!.endMs)}',
+                            ),
+                        ],
                       ),
                     ),
                   ),
@@ -1195,7 +1238,36 @@ class _DataRow extends ConsumerWidget {
   }
 }
 
-class _ThumbCell extends StatelessWidget {
+/// `2/3`: this period's place among the video's period rows, or null for a
+/// photo or a video shown as one row.
+String? _periodPosition(LibraryTableRow row, KeyPeriodKnowledge? period) {
+  if (period == null) return null;
+  final tiles = foldersKeyPeriodTiles(row.keyPeriods);
+  final index = tiles.indexWhere((p) => p.id == period.id);
+  if (index < 0) return null;
+  return '${index + 1}/${tiles.length}';
+}
+
+/// Small caption under the File icon or the thumbnail on a period row.
+class _PeriodCue extends StatelessWidget {
+  const _PeriodCue({super.key, required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Text(
+        text,
+        maxLines: 1,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(fontSize: 10),
+      ),
+    );
+  }
+}
+
+class _ThumbCell extends ConsumerWidget {
   const _ThumbCell({
     required this.row,
     required this.controller,
@@ -1211,18 +1283,35 @@ class _ThumbCell extends StatelessWidget {
   final VoidCallback? onOpen;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final faces = editMode
+        ? folderHoverFaces(
+            row: row,
+            period: period,
+            personName: controller.personName,
+          )
+        : const <HoverPreviewFace>[];
     final preview = ItemHoverPreview(
       item: row.item,
       controller: controller,
       period: period,
-      faces: editMode
-          ? folderHoverFaces(
+      faces: faces,
+      onFaceTap: editMode
+          ? (face, box) => pickFolderFaceWho(
+              ref: ref,
+              context: context,
               row: row,
+              face: face,
+              box: box,
               period: period,
-              personName: controller.personName,
             )
-          : const [],
+          : null,
+      faceStill: editMode && row.item.type == ItemType.video
+          ? () async {
+              final path = await controller.faceStillPath(row.item.id, period);
+              return path == null ? null : File(path);
+            }
+          : null,
       child: _Thumb(row: row, period: period),
     );
     final open = onOpen;

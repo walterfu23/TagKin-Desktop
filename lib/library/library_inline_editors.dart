@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:tagkin_desktop/app_shell.dart' show personsRepositoryProvider;
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/library/folder_row_editor.dart';
 import 'package:tagkin_desktop/library/folder_who_editor.dart';
@@ -11,8 +10,8 @@ import 'package:tagkin_desktop/library/item_hover_preview.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/persons/person_assign_control.dart'
     show promptAssignPerson;
+import 'package:tagkin_desktop/review/face_name_conflict_dialog.dart';
 import 'package:tagkin_desktop/review/knowledge_grouping.dart';
-import 'package:tagkin_desktop/ui/alpha_order.dart';
 import 'package:tagkin_desktop/where/where_label_resolver.dart';
 import 'package:tagkin_desktop/where/where_place_label.dart';
 
@@ -33,11 +32,15 @@ List<HoverPreviewFace> folderHoverFaces({
     final region = tag.region;
     if (region == null) continue;
     final appearance = appearanceForWhoTag(knowledge, tag.id);
+    final personId = appearance?.personId;
+    final assigned = personId != null && personId.isNotEmpty;
     faces.add(
       HoverPreviewFace(
         number: number,
         region: region,
-        personName: personName(appearance?.personId),
+        tagId: tag.id,
+        assigned: assigned,
+        personName: personName(personId),
       ),
     );
     number++;
@@ -94,18 +97,20 @@ class FolderInlineTags extends ConsumerWidget {
     final currentPeriod = period;
     final periodTags = currentPeriod == null
         ? const <Tag>[]
-        : groupPeriodTagsByDimension(currentPeriod)[dimension] ??
-            const <Tag>[];
+        : groupPeriodTagsByDimension(currentPeriod)[dimension] ?? const <Tag>[];
     final inherited = currentPeriod != null && periodTags.isEmpty;
     final cityScope = dimension != 'where'
         ? const <Tag>[]
         : inherited
-            ? groupItemLevelTagsByDimension(knowledge.tags)['where'] ??
-                const <Tag>[]
-            : tags;
+        ? groupItemLevelTagsByDimension(knowledge.tags)['where'] ??
+              const <Tag>[]
+        : tags;
     final city = dimension == 'where' ? cityWhereTag(cityScope) : null;
     final scenes = dimension == 'where'
-        ? [for (final tag in tags) if (!whereTagIsCity(tag)) tag]
+        ? [
+            for (final tag in tags)
+              if (!whereTagIsCity(tag)) tag,
+          ]
         : tags;
     final suggestions = dimension == 'where'
         ? ref.read(libraryTableControllerProvider).cityNames()
@@ -140,7 +145,9 @@ class FolderInlineTags extends ConsumerWidget {
               children: [
                 _WhatPersonMenu(
                   tag: tag,
-                  namesById: ref.watch(libraryTableControllerProvider).personNamesById,
+                  namesById: ref
+                      .watch(libraryTableControllerProvider)
+                      .personNamesById,
                   onChanged: (personId) => _commitWhatPerson(
                     ref,
                     context,
@@ -170,20 +177,20 @@ class FolderInlineTags extends ConsumerWidget {
             )
           else
             _CommitField(
-            key: Key('item-inline-$dimension-${tag.id}'),
-            fieldKey: Key('item-inline-$dimension-field-${tag.id}'),
-            value: tag.value,
-            hint: dimension == 'where' ? 'Where' : 'What',
-            onCommit: (next) => _commitTag(
-              ref,
-              context,
-              itemId: row.item.id,
-              dimension: dimension,
-              period: period,
-              tag: tag,
-              next: next,
+              key: Key('item-inline-$dimension-${tag.id}'),
+              fieldKey: Key('item-inline-$dimension-field-${tag.id}'),
+              value: tag.value,
+              hint: dimension == 'where' ? 'Where' : 'What',
+              onCommit: (next) => _commitTag(
+                ref,
+                context,
+                itemId: row.item.id,
+                dimension: dimension,
+                period: period,
+                tag: tag,
+                next: next,
+              ),
             ),
-          ),
         _CommitField(
           key: Key('item-inline-$dimension-add-$scopeId'),
           fieldKey: Key('item-inline-$dimension-add-field-$scopeId'),
@@ -219,7 +226,6 @@ Future<void> _commitTag(
   final trimmed = next.trim();
   if (tag == null && trimmed.isEmpty) return;
   if (tag != null && trimmed == tag.value) return;
-  final messenger = ScaffoldMessenger.of(context);
   if (dimension == 'where') {
     ref.read(libraryTableControllerProvider).clearWhereLabelCache();
   }
@@ -238,7 +244,7 @@ Future<void> _commitTag(
   }
   final error = review.mutationError;
   if (error != null) {
-    messenger.showSnackBar(const SnackBar(content: Text('Could not save')));
+    if (context.mounted) _showSaveError(context);
     throw error;
   }
 }
@@ -251,7 +257,6 @@ Future<void> _commitWhatPerson(
   required String? personId,
 }) async {
   if (personId == tag.personId) return;
-  final messenger = ScaffoldMessenger.of(context);
   final review = await ref.read(folderRowEditorProvider).open(itemId);
   await review.editTag(
     tag.id,
@@ -261,7 +266,7 @@ Future<void> _commitWhatPerson(
   );
   final error = review.mutationError;
   if (error != null) {
-    messenger.showSnackBar(const SnackBar(content: Text('Could not save')));
+    if (context.mounted) _showSaveError(context);
     throw error;
   }
 }
@@ -293,15 +298,9 @@ class _WhatPersonMenu extends StatelessWidget {
           isExpanded: true,
           value: selected,
           items: [
-            const DropdownMenuItem<String?>(
-              value: null,
-              child: Text('—'),
-            ),
+            const DropdownMenuItem<String?>(value: null, child: Text('—')),
             if (!known)
-              DropdownMenuItem<String?>(
-                value: selected,
-                child: Text(selected),
-              ),
+              DropdownMenuItem<String?>(value: selected, child: Text(selected)),
             for (final person in names)
               DropdownMenuItem<String?>(
                 value: person.key,
@@ -500,9 +499,19 @@ class _FolderCityFieldState extends State<FolderCityField> {
   @override
   void dispose() {
     _focus.removeListener(_onFocus);
+    _flushPending();
     _focus.dispose();
     _controller.dispose();
     super.dispose();
+  }
+
+  /// A collapse unmounts the row while the field is still focused, which
+  /// removes the focus listener before blur can save.
+  void _flushPending() {
+    if (_committing || _picking) return;
+    final next = _controller.text.trim();
+    if (next == widget.value.trim() || next == _committed) return;
+    unawaited(widget.onCommit(_controller.text));
   }
 
   void _onFocus() {
@@ -527,9 +536,9 @@ class _FolderCityFieldState extends State<FolderCityField> {
     final next = _controller.text.trim();
     if (next == widget.value.trim() || next == _committed) return;
     _committing = true;
+    _committed = next;
     try {
       await widget.onCommit(_controller.text);
-      _committed = next;
       if (!mounted) return;
       if (widget.clearOnCommit) {
         _controller.text = '';
@@ -575,9 +584,7 @@ class _FolderCityFieldState extends State<FolderCityField> {
   Widget build(BuildContext context) {
     final matches = _focus.hasFocus ? _matches : const <String>[];
     return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.escape): _revert,
-      },
+      bindings: {const SingleActivator(LogicalKeyboardKey.escape): _revert},
       child: Padding(
         padding: const EdgeInsets.only(bottom: 4),
         child: Column(
@@ -659,12 +666,8 @@ class FolderInlineComment extends ConsumerWidget {
         value: existing?.body ?? '',
         hint: 'Comment',
         maxLength: 128,
-        onCommit: (next) => _commitItemComment(
-          ref,
-          context,
-          itemId: row.item.id,
-          next: next,
-        ),
+        onCommit: (next) =>
+            _commitItemComment(ref, context, itemId: row.item.id, next: next),
       );
     }
     return Column(
@@ -714,12 +717,11 @@ Future<void> _commitItemComment(
   required String itemId,
   required String next,
 }) async {
-  final messenger = ScaffoldMessenger.of(context);
   final review = await ref.read(folderRowEditorProvider).open(itemId);
   await review.saveItemComment(next);
   final error = review.mutationError;
   if (error != null) {
-    messenger.showSnackBar(const SnackBar(content: Text('Could not save')));
+    if (context.mounted) _showSaveError(context);
     throw error;
   }
 }
@@ -735,7 +737,6 @@ Future<void> _commitPeriodComment(
   final trimmed = next.trim();
   if (comment == null && trimmed.isEmpty) return;
   if (trimmed.length > 128) return;
-  final messenger = ScaffoldMessenger.of(context);
   final review = await ref.read(folderRowEditorProvider).open(itemId);
   if (comment == null) {
     await review.addKeyPeriodComment(periodId, trimmed);
@@ -746,7 +747,7 @@ Future<void> _commitPeriodComment(
   }
   final error = review.mutationError;
   if (error != null) {
-    messenger.showSnackBar(const SnackBar(content: Text('Could not save')));
+    if (context.mounted) _showSaveError(context);
     throw error;
   }
 }
@@ -770,37 +771,16 @@ class FolderInlineWho extends ConsumerStatefulWidget {
 }
 
 class _FolderInlineWhoState extends ConsumerState<FolderInlineWho> {
-  List<Person> _persons = const [];
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_loadPersons());
-  }
-
-  Future<void> _loadPersons() async {
-    try {
-      final people = await ref.read(personsRepositoryProvider).listPersons();
-      if (!mounted) return;
-      setState(() {
-        _persons = sortedAlphaBy(people, (person) => person.name);
-      });
-    } catch (_) {
-      // The field still accepts a typed name.
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
+    final persons = ref.watch(libraryTableControllerProvider).persons;
     final knowledge = widget.row.knowledge;
     if (knowledge == null) return const SizedBox.shrink();
     final period = widget.period;
     final crops = period == null
         ? whoFaceCropTags(knowledge)
         : whoFaceCropTagsForPeriod(knowledge, period.id);
-    if (crops.isEmpty &&
-        period != null &&
-        itemHasWhoFaceCrops(knowledge)) {
+    if (crops.isEmpty && period != null && itemHasWhoFaceCrops(knowledge)) {
       final names = widget.row.summaryFor(period)?.who ?? widget.row.who;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -827,6 +807,7 @@ class _FolderInlineWhoState extends ConsumerState<FolderInlineWho> {
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: _dropdownFor(
+                persons: persons,
                 key: Key('item-inline-who-item-${assignments[i].id}'),
                 index: i,
                 appearance: assignments[i],
@@ -852,6 +833,7 @@ class _FolderInlineWhoState extends ConsumerState<FolderInlineWho> {
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: _dropdownFor(
+                persons: persons,
                 key: Key('item-inline-who-item-${assignments[i].id}'),
                 index: i,
                 appearance: assignments[i],
@@ -859,6 +841,7 @@ class _FolderInlineWhoState extends ConsumerState<FolderInlineWho> {
               ),
             ),
           _dropdownFor(
+            persons: persons,
             key: Key('item-inline-who-add-${widget.scopeId}'),
             fieldKey: Key('item-inline-who-add-field-${widget.scopeId}'),
             optionPrefix: 'item-inline-who-option-${widget.scopeId}-add',
@@ -879,6 +862,7 @@ class _FolderInlineWhoState extends ConsumerState<FolderInlineWho> {
             number: i + 1,
             scopeId: widget.scopeId,
             child: _dropdownFor(
+              persons: persons,
               key: Key('item-inline-who-${crops[i].id}'),
               index: i,
               appearance: appearanceForWhoTag(knowledge, crops[i].id),
@@ -890,6 +874,7 @@ class _FolderInlineWhoState extends ConsumerState<FolderInlineWho> {
   }
 
   Widget _dropdownFor({
+    required List<Person> persons,
     required Key key,
     required int index,
     required PersonAppearance? appearance,
@@ -910,10 +895,11 @@ class _FolderInlineWhoState extends ConsumerState<FolderInlineWho> {
       personName: personId == null
           ? null
           : ref.read(libraryTableControllerProvider).personName(personId),
-      persons: _persons,
+      persons: persons,
       hint: hint,
       canExclude: tagId != null,
       onPick: (pick) => _commitPick(
+        persons: persons,
         appearance: appearance,
         tagId: tagId,
         pick: pick,
@@ -921,60 +907,215 @@ class _FolderInlineWhoState extends ConsumerState<FolderInlineWho> {
     );
   }
 
-  String _nameOf(PersonAppearance? appearance) {
-    final id = appearance?.personId;
-    if (id == null || id.isEmpty) return '';
-    return ref.read(libraryTableControllerProvider).personName(id) ?? '';
-  }
-
   Future<void> _commitPick({
+    required List<Person> persons,
     required PersonAppearance? appearance,
     required String? tagId,
     required _WhoPick pick,
-  }) async {
-    final who = ref.read(folderWhoEditorProvider);
-    final WhoEditResult result;
-    if (pick.exclude) {
-      final id = tagId;
-      if (id == null || id.isEmpty) return;
-      result = await who.excludeFace(itemId: widget.row.item.id, tagId: id);
-    } else if (pick.unassign) {
-      final id = appearance?.personId;
-      if (appearance == null || id == null || id.isEmpty) return;
-      result = await who.unassign(
-        itemId: widget.row.item.id,
-        appearance: appearance,
-        tagId: tagId,
-        personName: _nameOf(appearance),
-      );
-    } else {
-      final personId = pick.personId;
-      Person? match;
-      if (personId != null) {
-        for (final person in _persons) {
-          if (person.id == personId) match = person;
-        }
+  }) {
+    final knowledge = widget.row.knowledge;
+    final period = widget.period;
+    return _commitFolderWhoPick(
+      ref: ref,
+      context: context,
+      itemId: widget.row.item.id,
+      appearance: appearance,
+      tagId: tagId,
+      persons: persons,
+      pick: pick,
+      knowledge: knowledge,
+      crops: knowledge == null
+          ? const []
+          : period == null
+          ? whoFaceCropTags(knowledge)
+          : whoFaceCropTagsForPeriod(knowledge, period.id),
+    );
+  }
+}
+
+Future<void> _commitFolderWhoPick({
+  required WidgetRef ref,
+  required BuildContext context,
+  required String itemId,
+  required PersonAppearance? appearance,
+  required String? tagId,
+  required List<Person> persons,
+  required _WhoPick pick,
+  required ItemKnowledge? knowledge,
+  required List<Tag> crops,
+}) async {
+  final who = ref.read(folderWhoEditorProvider);
+  final WhoEditResult result;
+  if (pick.exclude) {
+    final id = tagId;
+    if (id == null || id.isEmpty) return;
+    result = await who.excludeFace(itemId: itemId, tagId: id);
+  } else if (pick.unassign) {
+    final id = appearance?.personId;
+    if (appearance == null || id == null || id.isEmpty) return;
+    result = await who.unassign(
+      itemId: itemId,
+      appearance: appearance,
+      tagId: tagId,
+      personName: _folderWhoName(ref, appearance),
+    );
+  } else {
+    final personId = pick.personId;
+    Person? match;
+    if (personId != null) {
+      for (final person in persons) {
+        if (person.id == personId) match = person;
       }
-      result = await who.assign(
-        itemId: widget.row.item.id,
+    }
+    PersonAppearance? takeFrom;
+    if (tagId != null && knowledge != null) {
+      final holderTag = whoCropHoldingPerson(
+        knowledge: knowledge,
         tagId: tagId,
         personId: personId,
-        name: personId == null ? pick.name : null,
-        existing: appearance,
-        destName: match?.name ?? pick.name ?? '',
+        name: pick.name,
+        personNamesById: {for (final p in persons) p.id: p.name},
       );
-      if (personId == null) unawaited(_loadPersons());
+      final holder = holderTag == null
+          ? null
+          : appearanceForWhoTag(knowledge, holderTag.id);
+      if (holderTag != null &&
+          holder != null &&
+          holder.personId != null &&
+          holder.personId!.isNotEmpty) {
+        final takes = await showFaceNameConflictDialog(
+          context,
+          personName: _folderWhoName(ref, holder),
+          target: ConflictFace(
+            itemId: itemId,
+            tagId: tagId,
+            name: _folderWhoName(ref, appearance),
+            number: _cropNumber(crops, tagId),
+            knowledge: knowledge,
+          ),
+          holder: ConflictFace(
+            itemId: itemId,
+            tagId: holderTag.id,
+            name: _folderWhoName(ref, holder),
+            number: _cropNumber(crops, holderTag.id),
+            knowledge: knowledge,
+          ),
+        );
+        if (!takes || !context.mounted) return;
+        takeFrom = holder;
+      }
     }
-    if (!mounted) return;
-    final message = result.snackbar;
-    if (message != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          key: const Key('folder-who-also-moved'),
-          content: Text(message),
+    result = await who.assign(
+      itemId: itemId,
+      tagId: tagId,
+      personId: takeFrom != null ? takeFrom.personId : personId,
+      name: personId == null && takeFrom == null ? pick.name : null,
+      existing: appearance,
+      destName: takeFrom != null
+          ? _folderWhoName(ref, takeFrom)
+          : match?.name ?? pick.name ?? '',
+      takeFrom: takeFrom,
+    );
+  }
+  if (!context.mounted) return;
+  final message = result.snackbar;
+  if (message != null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(key: const Key('folder-who-also-moved'), content: Text(message)),
+    );
+  }
+}
+
+int? _cropNumber(List<Tag> crops, String tagId) {
+  final index = crops.indexWhere((tag) => tag.id == tagId);
+  return index < 0 ? null : index + 1;
+}
+
+String _folderWhoName(WidgetRef ref, PersonAppearance? appearance) {
+  final id = appearance?.personId;
+  if (id == null || id.isEmpty) return '';
+  return ref.read(libraryTableControllerProvider).personName(id) ?? '';
+}
+
+/// Who menu for one numbered face on the Folders Edit enlarged photo.
+Future<void> pickFolderFaceWho({
+  required WidgetRef ref,
+  required BuildContext context,
+  required LibraryTableRow row,
+  required HoverPreviewFace face,
+  required Rect box,
+  KeyPeriodKnowledge? period,
+}) async {
+  final tagId = face.tagId;
+  if (tagId == null || tagId.isEmpty) return;
+  final knowledge = row.knowledge;
+  if (knowledge == null) return;
+  final appearance = appearanceForWhoTag(knowledge, tagId);
+  final persons = ref.read(libraryTableControllerProvider).persons;
+  final selected = await showMenu<String>(
+    context: context,
+    position: RelativeRect.fromRect(
+      box,
+      Offset.zero & MediaQuery.sizeOf(context),
+    ),
+    items: [
+      PopupMenuItem(
+        key: Key('hover-who-$tagId-new'),
+        value: 'new',
+        child: const Text('New person'),
+      ),
+      PopupMenuItem(
+        key: Key('hover-who-$tagId-exclude'),
+        value: 'exclude',
+        child: const Text('Exclude'),
+      ),
+      if (face.assigned)
+        PopupMenuItem(
+          key: Key('hover-who-$tagId-unassigned'),
+          value: 'unassign',
+          child: const Text('Unassigned'),
         ),
-      );
-    }
+      for (final person in persons)
+        PopupMenuItem(
+          key: Key('hover-who-$tagId-${person.id}'),
+          value: person.id,
+          child: Text(person.name, overflow: TextOverflow.ellipsis),
+        ),
+    ],
+  );
+  if (selected == null || !context.mounted) return;
+  final _WhoPick pick;
+  if (selected == 'new') {
+    final resolved = await promptAssignPerson(context, persons: persons);
+    if (resolved == null || !context.mounted) return;
+    final id = resolved.personId;
+    if (id != null && id == appearance?.personId) return;
+    pick = id != null
+        ? _WhoPick.person(id)
+        : _WhoPick.newName(resolved.name ?? '');
+  } else if (selected == 'exclude') {
+    pick = const _WhoPick.exclude();
+  } else if (selected == 'unassign') {
+    pick = const _WhoPick.unassign();
+  } else {
+    pick = _WhoPick.person(selected);
+  }
+  try {
+    await _commitFolderWhoPick(
+      ref: ref,
+      context: context,
+      itemId: row.item.id,
+      appearance: appearance,
+      tagId: tagId,
+      persons: persons,
+      pick: pick,
+      knowledge: knowledge,
+      crops: period == null
+          ? whoFaceCropTags(knowledge)
+          : whoFaceCropTagsForPeriod(knowledge, period.id),
+    );
+  } catch (_) {
+    if (context.mounted) _showSaveError(context);
   }
 }
 
@@ -1012,23 +1153,23 @@ class _FaceWhoRow extends StatelessWidget {
 
 class _WhoPick {
   const _WhoPick.person(this.personId)
-      : name = null,
-        unassign = false,
-        exclude = false;
+    : name = null,
+      unassign = false,
+      exclude = false;
   const _WhoPick.newName(this.name)
-      : personId = null,
-        unassign = false,
-        exclude = false;
+    : personId = null,
+      unassign = false,
+      exclude = false;
   const _WhoPick.unassign()
-      : personId = null,
-        name = null,
-        unassign = true,
-        exclude = false;
+    : personId = null,
+      name = null,
+      unassign = true,
+      exclude = false;
   const _WhoPick.exclude()
-      : personId = null,
-        name = null,
-        unassign = false,
-        exclude = true;
+    : personId = null,
+      name = null,
+      unassign = false,
+      exclude = true;
 
   final String? personId;
   final String? name;
@@ -1185,6 +1326,7 @@ class _CommitFieldState extends State<_CommitField> {
   late final TextEditingController _controller;
   late final FocusNode _focus;
   bool _committing = false;
+  String? _submitted;
 
   @override
   void initState() {
@@ -1204,6 +1346,12 @@ class _CommitFieldState extends State<_CommitField> {
   @override
   void dispose() {
     _focus.removeListener(_onFocus);
+    if (!_committing) {
+      final next = _controller.text.trim();
+      if (next != widget.value.trim() && next != _submitted) {
+        unawaited(widget.onCommit(_controller.text));
+      }
+    }
     _focus.dispose();
     _controller.dispose();
     super.dispose();
@@ -1216,13 +1364,15 @@ class _CommitFieldState extends State<_CommitField> {
   Future<void> _commit() async {
     if (_committing) return;
     final next = _controller.text.trim();
-    if (next == widget.value.trim()) return;
+    if (next == widget.value.trim() || next == _submitted) return;
     _committing = true;
+    _submitted = next;
     try {
       await widget.onCommit(_controller.text);
       if (!mounted) return;
       if (widget.clearOnCommit) _controller.text = '';
     } catch (_) {
+      _submitted = null;
       if (!mounted) return;
       _controller.text = widget.value;
     } finally {
@@ -1238,9 +1388,7 @@ class _CommitFieldState extends State<_CommitField> {
   @override
   Widget build(BuildContext context) {
     return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.escape): _revert,
-      },
+      bindings: {const SingleActivator(LogicalKeyboardKey.escape): _revert},
       child: Padding(
         padding: const EdgeInsets.only(bottom: 4),
         child: TextField(
@@ -1272,7 +1420,7 @@ class _CommitFieldState extends State<_CommitField> {
 
 void _showSaveError(BuildContext context) {
   if (!context.mounted) return;
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('Could not save')),
-  );
+  ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(const SnackBar(content: Text('Could not save')));
 }

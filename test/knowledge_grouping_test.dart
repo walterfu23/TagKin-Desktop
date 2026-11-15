@@ -587,6 +587,102 @@ void main() {
     expect(occupiedSame.personIds, {'person_maya'});
   });
 
+  test('whoCropHoldingPerson finds the other face in the same key period', () {
+    const region = TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4);
+    final item = fixtureItem(id: 'item_v', type: ItemType.video);
+    Tag who(String id, String period) => fixtureTag(
+      id: id,
+      itemId: item.id,
+      keyPeriodId: period,
+      dimension: 'who',
+      value: 'face',
+      region: region,
+    );
+    final knowledge = fixtureKnowledge(
+      item: item,
+      tags: const [],
+      keyPeriods: [
+        KeyPeriodKnowledge(
+          id: 'kp_a',
+          itemId: item.id,
+          startMs: 0,
+          endMs: 2000,
+          sampleTimestampMs: 1000,
+          tags: [who('tag_a1', 'kp_a'), who('tag_a2', 'kp_a')],
+        ),
+        KeyPeriodKnowledge(
+          id: 'kp_b',
+          itemId: item.id,
+          startMs: 2000,
+          endMs: 4000,
+          sampleTimestampMs: 3000,
+          tags: [who('tag_b1', 'kp_b'), who('tag_b2', 'kp_b')],
+        ),
+      ],
+      appearances: [
+        fixtureAppearance(
+          id: 'ap_a1',
+          personId: 'person_maya',
+          itemId: item.id,
+          tagId: 'tag_a1',
+        ),
+        fixtureAppearance(
+          id: 'ap_b1',
+          personId: 'person_maya',
+          itemId: item.id,
+          tagId: 'tag_b1',
+        ),
+      ],
+    );
+
+    expect(
+      whoCropHoldingPerson(
+        knowledge: knowledge,
+        tagId: 'tag_a2',
+        personId: 'person_maya',
+      )?.id,
+      'tag_a1',
+    );
+    // Scope is the key period: the holder is tag_b1, not tag_a1.
+    expect(
+      whoCropHoldingPerson(
+        knowledge: knowledge,
+        tagId: 'tag_b2',
+        personId: 'person_maya',
+      )?.id,
+      'tag_b1',
+    );
+    // A face never conflicts with itself.
+    expect(
+      whoCropHoldingPerson(
+        knowledge: knowledge,
+        tagId: 'tag_a1',
+        personId: 'person_maya',
+      ),
+      isNull,
+    );
+    // A draft unassign frees the name.
+    expect(
+      whoCropHoldingPerson(
+        knowledge: knowledge,
+        tagId: 'tag_a2',
+        personId: 'person_maya',
+        cropIntents: const {'tag_a1': PersonAssignIntent(unassign: true)},
+      ),
+      isNull,
+    );
+    // A drafted name counts, matched case-insensitively.
+    expect(
+      whoCropHoldingPerson(
+        knowledge: knowledge,
+        tagId: 'tag_a1',
+        name: 'riley',
+        cropIntents: const {'tag_a2': PersonAssignIntent(name: 'Riley')},
+      )?.id,
+      'tag_a2',
+    );
+  });
+
   test('regionIou is 1 for identical boxes and 0 for disjoint', () {
     const a = TagRegion(yMin: 0.1, xMin: 0.1, yMax: 0.4, xMax: 0.4);
     const b = TagRegion(yMin: 0.5, xMin: 0.5, yMax: 0.8, xMax: 0.8);

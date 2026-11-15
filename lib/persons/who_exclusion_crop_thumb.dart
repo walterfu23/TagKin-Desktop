@@ -107,11 +107,7 @@ class _WhoExclusionCropThumbState extends ConsumerState<WhoExclusionCropThumb> {
         loadFileBytes: () async {
           final media = await resolveLocalMedia(item, verifyHash: false);
           if (!canCropLocalMediaForDisplay(media)) {
-            debugPrint(
-              'WhoExclusionCropThumb ${widget.itemId}: media '
-              '${media.status.name} path=${media.path}',
-            );
-            throw StateError('media unavailable: ${media.status.name}');
+            throw MediaUnavailable(media.status.name, media.path);
           }
           return loadStillBytesForFaceCrop(
             item: item,
@@ -126,6 +122,11 @@ class _WhoExclusionCropThumbState extends ConsumerState<WhoExclusionCropThumb> {
         );
       }
       return crop;
+    } on MediaUnavailable catch (e) {
+      if (logMediaUnavailable) {
+        debugPrint('WhoExclusionCropThumb ${widget.itemId}: $e');
+      }
+      return null;
     } catch (e, st) {
       debugPrint('WhoExclusionCropThumb ${widget.itemId}: $e\n$st');
       return null;

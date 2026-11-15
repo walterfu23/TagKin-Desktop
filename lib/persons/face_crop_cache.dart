@@ -7,6 +7,22 @@ import 'package:flutter/foundation.dart'
 import 'package:tagkin_desktop/contract/contract.dart';
 import 'package:tagkin_desktop/persons/who_face_linker.dart';
 
+/// The local file for a face crop is missing or unreadable. Expected (moved or
+/// deleted media); the thumb shows a placeholder, so no stack trace is logged.
+class MediaUnavailable implements Exception {
+  const MediaUnavailable(this.status, this.path);
+
+  final String status;
+  final String? path;
+
+  @override
+  String toString() => 'media $status path=$path';
+}
+
+/// Whether crop thumbs log a [MediaUnavailable] line. Widget tests render
+/// thumbs with no local media on purpose and switch this off.
+bool logMediaUnavailable = true;
+
 /// Shared decode-once/crop-many + LRU cache for Faces tray crop thumbnails.
 ///
 /// Without this, every face thumb independently re-reads and re-decodes the

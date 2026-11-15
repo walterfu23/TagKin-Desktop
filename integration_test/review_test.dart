@@ -94,10 +94,12 @@ void main() {
     expect(find.byKey(const Key('item-review')), findsOneWidget);
     expect(find.byKey(const Key('knowledge-view')), findsOneWidget);
     expect(find.text('Alex'), findsOneWidget);
-    expect(find.text('birthday'), findsOneWidget);
+    // Video What is the read-only CSV of item-level and key-period tags.
+    expect(find.textContaining('birthday'), findsOneWidget);
     expect(find.byKey(const Key('key-period-scrubber')), findsOneWidget);
     expect(find.byKey(const Key('key-period-kp_int')), findsOneWidget);
-    expect(find.textContaining('candles'), findsOneWidget);
+    // Shown in the What CSV and on the key period.
+    expect(find.textContaining('candles'), findsWidgets);
     expect(find.byKey(const Key('media-status-missing')), findsOneWidget);
   });
 }

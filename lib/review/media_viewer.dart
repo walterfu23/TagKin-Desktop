@@ -30,6 +30,8 @@ class MediaViewer extends StatelessWidget {
     this.videoController,
     this.whoOverlays = const [],
     this.personNameByWhoTagId = const {},
+    this.onWhoFaceTap,
+    this.tappableWhoTagIds = const {},
   });
 
   final ItemType itemType;
@@ -46,6 +48,12 @@ class MediaViewer extends StatelessWidget {
 
   /// Assigned person name per who-tag id; the box falls back to [Tag.value].
   final Map<String, String> personNameByWhoTagId;
+
+  /// Tap on a face square. Ignored unless that id is in [tappableWhoTagIds].
+  final void Function(String tagId)? onWhoFaceTap;
+
+  /// Who-tag ids whose square should select the matching face tile.
+  final Set<String> tappableWhoTagIds;
 
   @override
   Widget build(BuildContext context) {
@@ -87,6 +95,8 @@ class MediaViewer extends StatelessWidget {
             file: resolution.file!,
             whoOverlays: whoOverlays,
             personNameByWhoTagId: personNameByWhoTagId,
+            onWhoFaceTap: onWhoFaceTap,
+            tappableWhoTagIds: tappableWhoTagIds,
           ),
         ),
       );
@@ -100,9 +110,7 @@ class MediaViewer extends StatelessWidget {
       );
     }
 
-    return VideoPlaybackPane(
-      child: Video(controller: controller),
-    );
+    return VideoPlaybackPane(child: Video(controller: controller));
   }
 }
 
@@ -117,11 +125,7 @@ class VideoPlaybackPane extends StatelessWidget {
   Widget build(BuildContext context) {
     return SelectionContainer.disabled(
       key: const Key('media-video-selection-off'),
-      child: SizedBox(
-        key: const Key('media-video'),
-        height: 240,
-        child: child,
-      ),
+      child: SizedBox(key: const Key('media-video'), height: 240, child: child),
     );
   }
 }
@@ -131,11 +135,15 @@ class _PhotoWithWhoOverlays extends StatefulWidget {
     required this.file,
     required this.whoOverlays,
     this.personNameByWhoTagId = const {},
+    this.onWhoFaceTap,
+    this.tappableWhoTagIds = const {},
   });
 
   final File file;
   final List<Tag> whoOverlays;
   final Map<String, String> personNameByWhoTagId;
+  final void Function(String tagId)? onWhoFaceTap;
+  final Set<String> tappableWhoTagIds;
 
   @override
   State<_PhotoWithWhoOverlays> createState() => _PhotoWithWhoOverlaysState();
@@ -201,6 +209,8 @@ class _PhotoWithWhoOverlaysState extends State<_PhotoWithWhoOverlays> {
               personNameByWhoTagId: widget.personNameByWhoTagId,
               viewport: viewport,
               imageSize: imageSize,
+              onWhoFaceTap: widget.onWhoFaceTap,
+              tappableWhoTagIds: widget.tappableWhoTagIds,
             ),
           ],
         );
@@ -218,12 +228,16 @@ class WhoFaceOverlayLayer extends StatelessWidget {
     required this.viewport,
     required this.imageSize,
     this.personNameByWhoTagId = const {},
+    this.onWhoFaceTap,
+    this.tappableWhoTagIds = const {},
   });
 
   final List<Tag> whoOverlays;
   final Size viewport;
   final Size imageSize;
   final Map<String, String> personNameByWhoTagId;
+  final void Function(String tagId)? onWhoFaceTap;
+  final Set<String> tappableWhoTagIds;
 
   @override
   Widget build(BuildContext context) {
@@ -237,6 +251,9 @@ class WhoFaceOverlayLayer extends StatelessWidget {
               viewport: viewport,
               imageSize: imageSize,
               personName: personNameByWhoTagId[tag.id],
+              onTap: onWhoFaceTap != null && tappableWhoTagIds.contains(tag.id)
+                  ? () => onWhoFaceTap!(tag.id)
+                  : null,
             ),
       ],
     );
@@ -297,12 +314,14 @@ class _WhoFaceOverlay extends StatelessWidget {
     required this.viewport,
     required this.imageSize,
     this.personName,
+    this.onTap,
   });
 
   final Tag tag;
   final Size viewport;
   final Size imageSize;
   final String? personName;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -316,39 +335,46 @@ class _WhoFaceOverlay extends StatelessWidget {
 
     final scheme = Theme.of(context).colorScheme;
     final assigned = personName?.trim();
-    final label =
-        (assigned != null && assigned.isNotEmpty) ? assigned : tag.value;
+    final label = (assigned != null && assigned.isNotEmpty)
+        ? assigned
+        : tag.value;
+    final box = DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border.all(color: scheme.primary, width: 2),
+      ),
+      child: Align(
+        alignment: Alignment.topLeft,
+        child: ColoredBox(
+          color: scheme.primary.withValues(alpha: 0.85),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: scheme.onPrimary,
+                fontSize: 11,
+                height: 1.1,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      ),
+    );
+    final onTap = this.onTap;
     return Positioned(
       left: rect.left,
       top: rect.top,
       width: rect.width,
       height: rect.height,
-      child: IgnorePointer(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border.all(color: scheme.primary, width: 2),
-          ),
-          child: Align(
-            alignment: Alignment.topLeft,
-            child: ColoredBox(
-              color: scheme.primary.withValues(alpha: 0.85),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: scheme.onPrimary,
-                    fontSize: 11,
-                    height: 1.1,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
+      child: onTap == null
+          ? IgnorePointer(child: box)
+          : GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onTap,
+              child: box,
             ),
-          ),
-        ),
-      ),
     );
   }
 }

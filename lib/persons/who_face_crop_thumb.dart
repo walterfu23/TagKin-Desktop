@@ -173,11 +173,7 @@ class _WhoFaceCropThumbState extends ConsumerState<WhoFaceCropThumb> {
         loadFileBytes: () async {
           final media = await resolveLocalMedia(item, verifyHash: false);
           if (!canCropLocalMediaForDisplay(media)) {
-            debugPrint(
-              'WhoFaceCropThumb ${widget.itemId}/${widget.tagId}: media '
-              '${media.status.name} path=${media.path}',
-            );
-            throw StateError('media unavailable: ${media.status.name}');
+            throw MediaUnavailable(media.status.name, media.path);
           }
           return loadStillBytesForFaceCrop(
             item: item,
@@ -193,6 +189,11 @@ class _WhoFaceCropThumbState extends ConsumerState<WhoFaceCropThumb> {
         );
       }
       return _CropLoad(bytes: crop, whoLabel: whoLabel);
+    } on MediaUnavailable catch (e) {
+      if (logMediaUnavailable) {
+        debugPrint('WhoFaceCropThumb ${widget.itemId}/${widget.tagId}: $e');
+      }
+      return const _CropLoad(bytes: null, whoLabel: null);
     } catch (e, st) {
       debugPrint('WhoFaceCropThumb ${widget.itemId}/${widget.tagId}: $e\n$st');
       return const _CropLoad(bytes: null, whoLabel: null);

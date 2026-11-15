@@ -12,6 +12,7 @@ import 'package:tagkin_desktop/persons/person_name.dart';
 import 'package:tagkin_desktop/persons/person_name_collision_dialog.dart';
 import 'package:tagkin_desktop/persons/person_name_dialog.dart';
 import 'package:tagkin_desktop/persons/who_face_crop_thumb.dart';
+import 'package:tagkin_desktop/review/face_name_conflict_dialog.dart';
 import 'package:tagkin_desktop/undo/undo_controller.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
 import 'package:tagkin_desktop/undo/undoable_action.dart';
@@ -467,11 +468,68 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
     } else {
       targetPersonId = target;
     }
+    final persons = ref.read(personsRepositoryProvider);
+    PersonAppearance? chosenHolder;
+    final destId = targetPersonId;
+    if (destId != null &&
+        appearance.itemId != null &&
+        appearance.tagId != null) {
+      PersonDetail? dest;
+      try {
+        dest = await persons.getPerson(destId);
+      } catch (_) {
+        // The server still refuses a real conflict below.
+      }
+      if (!mounted) return;
+      PersonAppearance? holder;
+      for (final a in dest?.appearances ?? const <PersonAppearance>[]) {
+        if (a.id != appearanceId &&
+            a.itemId == appearance.itemId &&
+            a.keyPeriodId == appearance.keyPeriodId &&
+            a.tagId != null) {
+          holder = a;
+        }
+      }
+      if (holder != null) {
+        final takes = await showFaceNameConflictDialog(
+          context,
+          personName: dest!.name,
+          target: ConflictFace(
+            itemId: appearance.itemId!,
+            tagId: appearance.tagId!,
+            name: controller.detail?.name,
+            region: appearance.region,
+          ),
+          holder: ConflictFace(
+            itemId: holder.itemId!,
+            tagId: holder.tagId!,
+            name: dest.name,
+            region: holder.region,
+          ),
+        );
+        if (!takes || !mounted) return;
+        chosenHolder = holder;
+        await persons.unlinkAppearance(holder.id);
+      }
+    }
+    final takeFrom = chosenHolder;
     final result = await controller.reassign(
       appearanceId,
       personId: targetPersonId,
       name: newPersonName,
     );
+    if (takeFrom != null && destId != null && controller.error != null) {
+      // The face did not move: put the holder back.
+      try {
+        await persons.reassignAppearance(
+          takeFrom.id,
+          personId: destId,
+          propagateAlike: false,
+        );
+      } catch (_) {
+        // Keep the original failure.
+      }
+    }
     if (mounted && controller.error == null) {
       setState(() => _selectedAppearanceId = null);
       ref.read(collectionsControllerProvider).markDirty();
@@ -502,11 +560,19 @@ class _PersonDetailPageState extends ConsumerState<PersonDetailPage> {
               personId: fromPersonId,
               propagateAlike: false,
             );
+            if (takeFrom != null && destId != null) {
+              await persons.reassignAppearance(
+                takeFrom.id,
+                personId: destId,
+                propagateAlike: false,
+              );
+            }
             if (mounted && controller.error == null) {
               ref.read(collectionsControllerProvider).markDirty();
             }
           },
           onRedo: () async {
+            if (takeFrom != null) await persons.unlinkAppearance(takeFrom.id);
             await controller.reassign(
               appearanceId,
               personId: targetPersonId,

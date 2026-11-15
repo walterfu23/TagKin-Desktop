@@ -298,6 +298,7 @@ class LibraryTableController extends ChangeNotifier {
   final LocalThumbCache _thumbCache;
   final WhereLabelResolver _whereLabels;
   Map<String, String> _personNamesById = {};
+  List<Person> _persons = const [];
   int _pageSize;
   final int knowledgeConcurrency;
 
@@ -579,6 +580,29 @@ class LibraryTableController extends ChangeNotifier {
     await _fetchAndApplyKnowledge(itemId);
     if (_disposed) return const [];
     return rowById(itemId)?.keyPeriods ?? const [];
+  }
+
+  /// Local path of the sample still the face boxes were measured on: the
+  /// period at [period] (or a video's only period), at `sampleTimestampMs`.
+  /// Null with no sample time — a different frame would put boxes off the face.
+  Future<String?> faceStillPath(
+    String itemId,
+    KeyPeriodKnowledge? period,
+  ) async {
+    final row = rowById(itemId);
+    if (_disposed || row == null || row.item.type != ItemType.video) {
+      return null;
+    }
+    final target =
+        period ?? (row.keyPeriods.length == 1 ? row.keyPeriods.first : null);
+    final ms = target?.sampleTimestampMs;
+    if (target == null || ms == null) return null;
+    final thumb = await _thumbCache.resolveKeyPeriod(
+      row.item,
+      keyPeriodId: target.id,
+      timestampMs: ms < 0 ? 0 : ms,
+    );
+    return thumb.hasImage ? thumb.path : null;
   }
 
   bool _underHiddenFolder(LibraryTableRow r) {
@@ -1379,29 +1403,49 @@ class LibraryTableController extends ChangeNotifier {
   /// Person id → name for What labels. Empty until the persons list loads.
   Map<String, String> get personNamesById => _personNamesById;
 
+  /// Named people for Folders Edit Who dropdowns, A–Z case-insensitive.
+  List<Person> get persons => _persons;
+
   Future<void> _refreshPersonNames() async {
     if (_disposed) return;
     final repo = personsRepository;
     if (repo == null) {
-      _personNamesById = {};
-      _recomputeWhatLabels();
+      _applyPersonList(const []);
       return;
     }
     try {
       final people = await repo.listPersons();
       if (_disposed) return;
-      _personNamesById = {for (final p in people) p.id: p.name};
+      _applyPersonList(people);
     } catch (_) {
       if (_disposed) return;
-      _personNamesById = {};
+      _applyPersonList(const []);
     }
-    _recomputeWhatLabels();
+  }
+
+  void _applyPersonList(List<Person> people) {
+    final sorted = sortedAlphaBy(people, (person) => person.name);
+    final listChanged = !_samePersons(_persons, sorted);
+    _persons = sorted;
+    _personNamesById = {for (final person in sorted) person.id: person.name};
+    final notified = _recomputeWhatLabels();
+    if (listChanged && !notified) _notify();
+  }
+
+  bool _samePersons(List<Person> a, List<Person> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].id != b[i].id || a[i].name != b[i].name) return false;
+    }
+    return true;
   }
 
   /// Rebuild What display labels from the current person names. The stored
   /// activity words in [LibraryTableRow.what] stay unchanged.
-  void _recomputeWhatLabels() {
-    if (_rows.isEmpty) return;
+  ///
+  /// Returns whether listeners were notified.
+  bool _recomputeWhatLabels() {
+    if (_rows.isEmpty) return false;
     var changed = false;
     final next = <LibraryTableRow>[];
     for (final row in _rows) {
@@ -1424,9 +1468,10 @@ class LibraryTableController extends ChangeNotifier {
       changed = true;
       next.add(row.copyWith(whatLabels: labels, periodSummaries: summaries));
     }
-    if (!changed) return;
+    if (!changed) return false;
     _rows = next;
     _notify();
+    return true;
   }
 
   Future<void> _warmThumbs(int gen) async {

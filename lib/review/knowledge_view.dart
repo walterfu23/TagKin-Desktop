@@ -11,6 +11,23 @@ import 'package:tagkin_desktop/ui/alpha_order.dart';
 const double _kFaceThumbSize = 72;
 const double _kFaceCellWidth = 96;
 
+/// Lets the photo face square call the same tap handler as its tile.
+class FaceTapBridge {
+  void Function(String tagId)? _handler;
+
+  void attach(void Function(String tagId) handler) {
+    _handler = handler;
+  }
+
+  void detach() {
+    _handler = null;
+  }
+
+  void tap(String tagId) {
+    _handler?.call(tagId);
+  }
+}
+
 /// Per-crop / whole-item assign, plus excluded-face thumbs.
 /// Face crops sit in a compact thumb+name grid; tap selects, double-click an
 /// assigned face opens that person.
@@ -41,6 +58,7 @@ class KnowledgeView extends StatefulWidget {
     this.allowItemAssign = true,
     this.faceGridKey = const Key('item-face-assign-grid'),
     this.faceHintKey = const Key('item-face-hint'),
+    this.faceTapBridge,
   });
 
   final ItemKnowledge knowledge;
@@ -53,20 +71,15 @@ class KnowledgeView extends StatefulWidget {
   final Map<String, PersonAssignIntent> exclusionIntents;
   final List<PersonAssignIntent> pendingItemAssigns;
   final void Function(String personId)? onPersonTap;
-  final Future<void> Function(
-    String tagId, {
-    String? personId,
-    String? name,
-  })? onAssignCrop;
-  final Future<void> Function({
-    String? personId,
-    String? name,
-  })? onAssignItem;
+  final Future<void> Function(String tagId, {String? personId, String? name})?
+  onAssignCrop;
+  final Future<void> Function({String? personId, String? name})? onAssignItem;
   final Future<void> Function(
     String appearanceId, {
     String? personId,
     String? name,
-  })? onReassignAppearance;
+  })?
+  onReassignAppearance;
   final Future<void> Function(String appearanceId)? onUnassign;
   final Future<void> Function(String tagId)? onExcludeCrop;
   final Future<void> Function(String keepTagId)? onExcludeOtherCrops;
@@ -74,7 +87,8 @@ class KnowledgeView extends StatefulWidget {
     String exclusionId, {
     String? personId,
     String? name,
-  })? onAssignIncludedExclusion;
+  })?
+  onAssignIncludedExclusion;
   final Future<void> Function(String exclusionId)? onExcludeIncludedExclusion;
   final void Function(int index)? onRemovePendingItemAssign;
 
@@ -90,6 +104,9 @@ class KnowledgeView extends StatefulWidget {
   final Key faceGridKey;
   final Key faceHintKey;
 
+  /// When set, a tap on the matching photo square selects this grid's tile.
+  final FaceTapBridge? faceTapBridge;
+
   @override
   State<KnowledgeView> createState() => _KnowledgeViewState();
 }
@@ -97,6 +114,31 @@ class KnowledgeView extends StatefulWidget {
 class _KnowledgeViewState extends State<KnowledgeView> {
   String? _selected;
   final FaceCropTapTracker _faceTapTracker = FaceCropTapTracker();
+  final Map<String, GlobalKey> _cropTileKeys = {};
+
+  @override
+  void initState() {
+    super.initState();
+    widget.faceTapBridge?.attach(_onExternalFaceTap);
+  }
+
+  @override
+  void didUpdateWidget(KnowledgeView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.faceTapBridge == widget.faceTapBridge) return;
+    oldWidget.faceTapBridge?.detach();
+    widget.faceTapBridge?.attach(_onExternalFaceTap);
+  }
+
+  @override
+  void dispose() {
+    widget.faceTapBridge?.detach();
+    super.dispose();
+  }
+
+  GlobalKey _cropTileKey(String tagId) {
+    return _cropTileKeys.putIfAbsent(tagId, GlobalKey.new);
+  }
 
   void _toggle(String id) {
     setState(() => _selected = _selected == id ? null : id);
@@ -125,6 +167,33 @@ class _KnowledgeViewState extends State<KnowledgeView> {
       return;
     }
     _toggle(sel);
+  }
+
+  /// Photo-square tap. No-op unless this grid is showing that crop.
+  void _onExternalFaceTap(String tagId) {
+    final tag = _tappableCrop(tagId);
+    if (tag == null) return;
+    _onFaceTileTap('crop:$tagId', _cropPersonId(tag));
+    _revealCropTile(tagId);
+  }
+
+  Tag? _tappableCrop(String tagId) {
+    final crops = widget.cropTags ?? whoFaceCropTags(widget.knowledge);
+    for (final tag in crops) {
+      if (tag.id != tagId) continue;
+      if (widget.cropIntents[tag.id]?.exclude == true) return null;
+      return tag;
+    }
+    return null;
+  }
+
+  void _revealCropTile(String tagId) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = _cropTileKeys[tagId]?.currentContext;
+      if (ctx == null || !ctx.mounted) return;
+      Scrollable.ensureVisible(ctx);
+    });
   }
 
   String _cropCaption(Tag tag) {
@@ -257,21 +326,25 @@ class _KnowledgeViewState extends State<KnowledgeView> {
         (
           sel: 'crop:${tag.id}',
           caption: _cropCaption(tag),
-          tile: _FaceTile(
-            tileKey: Key('item-face-tile-${tag.id}'),
-            selectedKey: Key('item-face-selected-${tag.id}'),
-            selected: _selected == 'crop:${tag.id}',
-            onTap: () => _onFaceTileTap('crop:${tag.id}', _cropPersonId(tag)),
-            thumb: WhoFaceCropThumb(
-              itemId: appearanceForWhoTag(knowledge, tag.id)?.itemId ??
-                  widget.itemId ??
-                  knowledge.item.id,
-              tagId: tag.id,
-              knowledge: knowledge,
-              size: _kFaceThumbSize,
+          tile: KeyedSubtree(
+            key: _cropTileKey(tag.id),
+            child: _FaceTile(
+              tileKey: Key('item-face-tile-${tag.id}'),
+              selectedKey: Key('item-face-selected-${tag.id}'),
+              selected: _selected == 'crop:${tag.id}',
+              onTap: () => _onFaceTileTap('crop:${tag.id}', _cropPersonId(tag)),
+              thumb: WhoFaceCropThumb(
+                itemId:
+                    appearanceForWhoTag(knowledge, tag.id)?.itemId ??
+                    widget.itemId ??
+                    knowledge.item.id,
+                tagId: tag.id,
+                knowledge: knowledge,
+                size: _kFaceThumbSize,
+              ),
+              caption: _cropCaption(tag),
+              captionKey: Key('appearance-crop-${tag.id}'),
             ),
-            caption: _cropCaption(tag),
-            captionKey: Key('appearance-crop-${tag.id}'),
           ),
         ),
       for (final exclusion in included)
@@ -406,10 +479,7 @@ class ExcludedFacesStrip extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Excluded faces',
-          style: Theme.of(context).textTheme.titleSmall,
-        ),
+        Text('Excluded faces', style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(height: 4),
         Wrap(
           spacing: 8,
@@ -572,11 +642,8 @@ class _CropActions extends StatelessWidget {
   final PersonAssignIntent? intent;
   final bool enabled;
   final void Function(String personId)? onPersonTap;
-  final Future<void> Function(
-    String tagId, {
-    String? personId,
-    String? name,
-  })? onAssignCrop;
+  final Future<void> Function(String tagId, {String? personId, String? name})?
+  onAssignCrop;
   final Future<void> Function(String appearanceId)? onUnassign;
   final Future<void> Function(String tagId)? onExcludeCrop;
   final Future<void> Function(String keepTagId)? onExcludeOtherCrops;
@@ -594,7 +661,8 @@ class _CropActions extends StatelessWidget {
     final personName = effective.personName;
     final named = personName != null && personName.isNotEmpty;
     final canOpenPerson = personId != null && onPersonTap != null;
-    final canUnassign = appearance?.id != null &&
+    final canUnassign =
+        appearance?.id != null &&
         personId != null &&
         onUnassign != null &&
         !effective.unassign;
@@ -625,11 +693,8 @@ class _CropActions extends StatelessWidget {
               draftPersonNames: draftPersonNames,
               enabled: enabled,
               label: named ? 'Reassign' : 'Assign',
-              onAssign: ({personId, name}) => onAssignCrop!(
-                tag.id,
-                personId: personId,
-                name: name,
-              ),
+              onAssign: ({personId, name}) =>
+                  onAssignCrop!(tag.id, personId: personId, name: name),
             ),
           ),
         if (canOpenPerson ||
@@ -642,15 +707,13 @@ class _CropActions extends StatelessWidget {
               if (canOpenPerson)
                 OutlinedButton(
                   key: Key('item-face-open-person-${tag.id}'),
-                  onPressed:
-                      enabled ? () => onPersonTap!(personId) : null,
+                  onPressed: enabled ? () => onPersonTap!(personId) : null,
                   child: const Text('Open person'),
                 ),
               if (canUnassign)
                 TextButton(
                   key: Key('item-unassign-${appearance!.id}'),
-                  onPressed:
-                      enabled ? () => onUnassign!(appearance.id) : null,
+                  onPressed: enabled ? () => onUnassign!(appearance.id) : null,
                   child: const Text('Unassign'),
                 ),
               if (onExcludeCrop != null)
@@ -662,8 +725,9 @@ class _CropActions extends StatelessWidget {
               if (hasOtherCrops)
                 TextButton(
                   key: Key('item-exclude-others-face-${tag.id}'),
-                  onPressed:
-                      enabled ? () => onExcludeOtherCrops!(tag.id) : null,
+                  onPressed: enabled
+                      ? () => onExcludeOtherCrops!(tag.id)
+                      : null,
                   child: Text(othersLabel),
                 ),
             ],
@@ -685,10 +749,7 @@ class _ItemAssignList extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (final cell in cells)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: cell,
-          ),
+          Padding(padding: const EdgeInsets.only(bottom: 8), child: cell),
       ],
     );
   }
@@ -718,7 +779,8 @@ class _ItemAssignRow extends StatelessWidget {
     String appearanceId, {
     String? personId,
     String? name,
-  })? onReassignAppearance;
+  })?
+  onReassignAppearance;
   final Future<void> Function(String appearanceId)? onUnassign;
 
   @override
@@ -729,8 +791,8 @@ class _ItemAssignRow extends StatelessWidget {
       personNamesById: personNamesById,
     );
     final personId = effective.personId;
-    final name = effective.personName ??
-        (personId != null ? 'Person' : 'Unassigned');
+    final name =
+        effective.personName ?? (personId != null ? 'Person' : 'Unassigned');
     final canUnassign =
         personId != null && onUnassign != null && !effective.unassign;
     return Padding(
@@ -742,15 +804,9 @@ class _ItemAssignRow extends StatelessWidget {
                 ? InkWell(
                     key: Key('appearance-person-link-${appearance.id}'),
                     onTap: () => onPersonTap!(personId),
-                    child: Text(
-                      name,
-                      key: Key('appearance-${appearance.id}'),
-                    ),
+                    child: Text(name, key: Key('appearance-${appearance.id}')),
                   )
-                : Text(
-                    name,
-                    key: Key('appearance-${appearance.id}'),
-                  ),
+                : Text(name, key: Key('appearance-${appearance.id}')),
           ),
           if (onReassignAppearance != null)
             SizedBox(
@@ -804,12 +860,7 @@ class _PendingItemAssignRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          Expanded(
-            child: Text(
-              label,
-              key: Key('item-pending-assign-$index'),
-            ),
-          ),
+          Expanded(child: Text(label, key: Key('item-pending-assign-$index'))),
           if (onRemove != null)
             TextButton(
               key: Key('item-pending-assign-remove-$index'),
@@ -846,7 +897,8 @@ class _IncludedActions extends StatelessWidget {
     String exclusionId, {
     String? personId,
     String? name,
-  })? onAssign;
+  })?
+  onAssign;
   final Future<void> Function(String exclusionId)? onExclude;
 
   @override
@@ -875,11 +927,8 @@ class _IncludedActions extends StatelessWidget {
               draftPersonNames: draftPersonNames,
               enabled: enabled,
               label: named ? 'Reassign' : 'Assign',
-              onAssign: ({personId, name}) => onAssign!(
-                exclusion.id,
-                personId: personId,
-                name: name,
-              ),
+              onAssign: ({personId, name}) =>
+                  onAssign!(exclusion.id, personId: personId, name: name),
             ),
           ),
         if (canOpenPerson || onExclude != null)
@@ -889,8 +938,7 @@ class _IncludedActions extends StatelessWidget {
               if (canOpenPerson)
                 OutlinedButton(
                   key: Key('item-face-open-person-included-${exclusion.id}'),
-                  onPressed:
-                      enabled ? () => onPersonTap!(personId) : null,
+                  onPressed: enabled ? () => onPersonTap!(personId) : null,
                   child: const Text('Open person'),
                 ),
               if (onExclude != null)
