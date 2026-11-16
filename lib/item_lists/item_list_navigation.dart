@@ -1,3 +1,5 @@
+import 'dart:ui' show AppExitResponse;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tagkin_desktop/item_lists/item_list_export_page.dart';
@@ -70,6 +72,21 @@ bool appExitCanSkipLeavePrompt({
   required bool exportBusy,
 }) {
   return !collectionDirty && !viewDirty && !exportBusy;
+}
+
+/// Answer for a system-initiated terminate (macOS Shut Down / Restart / Log
+/// Out, Dock Quit).
+///
+/// Awaits [confirmLeave] before answering. Answering `cancel` first and
+/// prompting in the background aborts the system shutdown even when the user
+/// then picks Save or Discard.
+Future<AppExitResponse> resolveAppExitRequest({
+  required bool canSkipLeavePrompt,
+  required Future<bool> Function() confirmLeave,
+}) async {
+  if (canSkipLeavePrompt) return AppExitResponse.exit;
+  final ok = await confirmLeave();
+  return ok ? AppExitResponse.exit : AppExitResponse.cancel;
 }
 
 /// Request the item-list export screen from outside the signed-in scaffold.

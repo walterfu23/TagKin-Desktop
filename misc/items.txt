@@ -35,7 +35,7 @@ might want to consider path hiearchy.
 
 104. [not yet implemented] (was 26) add more into settings.
 
-105. [not yet implemented] (was 28) If desktop is running, it prevents the shutdown on match
+105. [done in code - needs a manual Restart / Log Out check on macOS] (was 28) If desktop is running, it prevents the shutdown on match (now shows the Save / Discard / Cancel prompt and answers the system terminate after it, instead of cancelling first)
 
 106. [not yet implemented] (was 33) persist duration and dimensions (Specs §5 Item fields)
 106. [not yet implemented] (was 32) item `title` field (Specs §5 Item fields)

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -176,6 +177,63 @@ void main() {
       ),
       isFalse,
     );
+  });
+
+  group('resolveAppExitRequest (system Shut Down / Restart / Log Out)', () {
+    test('clean exits without asking', () async {
+      var asked = 0;
+      final response = await resolveAppExitRequest(
+        canSkipLeavePrompt: true,
+        confirmLeave: () async {
+          asked++;
+          return true;
+        },
+      );
+      expect(response, AppExitResponse.exit);
+      expect(asked, 0);
+    });
+
+    test('dirty asks, and Save or Discard lets the exit continue', () async {
+      var asked = 0;
+      final response = await resolveAppExitRequest(
+        canSkipLeavePrompt: false,
+        confirmLeave: () async {
+          asked++;
+          return true;
+        },
+      );
+      expect(response, AppExitResponse.exit);
+      expect(asked, 1);
+    });
+
+    test('dirty asks, and Cancel / Stay cancels the exit', () async {
+      var asked = 0;
+      final response = await resolveAppExitRequest(
+        canSkipLeavePrompt: false,
+        confirmLeave: () async {
+          asked++;
+          return false;
+        },
+      );
+      expect(response, AppExitResponse.cancel);
+      expect(asked, 1);
+    });
+
+    test('answers only after the prompt resolves (never cancel-first)', () async {
+      final prompt = Completer<bool>();
+      var answered = false;
+      final future = resolveAppExitRequest(
+        canSkipLeavePrompt: false,
+        confirmLeave: () => prompt.future,
+      ).then((r) {
+        answered = true;
+        return r;
+      });
+      await Future<void>.delayed(Duration.zero);
+      expect(answered, isFalse);
+      prompt.complete(true);
+      expect(await future, AppExitResponse.exit);
+    });
   });
 
   test('itemListLeaveBusyBody names music generate only', () {

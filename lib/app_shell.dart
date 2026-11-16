@@ -1544,29 +1544,30 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
 
   @override
   Future<AppExitResponse> didRequestAppExit() async {
-    // Prefer onWindowClose / custom Quit for dirty confirm (avoids poisoning
-    // after Cancel — flutter#141377). System Shut Down / Restart / Log Out
-    // often terminate here without onWindowClose; blanket-cancel blocks macOS.
+    // With the close gate armed, Cmd+Q and the close button never reach here
+    // (Quit menu / onWindowClose own them), so this is a system terminate:
+    // Shut Down, Restart, Log Out, Dock Quit. Answer only after the leave
+    // prompt: replying cancel first aborts the system shutdown even when the
+    // user then picks Save or Discard.
     if (_quitConfirmed) return AppExitResponse.exit;
-    if (_windowCloseGateActive) {
-      final cols = ref.read(collectionsControllerProvider);
-      final viewDirty = _isActiveViewModified();
-      if (appExitCanSkipLeavePrompt(
-        collectionDirty: cols.dirty,
-        viewDirty: viewDirty,
-        exportBusy:
-            itemListExportBusy ||
-            ref.read(itemListExportJobManagerProvider).hasActive,
-      )) {
-        _quitConfirmed = true;
-        await _disarmWindowCloseGate();
-        return AppExitResponse.exit;
-      }
-      unawaited(_handleWindowClose());
-      return AppExitResponse.cancel;
+    final canSkip =
+        _windowCloseGateActive &&
+        appExitCanSkipLeavePrompt(
+          collectionDirty: ref.read(collectionsControllerProvider).dirty,
+          viewDirty: _isActiveViewModified(),
+          exportBusy:
+              itemListExportBusy ||
+              ref.read(itemListExportJobManagerProvider).hasActive,
+        );
+    final response = await resolveAppExitRequest(
+      canSkipLeavePrompt: canSkip,
+      confirmLeave: _confirmLeaveIfDirty,
+    );
+    if (canSkip && response == AppExitResponse.exit) {
+      _quitConfirmed = true;
+      await _disarmWindowCloseGate();
     }
-    final ok = await _confirmLeaveIfDirty();
-    return ok ? AppExitResponse.exit : AppExitResponse.cancel;
+    return response;
   }
 
   @override

@@ -23,6 +23,21 @@ class AppDelegate: FlutterAppDelegate {
     return true
   }
 
+  /// A system terminate (Shut Down, Restart, Log Out, Dock Quit) can find
+  /// the app hidden or minimized. The Dart side may answer with the Save /
+  /// Discard / Cancel prompt, which lives in the window, so bring it forward
+  /// first. The reply itself stays with Flutter's termination handling.
+  override func applicationShouldTerminate(
+    _ sender: NSApplication
+  ) -> NSApplication.TerminateReply {
+    NSApp.activate(ignoringOtherApps: true)
+    for window in NSApp.windows where window.isMiniaturized {
+      window.deminiaturize(nil)
+    }
+    NSApp.mainWindow?.makeKeyAndOrderFront(nil)
+    return super.applicationShouldTerminate(sender)
+  }
+
   override func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
     return true
   }
