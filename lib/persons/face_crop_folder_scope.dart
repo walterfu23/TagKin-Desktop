@@ -102,6 +102,97 @@ String leafFolderLabel(String folder) {
   return base.isEmpty ? folder : base;
 }
 
+/// Faces-page status of one leaf folder, shown next to its name in the
+/// Folder dropdown.
+class FolderFaceStatus {
+  const FolderFaceStatus({
+    required this.analysisFinished,
+    required this.unassignedLeft,
+  });
+
+  /// No item in the folder is still pending, waiting, or processing.
+  final bool analysisFinished;
+
+  /// Unassigned faces still to place in the folder.
+  final int unassignedLeft;
+
+  /// Analysis finished and no unassigned faces remain.
+  bool get isDone => analysisFinished && unassignedLeft == 0;
+
+  /// `Analyzing...` while analysis runs (the count can still grow), else
+  /// `Done` or `N left`.
+  String get label {
+    if (!analysisFinished) return 'Analyzing...';
+    if (unassignedLeft == 0) return 'Done';
+    return '$unassignedLeft left';
+  }
+
+  FolderFaceStatus withUnassignedLeft(int count) =>
+      FolderFaceStatus(analysisFinished: analysisFinished, unassignedLeft: count);
+
+  @override
+  bool operator ==(Object other) =>
+      other is FolderFaceStatus &&
+      other.analysisFinished == analysisFinished &&
+      other.unassignedLeft == unassignedLeft;
+
+  @override
+  int get hashCode => Object.hash(analysisFinished, unassignedLeft);
+}
+
+/// Whether [item] is past analysis. Failed, cancelled, and refused files
+/// are finished: they will never yield faces, so they must not block Done.
+bool itemAnalysisFinished(Item item) {
+  switch (item.processingStatus) {
+    case ProcessingStatus.pending:
+    case ProcessingStatus.awaitingModelAccess:
+    case ProcessingStatus.processing:
+      return false;
+    case ProcessingStatus.tagged:
+    case ProcessingStatus.failed:
+    case ProcessingStatus.cancelled:
+    case ProcessingStatus.refused:
+      return true;
+  }
+}
+
+/// Unassigned appearance count per item id (appearances without an item id
+/// are ignored).
+Map<String, int> unassignedCountByItemId(
+  Iterable<PersonAppearance> unassigned,
+) {
+  final counts = <String, int>{};
+  for (final a in unassigned) {
+    final id = a.itemId;
+    if (id == null) continue;
+    counts[id] = (counts[id] ?? 0) + 1;
+  }
+  return counts;
+}
+
+/// Status per leaf folder (keyed like [distinctLeafFolders] entries).
+Map<String, FolderFaceStatus> leafFolderStatuses(
+  Iterable<Item> items,
+  Map<String, int> unassignedByItemId,
+) {
+  final finished = <String, bool>{};
+  final left = <String, int>{};
+  for (final item in items) {
+    final folder = leafFolderFromItem(item);
+    if (folder == null) continue;
+    finished[folder] =
+        (finished[folder] ?? true) && itemAnalysisFinished(item);
+    left[folder] = (left[folder] ?? 0) + (unassignedByItemId[item.id] ?? 0);
+  }
+  return {
+    for (final folder in finished.keys)
+      folder: FolderFaceStatus(
+        analysisFinished: finished[folder]!,
+        unassignedLeft: left[folder] ?? 0,
+      ),
+  };
+}
+
 /// Drop folders that sit under another selected folder.
 List<String> minimalCoveringFolders(Iterable<String> folders) {
   final unique = {

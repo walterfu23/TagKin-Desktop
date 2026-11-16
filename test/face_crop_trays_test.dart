@@ -2042,6 +2042,80 @@ void main() {
     expect(find.byKey(const Key('face-crop-assigned-empty')), findsOneWidget);
   });
 
+  testWidgets('face crop trays: folder dropdown shows N left / Done / '
+      'Analyzing per folder in A-Z order', (tester) async {
+    final persons = FakePersonsRepository(persons: const []);
+    persons.unassignedAppearances.addAll([
+      fixtureAppearance(
+        id: 'ap_paris1',
+        personId: null,
+        itemId: 'item_paris',
+        tagId: 'tag_paris1',
+      ),
+      fixtureAppearance(
+        id: 'ap_paris2',
+        personId: null,
+        itemId: 'item_paris',
+        tagId: 'tag_paris2',
+      ),
+    ]);
+    final items = FakeItemsRepository(
+      items: [
+        fixtureItem(
+          id: 'item_paris',
+          sourceRef: 'file:///albums/Paris/a.jpg',
+          processingStatus: ProcessingStatus.tagged,
+          contentHash: null,
+        ),
+        fixtureItem(
+          id: 'item_rome',
+          sourceRef: 'file:///albums/Rome/b.jpg',
+          processingStatus: ProcessingStatus.tagged,
+          contentHash: null,
+        ),
+        fixtureItem(
+          id: 'item_oslo',
+          sourceRef: 'file:///albums/Oslo/c.jpg',
+          processingStatus: ProcessingStatus.processing,
+          contentHash: null,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          personsRepositoryProvider.overrideWithValue(persons),
+          itemsRepositoryProvider.overrideWithValue(items),
+        ],
+        child: const MaterialApp(
+          home: FaceCropTraysPage(initialLeafFolder: '/albums/Paris'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('face-crop-folder-select')));
+    await tester.pumpAndSettle();
+
+    String statusOf(String folder) => tester
+        .widget<Text>(
+          find.byKey(Key('face-crop-folder-status-/albums/$folder')).last,
+        )
+        .data!;
+
+    expect(statusOf('Oslo'), 'Analyzing...');
+    expect(statusOf('Paris'), '2 left');
+    expect(statusOf('Rome'), 'Done');
+
+    // A-Z by folder name.
+    final oslo = tester.getTopLeft(find.text('Oslo').last).dy;
+    final paris = tester.getTopLeft(find.text('Paris').last).dy;
+    final rome = tester.getTopLeft(find.text('Rome').last).dy;
+    expect(oslo, lessThan(paris));
+    expect(paris, lessThan(rome));
+  });
+
   testWidgets('face crop trays: folder picker scopes unassigned crops', (
     tester,
   ) async {

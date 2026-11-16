@@ -150,6 +150,10 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
   List<String> _recentPersonIds = const [];
   List<PersonAppearance> _assignedOverview = const [];
   List<PersonAppearance> _unassigned = const [];
+
+  /// Account-wide unassigned face count per item id, from the last tray
+  /// load; feeds the per-folder status in the Folder dropdown.
+  Map<String, int> _unassignedByItemId = const {};
   List<WhoExclusion> _excluded = const [];
 
   /// Unconfirmed auto-assigned face count per person in the current folder
@@ -852,9 +856,15 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
           scopedIds.length != prevScoped.length ||
           !scopedIds.containsAll(prevScoped);
 
+      final statusChanged = !_statusMapEquals(
+        leafFolderStatuses(items, _unassignedByItemId),
+        leafFolderStatuses(_itemsById.values, _unassignedByItemId),
+      );
+
       if (!foldersChanged &&
           !folderChanged &&
           !scopeChanged &&
+          !statusChanged &&
           _listEquals(allFolders, _allLeafFolders)) {
         return;
       }
@@ -898,6 +908,60 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         _traySyncError = 'Could not refresh Faces. Try Refresh.';
       });
     }
+  }
+
+  static bool _statusMapEquals(
+    Map<String, FolderFaceStatus> a,
+    Map<String, FolderFaceStatus> b,
+  ) {
+    if (a.length != b.length) return false;
+    for (final e in a.entries) {
+      if (b[e.key] != e.value) return false;
+    }
+    return true;
+  }
+
+  /// Dropdown status per folder. The open folder uses the live tray count so
+  /// assigning faces updates it without a reload.
+  Map<String, FolderFaceStatus> get _folderStatuses {
+    final map = leafFolderStatuses(_itemsById.values, _unassignedByItemId);
+    final current = _leafFolder;
+    if (current != null) {
+      final key = normalizeLeafFolder(current);
+      final existing = map[key];
+      if (existing != null) {
+        map[key] = existing.withUnassignedLeft(_unassignedTrayFaceCount);
+      }
+    }
+    return map;
+  }
+
+  /// Folder dropdown entries, A-Z as in [_leafFolders], each with its status
+  /// (`N left`, `Done`, or `Analyzing...`).
+  List<DropdownMenuItem<String>> _folderMenuItems(BuildContext context) {
+    final statuses = _folderStatuses;
+    return [
+      for (final folder in _leafFolders)
+        DropdownMenuItem(
+          value: folder,
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  leafFolderLabel(folder),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                statuses[normalizeLeafFolder(folder)]?.label ?? '',
+                key: Key('face-crop-folder-status-$folder'),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+    ];
   }
 
   static bool _listEquals(List<String> a, List<String> b) {
@@ -1050,6 +1114,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         _assignedOverview = assignedOverview;
         _unconfirmedCountByPerson = unconfirmedCountByPerson;
         _unassigned = unassigned;
+        _unassignedByItemId = unassignedCountByItemId(unassignedAll);
         _excluded = excluded;
         _itemsById = {for (final it in items) it.id: it};
         _traySyncError = null;
@@ -2784,6 +2849,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
         _assignedOverview = assignedOverview;
         _unconfirmedCountByPerson = unconfirmedCountByPerson;
         _unassigned = unassigned;
+        _unassignedByItemId = unassignedCountByItemId(unassignedAll);
         _excluded = excluded;
         _traySyncError = null;
       });
@@ -3892,7 +3958,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: Center(
                           child: SizedBox(
-                            width: 220,
+                            width: 300,
                             child: DropdownButtonFormField<String>(
                               key: const Key('face-crop-folder-select'),
                               // ignore: deprecated_member_use
@@ -3911,16 +3977,7 @@ class _FaceCropTraysPageState extends ConsumerState<FaceCropTraysPage> {
                                   vertical: 8,
                                 ),
                               ),
-                              items: [
-                                for (final folder in _leafFolders)
-                                  DropdownMenuItem(
-                                    value: folder,
-                                    child: Text(
-                                      leafFolderLabel(folder),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                              ],
+                              items: _folderMenuItems(context),
                               onChanged: _busy ? null : _selectLeafFolder,
                             ),
                           ),
