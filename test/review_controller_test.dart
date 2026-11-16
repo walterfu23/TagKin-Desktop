@@ -349,6 +349,85 @@ void main() {
     controller.dispose();
   });
 
+  group('comment undo/redo chains survive re-created comment ids', () {
+    Future<(ReviewController, UndoController)> open() async {
+      final item = fixtureItem(id: 'item_1');
+      final items = FakeItemsRepository(
+        items: [item],
+        knowledgeByItemId: {
+          'item_1': fixtureKnowledge(item: item, tags: const []),
+        },
+      );
+      final stack = UndoController();
+      final controller = ReviewController(
+        itemId: 'item_1',
+        itemsRepository: items,
+        correctionsRepository: FakeCorrectionsRepository(items: items),
+        commentsRepository: FakeCommentsRepository(authorUserId: 'acc_server'),
+        resolveMedia: (_) async =>
+            const LocalMediaResolution(status: LocalMediaStatus.missing),
+        undoStack: stack,
+      );
+      await controller.load();
+      return (controller, stack);
+    }
+
+    test('add, delete, undo delete, undo add removes the comment', () async {
+      final (controller, stack) = await open();
+      await controller.saveItemComment('first');
+      await controller.saveItemComment('');
+      expect(controller.itemComments, isEmpty);
+
+      await stack.undo(); // restores 'first' under a new id
+      expect(controller.itemComments.single.body, 'first');
+      await stack.undo(); // undo the add
+      expect(controller.itemComments, isEmpty);
+
+      await stack.redo(); // add again
+      expect(controller.itemComments.single.body, 'first');
+      await stack.redo(); // delete again
+      expect(controller.itemComments, isEmpty);
+      controller.dispose();
+      stack.dispose();
+    });
+
+    test('add, edit, undo both, redo both ends on the edited body', () async {
+      final (controller, stack) = await open();
+      await controller.saveItemComment('first');
+      await controller.saveItemComment('second');
+      expect(controller.itemComments.single.body, 'second');
+
+      await stack.undo();
+      expect(controller.itemComments.single.body, 'first');
+      await stack.undo();
+      expect(controller.itemComments, isEmpty);
+
+      await stack.redo();
+      expect(controller.itemComments.single.body, 'first');
+      await stack.redo();
+      expect(controller.itemComments.single.body, 'second');
+
+      await stack.undo();
+      await stack.undo();
+      expect(controller.itemComments, isEmpty);
+      controller.dispose();
+      stack.dispose();
+    });
+
+    test('key-period comment redo stays on its key period', () async {
+      final (controller, stack) = await open();
+      await controller.addKeyPeriodComment('kp_1', 'hello');
+      await stack.undo();
+      expect(controller.commentsForKeyPeriod('kp_1'), isEmpty);
+
+      await stack.redo();
+      expect(controller.commentsForKeyPeriod('kp_1').single.body, 'hello');
+      expect(controller.itemComments, isEmpty);
+      controller.dispose();
+      stack.dispose();
+    });
+  });
+
   test('mutation failure rolls back optimistic tag (R6)', () async {
     final item = fixtureItem(id: 'item_1');
     final knowledge = fixtureKnowledge(

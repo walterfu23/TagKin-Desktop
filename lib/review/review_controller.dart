@@ -444,14 +444,58 @@ class ReviewController extends ChangeNotifier {
     );
   }
 
-  void _recordCommentAdd(String commentId, String body) {
+  /// Soft-delete has no restore route, so redo-of-add and undo-of-delete
+  /// create a new comment. Older stack entries still hold the original id;
+  /// this maps it to the live one.
+  final Map<String, String> _commentIdAlias = {};
+
+  String _liveCommentId(String id) {
+    var current = id;
+    while (_commentIdAlias.containsKey(current)) {
+      current = _commentIdAlias[current]!;
+    }
+    return current;
+  }
+
+  /// Adds [body] again and points [oldId] at the new comment.
+  Future<void> _readdComment(
+    String oldId,
+    String? keyPeriodId,
+    String body,
+  ) async {
+    final before = {for (final c in comments) c.id};
+    if (keyPeriodId != null && keyPeriodId.isNotEmpty) {
+      await addKeyPeriodComment(keyPeriodId, body);
+    } else {
+      await addItemComment(body);
+    }
+    Comment? created;
+    for (final c in comments) {
+      if (c.deletedAt != null || before.contains(c.id)) continue;
+      if (c.body != body.trim()) continue;
+      if ((c.keyPeriodId ?? '') != (keyPeriodId ?? '')) continue;
+      created = c;
+    }
+    if (created == null) throw StateError('Comment is gone');
+    _commentIdAlias[oldId] = created.id;
+  }
+
+  void _recordCommentAdd(
+    String commentId,
+    String body, {
+    String? keyPeriodId,
+  }) {
     final stack = undoStack;
     if (stack == null || !_recordUndo) return;
     stack.push(
       CallbackUndoableAction(
         label: 'Add comment',
-        onUndo: () => _withoutRecording(() => deleteComment(commentId)),
-        onRedo: () => _withoutRecording(() => addItemComment(body)),
+        onUndo: () => _withoutRecording(
+          () => deleteComment(_liveCommentId(commentId)),
+        ),
+        onRedo: () => _withoutRecording(
+          () => _readdComment(commentId, keyPeriodId, body),
+        ),
       ),
     );
   }
@@ -462,8 +506,12 @@ class ReviewController extends ChangeNotifier {
     stack.push(
       CallbackUndoableAction(
         label: 'Edit comment',
-        onUndo: () => _withoutRecording(() => editComment(commentId, prior)),
-        onRedo: () => _withoutRecording(() => editComment(commentId, next)),
+        onUndo: () => _withoutRecording(
+          () => editComment(_liveCommentId(commentId), prior),
+        ),
+        onRedo: () => _withoutRecording(
+          () => editComment(_liveCommentId(commentId), next),
+        ),
       ),
     );
   }
@@ -558,7 +606,7 @@ class ReviewController extends ChangeNotifier {
       ];
       phase = ReviewPhase.ready;
       notifyListeners();
-      _recordCommentAdd(created.id, trimmed);
+      _recordCommentAdd(created.id, trimmed, keyPeriodId: keyPeriodId);
       await _finishCommit();
     } catch (e) {
       if (_disposed) return;
@@ -654,28 +702,15 @@ class ReviewController extends ChangeNotifier {
   void _recordCommentDelete(Comment prior) {
     final stack = undoStack;
     if (stack == null || !_recordUndo) return;
-    var restoredId = prior.id;
     stack.push(
       CallbackUndoableAction(
         label: 'Delete comment',
-        onUndo: () => _withoutRecording(() async {
-          final keyPeriodId = prior.keyPeriodId;
-          if (keyPeriodId != null && keyPeriodId.isNotEmpty) {
-            await addKeyPeriodComment(keyPeriodId, prior.body);
-          } else {
-            await addItemComment(prior.body);
-          }
-          Comment? match;
-          for (final c in comments) {
-            if (c.deletedAt != null) continue;
-            if (c.body != prior.body) continue;
-            if (c.keyPeriodId != prior.keyPeriodId) continue;
-            match = c;
-          }
-          if (match == null) throw StateError('Comment is gone');
-          restoredId = match.id;
-        }),
-        onRedo: () => _withoutRecording(() => deleteComment(restoredId)),
+        onUndo: () => _withoutRecording(
+          () => _readdComment(prior.id, prior.keyPeriodId, prior.body),
+        ),
+        onRedo: () => _withoutRecording(
+          () => deleteComment(_liveCommentId(prior.id)),
+        ),
       ),
     );
   }

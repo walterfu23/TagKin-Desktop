@@ -20,42 +20,57 @@ might want to consider path hiearchy.
 16. [done] direct edit any entry in the table
 18. [done] where: restaurant. should also show city, state.
 20. [done] add tagging of videos (image-only sample frames per key period; no native video model).
-
-19. [not yet implemented] include user first name, last name from clerk
-21. [not yet implemented] after removing an item, everything collapses
-22. [not yet implemented] faces from the same folder, they are more likely to be assigned to persons from the same folder as well.
 23. [done] use google as an auth provider (Clerk widget, and Firebase "Continue with Google" on macOS + Windows via loopback). 
-23B.[not yet implemented] other providers beyond Google (see 45)
-24. [not yet implemented] On the faces page, In the folder dropdown, it might be a good idea to separate out folders that have been fully processed from other folders. perhaps more than a simple dropdown?
-
-25. [not yet implemented] Google consent page shows Clerk wants access to the google account. look at it later. somehow it has to do with google cloud console to create/configure oath client + consent screen with app name.
-
-26. [not yet implemented] add more into settings.
-27. Need to consider where persons, faces live. Right now they are under an account, stored in Postgress on the server.
-28. [not yet implemented] If desktop is running, it prevents the shutdown on match
-
-From Specs.md (remaining spec gaps):
-
-29. [not yet implemented] user-cloud ingest and reconnect a cloud source (Specs §5 / §6.2B / §6.7 / §8 Sources)
-30. [not yet implemented] browse / filter / search by person, activity, place, date, key period, comment text, source, state (Specs §6.3 / §8 Discovery / §11.3 / §12 Knowledge) — desktop has client-side text filter only
-31. [not yet implemented] comment search (CRUD exists) (Specs §5 / §8 / §12 Comments)
-32. [not yet implemented] item `title` field (Specs §5 Item fields)
-33. [not yet implemented] persist duration and dimensions (Specs §5 Item fields)
-34. [not yet implemented] account deletion (item/person/comment/correction delete exist) (Specs §5 / §8 / §12 Lifecycle)
-35. [not yet implemented] explicit retention controls (Specs §5 / §8 Lifecycle)
-36. [not yet implemented] `paused_for_budget` job state — soft budget warn → pause (enum exists; jobs never pause) (Specs §5 / §7 Cost / §8 Cost / §12 Cost)
-37. [not yet implemented] usage spent / reserved / limit meters (Specs §7 Cost / §8 Cost)
-38. [not yet implemented] voiceprint on PersonAppearance (Specs §5 Contract sketch)
-39. [not yet implemented] 2FA as a TagKin-enforced path (Clerk instance config only) (Specs §5 / §6.1 Auth)
-40. [not yet implemented] OpenAI GPT-4o mini, Mistral Small, Claude / GPT-4o-class escalate (Gemini + stub only) (Specs §7 Candidate models)
-41. [not yet implemented] combination-of-models routing — cheapest fit per task (beyond Gemini + stub) (Specs §7 Cost)
-42. [not yet implemented] distinguish GPS-derived vs inferred where in the UI (Specs §5 Where) — see also 13–14, 18
 43. [done] video sample-frame analyze onto key periods; person embed from within each period (Specs §5 / §6.2A / §7 / §8 / §11.2) — see also 20
-44. [not yet implemented] family sharing / multi-account (Specs §4 Non-goals: later)
-45. [not yet implemented] additional auth IdPs beyond username/password and Google (Specs §13 settled TBD)
-46. [not yet implemented] thumbnail hosting without storing media (Specs §13 open)
-47. [not yet implemented] operator-hosted GPU pool (deferred; R1 tension) (Specs §13)
-48. should allow undo/redo everywhere, including item details page. folder ingestion dose not allow undo/redo
 49. [Done] in the item detail page, should have a way for an excluded face to be assigned to a person.
-50. allow the music to stay for the future regeration of the same mp4 file?
-51. add cost to the sms usage 
+
+--- Unfinished items, renumbered 101+ in the order to address them (was N = old number). Items sharing a number are worked on together. ---
+
+101. [done - regression tests only, collapse not reproduced; needs exact steps if it still happens] (was 21) after removing a folder, no other folder should collapse (Remove folder is the only removal)
+101. [done] (was 48) undo/redo in Folders Edit mode and item detail (fixed comment undo/redo chains). Remove folder and Add from folder are intentionally not undoable.
+
+102. [not yet implemented] (was 19) include user first name, last name from clerk
+
+103. [not yet implemented] (was 24) On the faces page, In the folder dropdown, it might be a good idea to separate out folders that have been fully processed from other folders. perhaps more than a simple dropdown?
+
+104. [not yet implemented] (was 26) add more into settings.
+
+105. [not yet implemented] (was 28) If desktop is running, it prevents the shutdown on match
+
+106. [not yet implemented] (was 33) persist duration and dimensions (Specs §5 Item fields)
+106. [not yet implemented] (was 32) item `title` field (Specs §5 Item fields)
+
+107. [not yet implemented] (was 42) distinguish GPS-derived vs inferred where in the UI (Specs §5 Where) — see also 13–14, 18
+
+108. [not yet implemented] (was 22) faces from the same folder, they are more likely to be assigned to persons from the same folder as well.
+
+109. [not yet implemented] (was 30) browse / filter / search by person, activity, place, date, key period, comment text, source, state (Specs §6.3 / §8 Discovery / §11.3 / §12 Knowledge) — desktop has client-side text filter only
+109. [not yet implemented] (was 31) comment search (CRUD exists) (Specs §5 / §8 / §12 Comments)
+
+110. [not yet implemented] (was 37) usage spent / reserved / limit meters (Specs §7 Cost / §8 Cost)
+110. [not yet implemented] (was 36) `paused_for_budget` job state — soft budget warn → pause (enum exists; jobs never pause) (Specs §5 / §7 Cost / §8 Cost / §12 Cost)
+
+111. (was 51) add cost to the sms usage
+
+112. [not yet implemented] (was 34) account deletion (item/person/comment/correction delete exist) (Specs §5 / §8 / §12 Lifecycle)
+112. [not yet implemented] (was 35) explicit retention controls (Specs §5 / §8 Lifecycle)
+
+113. [not yet implemented] (was 40) OpenAI GPT-4o mini, Mistral Small, Claude / GPT-4o-class escalate (Gemini + stub only) (Specs §7 Candidate models)
+113. [not yet implemented] (was 41) combination-of-models routing — cheapest fit per task (beyond Gemini + stub) (Specs §7 Cost)
+
+114. [not yet implemented] (was 25) Google consent page shows Clerk wants access to the google account. look at it later. somehow it has to do with google cloud console to create/configure oath client + consent screen with app name.
+114. [not yet implemented] (was 39) 2FA as a TagKin-enforced path (Clerk instance config only) (Specs §5 / §6.1 Auth)
+114. [not yet implemented] (was 23B) other providers beyond Google (same group as 45)
+114. [not yet implemented] (was 45) additional auth IdPs beyond username/password and Google (Specs §13 settled TBD)
+
+115. (was 27) Need to consider where persons, faces live. Right now they are under an account, stored in Postgress on the server.
+115. [not yet implemented] (was 38) voiceprint on PersonAppearance (Specs §5 Contract sketch)
+
+116. [not yet implemented] (was 29) user-cloud ingest and reconnect a cloud source (Specs §5 / §6.2B / §6.7 / §8 Sources)
+116. [not yet implemented] (was 46) thumbnail hosting without storing media (Specs §13 open)
+
+117. [not yet implemented] (was 44) family sharing / multi-account (Specs §4 Non-goals: later)
+
+118. [not yet implemented] (was 47) operator-hosted GPU pool (deferred; R1 tension) (Specs §13)
+
+119. (was 50) allow the music to stay for the future regeration of the same mp4 file?

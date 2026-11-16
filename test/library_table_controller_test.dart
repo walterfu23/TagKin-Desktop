@@ -1006,6 +1006,136 @@ void main() {
     );
   });
 
+  group('Remove folder keeps other folders open or closed', () {
+    Item taggedIn(String dir, int n) => fixtureItem(
+      id: '${dir.replaceAll('/', '_')}_$n',
+      sourceRef: 'file://$dir/$n.jpg',
+      processingStatus: ProcessingStatus.tagged,
+    );
+
+    Map<String, bool> headerStates(LibraryTableController c) => {
+      for (final h in c.visibleEntries.whereType<LibraryPathGroupHeader>())
+        h.dir: h.collapsed,
+    };
+
+    // Loads [dirs] (two photos each), applies [setup], then removes
+    // [removed] the way Remove folder does: soft-delete its items, shrink the
+    // collection membership, reload. Returns header states before and after.
+    Future<({Map<String, bool> before, Map<String, bool> after})> run({
+      required List<String> dirs,
+      required String removed,
+      required void Function(LibraryTableController c) setup,
+    }) async {
+      final items = FakeItemsRepository(
+        items: [
+          for (final d in dirs) ...[taggedIn(d, 1), taggedIn(d, 2)],
+        ],
+      );
+      final controller = LibraryTableController(
+        itemsRepository: items,
+        commentsRepository: FakeCommentsRepository(),
+        thumbCache: LocalThumbCache(),
+        knowledgeConcurrency: 2,
+      );
+      await controller.load();
+      controller.setCollectionLeafFolders(dirs.toSet());
+      setup(controller);
+      final before = headerStates(controller);
+
+      items.removeItem(taggedIn(removed, 1).id);
+      items.removeItem(taggedIn(removed, 2).id);
+      controller.setCollectionLeafFolders(
+        dirs.where((d) => d != removed).toSet(),
+      );
+      await controller.load();
+      return (before: before, after: headerStates(controller));
+    }
+
+    void expectUnchanged(
+      Map<String, bool> before,
+      Map<String, bool> after,
+      String removed,
+    ) {
+      for (final entry in after.entries) {
+        if (before.containsKey(entry.key)) {
+          expect(
+            entry.value,
+            before[entry.key],
+            reason: '${entry.key} changed after removing $removed',
+          );
+        }
+      }
+    }
+
+    test('three siblings: one open, one closed, remove another', () async {
+      const p = '/users/w/photos';
+      final r = await run(
+        dirs: ['$p/2019', '$p/2020', '$p/2021'],
+        removed: '$p/2021',
+        setup: (c) => c.toggleCollapseSourceDir('$p/2020'),
+      );
+      expect(r.before['$p/2020'], isFalse);
+      expect(r.before['$p/2019'], isTrue);
+      expectUnchanged(r.before, r.after, '$p/2021');
+    });
+
+    test('two siblings: remove one, the other keeps its state', () async {
+      const p = '/users/w/photos';
+      final open = await run(
+        dirs: ['$p/2020', '$p/2021'],
+        removed: '$p/2021',
+        setup: (c) => c.toggleCollapseSourceDir('$p/2020'),
+      );
+      expect(open.after['$p/2020'], isFalse, reason: '2020 stays open');
+
+      final closed = await run(
+        dirs: ['$p/2020', '$p/2021'],
+        removed: '$p/2021',
+        setup: (_) {},
+      );
+      expect(closed.after['$p/2020'], isTrue, reason: '2020 stays closed');
+    });
+
+    test('nested folders: remove a folder under another branch', () async {
+      const r = '/users/w/root';
+      final res = await run(
+        dirs: ['$r/a/x', '$r/a/y', '$r/b'],
+        removed: '$r/b',
+        setup: (c) {
+          c.toggleCollapseSourceDir('$r/a/x');
+        },
+      );
+      expect(res.before['$r/a/x'], isFalse);
+      expectUnchanged(res.before, res.after, '$r/b');
+    });
+
+    test('nested folders: remove a leaf inside an open branch', () async {
+      const r = '/users/w/root';
+      final res = await run(
+        dirs: ['$r/a/x', '$r/a/y', '$r/b'],
+        removed: '$r/a/y',
+        setup: (c) {
+          c.toggleCollapseSourceDir('$r/a/x');
+          c.toggleCollapseSourceDir('$r/b');
+        },
+      );
+      expectUnchanged(res.before, res.after, '$r/a/y');
+      expect(res.after['$r/b'], isFalse);
+      expect(res.after['$r/a/x'], isFalse);
+    });
+
+    test('user-collapsed parent stays collapsed', () async {
+      const p = '/users/w/photos';
+      final res = await run(
+        dirs: ['$p/2019', '$p/2020', '$p/2021'],
+        removed: '$p/2021',
+        setup: (c) => c.toggleCollapseSourceDir(p),
+      );
+      expect(res.before[p], isTrue);
+      expectUnchanged(res.before, res.after, '$p/2021');
+    });
+  });
+
   test(
     'expanded source folder stays open after reload removes an item',
     () async {
