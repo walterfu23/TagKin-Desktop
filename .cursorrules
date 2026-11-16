@@ -22,6 +22,7 @@
   amending existing sections and changelog rows.
 - Desktop-only setup details may stay in this README.
 - If code and Docs disagree, fix whichever is wrong; do not leave them out of sync.
+- Every behavior change also updates regression tests, and a change in either repo (`tagkin` or `tagkin-desktop`) may need spec and test changes in both — see `.cursor/rules/regression-and-specs-with-every-change.mdc`.
 
 # Hard rules (summary — full text in tagkin/Docs/Rules.md)
 - **R1 / R5 / R7** — TagKin servers never hold media bytes. Desktop may read local

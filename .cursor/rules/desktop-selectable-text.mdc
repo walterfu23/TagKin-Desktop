@@ -1,0 +1,14 @@
+---
+description: TagKin-Desktop — all on-screen text must be selectable/copyable
+globs: lib/**/*.dart
+alwaysApply: false
+---
+
+# Desktop selectable text
+
+Any string shown in the **tagkin-desktop** window must be selectable so the user can copy it (errors, account ids/emails, status, labels, config messages).
+
+- Default: wrap each **route root** in [`SelectableScope`](../../lib/widgets/selectable_scope.dart) (`SelectionArea`). Home is wrapped in `TagKinDesktopApp`; every `Navigator.push` / `MaterialPageRoute` child must wrap too.
+- Do **not** put `SelectionArea` in `MaterialApp.builder` — that sits above `Overlay` and crashes (`No Overlay widget found`).
+- Prefer plain `Text` under `SelectableScope`; use `SelectableText` only outside that tree.
+- Do not strip selection from body, error, or content surfaces. Ephemeral snackbar chrome may stay non-selectable.

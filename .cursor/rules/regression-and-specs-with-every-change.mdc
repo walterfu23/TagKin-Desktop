@@ -1,0 +1,41 @@
+---
+description: Every behavior change ships with regression tests, Specs, and subsystem docs, verified by the subsystem bar
+alwaysApply: true
+---
+
+# Regression tests and docs with every change
+
+Any code, contract, or config change that alters behavior updates **regression tests and docs in the same change**. This includes bug fixes and undo/redo fixes, not only new features. Complements [`keep-specs-in-sync.mdc`](./keep-specs-in-sync.mdc).
+
+## Tests
+- **Bug fix:** write a failing regression test that reproduces it first, then make it pass.
+- **Feature or behavior change:** add or update tests in the same change.
+- **Cannot reproduce:** keep the tests as regression coverage, say so, and do not add a speculative fix.
+- Test-only or script-only changes still update the regression bullet for the surface they cover.
+
+## Docs (all of these, same change)
+- [`TagKin/Docs/Specs.md`](../../../TagKin/Docs/Specs.md): amend the affected **body** section and add a dated changelog row. A changelog-only edit is not enough.
+- The owning row in [`Desktop_Subsystems_v1.md`](../../../TagKin/Docs/Desktop_Subsystems_v1.md) / [`Subsystems_v1.md`](../../../TagKin/Docs/Subsystems_v1.md): add or update the **Regression set** bullet, and add a dated changelog row that names the bar.
+- Admin surfaces: see [`admin-tool-guide.mdc`](../../../TagKin/.cursor/rules/admin-tool-guide.mdc).
+
+## Verify before saying done
+- Run the subsystem bar named in the changelog row (`NNN_test_dN.sh` in `TagKin-Desktop/mac/`, `NNN_test_sN.sh` in `TagKin/mac/`), or `flutter analyze` + `flutter test` (or `pnpm` typecheck, lint, test) when the bar's integration step is not practical.
+- Never cite a bar in a changelog row unless it was run. If only part ran (for example no integration step), say which part.
+
+## Cross-repo: a change in either repo can need spec and test changes in both
+TagKin (API, web, contract, `Docs/`) and TagKin-Desktop (Flutter client) are separate repos, but one behavior. Before saying done, check the other side:
+- **Contract / OpenAPI change:** regenerate both sides (`TagKin-Desktop/mac/102_codegen.sh`) and update the API bars (`NNN_test_sN.sh`) and the desktop bars (`NNN_test_dN.sh`) that cover the surface.
+- **API behavior a desktop surface depends on:** update the owning S row in `Subsystems_v1.md` and the matching D row in `Desktop_Subsystems_v1.md`.
+- **Desktop-only display or behavior change:** `Specs.md` and the D row still change, even if no API test does.
+- Docs live only in `TagKin/Docs/`. Never copy them into `TagKin-Desktop`.
+- Each repo is committed separately. A cross-repo change needs a commit in both.
+
+## Final summary must state
+- For **each repo touched or checked**: tests added or updated (file and names), docs updated (file and section, body and changelog), and which bars ran.
+- What was actually run, and what was not.
+- Which repos still need a commit.
+
+This rule has a twin at `TagKin/.cursor/rules/regression-and-specs-with-every-change.mdc`. Keep the two identical except for link prefixes.
+
+## Skip only for
+Pure formatting, comments, or renames with no behavior change.

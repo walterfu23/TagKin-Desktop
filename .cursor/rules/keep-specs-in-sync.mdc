@@ -1,0 +1,17 @@
+---
+description: Product-visible behavior changes must update Specs.md
+alwaysApply: true
+---
+
+# Keep Specs in sync
+
+When you **plan or implement** a product-visible change, update [`TagKin/Docs/Specs.md`](../../../TagKin/Docs/Specs.md) in the same change (or include it in the plan), plus a dated changelog row.
+
+Product-visible includes library columns, labels, who/what/where display, Faces, Settings, analyze, ingest, and review — not only API/contract edits.
+
+- Update [`Desktop_Subsystems_v1.md`](../../../TagKin/Docs/Desktop_Subsystems_v1.md) / [`Subsystems_v1.md`](../../../TagKin/Docs/Subsystems_v1.md) when a D/S row owns the surface (regression bullet and/or changelog).
+- **Display-only / desktop-only is not a skip.** Stored OpenAPI can stay the same; Specs still describe what the user sees.
+- **Admin tool GUI:** in the same change, update [`TagKin/Docs/AdminTool_Guide.md`](../../../TagKin/Docs/AdminTool_Guide.md) (what the window shows). **`tagkin-admin` commands:** update [`TagKin/Docs/AdminCli_Guide.md`](../../../TagKin/Docs/AdminCli_Guide.md) (flags, mutate vs read) plus `commands.json` / Dart catalog if the CLI table changed. See [`admin-tool-guide.mdc`](../../../TagKin/.cursor/rules/admin-tool-guide.mdc).
+- Skip only for pure formatting, comments, or refactors with no behavior change — not a skip for bug fixes, or when adding, renaming, or changing an operator command or GUI screen. Regression tests, body text, regression bullets, and the bar run are required too: see [`regression-and-specs-with-every-change.mdc`](./regression-and-specs-with-every-change.mdc).
+
+This rule has a twin at `TagKin/.cursor/rules/keep-specs-in-sync.mdc`. Keep the two identical except for link prefixes.
