@@ -55,6 +55,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   late int _autoConfirmMinConfidencePercent;
   late int _jobsPollIntervalSeconds;
   late DateTimeDisplayFormat _dateTimeFormat;
+  // Edited on the Export Views page; carried through so Save keeps them.
   late double _exportPhotoStillDurationSeconds;
   late ExportPhotoTransition _exportPhotoTransition;
   late double _exportPhotoTransitionSeconds;
@@ -1078,26 +1079,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     _settingsGroup(
                       title: 'Item list export',
                       subtitle:
-                          'Export photo duration, sequence size, photo '
-                          'transitions, and soundtrack under video apply to '
-                          'FCP7 XML / FCPXML / MP4 as documented on each control. '
-                          'JSON export is unaffected.',
+                          'Music prompt, soundtrack under video, and music loop '
+                          'count apply to MP4 export. Photo duration, '
+                          'transition, and sequence size are on the Export '
+                          'Views page.',
                       children: [
-                        _doubleSlider(
-                          key: const Key('pref-export-photo-still-duration'),
-                          label: 'Export photo duration',
-                          helper:
-                              'How long each photo still lasts on an FCP7 XML, '
-                              'FCPXML, or MP4 timeline. Default 2.5 s (0.5–10, '
-                              'step 0.5). JSON export is unaffected.',
-                          value: _exportPhotoStillDurationSeconds,
-                          min: DesktopPrefs.exportPhotoStillDurationSecondsMin,
-                          max: DesktopPrefs.exportPhotoStillDurationSecondsMax,
-                          step:
-                              DesktopPrefs.exportPhotoStillDurationSecondsStep,
-                          onChanged: (v) =>
-                              _exportPhotoStillDurationSeconds = v,
-                        ),
                         Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 16,
@@ -1151,95 +1137,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           max: DesktopPrefs.exportMusicLoopCountMax,
                           step: DesktopPrefs.exportMusicLoopCountStep,
                           onChanged: (v) => _exportMusicLoopCount = v,
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          child: InputDecorator(
-                            decoration: const InputDecoration(
-                              labelText: 'Export sequence size',
-                              helperText:
-                                  'FCP7 XML / FCPXML / MP4 sequence. Match smallest '
-                                  '(default) uses the smallest width and height '
-                                  'among the files. 1080p, 4K, and Match smallest '
-                                  'scale clips to fit. Match largest uses native '
-                                  'pixels with no scale. JSON export is unaffected.',
-                              border: OutlineInputBorder(),
-                            ),
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<ExportSequenceSize>(
-                                key: const Key('pref-export-sequence-size'),
-                                value: _exportSequenceSize,
-                                isExpanded: true,
-                                items: [
-                                  for (final f in ExportSequenceSize.values)
-                                    DropdownMenuItem(
-                                      value: f,
-                                      child: Text(f.settingsLabel),
-                                    ),
-                                ],
-                                onChanged: (v) {
-                                  if (v == null) return;
-                                  _mutateDraft(() => _exportSequenceSize = v);
-                                },
-                              ),
-                            ),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          child: InputDecorator(
-                            decoration: const InputDecoration(
-                              labelText: 'Export photo transition',
-                              helperText:
-                                  'Between adjacent photos on FCP7 XML / FCPXML / '
-                                  'MP4. Hard cut into and out of video key periods. '
-                                  'JSON export is unaffected.',
-                              border: OutlineInputBorder(),
-                            ),
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<ExportPhotoTransition>(
-                                key: const Key('pref-export-photo-transition'),
-                                value: _exportPhotoTransition,
-                                isExpanded: true,
-                                items: [
-                                  for (final f in ExportPhotoTransition.values)
-                                    DropdownMenuItem(
-                                      value: f,
-                                      child: Text(f.settingsLabel),
-                                    ),
-                                ],
-                                onChanged: (v) {
-                                  if (v == null) return;
-                                  _mutateDraft(
-                                    () => _exportPhotoTransition = v,
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                        ),
-                        _doubleSlider(
-                          key: const Key(
-                            'pref-export-photo-transition-duration',
-                          ),
-                          label: 'Export transition duration',
-                          helper:
-                              'How long the photo-to-photo transition lasts. '
-                              'Default 1 s (0.1–2, step 0.1).',
-                          value: _exportPhotoTransitionSeconds,
-                          min: DesktopPrefs.exportPhotoTransitionSecondsMin,
-                          max: DesktopPrefs.exportPhotoTransitionSecondsMax,
-                          step: DesktopPrefs.exportPhotoTransitionSecondsStep,
-                          enabled:
-                              _exportPhotoTransition !=
-                              ExportPhotoTransition.none,
-                          onChanged: (v) => _exportPhotoTransitionSeconds = v,
                         ),
                       ],
                     ),

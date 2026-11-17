@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tagkin_desktop/app_shell.dart';
+import 'package:tagkin_desktop/item_lists/item_list_nle.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_store.dart';
@@ -187,6 +188,57 @@ void main() {
 
     expect(prefsController.prefs.dateTimeFormat, DateTimeDisplayFormat.iso24);
   });
+
+  testWidgets(
+    'Settings has no export timeline controls and Save keeps their values',
+    (tester) async {
+      final store = MemoryDesktopPrefsStore();
+      final prefsController = DesktopPrefsController(store: store);
+      await prefsController.load();
+      await prefsController.update(
+        prefsController.prefs.copyWith(
+          exportPhotoStillDurationSeconds: 6.0,
+          exportPhotoTransition: ExportPhotoTransition.dipToBlack,
+          exportPhotoTransitionSeconds: 0.5,
+          exportSequenceSize: ExportSequenceSize.p4k,
+        ),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(overrides: _overrides(prefsController), child: _host()),
+      );
+      await _openSettings(tester);
+
+      final loopCount = find.byKey(const Key('pref-export-music-loop-count'));
+      await tester.dragUntilVisible(
+        loopCount,
+        find.byType(ListView),
+        const Offset(0, -120),
+      );
+      await tester.pumpAndSettle();
+      expect(loopCount, findsOneWidget);
+      for (final key in const [
+        'pref-export-photo-still-duration',
+        'pref-export-photo-transition',
+        'pref-export-photo-transition-duration',
+        'pref-export-sequence-size',
+      ]) {
+        expect(find.byKey(Key(key)), findsNothing, reason: key);
+      }
+
+      tester.widget<Slider>(loopCount).onChanged!(3);
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('settings-save')));
+      await tester.pumpAndSettle();
+
+      final saved = prefsController.prefs;
+      expect(saved.exportMusicLoopCount, 3);
+      expect(saved.exportPhotoStillDurationSeconds, 6.0);
+      expect(saved.exportPhotoTransition, ExportPhotoTransition.dipToBlack);
+      expect(saved.exportPhotoTransitionSeconds, 0.5);
+      expect(saved.exportSequenceSize, ExportSequenceSize.p4k);
+    },
+  );
 
   testWidgets('Settings Credits group shows remaining from /usage', (
     tester,

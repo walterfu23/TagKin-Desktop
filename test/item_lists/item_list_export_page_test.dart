@@ -577,6 +577,11 @@ void main() {
       find.byKey(const Key('item-list-music-prompt-preset')),
       findsOneWidget,
     );
+    // The timeline controls push the music row down in the default window.
+    await tester.ensureVisible(
+      find.byKey(const Key('item-list-music-prompt-preset')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('item-list-music-prompt-preset')));
     await tester.pumpAndSettle();
     expect(find.text('Warm family'), findsOneWidget);
@@ -697,6 +702,159 @@ void main() {
           .audioPath,
       music.writtenPaths[0],
     );
+  });
+
+  testWidgets('timeline controls show for every format except JSON', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await _pumpPage(
+      tester,
+      overrides: _overrides(
+        items: FakeItemsRepository(
+          items: [fixtureItem(id: 'photo-a', sourceRef: '')],
+        ),
+      ),
+    );
+
+    const keys = [
+      'item-list-photo-duration',
+      'item-list-photo-transition',
+      'item-list-photo-transition-duration',
+      'item-list-sequence-size',
+    ];
+    for (final format in const [
+      'mp4WithMusic',
+      'mp4',
+      'fcp7Xml',
+      'fcpxml',
+    ]) {
+      await tester.tap(find.byKey(const Key('item-list-format-menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(Key('item-list-format-$format')));
+      await tester.pumpAndSettle();
+      for (final key in keys) {
+        expect(find.byKey(Key(key)), findsOneWidget, reason: '$format $key');
+      }
+    }
+
+    await tester.tap(find.byKey(const Key('item-list-format-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('item-list-format-json')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('item-list-timeline-controls')), findsNothing);
+  });
+
+  testWidgets('photo duration slider drives music length, stale note, and '
+      'is remembered', (tester) async {
+    tester.view.physicalSize = const Size(1200, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final music = FakeMusicRepository();
+    final prefs = DesktopPrefsController(store: _MemoryDesktopPrefsStore());
+    await _pumpPage(
+      tester,
+      overrides: _overrides(
+        items: FakeItemsRepository(
+          items: [
+            fixtureItem(id: 'photo-a', sourceRef: ''),
+            fixtureItem(id: 'photo-b', sourceRef: ''),
+          ],
+        ),
+        music: music,
+        prefs: prefs,
+      ),
+    );
+
+    expect(find.text('Duration per photo'), findsOneWidget);
+    expect(find.text('Photo duration (seconds)'), findsNothing);
+    expect(
+      find.textContaining('How long each photo stays on screen'),
+      findsOneWidget,
+    );
+    expect(find.text('2.5 s'), findsOneWidget);
+    String lengthText() => tester
+        .widget<Text>(find.byKey(const Key('item-list-timeline-length')))
+        .data!;
+    // 2 photos x 2.5 s - 1 s cross-dissolve + 3 s fade out.
+    expect(lengthText(), startsWith('Video length: 0:07'));
+
+    final slider = find.byKey(const Key('item-list-photo-duration'));
+    expect(tester.widget<Slider>(slider).value, 2.5);
+    tester.widget<Slider>(slider).onChanged!(5.0);
+    await tester.pumpAndSettle();
+    expect(tester.widget<Slider>(slider).value, 5.0);
+    expect(find.text('5 s'), findsOneWidget);
+    expect(lengthText(), startsWith('Video length: 0:12'));
+    expect(prefs.prefs.exportPhotoStillDurationSeconds, 5.0);
+
+    await tester.enterText(
+      find.byKey(const Key('item-list-music-prompt')),
+      'quiet piano',
+    );
+    await tester.tap(find.byKey(const Key('item-list-generate-music')));
+    await tester.pumpAndSettle();
+    // 2 photos x 5 s - 1 s cross-dissolve + 3 s fade out.
+    expect(music.durations.single, 12000);
+    expect(find.byKey(const Key('item-list-music-stale')), findsNothing);
+
+    tester.widget<Slider>(slider).onChanged!(3.0);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('item-list-music-stale')), findsOneWidget);
+
+    tester.widget<Slider>(slider).onChanged!(5.0);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('item-list-music-stale')), findsNothing);
+  });
+
+  testWidgets('transition None disables the transition duration slider', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final prefs = DesktopPrefsController(
+      store: _MemoryDesktopPrefsStore(
+        initial: DesktopPrefs.defaults.copyWith(
+          exportPhotoTransition: ExportPhotoTransition.none,
+        ),
+      ),
+    );
+    await prefs.load();
+    await _pumpPage(
+      tester,
+      overrides: _overrides(
+        items: FakeItemsRepository(
+          items: [fixtureItem(id: 'photo-a', sourceRef: '')],
+        ),
+        prefs: prefs,
+      ),
+    );
+
+    final duration = find.byKey(
+      const Key('item-list-photo-transition-duration'),
+    );
+    expect(tester.widget<Slider>(duration).onChanged, isNull);
+    expect(
+      find.text('Photos cut straight to the next one.'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('item-list-photo-transition')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const Key('item-list-photo-transition-dipToBlack')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<Slider>(duration).onChanged, isNotNull);
+    expect(find.textContaining('dissolves into the next'), findsOneWidget);
+    expect(prefs.prefs.exportPhotoTransition, ExportPhotoTransition.dipToBlack);
   });
 
   testWidgets('Export shows Exporting… until save finishes', (tester) async {

@@ -20,7 +20,9 @@ import 'package:tagkin_desktop/library/local_thumb_cache.dart';
 import 'package:tagkin_desktop/persons/collection.dart';
 import 'package:tagkin_desktop/persons/collections_controller.dart';
 import 'package:tagkin_desktop/review/local_media_resolver.dart';
+import 'package:tagkin_desktop/prefs/desktop_prefs.dart';
 import 'package:tagkin_desktop/prefs/desktop_prefs_controller.dart';
+import 'package:tagkin_desktop/prefs/range_slider_control.dart';
 import 'package:tagkin_desktop/ui/format_local_datetime.dart';
 import 'package:tagkin_desktop/widgets/selectable_scope.dart';
 
@@ -84,11 +86,15 @@ class _MusicTake {
     required this.audioPath,
     required this.prompt,
     required this.soundtrackId,
+    required this.durationMs,
   });
 
   final String audioPath;
   final String prompt;
   final String soundtrackId;
+
+  /// Timeline length the take was generated for.
+  final int durationMs;
 }
 
 class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
@@ -105,13 +111,20 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
   String? _musicError;
   List<MusicPromptPreset> _musicPresets = const [];
   String _musicPresetId = kMusicPromptCustomId;
+  late double _stillSeconds;
+  late ExportPhotoTransition _transition;
+  late double _transitionSeconds;
+  late ExportSequenceSize _sequenceSize;
 
   @override
   void initState() {
     super.initState();
-    _musicPrompt.text = ref
-        .read(desktopPrefsProvider)
-        .exportMusicPromptOrDefault;
+    final initial = ref.read(desktopPrefsProvider);
+    _musicPrompt.text = initial.exportMusicPromptOrDefault;
+    _stillSeconds = initial.exportPhotoStillDurationSecondsOrDefault;
+    _transition = initial.exportPhotoTransitionOrDefault;
+    _transitionSeconds = initial.exportPhotoTransitionSecondsOrDefault;
+    _sequenceSize = initial.exportSequenceSizeOrDefault;
     unawaited(_loadMusicPresets());
     itemListConfirmLeaveIfBusy = _confirmLeaveIfBusy;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -198,6 +211,51 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
     );
   }
 
+  /// Remember the timeline controls as the next export's starting values.
+  Future<void> _persistTimeline() async {
+    try {
+      await ref
+          .read(desktopPrefsControllerProvider)
+          .update(
+            ref
+                .read(desktopPrefsProvider)
+                .copyWith(
+                  exportPhotoStillDurationSeconds: _stillSeconds,
+                  exportPhotoTransition: _transition,
+                  exportPhotoTransitionSeconds: _transitionSeconds,
+                  exportSequenceSize: _sequenceSize,
+                ),
+          );
+    } catch (_) {
+      // The controls still apply to this page if the pref cannot be saved.
+    }
+  }
+
+  void _setTimeline(VoidCallback change) {
+    setState(change);
+    unawaited(_persistTimeline());
+  }
+
+  ItemListNleTimeline _timeline(ItemListExportController controller) {
+    return controller.currentTimeline(
+      stillDurationSeconds: _stillSeconds,
+      transition: _transition,
+      transitionSeconds: _transitionSeconds,
+    );
+  }
+
+  bool _musicIsStale(ItemListExportController controller) {
+    final path = _audioPath;
+    if (path == null) return false;
+    for (final take in _musicTakes) {
+      if (take.audioPath == path) {
+        return take.durationMs !=
+            itemListNleTimelineDurationMs(_timeline(controller));
+      }
+    }
+    return false;
+  }
+
   Future<void> _export() async {
     final prefs = ref.read(desktopPrefsProvider);
     final controller = ref.read(itemListExportControllerProvider);
@@ -217,20 +275,20 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
           audioPath: _format == ItemListExportFormat.mp4WithMusic
               ? _audioPath
               : null,
-          stillDurationSeconds: prefs.exportPhotoStillDurationSecondsOrDefault,
-          transition: prefs.exportPhotoTransitionOrDefault,
-          transitionSeconds: prefs.exportPhotoTransitionSecondsOrDefault,
-          sequenceSize: prefs.exportSequenceSizeOrDefault,
+          stillDurationSeconds: _stillSeconds,
+          transition: _transition,
+          transitionSeconds: _transitionSeconds,
+          sequenceSize: _sequenceSize,
           soundtrackDuck:
               prefs.exportSoundtrackUnderVideoPercentOrDefault / 100.0,
         );
       } else {
         final path = await controller.export(
           format: _format,
-          stillDurationSeconds: prefs.exportPhotoStillDurationSecondsOrDefault,
-          transition: prefs.exportPhotoTransitionOrDefault,
-          transitionSeconds: prefs.exportPhotoTransitionSecondsOrDefault,
-          sequenceSize: prefs.exportSequenceSizeOrDefault,
+          stillDurationSeconds: _stillSeconds,
+          transition: _transition,
+          transitionSeconds: _transitionSeconds,
+          sequenceSize: _sequenceSize,
         );
         if (path != null) {
           outcomeTitle = 'Export';
@@ -286,11 +344,7 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
       setState(() => _musicError = 'Enter a music prompt');
       return;
     }
-    final timeline = controller.currentTimeline(
-      stillDurationSeconds: prefs.exportPhotoStillDurationSecondsOrDefault,
-      transition: prefs.exportPhotoTransitionOrDefault,
-      transitionSeconds: prefs.exportPhotoTransitionSecondsOrDefault,
-    );
+    final timeline = _timeline(controller);
     final durationMs = itemListNleTimelineDurationMs(timeline);
     if (durationMs < 3000) {
       setState(
@@ -320,6 +374,7 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
         audioPath: file.path,
         prompt: prompt,
         soundtrackId: generated.soundtrackId,
+        durationMs: durationMs,
       );
       setState(() {
         _musicTakes.add(take);
@@ -421,6 +476,29 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
                               const SizedBox(height: 12),
                               _ExportJobsPanel(manager: jobs),
                             ],
+                            if (_format != ItemListExportFormat.json) ...[
+                              const SizedBox(height: 12),
+                              _TimelineControls(
+                                stillSeconds: _stillSeconds,
+                                transition: _transition,
+                                transitionSeconds: _transitionSeconds,
+                                sequenceSize: _sequenceSize,
+                                lengthLabel: formatKeyPeriodMs(
+                                  itemListNleTimelineDurationMs(
+                                    _timeline(controller),
+                                  ),
+                                ),
+                                onStillSeconds: (v) =>
+                                    _setTimeline(() => _stillSeconds = v),
+                                onTransition: (v) =>
+                                    _setTimeline(() => _transition = v),
+                                onTransitionSeconds: (v) => _setTimeline(
+                                  () => _transitionSeconds = v,
+                                ),
+                                onSequenceSize: (v) =>
+                                    _setTimeline(() => _sequenceSize = v),
+                              ),
+                            ],
                             if (_format ==
                                 ItemListExportFormat.mp4WithMusic) ...[
                               const SizedBox(height: 12),
@@ -499,17 +577,19 @@ class _ItemListExportPageState extends ConsumerState<ItemListExportPage> {
                                     key: const Key('item-list-music-error'),
                                   ),
                                 ),
+                              if (_musicIsStale(controller))
+                                const Padding(
+                                  padding: EdgeInsets.only(top: 8),
+                                  child: Text(
+                                    'Timeline changed since this music was '
+                                    'generated. Try another to match.',
+                                    key: Key('item-list-music-stale'),
+                                  ),
+                                ),
                               if (_audioPath != null) ...[
                                 const SizedBox(height: 8),
                                 ItemListSlideshowPreview(
-                                  timeline: controller.currentTimeline(
-                                    stillDurationSeconds: prefs
-                                        .exportPhotoStillDurationSecondsOrDefault,
-                                    transition:
-                                        prefs.exportPhotoTransitionOrDefault,
-                                    transitionSeconds: prefs
-                                        .exportPhotoTransitionSecondsOrDefault,
-                                  ),
+                                  timeline: _timeline(controller),
                                   audioPath: _audioPath!,
                                   soundtrackDuck:
                                       prefs
@@ -728,6 +808,207 @@ class _FormatDropdown extends StatelessWidget {
             const SizedBox(width: 6),
             Text(
               format.label,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const Icon(Icons.arrow_drop_down, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Photo timing and sequence size for MP4 / FCP7 XML / FCPXML (not JSON).
+class _TimelineControls extends StatelessWidget {
+  const _TimelineControls({
+    required this.stillSeconds,
+    required this.transition,
+    required this.transitionSeconds,
+    required this.sequenceSize,
+    required this.lengthLabel,
+    required this.onStillSeconds,
+    required this.onTransition,
+    required this.onTransitionSeconds,
+    required this.onSequenceSize,
+  });
+
+  final double stillSeconds;
+  final ExportPhotoTransition transition;
+  final double transitionSeconds;
+  final ExportSequenceSize sequenceSize;
+  final String lengthLabel;
+  final ValueChanged<double> onStillSeconds;
+  final ValueChanged<ExportPhotoTransition> onTransition;
+  final ValueChanged<double> onTransitionSeconds;
+  final ValueChanged<ExportSequenceSize> onSequenceSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      key: const Key('item-list-timeline-controls'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: _labeledSlider(
+                theme,
+                'Duration per photo',
+                'How long each photo stays on screen. Video clips keep '
+                    'their own length.',
+                DoubleRangeSliderControl(
+                  sliderKey: const Key('item-list-photo-duration'),
+                  value: stillSeconds,
+                  min: DesktopPrefs.exportPhotoStillDurationSecondsMin,
+                  max: DesktopPrefs.exportPhotoStillDurationSecondsMax,
+                  step: DesktopPrefs.exportPhotoStillDurationSecondsStep,
+                  labelBuilder: _secondsLabel,
+                  onChanged: onStillSeconds,
+                ),
+                helperKey: const Key('item-list-photo-duration-help'),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _labeledSlider(
+                theme,
+                'Transition duration',
+                transition == ExportPhotoTransition.none
+                    ? 'Photos cut straight to the next one.'
+                    : 'How long one photo dissolves into the next. The '
+                          'dissolve overlaps both photos, so it shortens the '
+                          'total.',
+                DoubleRangeSliderControl(
+                  sliderKey: const Key('item-list-photo-transition-duration'),
+                  value: transitionSeconds,
+                  min: DesktopPrefs.exportPhotoTransitionSecondsMin,
+                  max: DesktopPrefs.exportPhotoTransitionSecondsMax,
+                  step: DesktopPrefs.exportPhotoTransitionSecondsStep,
+                  enabled: transition != ExportPhotoTransition.none,
+                  labelBuilder: _secondsLabel,
+                  onChanged: onTransitionSeconds,
+                ),
+                helperKey: const Key('item-list-photo-transition-help'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Video length: $lengthLabel (includes the 3 s fade to white)',
+          key: const Key('item-list-timeline-length'),
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 16,
+          runSpacing: 4,
+          children: [
+            _TimelineChoice<ExportPhotoTransition>(
+              menuKey: const Key('item-list-photo-transition'),
+              itemKeyPrefix: 'item-list-photo-transition',
+              title: 'Photo transition',
+              icon: Icons.blur_linear,
+              value: transition,
+              values: ExportPhotoTransition.values,
+              idOf: (v) => v.name,
+              labelOf: (v) => v.settingsLabel,
+              onSelected: onTransition,
+            ),
+            _TimelineChoice<ExportSequenceSize>(
+              menuKey: const Key('item-list-sequence-size'),
+              itemKeyPrefix: 'item-list-sequence-size',
+              title: 'Sequence size',
+              icon: Icons.aspect_ratio,
+              value: sequenceSize,
+              values: ExportSequenceSize.values,
+              idOf: (v) => v.wire,
+              labelOf: (v) => v.settingsLabel,
+              onSelected: onSequenceSize,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  static String _secondsLabel(double v) =>
+      '${v == v.roundToDouble() ? v.toInt() : v} s';
+
+  Widget _labeledSlider(
+    ThemeData theme,
+    String label,
+    String helper,
+    Widget slider, {
+    required Key helperKey,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(label, style: theme.textTheme.titleSmall),
+        Text(
+          helper,
+          key: helperKey,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        slider,
+      ],
+    );
+  }
+}
+
+class _TimelineChoice<T> extends StatelessWidget {
+  const _TimelineChoice({
+    required this.menuKey,
+    required this.itemKeyPrefix,
+    required this.title,
+    required this.icon,
+    required this.value,
+    required this.values,
+    required this.idOf,
+    required this.labelOf,
+    required this.onSelected,
+  });
+
+  final Key menuKey;
+  final String itemKeyPrefix;
+  final String title;
+  final IconData icon;
+  final T value;
+  final List<T> values;
+  final String Function(T value) idOf;
+  final String Function(T value) labelOf;
+  final ValueChanged<T> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<T>(
+      key: menuKey,
+      tooltip: title,
+      onSelected: onSelected,
+      itemBuilder: (context) {
+        return [
+          for (final v in values)
+            PopupMenuItem<T>(
+              key: Key('$itemKeyPrefix-${idOf(v)}'),
+              value: v,
+              child: Text(v == value ? '${labelOf(v)} ✓' : labelOf(v)),
+            ),
+        ];
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18),
+            const SizedBox(width: 6),
+            Text(
+              '$title: ${labelOf(value)}',
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
             const Icon(Icons.arrow_drop_down, size: 20),
