@@ -1908,12 +1908,6 @@ class _SignedInScaffoldState extends ConsumerState<_SignedInScaffold>
                     onPressed: _openSettings,
                     icon: const Icon(Icons.settings_outlined),
                   ),
-                IconButton(
-                  key: const Key('nav-item-list-export'),
-                  tooltip: 'Export Views',
-                  onPressed: () => unawaited(_openItemListExport()),
-                  icon: const Icon(Icons.ios_share_outlined),
-                ),
                 if (showWindowsFileMenu)
                   PopupMenuButton<CollectionMenuCommand>(
                     key: const Key('windows-file-menu'),

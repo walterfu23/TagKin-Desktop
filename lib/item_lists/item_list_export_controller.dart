@@ -601,6 +601,9 @@ class ItemListExportController extends ChangeNotifier {
   List<ItemListEntry> _entriesFromTable() {
     final out = <ItemListEntry>[];
     for (final row in libraryTable.filteredSorted) {
+      // Hidden items and items under hidden folders never reach the slideshow
+      // or any export, even when the view's Hide column shows Hidden / Both.
+      if (libraryTable.isRowHiddenInView(row)) continue;
       if (row.item.type == ItemType.photo) {
         out.add(
           ItemListEntry(

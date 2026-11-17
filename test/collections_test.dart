@@ -63,7 +63,6 @@ void main() {
                 ),
               ),
             ],
-            recentViewIds: ['view_1'],
             currentViewId: 'view_1',
           ),
         ],
@@ -526,28 +525,25 @@ void main() {
         expect(controller.current.currentViewId, isNull);
       });
 
-      test('recentViews is MRU capped; all views remain', () async {
-        final capped = CollectionsController(
-          store: CollectionsStore(supportDir: tempDir),
-          maxRecentViews: () => 2,
-        );
-        await capped.load();
-        await capped.create(name: 'Trip', seedFolders: ['/a']);
-        final a = await capped.saveView(
-          name: 'A',
-          filters: const LibraryViewFilters(filterQuery: 'a'),
-        );
-        final b = await capped.saveView(
-          name: 'B',
-          filters: const LibraryViewFilters(filterQuery: 'b'),
-        );
-        final c = await capped.saveView(
-          name: 'C',
-          filters: const LibraryViewFilters(filterQuery: 'c'),
-        );
-        expect(capped.views, hasLength(3));
-        expect(capped.recentViews.map((v) => v.id), [c!.id, b!.id]);
-        expect(capped.recentViews.map((v) => v.id), isNot(contains(a!.id)));
+      test('views stay A-Z and uncapped (no recent-views cap)', () async {
+        await controller.create(name: 'Trip', seedFolders: ['/a']);
+        for (final n in [
+          'beta',
+          'Alpha',
+          'charlie',
+          for (var i = 0; i < 12; i++) 'Z$i',
+        ]) {
+          await controller.saveView(
+            name: n,
+            filters: LibraryViewFilters(filterQuery: n),
+          );
+        }
+        expect(controller.views, hasLength(15));
+        expect(controller.views.take(3).map((v) => v.name), [
+          'Alpha',
+          'beta',
+          'charlie',
+        ]);
       });
 
       test('saving a view does not dirty or flush unsaved rename', () async {
@@ -643,20 +639,17 @@ void main() {
         ]);
       });
 
-      test('setCurrentViewId All is not inferred from recents', () async {
+      test('setCurrentViewId null persists All', () async {
         await controller.create(name: 'Trip', seedFolders: ['/a']);
         final saved = await controller.saveView(
           name: 'Ada',
           filters: const LibraryViewFilters(filterQuery: 'Ada'),
         );
         expect(controller.current.currentViewId, saved!.id);
-        expect(controller.current.recentViewIds.first, saved.id);
         expect(await controller.setCurrentViewId(null), isTrue);
         expect(controller.current.currentViewId, isNull);
-        expect(controller.current.recentViewIds.first, saved.id);
         final disk = await CollectionsStore(supportDir: tempDir).load();
         expect(disk.collections.single.currentViewId, isNull);
-        expect(disk.collections.single.recentViewIds.first, saved.id);
       });
 
       test('missing currentViewId stays All after reload', () async {
@@ -675,7 +668,6 @@ void main() {
                     filters: LibraryViewFilters(filterQuery: 'Ada'),
                   ),
                 ],
-                recentViewIds: ['view_1'],
               ),
             ],
             currentCollectionId: 'collection_1',
@@ -684,7 +676,26 @@ void main() {
         await controller.load();
         expect(await controller.open('collection_1'), isTrue);
         expect(controller.current.currentViewId, isNull);
-        expect(controller.current.recentViewIds, ['view_1']);
+      });
+
+      test('a collection file with old recentViewIds still loads', () async {
+        final c = Collection.fromJson({
+          'id': 'collection_1',
+          'name': 'Trip',
+          'leafFolders': ['/a'],
+          'views': [
+            {
+              'id': 'view_1',
+              'name': 'Ada',
+              'filters': {'filterQuery': 'Ada'},
+            },
+          ],
+          'recentViewIds': ['view_1', 'gone'],
+          'currentViewId': 'view_1',
+        });
+        expect(c.views.single.name, 'Ada');
+        expect(c.currentViewId, 'view_1');
+        expect(c.toJson().containsKey('recentViewIds'), isFalse);
       });
     });
   });

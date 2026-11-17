@@ -16,7 +16,6 @@ class FoldersUndoSnapshot {
     required this.activeViewId,
     required this.activeViewSnapshot,
     required this.views,
-    required this.recentViewIds,
     required this.currentViewId,
     required this.expandedDirs,
   });
@@ -26,7 +25,6 @@ class FoldersUndoSnapshot {
   final String? activeViewId;
   final LibraryViewFilters? activeViewSnapshot;
   final List<SavedView> views;
-  final List<String> recentViewIds;
   final String? currentViewId;
 
   /// Open path-group folders, sorted. Not part of a saved View.
@@ -38,7 +36,6 @@ class FoldersUndoSnapshot {
         activeViewId == other.activeViewId &&
         activeViewSnapshot == other.activeViewSnapshot &&
         _listEq(views, other.views) &&
-        _listEq(recentViewIds, other.recentViewIds) &&
         currentViewId == other.currentViewId &&
         _listEq(expandedDirs, other.expandedDirs);
   }
@@ -70,7 +67,6 @@ class FoldersUndo {
       activeViewId: table.activeViewId,
       activeViewSnapshot: table.activeViewSnapshot,
       views: List<SavedView>.of(cur?.views ?? const []),
-      recentViewIds: List<String>.of(cur?.recentViewIds ?? const []),
       currentViewId: cur?.currentViewId,
       expandedDirs: (table.expandedSourceDirs.toList()..sort()),
     );
@@ -88,7 +84,6 @@ class FoldersUndo {
     await cols.restoreViewsState(
       collectionId: snap.collectionId,
       views: snap.views,
-      recentViewIds: snap.recentViewIds,
       currentViewId: snap.currentViewId,
     );
     final hide = table.hiddenItemsFilter;

@@ -17,7 +17,6 @@ class DesktopPrefs {
     this.familiarRegions = '',
     this.libraryPageSize = 50,
     this.recentCollectionsLimit = 20,
-    this.recentViewsLimit = 10,
     this.nearDuplicateThreshold = 4,
     this.sampleMinIntervalMs = 1000,
     this.sampleMaxIntervalMs = 15000,
@@ -66,7 +65,6 @@ class DesktopPrefs {
   final int recentCollectionsLimit;
 
   /// Max recent saved Folders views listed in the Views menu (per collection).
-  final int recentViewsLimit;
 
   /// Hamming distance ≤ this → near-duplicate at ingest.
   final int nearDuplicateThreshold;
@@ -230,10 +228,6 @@ class DesktopPrefs {
   static const recentCollectionsLimitMax = 100;
   static const recentCollectionsLimitStep = 1;
 
-  static const recentViewsLimitMin = 1;
-  static const recentViewsLimitMax = 100;
-  static const recentViewsLimitStep = 1;
-
   static const nearDuplicateThresholdMin = 0;
   static const nearDuplicateThresholdMax = 64;
   static const nearDuplicateThresholdStep = 1;
@@ -298,7 +292,6 @@ class DesktopPrefs {
     String? familiarRegions,
     int? libraryPageSize,
     int? recentCollectionsLimit,
-    int? recentViewsLimit,
     int? nearDuplicateThreshold,
     int? sampleMinIntervalMs,
     int? sampleMaxIntervalMs,
@@ -334,7 +327,6 @@ class DesktopPrefs {
       libraryPageSize: libraryPageSize ?? this.libraryPageSize,
       recentCollectionsLimit:
           recentCollectionsLimit ?? this.recentCollectionsLimit,
-      recentViewsLimit: recentViewsLimit ?? this.recentViewsLimit,
       nearDuplicateThreshold:
           nearDuplicateThreshold ?? this.nearDuplicateThreshold,
       sampleMinIntervalMs: sampleMinIntervalMs ?? this.sampleMinIntervalMs,
@@ -383,7 +375,6 @@ class DesktopPrefs {
     'where.familiarRegions': familiarRegions,
     'ui.libraryPageSize': libraryPageSize,
     'ui.recentCollectionsLimit': recentCollectionsLimit,
-    'ui.recentViewsLimit': recentViewsLimit,
     'ingest.nearDuplicateThreshold': nearDuplicateThreshold,
     'video.sampleMinIntervalMs': sampleMinIntervalMs,
     'video.sampleMaxIntervalMs': sampleMaxIntervalMs,
@@ -474,12 +465,6 @@ class DesktopPrefs {
         20,
         min: recentCollectionsLimitMin,
         max: recentCollectionsLimitMax,
-      ),
-      recentViewsLimit: intVal(
-        'ui.recentViewsLimit',
-        10,
-        min: recentViewsLimitMin,
-        max: recentViewsLimitMax,
       ),
       nearDuplicateThreshold: intVal(
         'ingest.nearDuplicateThreshold',
@@ -599,7 +584,6 @@ class DesktopPrefs {
       other.familiarRegions == familiarRegions &&
       other.libraryPageSize == libraryPageSize &&
       other.recentCollectionsLimit == recentCollectionsLimit &&
-      other.recentViewsLimit == recentViewsLimit &&
       other.nearDuplicateThreshold == nearDuplicateThreshold &&
       other.sampleMinIntervalMs == sampleMinIntervalMs &&
       other.sampleMaxIntervalMs == sampleMaxIntervalMs &&
@@ -638,7 +622,6 @@ class DesktopPrefs {
     familiarRegions,
     libraryPageSize,
     recentCollectionsLimit,
-    recentViewsLimit,
     nearDuplicateThreshold,
     sampleMinIntervalMs,
     sampleMaxIntervalMs,

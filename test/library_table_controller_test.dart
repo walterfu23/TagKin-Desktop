@@ -2529,7 +2529,6 @@ void main() {
           cols: cols,
         );
         expect(table.activeViewId, isNull);
-        expect(cols.current.recentViewIds.first, cols.views.single.id);
 
         await cols.setCurrentViewId(cols.views.single.id);
         await cols.deleteView(cols.views.single.id);

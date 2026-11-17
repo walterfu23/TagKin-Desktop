@@ -232,6 +232,182 @@ void main() {
     expect(controller.selectedView?.id, 'v1');
   });
 
+  group('combined filters and hidden items', () {
+    Item photo(String id, String capturedAt, {String? sourceRef}) =>
+        fixtureItem(
+          id: id,
+          processingStatus: ProcessingStatus.tagged,
+          capturedAt: capturedAt,
+          sourceRef: sourceRef ?? 'file:///albums/$id.jpg',
+        );
+
+    ItemKnowledge tagged(Item item, {required String where}) =>
+        fixtureKnowledge(
+          item: item,
+          tags: [
+            fixtureTag(
+              id: '${item.id}_where',
+              itemId: item.id,
+              dimension: 'where',
+              value: where,
+            ),
+          ],
+        );
+
+    Future<ItemListExportController> loaded(
+      List<Item> items,
+      Map<String, ItemKnowledge> knowledge,
+    ) async {
+      final controller = _controller(
+        items: FakeItemsRepository(items: items, knowledgeByItemId: knowledge),
+      );
+      addTearDown(controller.dispose);
+      await controller.load();
+      await _waitUntil(
+        () =>
+            controller.entries.length == items.length &&
+            !controller.libraryTable.knowledgeWarming,
+      );
+      return controller;
+    }
+
+    test(
+      'selectView honors the Where filter and the captured date range',
+      () async {
+        final a = photo('a', '2026-07-01T12:00:00.000Z');
+        final b = photo('b', '2026-08-15T12:00:00.000Z');
+        final c = photo('c', '2026-07-10T12:00:00.000Z');
+        final controller = await loaded(
+          [a, b, c],
+          {
+            'a': tagged(a, where: 'Seattle'),
+            'b': tagged(b, where: 'Seattle'),
+            'c': tagged(c, where: 'Portland'),
+          },
+        );
+        await controller.selectView(
+          const SavedView(
+            id: 'v',
+            name: 'Seattle in July',
+            filters: LibraryViewFilters(
+              whereNames: ['Seattle'],
+              capturedFrom: '2026-07-01',
+              capturedTo: '2026-07-31',
+            ),
+          ),
+        );
+        await _waitUntil(() => controller.entries.length == 1);
+        expect(controller.entries.map((e) => e.itemId), ['a']);
+      },
+    );
+
+    test('hidden items and items under hidden folders never reach Export, '
+        'whatever the Hide column says', () async {
+      final keep = photo('keep', '2026-07-01T12:00:00.000Z');
+      final hiddenItem = photo('hidden-item', '2026-07-02T12:00:00.000Z');
+      final inHiddenFolder = photo(
+        'in-hidden-folder',
+        '2026-07-03T12:00:00.000Z',
+        sourceRef: 'file:///albums/Trip/x.jpg',
+      );
+      final controller = await loaded([keep, hiddenItem, inHiddenFolder], {});
+      for (final mode in ['visible', 'hidden', 'both']) {
+        await controller.selectView(
+          SavedView(
+            id: 'v-$mode',
+            name: mode,
+            filters: LibraryViewFilters(
+              hiddenItemsFilter: mode,
+              hiddenItemIds: const ['hidden-item'],
+              hiddenFolders: const ['/albums/Trip'],
+            ),
+          ),
+        );
+        await _waitUntil(() => controller.selectedView?.id == 'v-$mode');
+        expect(
+          controller.entries.map((e) => e.itemId).toList(),
+          mode == 'hidden' ? isEmpty : ['keep'],
+          reason: 'Hide column = $mode',
+        );
+      }
+    });
+
+    test('filter in Folders, hide one result, then export the rest', () async {
+      final a = photo('a', '2026-07-01T12:00:00.000Z');
+      final b = photo('b', '2026-07-02T12:00:00.000Z');
+      final c = photo('c', '2026-07-03T12:00:00.000Z');
+      final controller = await loaded(
+        [a, b, c],
+        {
+          'a': tagged(a, where: 'Seattle'),
+          'b': tagged(b, where: 'Seattle'),
+          'c': tagged(c, where: 'Portland'),
+        },
+      );
+      final folders = LibraryTableController(
+        itemsRepository: FakeItemsRepository(items: [a, b, c]),
+        commentsRepository: FakeCommentsRepository(),
+        thumbCache: LocalThumbCache(),
+      );
+      addTearDown(folders.dispose);
+      folders.setActiveView('v-live', const LibraryViewFilters());
+      folders.setWhereFilter(names: {'Seattle'});
+      folders.setItemHiddenInView('b', hidden: true);
+      const stored = SavedView(
+        id: 'v-live',
+        name: 'Live',
+        filters: LibraryViewFilters(),
+      );
+      await controller.selectView(exportViewMatchingFolders(stored, folders));
+      await _waitUntil(() => controller.entries.length == 1);
+      expect(controller.entries.map((e) => e.itemId), ['a']);
+    });
+
+    test(
+      'hiding a key-period video removes every one of its periods',
+      () async {
+        final video = fixtureItem(id: 'video-1', type: ItemType.video);
+        final keep = photo('keep', '2026-07-01T12:00:00.000Z');
+        final controller = await loaded(
+          [video, keep],
+          {
+            'video-1': fixtureKnowledge(
+              item: video,
+              keyPeriods: const [
+                KeyPeriodKnowledge(
+                  id: 'kp-1',
+                  itemId: 'video-1',
+                  startMs: 0,
+                  endMs: 1000,
+                  sampleTimestampMs: 800,
+                  tags: [],
+                ),
+                KeyPeriodKnowledge(
+                  id: 'kp-2',
+                  itemId: 'video-1',
+                  startMs: 2000,
+                  endMs: 4000,
+                  sampleTimestampMs: 2500,
+                  tags: [],
+                ),
+              ],
+            ),
+          },
+        );
+        expect(controller.entries.length, 3);
+        await controller.selectView(
+          const SavedView(
+            id: 'v',
+            name: 'No video',
+            filters: LibraryViewFilters(hiddenItemIds: ['video-1']),
+          ),
+        );
+        await _waitUntil(() => controller.entries.length == 1);
+        expect(controller.entries.map((e) => e.itemId), ['keep']);
+      },
+    );
+  });
+
   test(
     'exportViewMatchingFolders overlays live Hide folder on current view',
     () {

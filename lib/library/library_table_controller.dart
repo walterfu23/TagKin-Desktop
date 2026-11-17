@@ -397,7 +397,7 @@ class LibraryTableController extends ChangeNotifier {
   /// session (not a [DesktopPrefs] entry). Empty = no filter. Applied to
   /// whatever population the other Folders filters (collection scope, text
   /// query, Visible/Hidden/Both) are currently showing — see
-  /// [_rowsForWhoFilter] / [availableWhoNames].
+  /// [_rowsBase] / [availableWhoNames].
   Set<String> _whoFilterNames = const {};
 
   Set<String> get whoFilterNames => _whoFilterNames;
@@ -411,6 +411,104 @@ class LibraryTableController extends ChangeNotifier {
     if (names != null) _whoFilterNames = Set<String>.from(names);
     if (matchAll != null) _whoFilterMatchAll = matchAll;
     pageIndex = 0;
+    _notifyViewMutation();
+  }
+
+  /// Where column filter (display labels, city first). Same shape as the Who
+  /// filter: empty = none; Match Any (default) or Match All.
+  Set<String> _whereFilterNames = const {};
+  bool _whereFilterMatchAll = false;
+
+  Set<String> get whereFilterNames => _whereFilterNames;
+  bool get whereFilterMatchAll => _whereFilterMatchAll;
+
+  void setWhereFilter({Set<String>? names, bool? matchAll}) {
+    if (names != null) _whereFilterNames = Set<String>.from(names);
+    if (matchAll != null) _whereFilterMatchAll = matchAll;
+    pageIndex = 0;
+    _notifyViewMutation();
+  }
+
+  /// What column filter (activity words). Same shape as the Who filter.
+  Set<String> _whatFilterNames = const {};
+  bool _whatFilterMatchAll = false;
+
+  Set<String> get whatFilterNames => _whatFilterNames;
+  bool get whatFilterMatchAll => _whatFilterMatchAll;
+
+  void setWhatFilter({Set<String>? names, bool? matchAll}) {
+    if (names != null) _whatFilterNames = Set<String>.from(names);
+    if (matchAll != null) _whatFilterMatchAll = matchAll;
+    pageIndex = 0;
+    _notifyViewMutation();
+  }
+
+  /// Captured-date range as `yyyy-MM-dd` local days, inclusive; either end
+  /// may be null (open). While a range is set, an item with no captured date
+  /// is left out.
+  String? _capturedFrom;
+  String? _capturedTo;
+
+  String? get capturedFrom => _capturedFrom;
+  String? get capturedTo => _capturedTo;
+
+  /// Replaces both ends. A value that is not a real `yyyy-MM-dd` date is
+  /// treated as open. Call with no arguments to clear the range.
+  void setCapturedRange({String? from, String? to}) {
+    _capturedFrom = _normalizeDay(from);
+    _capturedTo = _normalizeDay(to);
+    pageIndex = 0;
+    _notifyViewMutation();
+  }
+
+  static final RegExp _dayPattern = RegExp(r'^\d{4}-\d{2}-\d{2}$');
+
+  static String? _normalizeDay(String? value) {
+    if (value == null || !_dayPattern.hasMatch(value)) return null;
+    return DateTime.tryParse(value) == null ? null : value;
+  }
+
+  /// Local `yyyy-MM-dd` day of [item]'s captured time, or null.
+  static String? _capturedDay(Item item) {
+    final raw = item.capturedAt;
+    if (raw == null || raw.isEmpty) return null;
+    final at = DateTime.tryParse(raw)?.toLocal();
+    if (at == null) return null;
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${at.year.toString().padLeft(4, '0')}-${two(at.month)}-${two(at.day)}';
+  }
+
+  /// Filters beyond the Hide column that narrow the table: text query,
+  /// status, Who, Where, What, and the captured-date range.
+  int get activeFilterCount {
+    var n = 0;
+    if (filterQuery.trim().isNotEmpty) n++;
+    if (statusFilter != null) n++;
+    if (_whoFilterNames.isNotEmpty) n++;
+    if (_whereFilterNames.isNotEmpty) n++;
+    if (_whatFilterNames.isNotEmpty) n++;
+    if (_capturedFrom != null || _capturedTo != null) n++;
+    return n;
+  }
+
+  bool get hasActiveFilters => activeFilterCount > 0;
+
+  /// Clears every filter counted by [activeFilterCount]. The Hide column and
+  /// items or folders hidden in the view are left as they are.
+  Future<void> clearFilters() async {
+    final hadStatus = statusFilter != null;
+    filterQuery = '';
+    statusFilter = null;
+    _whoFilterNames = const {};
+    _whoFilterMatchAll = false;
+    _whereFilterNames = const {};
+    _whereFilterMatchAll = false;
+    _whatFilterNames = const {};
+    _whatFilterMatchAll = false;
+    _capturedFrom = null;
+    _capturedTo = null;
+    pageIndex = 0;
+    if (hadStatus) await load();
     _notifyViewMutation();
   }
 
@@ -618,13 +716,20 @@ class LibraryTableController extends ChangeNotifier {
   bool _itemHiddenInView(LibraryTableRow r) =>
       _hiddenItemIds.contains(r.item.id);
 
-  /// Rows after every Folders filter except the Who filter and sort:
+  /// True when [r] is hidden in this view: hidden item, or under a hidden
+  /// folder. Export Views always leaves these out, whatever the Hide column
+  /// filter says.
+  bool isRowHiddenInView(LibraryTableRow r) =>
+      _itemHiddenInView(r) || _underHiddenFolder(r);
+
+  /// Rows after the filters that are not column facets and before sort:
   /// collection scope, text query, Visible/Hidden/Both, and
-  /// view-local hidden folders and hidden item ids. This is the population
-  /// the Who filter's checklist ([availableWhoNames]) and predicate operate
-  /// on, so e.g. switching the Hide-column dropdown to **Hidden** scopes both
-  /// the checklist and the filter to hidden rows only.
-  List<LibraryTableRow> get _rowsForWhoFilter {
+  /// view-local hidden folders and hidden item ids. The Who / Where / What /
+  /// date facets then narrow this population ([_applyFacets]); each facet's
+  /// checklist ([availableWhoNames] and friends) is drawn from the rows left
+  /// by every other facet, so e.g. switching the Hide-column dropdown to
+  /// **Hidden** scopes both the checklists and the filters to hidden rows.
+  List<LibraryTableRow> get _rowsBase {
     var list = List<LibraryTableRow>.from(_rows);
     final collectionFolders = collectionLeafFolders;
     if (collectionFolders != null) {
@@ -664,24 +769,74 @@ class LibraryTableController extends ChangeNotifier {
     return list;
   }
 
-  /// Distinct Who names available to pick in the Who filter checklist, drawn
-  /// from [_rowsForWhoFilter] (i.e. the population currently surviving every
-  /// other active Folders filter) — A–Z, case-insensitive.
-  Set<String> get availableWhoNames {
-    final names = <String>{for (final r in _rowsForWhoFilter) ...r.who};
+  static bool _matchesNames(
+    Iterable<String> have,
+    Set<String> want,
+    bool matchAll,
+  ) {
+    if (want.isEmpty) return true;
+    final names = have.toSet();
+    return matchAll ? want.every(names.contains) : want.any(names.contains);
+  }
+
+  bool _inCapturedRange(LibraryTableRow r) {
+    final from = _capturedFrom;
+    final to = _capturedTo;
+    if (from == null && to == null) return true;
+    final day = _capturedDay(r.item);
+    if (day == null) return false;
+    if (from != null && day.compareTo(from) < 0) return false;
+    if (to != null && day.compareTo(to) > 0) return false;
+    return true;
+  }
+
+  /// Applies the Who, Where, What, and date facets to [list], leaving out the
+  /// facet named by [skip] (so its own checklist is not narrowed by itself).
+  List<LibraryTableRow> _applyFacets(
+    List<LibraryTableRow> list, {
+    String? skip,
+  }) {
+    return list.where((r) {
+      if (skip != 'who' &&
+          !_matchesNames(r.who, _whoFilterNames, _whoFilterMatchAll)) {
+        return false;
+      }
+      if (skip != 'where' &&
+          !_matchesNames(r.where, _whereFilterNames, _whereFilterMatchAll)) {
+        return false;
+      }
+      if (skip != 'what' &&
+          !_matchesNames(r.what, _whatFilterNames, _whatFilterMatchAll)) {
+        return false;
+      }
+      if (skip != 'date' && !_inCapturedRange(r)) return false;
+      return true;
+    }).toList();
+  }
+
+  Set<String> _availableNames(
+    String facet,
+    Iterable<String> Function(LibraryTableRow r) pick,
+  ) {
+    final rows = _applyFacets(_rowsBase, skip: facet);
+    final names = <String>{for (final r in rows) ...pick(r)};
     return sortedAlphaBy(names, (n) => n).toSet();
   }
 
+  /// Distinct Who names available to pick in the Who filter checklist, drawn
+  /// from the population surviving every other active Folders filter —
+  /// A–Z, case-insensitive.
+  Set<String> get availableWhoNames => _availableNames('who', (r) => r.who);
+
+  /// Distinct Where labels for the Where filter checklist (same rules).
+  Set<String> get availableWhereNames =>
+      _availableNames('where', (r) => r.where);
+
+  /// Distinct What (activity) words for the What filter checklist.
+  Set<String> get availableWhatNames => _availableNames('what', (r) => r.what);
+
   List<LibraryTableRow> get filteredSorted {
-    var list = _rowsForWhoFilter;
-    if (_whoFilterNames.isNotEmpty) {
-      list = list.where((r) {
-        final names = r.who.toSet();
-        return _whoFilterMatchAll
-            ? _whoFilterNames.every(names.contains)
-            : _whoFilterNames.any(names.contains);
-      }).toList();
-    }
+    var list = _applyFacets(_rowsBase);
     if (sortKeys.isNotEmpty) {
       list = List<LibraryTableRow>.from(list)
         ..sort((a, b) {
@@ -1059,6 +1214,12 @@ class LibraryTableController extends ChangeNotifier {
       statusFilter: statusFilter?.wire,
       whoNames: who,
       whoMatchAll: whoFilterMatchAll,
+      whereNames: (whereFilterNames.toList()..sort(compareLabelsAlpha)),
+      whereMatchAll: whereFilterMatchAll,
+      whatNames: (whatFilterNames.toList()..sort(compareLabelsAlpha)),
+      whatMatchAll: whatFilterMatchAll,
+      capturedFrom: _capturedFrom,
+      capturedTo: _capturedTo,
       hiddenItemsFilter: hiddenItemsFilter.name,
       sortKeys: [
         for (final k in sortKeys)
@@ -1107,6 +1268,12 @@ class LibraryTableController extends ChangeNotifier {
     ];
     _whoFilterNames = Set<String>.from(f.whoNames);
     _whoFilterMatchAll = f.whoMatchAll;
+    _whereFilterNames = Set<String>.from(f.whereNames);
+    _whereFilterMatchAll = f.whereMatchAll;
+    _whatFilterNames = Set<String>.from(f.whatNames);
+    _whatFilterMatchAll = f.whatMatchAll;
+    _capturedFrom = _normalizeDay(f.capturedFrom);
+    _capturedTo = _normalizeDay(f.capturedTo);
     HiddenItemsFilter nextHidden = HiddenItemsFilter.both;
     for (final v in HiddenItemsFilter.values) {
       if (v.name == f.hiddenItemsFilter) {

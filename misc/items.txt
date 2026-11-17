@@ -37,15 +37,15 @@ might want to consider path hiearchy.
 
 105. [done in code - needs a manual Restart / Log Out check on macOS] (was 28) If desktop is running, it prevents the shutdown on match (now shows the Save / Discard / Cancel prompt and answers the system terminate after it, instead of cancelling first)
 
-106. [not yet implemented] (was 33) persist duration and dimensions (Specs §5 Item fields)
-106. [not yet implemented] (was 32) item `title` field (Specs §5 Item fields)
+106. [skipped by decision - no current feature needs the server to store them; the desktop can read length and size from the file when needed] (was 33) persist duration and dimensions (Specs §5 Item fields)
+106. [skipped by decision - item title dropped] (was 32) item `title` field (Specs §5 Item fields)
 
-107. [not yet implemented] (was 42) distinguish GPS-derived vs inferred where in the UI (Specs §5 Where) — see also 13–14, 18
+107. [skipped by design - the Where display stays as is; GPS-derived and inferred places are not labelled differently] (was 42) distinguish GPS-derived vs inferred where in the UI (Specs §5 Where) — see also 13–14, 18
 
-108. [not yet implemented] (was 22) faces from the same folder, they are more likely to be assigned to persons from the same folder as well.
+108. [skipped by decision - matching stays on face similarity alone; the folder is not used as a hint] (was 22) faces from the same folder, they are more likely to be assigned to persons from the same folder as well.
 
-109. [not yet implemented] (was 30) browse / filter / search by person, activity, place, date, key period, comment text, source, state (Specs §6.3 / §8 Discovery / §11.3 / §12 Knowledge) — desktop has client-side text filter only
-109. [not yet implemented] (was 31) comment search (CRUD exists) (Specs §5 / §8 / §12 Comments)
+109. [done in code, desktop only - needs a manual look] (was 30) browse / filter / search by person, activity, place, date, key period, comment text, source, state (Specs §6.3 / §8 Discovery / §11.3 / §12 Knowledge) — Who / What / Where header filters, Captured From / To range, Clear filters, text box (incl. comment and source), Status; ANDed; no separate Source checklist; Export Views drops hidden items
+109. [done in code - covered by the Folders text box] (was 31) comment search (CRUD exists) (Specs §5 / §8 / §12 Comments)
 
 110. [not yet implemented] (was 37) usage spent / reserved / limit meters (Specs §7 Cost / §8 Cost)
 110. [not yet implemented] (was 36) `paused_for_budget` job state — soft budget warn → pause (enum exists; jobs never pause) (Specs §5 / §7 Cost / §8 Cost / §12 Cost)

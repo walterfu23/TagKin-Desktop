@@ -43,7 +43,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   late TextEditingController _familiarRegions;
   late int _libraryPageSize;
   late int _recentCollectionsLimit;
-  late int _recentViewsLimit;
   late int _nearDuplicateThreshold;
   late int _sampleMinIntervalMs;
   late int _sampleMaxIntervalMs;
@@ -92,7 +91,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _familiarRegions = TextEditingController(text: prefs.familiarRegions);
     _libraryPageSize = prefs.libraryPageSize;
     _recentCollectionsLimit = prefs.recentCollectionsLimit;
-    _recentViewsLimit = prefs.recentViewsLimit;
     _nearDuplicateThreshold = prefs.nearDuplicateThreshold;
     _sampleMinIntervalMs = prefs.sampleMinIntervalMs;
     _sampleMaxIntervalMs = prefs.sampleMaxIntervalMs;
@@ -173,7 +171,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _familiarRegions.text = prefs.familiarRegions;
     _libraryPageSize = prefs.libraryPageSize;
     _recentCollectionsLimit = prefs.recentCollectionsLimit;
-    _recentViewsLimit = prefs.recentViewsLimit;
     _nearDuplicateThreshold = prefs.nearDuplicateThreshold;
     _sampleMinIntervalMs = prefs.sampleMinIntervalMs;
     _sampleMaxIntervalMs = prefs.sampleMaxIntervalMs;
@@ -244,7 +241,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       ),
       'ui.libraryPageSize': _libraryPageSize,
       'ui.recentCollectionsLimit': _recentCollectionsLimit,
-      'ui.recentViewsLimit': _recentViewsLimit,
       'ingest.nearDuplicateThreshold': _nearDuplicateThreshold,
       'video.sampleMinIntervalMs': _sampleMinIntervalMs,
       'video.sampleMaxIntervalMs': _sampleMaxIntervalMs,
@@ -908,19 +904,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           max: DesktopPrefs.recentCollectionsLimitMax,
                           step: DesktopPrefs.recentCollectionsLimitStep,
                           onChanged: (v) => _recentCollectionsLimit = v,
-                        ),
-                        _intSlider(
-                          key: const Key('pref-recent-views-limit'),
-                          label: 'Recent views limit',
-                          helper:
-                              'Max saved views listed in the Folders Views menu. '
-                              'All saved views stay until you delete them; this '
-                              'only caps the recent list. Default 10 (1–100).',
-                          value: _recentViewsLimit,
-                          min: DesktopPrefs.recentViewsLimitMin,
-                          max: DesktopPrefs.recentViewsLimitMax,
-                          step: DesktopPrefs.recentViewsLimitStep,
-                          onChanged: (v) => _recentViewsLimit = v,
                         ),
                       ],
                     ),

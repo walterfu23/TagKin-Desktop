@@ -20,6 +20,7 @@ import 'package:tagkin_desktop/review/local_media_resolver.dart';
 import 'package:tagkin_desktop/where/where_label_resolver.dart';
 import 'package:tagkin_desktop/where/where_place_label.dart';
 import 'package:tagkin_desktop/widgets/sure_action_button.dart';
+import 'package:tagkin_desktop/ui/zebra_row_color.dart';
 
 const double _kThumbSize = 56;
 const double _kColThumb = 72;
@@ -44,10 +45,6 @@ const double _kTableMinWidth =
     _kColWhere +
     _kColComment +
     _kColStatus;
-
-/// Slight grey for even (1-based) rows — index.isOdd in 0-based list.
-Color _zebraRowColor(ColorScheme scheme) =>
-    scheme.onSurface.withValues(alpha: 0.04);
 
 /// Wide multi-column library table (D2 post-v1).
 class LibraryItemsTable extends ConsumerWidget {
@@ -410,7 +407,10 @@ class _HeaderRow extends StatelessWidget {
                   column: LibrarySortColumn.who,
                   controller: controller,
                   multiColumnSort: multiColumnSort,
-                  trailing: _WhoFilterButton(controller: controller),
+                  trailing: _FacetFilterButton(
+                    facet: _Facet.who,
+                    controller: controller,
+                  ),
                   onSort: () => record('Sort', () async {
                     controller.toggleSort(
                       LibrarySortColumn.who,
@@ -424,6 +424,10 @@ class _HeaderRow extends StatelessWidget {
                   column: LibrarySortColumn.what,
                   controller: controller,
                   multiColumnSort: multiColumnSort,
+                  trailing: _FacetFilterButton(
+                    facet: _Facet.what,
+                    controller: controller,
+                  ),
                   onSort: () => record('Sort', () async {
                     controller.toggleSort(
                       LibrarySortColumn.what,
@@ -437,6 +441,10 @@ class _HeaderRow extends StatelessWidget {
                   column: LibrarySortColumn.where,
                   controller: controller,
                   multiColumnSort: multiColumnSort,
+                  trailing: _FacetFilterButton(
+                    facet: _Facet.where,
+                    controller: controller,
+                  ),
                   onSort: () => record('Sort', () async {
                     controller.toggleSort(
                       LibrarySortColumn.where,
@@ -532,8 +540,8 @@ class _SortHeader extends StatelessWidget {
   final bool multiColumnSort;
   final Future<void> Function() onSort;
 
-  /// Optional control (e.g. a column filter button) shown after the sort
-  /// label, outside the sort tap target.
+  /// Optional control (e.g. a column filter button) shown right after the
+  /// sort label, outside the sort tap target.
   final Widget? trailing;
 
   @override
@@ -549,7 +557,7 @@ class _SortHeader extends StatelessWidget {
       width: width,
       child: Row(
         children: [
-          Expanded(
+          Flexible(
             child: InkWell(
               key: Key('sort-header-${column.name}'),
               onTap: () {
@@ -558,6 +566,7 @@ class _SortHeader extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Flexible(
                       child: Text(
@@ -584,31 +593,73 @@ class _SortHeader extends StatelessWidget {
               ),
             ),
           ),
+          // Sits right after its own label, then the rest of the column.
           ?trailing,
+          const Spacer(),
         ],
       ),
     );
   }
 }
 
-/// Who column header filter icon; opens [_WhoFilterDialog].
-class _WhoFilterButton extends StatelessWidget {
-  const _WhoFilterButton({required this.controller});
+/// Which column facet a filter button / dialog edits.
+enum _Facet {
+  who('who', 'Who'),
+  where('where', 'Where'),
+  what('what', 'What');
 
+  const _Facet(this.id, this.title);
+
+  /// Lower-case id used in widget keys and the undo label.
+  final String id;
+  final String title;
+
+  Set<String> selected(LibraryTableController c) => switch (this) {
+    _Facet.who => c.whoFilterNames,
+    _Facet.where => c.whereFilterNames,
+    _Facet.what => c.whatFilterNames,
+  };
+
+  bool matchAll(LibraryTableController c) => switch (this) {
+    _Facet.who => c.whoFilterMatchAll,
+    _Facet.where => c.whereFilterMatchAll,
+    _Facet.what => c.whatFilterMatchAll,
+  };
+
+  Set<String> available(LibraryTableController c) => switch (this) {
+    _Facet.who => c.availableWhoNames,
+    _Facet.where => c.availableWhereNames,
+    _Facet.what => c.availableWhatNames,
+  };
+
+  void apply(LibraryTableController c, Set<String> names, bool matchAll) =>
+      switch (this) {
+        _Facet.who => c.setWhoFilter(names: names, matchAll: matchAll),
+        _Facet.where => c.setWhereFilter(names: names, matchAll: matchAll),
+        _Facet.what => c.setWhatFilter(names: names, matchAll: matchAll),
+      };
+}
+
+/// Who / Where / What column header filter icon; opens [_FacetFilterDialog].
+class _FacetFilterButton extends StatelessWidget {
+  const _FacetFilterButton({required this.facet, required this.controller});
+
+  final _Facet facet;
   final LibraryTableController controller;
 
   @override
   Widget build(BuildContext context) {
-    final active = controller.whoFilterNames.isNotEmpty;
-    final matchLabel = controller.whoFilterMatchAll ? 'Match All' : 'Match Any';
+    final selected = facet.selected(controller);
+    final active = selected.isNotEmpty;
+    final matchLabel = facet.matchAll(controller) ? 'Match All' : 'Match Any';
     final tooltip = active
-        ? 'Who filter: ${controller.whoFilterNames.length} selected ($matchLabel)'
-        : 'Filter Who';
+        ? '${facet.title} filter: ${selected.length} selected ($matchLabel)'
+        : 'Filter ${facet.title}';
     return Tooltip(
       message: tooltip,
       waitDuration: Duration.zero,
       child: IconButton(
-        key: const Key('library-who-filter-button'),
+        key: Key('library-${facet.id}-filter-button'),
         icon: Icon(
           active ? Icons.filter_alt : Icons.filter_alt_outlined,
           size: 18,
@@ -618,36 +669,40 @@ class _WhoFilterButton extends StatelessWidget {
         constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
         onPressed: () => showDialog<void>(
           context: context,
-          builder: (_) => _WhoFilterDialog(controller: controller),
+          builder: (_) =>
+              _FacetFilterDialog(facet: facet, controller: controller),
         ),
       ),
     );
   }
 }
 
-/// Who filter dialog: checklist of names in the currently displayed
-/// population (see [LibraryTableController.availableWhoNames]) plus a
-/// Match Any (OR) / Match All (AND) toggle for combining multiple names.
-class _WhoFilterDialog extends StatefulWidget {
-  const _WhoFilterDialog({required this.controller});
+/// Facet filter dialog: checklist of values in the currently displayed
+/// population (see [LibraryTableController.availableWhoNames] and its Where /
+/// What siblings) plus a Match Any (OR) / Match All (AND) toggle.
+class _FacetFilterDialog extends StatefulWidget {
+  const _FacetFilterDialog({required this.facet, required this.controller});
 
+  final _Facet facet;
   final LibraryTableController controller;
 
   @override
-  State<_WhoFilterDialog> createState() => _WhoFilterDialogState();
+  State<_FacetFilterDialog> createState() => _FacetFilterDialogState();
 }
 
-class _WhoFilterDialogState extends State<_WhoFilterDialog> {
+class _FacetFilterDialogState extends State<_FacetFilterDialog> {
   late final Set<String> _selected = Set<String>.from(
-    widget.controller.whoFilterNames,
+    widget.facet.selected(widget.controller),
   );
-  late bool _matchAll = widget.controller.whoFilterMatchAll;
+  late bool _matchAll = widget.facet.matchAll(widget.controller);
 
   @override
   Widget build(BuildContext context) {
-    final names = widget.controller.availableWhoNames.toList();
+    final facet = widget.facet;
+    final id = facet.id;
+    final names = facet.available(widget.controller).toList();
     return AlertDialog(
-      title: const Text('Filter Who'),
+      title: Text('Filter ${facet.title}'),
       content: SizedBox(
         width: 360,
         child: Column(
@@ -655,7 +710,7 @@ class _WhoFilterDialogState extends State<_WhoFilterDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SegmentedButton<bool>(
-              key: const Key('who-filter-match-mode'),
+              key: Key('$id-filter-match-mode'),
               segments: const [
                 ButtonSegment(value: false, label: Text('Match Any')),
                 ButtonSegment(value: true, label: Text('Match All')),
@@ -678,7 +733,7 @@ class _WhoFilterDialogState extends State<_WhoFilterDialog> {
                     children: [
                       for (final name in names)
                         CheckboxListTile(
-                          key: Key('who-filter-option-$name'),
+                          key: Key('$id-filter-option-$name'),
                           dense: true,
                           controlAffinity: ListTileControlAffinity.leading,
                           title: Text(name),
@@ -700,17 +755,17 @@ class _WhoFilterDialogState extends State<_WhoFilterDialog> {
       ),
       actions: [
         TextButton(
-          key: const Key('who-filter-clear'),
+          key: Key('$id-filter-clear'),
           onPressed: () => setState(_selected.clear),
           child: const Text('Clear'),
         ),
         TextButton(
-          key: const Key('who-filter-cancel'),
+          key: Key('$id-filter-cancel'),
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
         FilledButton(
-          key: const Key('who-filter-apply'),
+          key: Key('$id-filter-apply'),
           onPressed: () {
             final container = ProviderScope.containerOf(context);
             final selected = Set<String>.from(_selected);
@@ -721,12 +776,9 @@ class _WhoFilterDialogState extends State<_WhoFilterDialog> {
                   .record(
                     table: widget.controller,
                     cols: container.read(collectionsControllerProvider),
-                    label: 'Filter who',
+                    label: 'Filter $id',
                     mutate: () async {
-                      widget.controller.setWhoFilter(
-                        names: selected,
-                        matchAll: matchAll,
-                      );
+                      facet.apply(widget.controller, selected, matchAll);
                     },
                   ),
             );
@@ -793,7 +845,7 @@ class _PathGroupHeader extends StatelessWidget {
     );
     return Material(
       color: zebra
-          ? _zebraRowColor(Theme.of(context).colorScheme)
+          ? zebraRowColor(Theme.of(context).colorScheme)
           : Colors.transparent,
       child: InkWell(
         key: Key('source-group-$dir'),
@@ -1020,7 +1072,7 @@ class _DataRow extends ConsumerWidget {
     final grow = expanded || editMode;
     return Material(
       color: zebra
-          ? _zebraRowColor(Theme.of(context).colorScheme)
+          ? zebraRowColor(Theme.of(context).colorScheme)
           : Colors.transparent,
       child: InkWell(
         key: Key('item-row-$scopeId'),

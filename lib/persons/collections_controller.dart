@@ -44,12 +44,10 @@ class CollectionsController extends ChangeNotifier {
   CollectionsController({
     CollectionsStore? store,
     this._maxRecents,
-    this._maxRecentViews,
   }) : _store = store ?? CollectionsStore();
 
   final CollectionsStore _store;
   final int Function()? _maxRecents;
-  final int Function()? _maxRecentViews;
   CollectionsFile _catalog = CollectionsFile.empty;
   Collection? _current;
   Collection? _baseline;
@@ -306,7 +304,6 @@ class CollectionsController extends ChangeNotifier {
     leafFolders: List<String>.of(c.leafFolders),
     ui: c.ui,
     views: List<SavedView>.of(c.views),
-    recentViewIds: List<String>.of(c.recentViewIds),
     currentViewId: c.currentViewId,
   );
 
@@ -769,25 +766,6 @@ class CollectionsController extends ChangeNotifier {
     return null;
   }
 
-  /// Most-recent-first views, capped by Settings recent-views limit.
-  List<SavedView> get recentViews {
-    final cur = _current;
-    if (cur == null) return const [];
-    final byId = {for (final v in cur.views) v.id: v};
-    final limit = (_maxRecentViews?.call() ?? Collection.maxRecentViews).clamp(
-      1,
-      100,
-    );
-    final out = <SavedView>[];
-    for (final id in cur.recentViewIds) {
-      final v = byId[id];
-      if (v == null) continue;
-      out.add(v);
-      if (out.length >= limit) break;
-    }
-    return out;
-  }
-
   Future<SavedView?> saveView({
     required String name,
     String description = '',
@@ -804,10 +782,8 @@ class CollectionsController extends ChangeNotifier {
       filters: filters,
     );
     final nextViews = [...cur.views, created];
-    final nextRecents = _cappedViewRecents(created.id, cur.recentViewIds);
     await _persistViewsPatch(
       views: nextViews,
-      recentViewIds: nextRecents,
       currentViewId: created.id,
     );
     return created;
@@ -820,8 +796,7 @@ class CollectionsController extends ChangeNotifier {
     if (idx < 0) return false;
     final nextViews = List<SavedView>.of(cur.views);
     nextViews[idx] = nextViews[idx].copyWith(filters: filters);
-    final nextRecents = _cappedViewRecents(id, cur.recentViewIds);
-    await _persistViewsPatch(views: nextViews, recentViewIds: nextRecents);
+    await _persistViewsPatch(views: nextViews);
     return true;
   }
 
@@ -844,8 +819,7 @@ class CollectionsController extends ChangeNotifier {
       name: trimmedName,
       description: description?.trim(),
     );
-    final nextRecents = _cappedViewRecents(id, cur.recentViewIds);
-    await _persistViewsPatch(views: nextViews, recentViewIds: nextRecents);
+    await _persistViewsPatch(views: nextViews);
     return true;
   }
 
@@ -857,43 +831,21 @@ class CollectionsController extends ChangeNotifier {
       for (final v in cur.views)
         if (v.id != id) v,
     ];
-    final nextRecents = [
-      for (final rid in cur.recentViewIds)
-        if (rid != id) rid,
-    ];
     await _persistViewsPatch(
       views: nextViews,
-      recentViewIds: nextRecents,
       currentViewId: cur.currentViewId == id ? null : cur.currentViewId,
       clearCurrentViewId: cur.currentViewId == id,
     );
     return true;
   }
 
-  Future<bool> touchViewRecent(String id) async {
-    final cur = _current;
-    if (cur == null || !sessionReady) return false;
-    if (!cur.views.any((v) => v.id == id)) return false;
-    final nextRecents = _cappedViewRecents(id, cur.recentViewIds);
-    if (_listEq(nextRecents, cur.recentViewIds) && cur.currentViewId == id) {
-      return true;
-    }
-    await _persistViewsPatch(
-      views: cur.views,
-      recentViewIds: nextRecents,
-      currentViewId: id,
-    );
-    return true;
-  }
-
-  /// Replace the open collection's saved views, recents, and current view.
+  /// Replace the open collection's saved views and current view.
   ///
   /// Used by Folders undo/redo. Fails when [collectionId] is not the open
   /// collection so a stale snapshot cannot write another collection.
   Future<void> restoreViewsState({
     required String collectionId,
     required List<SavedView> views,
-    required List<String> recentViewIds,
     required String? currentViewId,
   }) async {
     final cur = _current;
@@ -905,7 +857,6 @@ class CollectionsController extends ChangeNotifier {
     }
     await _persistViewsPatch(
       views: views,
-      recentViewIds: recentViewIds,
       currentViewId: currentViewId,
       clearCurrentViewId: currentViewId == null,
     );
@@ -919,31 +870,16 @@ class CollectionsController extends ChangeNotifier {
     if (cur.currentViewId == id) return true;
     await _persistViewsPatch(
       views: cur.views,
-      recentViewIds: cur.recentViewIds,
       currentViewId: id,
       clearCurrentViewId: id == null,
     );
     return true;
   }
 
-  List<String> _cappedViewRecents(String id, List<String> existing) {
-    final limit = (_maxRecentViews?.call() ?? Collection.maxRecentViews).clamp(
-      1,
-      100,
-    );
-    final next = <String>[id];
-    for (final existingId in existing) {
-      if (existingId != id) next.add(existingId);
-      if (next.length >= limit) break;
-    }
-    return next;
-  }
-
-  /// Writes views/recents/current view onto the catalog row without flushing
+  /// Writes views/current view onto the catalog row without flushing
   /// dirty name / folders / page-look edits.
   Future<void> _persistViewsPatch({
     required List<SavedView> views,
-    required List<String> recentViewIds,
     String? currentViewId,
     bool clearCurrentViewId = false,
   }) async {
@@ -954,7 +890,6 @@ class CollectionsController extends ChangeNotifier {
         : (currentViewId ?? cur.currentViewId);
     _current = cur.copyWith(
       views: views,
-      recentViewIds: recentViewIds,
       currentViewId: nextCurrentViewId,
       clearCurrentViewId: nextCurrentViewId == null,
     );
@@ -967,7 +902,6 @@ class CollectionsController extends ChangeNotifier {
     }
     final persisted = catalogRow.copyWith(
       views: views,
-      recentViewIds: recentViewIds,
       currentViewId: nextCurrentViewId,
       clearCurrentViewId: nextCurrentViewId == null,
     );
@@ -992,7 +926,6 @@ class CollectionsController extends ChangeNotifier {
     if (base != null && base.id == cur.id) {
       _baseline = base.copyWith(
         views: views,
-        recentViewIds: recentViewIds,
         currentViewId: nextCurrentViewId,
         clearCurrentViewId: nextCurrentViewId == null,
       );
@@ -1028,7 +961,6 @@ class CollectionsController extends ChangeNotifier {
       leafFolders: const [],
       ui: cur.ui,
       views: List<SavedView>.of(cur.views),
-      recentViewIds: List<String>.of(cur.recentViewIds),
       currentViewId: cur.currentViewId,
     );
     _current = copy;
@@ -1150,7 +1082,6 @@ final collectionsControllerProvider =
       final controller = CollectionsController(
         store: ref.read(collectionsStoreProvider),
         maxRecents: () => ref.read(desktopPrefsProvider).recentCollectionsLimit,
-        maxRecentViews: () => ref.read(desktopPrefsProvider).recentViewsLimit,
       );
       controller.load();
       return controller;

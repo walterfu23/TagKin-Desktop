@@ -219,21 +219,25 @@ void main() {
       expect(asked, 1);
     });
 
-    test('answers only after the prompt resolves (never cancel-first)', () async {
-      final prompt = Completer<bool>();
-      var answered = false;
-      final future = resolveAppExitRequest(
-        canSkipLeavePrompt: false,
-        confirmLeave: () => prompt.future,
-      ).then((r) {
-        answered = true;
-        return r;
-      });
-      await Future<void>.delayed(Duration.zero);
-      expect(answered, isFalse);
-      prompt.complete(true);
-      expect(await future, AppExitResponse.exit);
-    });
+    test(
+      'answers only after the prompt resolves (never cancel-first)',
+      () async {
+        final prompt = Completer<bool>();
+        var answered = false;
+        final future =
+            resolveAppExitRequest(
+              canSkipLeavePrompt: false,
+              confirmLeave: () => prompt.future,
+            ).then((r) {
+              answered = true;
+              return r;
+            });
+        await Future<void>.delayed(Duration.zero);
+        expect(answered, isFalse);
+        prompt.complete(true);
+        expect(await future, AppExitResponse.exit);
+      },
+    );
   });
 
   test('itemListLeaveBusyBody names music generate only', () {
@@ -488,11 +492,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(folders.isFolderHidden(trip), isTrue);
-    expect(find.text('2 items'), findsOneWidget);
+    // Items under a hidden folder never reach Export Views.
+    expect(find.text('1 item'), findsOneWidget);
     expect(find.byKey(const Key('item-list-drag-photo-keep')), findsOneWidget);
     expect(
       find.byKey(const Key('item-list-drag-photo-hidden-folder')),
-      findsOneWidget,
+      findsNothing,
     );
     expect(find.text('View01'), findsWidgets);
   });
@@ -1295,14 +1300,20 @@ void main() {
     expect(renderedAudio, isNull);
   });
 
-  test('Export Views is the title, toolbar tooltip, and File menu', () {
+  test('Export Views is the title, Views menu item, and File menu', () {
     final page = File(
       'lib/item_lists/item_list_export_page.dart',
     ).readAsStringSync();
     final shell = File('lib/app_shell.dart').readAsStringSync();
+    final folders = File('lib/library/items_list_page.dart').readAsStringSync();
+    final views = File('lib/library/views_menu.dart').readAsStringSync();
     final menu = File('lib/shell/tagkin_platform_menu.dart').readAsStringSync();
     expect(page.contains("title: const Text('Export Views')"), isTrue);
-    expect(shell.contains("tooltip: 'Export Views'"), isTrue);
+    expect(views.contains("Key('views-menu-export')"), isTrue);
+    expect(views.contains("Text('Export this view…')"), isTrue);
+    expect(folders.contains('folders-export-views'), isFalse);
+    expect(shell.contains("tooltip: 'Export Views'"), isFalse);
+    expect(shell.contains('nav-item-list-export'), isFalse);
     expect(shell.contains("const Text('Export Views…')"), isTrue);
     expect(menu.contains("label: 'Export Views…'"), isTrue);
     expect(shell.contains("tooltip: 'Export list'"), isFalse);

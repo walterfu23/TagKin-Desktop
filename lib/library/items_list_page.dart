@@ -10,6 +10,7 @@ import 'package:tagkin_desktop/ingest/folder_picker.dart';
 import 'package:tagkin_desktop/library/folder_remove_queue.dart';
 import 'package:tagkin_desktop/library/folders_undo_recorder.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
+import 'package:tagkin_desktop/library/library_filter_bar.dart';
 import 'package:tagkin_desktop/library/library_items_table.dart';
 import 'package:tagkin_desktop/library/library_table_controller.dart';
 import 'package:tagkin_desktop/library/source_reveal.dart';
@@ -554,8 +555,9 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
                               ],
                               const SizedBox(width: 12),
                               CreditsRemainingChip(
-                                creditsRepository:
-                                    ref.watch(creditsRepositoryProvider),
+                                creditsRepository: ref.watch(
+                                  creditsRepositoryProvider,
+                                ),
                               ),
                               const SizedBox(width: 12),
                               FilledButton.icon(
@@ -569,9 +571,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
                                   _editMode = !_editMode;
                                 }),
                                 icon: Icon(
-                                  _editMode
-                                      ? Icons.check
-                                      : Icons.edit_outlined,
+                                  _editMode ? Icons.check : Icons.edit_outlined,
                                 ),
                                 label: Text(_editMode ? 'Done' : 'Edit'),
                               ),
@@ -594,6 +594,7 @@ class _ItemsListPageState extends ConsumerState<ItemsListPage> {
                     },
                   ),
                 ),
+                LibraryFilterBar(table: table),
                 Expanded(child: _buildBody(table, retryEnabled: !blocked)),
               ],
             ),

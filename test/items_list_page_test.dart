@@ -14,6 +14,7 @@ import 'package:tagkin_desktop/ingest/folder_picker.dart';
 import 'package:tagkin_desktop/ingest/model_host_uploader.dart';
 import 'package:tagkin_desktop/ingest/upload_controller.dart';
 import 'package:tagkin_desktop/library/folder_remove_queue.dart';
+import 'package:tagkin_desktop/item_lists/item_list_export_page.dart';
 import 'package:tagkin_desktop/library/item_detail_page.dart';
 import 'package:tagkin_desktop/library/item_hover_preview.dart';
 import 'package:tagkin_desktop/undo/undo_shortcuts.dart';
@@ -2094,6 +2095,120 @@ void main() {
     expect(find.byKey(const Key('item-row-c')), findsOneWidget);
   });
 
+  testWidgets('Export this view is a View actions item, not a toolbar or '
+      'AppBar button', (tester) async {
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(items: [fixtureItem(id: 'a')]),
+    );
+
+    expect(find.byKey(const Key('nav-item-list-export')), findsNothing);
+    expect(find.byKey(const Key('folders-export-views')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('library-view-actions')));
+    await tester.pumpAndSettle();
+    expect(find.text('Export this view…'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('views-menu-export')));
+    // The export page keeps a progress indicator running, so no settle.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.byType(ItemListExportPage), findsOneWidget);
+  });
+
+  testWidgets('Who / What / Where filter funnels sit right after their own '
+      'header label', (tester) async {
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(items: [fixtureItem(id: 'a')]),
+    );
+
+    Rect label(String column, String text) => tester.getRect(
+      find.descendant(
+        of: find.byKey(Key('sort-header-$column')),
+        matching: find.text(text),
+      ),
+    );
+    Rect funnel(String column) =>
+        tester.getRect(find.byKey(Key('library-$column-filter-button')));
+
+    final whoLabel = label('who', 'Who');
+    final whatLabel = label('what', 'What');
+    final whereLabel = label('where', 'Where');
+    final commentLabel = label('comment', 'Comment');
+
+    expect(funnel('who').left - whoLabel.right, lessThan(30));
+    expect(funnel('who').right, lessThanOrEqualTo(whatLabel.left));
+    expect(funnel('what').left - whatLabel.right, lessThan(30));
+    expect(funnel('what').right, lessThanOrEqualTo(whereLabel.left));
+    expect(funnel('where').left - whereLabel.right, lessThan(30));
+    expect(funnel('where').right, lessThanOrEqualTo(commentLabel.left));
+  });
+
+  testWidgets('Where header filter, filters-active label and Clear filters', (
+    tester,
+  ) async {
+    final a = fixtureItem(id: 'a', processingStatus: ProcessingStatus.tagged);
+    final b = fixtureItem(id: 'b', processingStatus: ProcessingStatus.tagged);
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(
+        items: [a, b],
+        knowledgeByItemId: {
+          'a': fixtureKnowledge(
+            item: a,
+            tags: [
+              fixtureTag(
+                id: 'wa',
+                itemId: 'a',
+                dimension: 'where',
+                value: 'Seattle',
+              ),
+            ],
+          ),
+          'b': fixtureKnowledge(
+            item: b,
+            tags: [
+              fixtureTag(
+                id: 'wb',
+                itemId: 'b',
+                dimension: 'where',
+                value: 'Portland',
+              ),
+            ],
+          ),
+        },
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('library-active-filters')), findsNothing);
+    expect(
+      tester
+          .widget<TextButton>(find.byKey(const Key('library-clear-filters')))
+          .onPressed,
+      isNull,
+    );
+
+    await tester.tap(find.byKey(const Key('library-where-filter-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('where-filter-option-Seattle')));
+    await tester.tap(find.byKey(const Key('where-filter-apply')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('item-row-a')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-b')), findsNothing);
+    expect(find.text('1 filter active'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('library-clear-filters')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('item-row-a')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-b')), findsOneWidget);
+    expect(find.byKey(const Key('library-active-filters')), findsNothing);
+  });
+
   testWidgets('Who filter checklist and matching scope to Hidden when the '
       'Hide-column dropdown shows Hidden', (tester) async {
     final shown = fixtureItem(id: 'shown');
@@ -2735,7 +2850,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('library-views-menu')));
+      await tester.tap(find.byKey(const Key('library-view-actions')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('views-menu-save-as')));
       await tester.pumpAndSettle();
@@ -2777,7 +2892,7 @@ void main() {
     await _pumpLibrary(tester, items: items);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('library-views-menu')));
+    await tester.tap(find.byKey(const Key('library-view-actions')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('views-menu-save-as')));
     await tester.pumpAndSettle();
@@ -2824,7 +2939,7 @@ void main() {
       await tester.pumpAndSettle();
 
       Future<void> saveAs(String name) async {
-        await tester.tap(find.byKey(const Key('library-views-menu')));
+        await tester.tap(find.byKey(const Key('library-view-actions')));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('views-menu-save-as')));
         await tester.pumpAndSettle();
@@ -2862,7 +2977,8 @@ void main() {
       ).read(collectionsControllerProvider);
       expect(cols.views.map((v) => v.name), ['Ada', 'Sam']);
 
-      await tester.tap(find.byKey(const Key('library-views-menu')));
+      // Rename acts on the current view (Sam), from the actions menu.
+      await tester.tap(find.byKey(const Key('library-view-actions')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('views-menu-rename')));
       await tester.pumpAndSettle();
@@ -2924,7 +3040,7 @@ void main() {
     await _pumpLibrary(tester, items: FakeItemsRepository(items: [a, b]));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('library-views-menu')));
+    await tester.tap(find.byKey(const Key('library-view-actions')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('views-menu-save-as')));
     await tester.pumpAndSettle();
@@ -3595,7 +3711,7 @@ void main() {
     expect(find.byKey(const Key('item-row-b')), findsOneWidget);
     expect(find.byKey(const Key('item-row-a')), findsNothing);
 
-    await tester.tap(find.byKey(const Key('library-views-menu')));
+    await tester.tap(find.byKey(const Key('library-view-actions')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('views-menu-save-as')));
     await tester.pumpAndSettle();
@@ -3632,7 +3748,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Ada only*'), findsWidgets);
 
-    await tester.tap(find.byKey(const Key('library-views-menu')));
+    await tester.tap(find.byKey(const Key('library-view-actions')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('views-menu-update')));
     await tester.pumpAndSettle();
@@ -3648,39 +3764,289 @@ void main() {
     expect(find.byKey(const Key('item-row-a')), findsOneWidget);
     expect(find.byKey(const Key('item-row-b')), findsNothing);
 
-    await tester.tap(find.byKey(const Key('library-views-menu')));
+    // Delete acts on the current view and returns to All.
+    expect(find.byKey(const Key('item-row-b')), findsNothing);
+    await tester.tap(find.byKey(const Key('library-view-actions')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('views-menu-delete')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('view-delete-confirm')));
     await tester.pumpAndSettle();
+    expect(find.byKey(const Key('item-row-a')), findsOneWidget);
+    expect(find.byKey(const Key('item-row-b')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('library-views-menu')));
+    await tester.pumpAndSettle();
     expect(find.text('Ada only'), findsNothing);
   });
 
-  testWidgets('Manage views reaches a saved view', (tester) async {
+  Future<void> saveViewAs(
+    WidgetTester tester,
+    String filterText,
+    String name,
+  ) async {
+    await tester.enterText(find.byKey(const Key('library-filter')), filterText);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('library-view-actions')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('views-menu-save-as')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('view-name-field')), name);
+    await tester.tap(find.byKey(const Key('view-name-confirm')));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('Views selector lists All first, then every view A-Z, uncapped', (
+    tester,
+  ) async {
     await _pumpLibrary(
       tester,
       items: FakeItemsRepository(items: [fixtureItem(id: 'a')]),
     );
-    await tester.pumpAndSettle();
+    final names = [
+      'beta',
+      'Alpha',
+      'charlie',
+      for (var i = 1; i <= 10; i++) 'Zed$i',
+    ];
+    for (var i = 0; i < names.length; i++) {
+      await saveViewAs(tester, 'q$i', names[i]);
+    }
+    final cols = ProviderScope.containerOf(
+      tester.element(find.byType(TagKinDesktopApp)),
+    ).read(collectionsControllerProvider);
 
-    await tester.enterText(find.byKey(const Key('library-filter')), 'xyz');
-    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('library-views-menu')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('views-menu-save-as')));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('view-name-field')), 'Needle');
-    await tester.tap(find.byKey(const Key('view-name-confirm')));
-    await tester.pumpAndSettle();
 
+    final rows = tester
+        .widgetList<MenuItemButton>(
+          find.byWidgetPredicate(
+            (w) =>
+                w is MenuItemButton &&
+                w.key is ValueKey<String> &&
+                (w.key! as ValueKey<String>).value.startsWith('views-menu-'),
+          ),
+        )
+        .map((w) => (w.key! as ValueKey<String>).value)
+        .toList();
+    // All first, then one row per saved view (more than the old cap of 10).
+    expect(rows.first, 'views-menu-all');
+    expect(rows.length, 1 + cols.views.length);
+    expect(cols.views.length, greaterThan(10));
+    expect(
+      cols.views.map((v) => v.name).toList(),
+      [...cols.views.map((v) => v.name)]..sort(
+        (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
+      ),
+    );
+    for (final v in cols.views) {
+      expect(find.byKey(Key('views-menu-view-${v.id}')), findsOneWidget);
+    }
+    // The popup stays a bounded, scrollable height however many views exist.
+    final viewport = find
+        .ancestor(
+          of: find.byKey(const Key('views-menu-all')),
+          matching: find.byType(SingleChildScrollView),
+        )
+        .first;
+    expect(tester.getSize(viewport).height, lessThanOrEqualTo(360));
+  });
+
+  testWidgets('Views selector checks the current view and has no Manage views '
+      'or recent wording', (tester) async {
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(items: [fixtureItem(id: 'a')]),
+    );
     await tester.tap(find.byKey(const Key('library-views-menu')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('views-menu-manage')));
+    expect(find.byKey(const Key('views-menu-check-all')), findsOneWidget);
+    expect(find.text('Manage views…'), findsNothing);
+    expect(find.byKey(const Key('views-menu-manage')), findsNothing);
+    expect(find.textContaining('ecent'), findsNothing);
+    await tester.tapAt(const Offset(5, 5));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('views-manage-dialog')), findsOneWidget);
-    expect(find.text('Needle'), findsWidgets);
-    await tester.tap(find.byKey(const Key('views-manage-close')));
+
+    await saveViewAs(tester, 'one', 'Alpha');
+    await saveViewAs(tester, 'two', 'Beta');
+    await tester.tap(find.byKey(const Key('library-views-menu')));
     await tester.pumpAndSettle();
+    final checks = find.byWidgetPredicate(
+      (w) =>
+          w.key is ValueKey<String> &&
+          (w.key! as ValueKey<String>).value.startsWith('views-menu-check-'),
+    );
+    expect(checks, findsOneWidget);
+    expect(find.byKey(const Key('views-menu-check-all')), findsNothing);
+  });
+
+  testWidgets('View actions menu holds the actions; Rename / Delete are '
+      'disabled on All', (tester) async {
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(items: [fixtureItem(id: 'a')]),
+    );
+    await tester.tap(find.byKey(const Key('library-view-actions')));
+    await tester.pumpAndSettle();
+
+    for (final key in [
+      'views-menu-save-as',
+      'views-menu-update',
+      'views-menu-rename',
+      'views-menu-delete',
+      'views-menu-export',
+    ]) {
+      expect(find.byKey(Key(key)), findsOneWidget, reason: key);
+    }
+    expect(find.byKey(const Key('views-menu-all')), findsNothing);
+    expect(find.byKey(const Key('views-menu-manage')), findsNothing);
+    bool enabled(String key) =>
+        tester.widget<PopupMenuItem<Object?>>(find.byKey(Key(key))).enabled;
+    expect(enabled('views-menu-save-as'), isTrue);
+    expect(enabled('views-menu-update'), isFalse);
+    expect(enabled('views-menu-rename'), isFalse);
+    expect(enabled('views-menu-delete'), isFalse);
+    expect(enabled('views-menu-export'), isTrue);
+  });
+
+  testWidgets('Rename and Delete enable on a named view', (tester) async {
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(items: [fixtureItem(id: 'a')]),
+    );
+    await saveViewAs(tester, 'one', 'Alpha');
+    await tester.tap(find.byKey(const Key('library-view-actions')));
+    await tester.pumpAndSettle();
+    bool enabled(String key) =>
+        tester.widget<PopupMenuItem<Object?>>(find.byKey(Key(key))).enabled;
+    expect(enabled('views-menu-rename'), isTrue);
+    expect(enabled('views-menu-delete'), isTrue);
+  });
+
+  Future<void> saveManyViews(WidgetTester tester, int count) async {
+    for (var i = 1; i <= count; i++) {
+      await saveViewAs(tester, 'q$i', 'Trip${i.toString().padLeft(2, '0')}');
+    }
+  }
+
+  Future<void> openSelector(WidgetTester tester) async {
+    await tester.tap(find.byKey(const Key('library-views-menu')));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('Views selector rows are compact', (tester) async {
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(items: [fixtureItem(id: 'a')]),
+    );
+    await saveViewAs(tester, 'one', 'Alpha');
+    await openSelector(tester);
+    expect(
+      tester.getSize(find.byKey(const Key('views-menu-all'))).height,
+      lessThanOrEqualTo(36),
+    );
+    final alpha = find.byWidgetPredicate(
+      (w) =>
+          w is MenuItemButton &&
+          w.key is ValueKey<String> &&
+          (w.key! as ValueKey<String>).value.startsWith('views-menu-view-'),
+    );
+    expect(tester.getSize(alpha.first).height, lessThanOrEqualTo(36));
+  });
+
+  testWidgets('Views selector search is hidden up to 12 views, shown above', (
+    tester,
+  ) async {
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(items: [fixtureItem(id: 'a')]),
+    );
+    // Typing the first filter from All auto-saves View01, so 11 + 1 = 12.
+    await saveManyViews(tester, 11);
+    final cols = ProviderScope.containerOf(
+      tester.element(find.byType(TagKinDesktopApp)),
+    ).read(collectionsControllerProvider);
+    expect(cols.views, hasLength(12));
+    await openSelector(tester);
+    expect(find.byKey(const Key('views-menu-search')), findsNothing);
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
+
+    await saveViewAs(tester, 'q12', 'Trip12');
+    expect(cols.views, hasLength(13));
+    await openSelector(tester);
+    expect(find.byKey(const Key('views-menu-search')), findsOneWidget);
+  });
+
+  testWidgets('Views selector search filters by name', (tester) async {
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(items: [fixtureItem(id: 'a')]),
+    );
+    await saveManyViews(tester, 13);
+    await openSelector(tester);
+
+    await tester.enterText(find.byKey(const Key('views-menu-search')), 'trip1');
+    await tester.pumpAndSettle();
+    // Trip10..Trip13 only; All is hidden because "trip1" does not match it.
+    expect(find.byKey(const Key('views-menu-all')), findsNothing);
+    Finder viewRows() => find.byWidgetPredicate(
+      (w) =>
+          w is MenuItemButton &&
+          w.key is ValueKey<String> &&
+          (w.key! as ValueKey<String>).value.startsWith('views-menu-view-'),
+    );
+    expect(viewRows(), findsNWidgets(4));
+
+    await tester.enterText(find.byKey(const Key('views-menu-search')), 'zzz');
+    await tester.pumpAndSettle();
+    expect(viewRows(), findsNothing);
+    expect(find.byKey(const Key('views-menu-no-match')), findsOneWidget);
+    expect(find.text('No matching views'), findsOneWidget);
+
+    await tester.enterText(find.byKey(const Key('views-menu-search')), 'ALL');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('views-menu-all')), findsOneWidget);
+  });
+
+  testWidgets('Views selector Enter picks the first match', (tester) async {
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(items: [fixtureItem(id: 'a')]),
+    );
+    await saveManyViews(tester, 13);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(TagKinDesktopApp)),
+    );
+    await openSelector(tester);
+    await tester.enterText(find.byKey(const Key('views-menu-search')), 'trip05');
+    await tester.pumpAndSettle();
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    final cols = container.read(collectionsControllerProvider);
+    final trip05 = cols.views.firstWhere((v) => v.name == 'Trip05');
+    expect(cols.current.currentViewId, trip05.id);
+    expect(find.byKey(const Key('views-menu-search')), findsNothing);
+  });
+
+  testWidgets('Views selector search resets on reopen', (tester) async {
+    await _pumpLibrary(
+      tester,
+      items: FakeItemsRepository(items: [fixtureItem(id: 'a')]),
+    );
+    await saveManyViews(tester, 13);
+    await openSelector(tester);
+    await tester.enterText(find.byKey(const Key('views-menu-search')), 'trip05');
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
+
+    await openSelector(tester);
+    final field = tester.widget<TextField>(
+      find.byKey(const Key('views-menu-search')),
+    );
+    expect(field.controller!.text, isEmpty);
+    expect(find.byKey(const Key('views-menu-all')), findsOneWidget);
   });
 }

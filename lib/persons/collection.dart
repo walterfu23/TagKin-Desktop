@@ -13,7 +13,6 @@ class Collection {
     required this.leafFolders,
     this.ui = CollectionUiState.empty,
     this.views = const [],
-    this.recentViewIds = const [],
     this.currentViewId,
   });
 
@@ -30,14 +29,8 @@ class Collection {
   /// Named Folders filter snapshots (Views). Independent of [ui] dirty.
   final List<SavedView> views;
 
-  /// Most-recent-first saved-view ids (capped when written).
-  final List<String> recentViewIds;
-
   /// Last selected named Folders view, or null for built-in All.
   final String? currentViewId;
-
-  /// Default cap for [recentViewIds] (Settings [recentViewsLimit]).
-  static const maxRecentViews = 10;
 
   Collection copyWith({
     String? id,
@@ -45,7 +38,6 @@ class Collection {
     List<String>? leafFolders,
     CollectionUiState? ui,
     List<SavedView>? views,
-    List<String>? recentViewIds,
     String? currentViewId,
     bool clearCurrentViewId = false,
   }) {
@@ -55,7 +47,6 @@ class Collection {
       leafFolders: leafFolders ?? this.leafFolders,
       ui: ui ?? this.ui,
       views: views ?? this.views,
-      recentViewIds: recentViewIds ?? this.recentViewIds,
       currentViewId: clearCurrentViewId
           ? null
           : (currentViewId ?? this.currentViewId),
@@ -68,7 +59,6 @@ class Collection {
     'leafFolders': leafFolders,
     if (ui != CollectionUiState.empty) 'ui': ui.toJson(),
     if (views.isNotEmpty) 'views': [for (final v in views) v.toJson()],
-    if (recentViewIds.isNotEmpty) 'recentViewIds': recentViewIds,
     if (currentViewId != null && currentViewId!.isNotEmpty)
       'currentViewId': currentViewId,
   };
@@ -90,15 +80,6 @@ class Collection {
         }
       }
     }
-    final recentsRaw = json['recentViewIds'];
-    final recents = <String>[];
-    if (recentsRaw is List) {
-      for (final rid in recentsRaw) {
-        if (rid is String && rid.isNotEmpty && !recents.contains(rid)) {
-          recents.add(rid);
-        }
-      }
-    }
     final currentView = json['currentViewId'];
     return Collection(
       id: id is String ? id : '',
@@ -115,7 +96,6 @@ class Collection {
             )
           : CollectionUiState.empty,
       views: views,
-      recentViewIds: recents,
       currentViewId: currentView is String && currentView.isNotEmpty
           ? currentView
           : null,
@@ -130,7 +110,6 @@ class Collection {
       _listEquals(other.leafFolders, leafFolders) &&
       other.ui == ui &&
       _listEquals(other.views, views) &&
-      _listEquals(other.recentViewIds, recentViewIds) &&
       other.currentViewId == currentViewId;
 
   @override
@@ -140,7 +119,6 @@ class Collection {
     Object.hashAll(leafFolders),
     ui,
     Object.hashAll(views),
-    Object.hashAll(recentViewIds),
     currentViewId,
   );
 }
@@ -340,6 +318,12 @@ class LibraryViewFilters {
     this.statusFilter,
     this.whoNames = const [],
     this.whoMatchAll = false,
+    this.whereNames = const [],
+    this.whereMatchAll = false,
+    this.whatNames = const [],
+    this.whatMatchAll = false,
+    this.capturedFrom,
+    this.capturedTo,
     this.hiddenItemsFilter = 'both',
     this.sortKeys = const [],
     this.hiddenFolders = const [],
@@ -357,6 +341,22 @@ class LibraryViewFilters {
 
   /// false = Match Any (OR); true = Match All (AND).
   final bool whoMatchAll;
+
+  /// Selected Where labels (A–Z when captured).
+  final List<String> whereNames;
+
+  /// false = Match Any (OR); true = Match All (AND).
+  final bool whereMatchAll;
+
+  /// Selected What (activity) words (A–Z when captured).
+  final List<String> whatNames;
+
+  /// false = Match Any (OR); true = Match All (AND).
+  final bool whatMatchAll;
+
+  /// Captured-date range, `yyyy-MM-dd` (local day), inclusive. Null = open.
+  final String? capturedFrom;
+  final String? capturedTo;
 
   /// [HiddenItemsFilter.name]: visible / hidden / both.
   final String hiddenItemsFilter;
@@ -380,6 +380,13 @@ class LibraryViewFilters {
     bool clearStatusFilter = false,
     List<String>? whoNames,
     bool? whoMatchAll,
+    List<String>? whereNames,
+    bool? whereMatchAll,
+    List<String>? whatNames,
+    bool? whatMatchAll,
+    String? capturedFrom,
+    String? capturedTo,
+    bool clearCapturedRange = false,
     String? hiddenItemsFilter,
     List<CollectionSortKey>? sortKeys,
     List<String>? hiddenFolders,
@@ -394,6 +401,14 @@ class LibraryViewFilters {
           : (statusFilter ?? this.statusFilter),
       whoNames: whoNames ?? this.whoNames,
       whoMatchAll: whoMatchAll ?? this.whoMatchAll,
+      whereNames: whereNames ?? this.whereNames,
+      whereMatchAll: whereMatchAll ?? this.whereMatchAll,
+      whatNames: whatNames ?? this.whatNames,
+      whatMatchAll: whatMatchAll ?? this.whatMatchAll,
+      capturedFrom: clearCapturedRange
+          ? null
+          : (capturedFrom ?? this.capturedFrom),
+      capturedTo: clearCapturedRange ? null : (capturedTo ?? this.capturedTo),
       hiddenItemsFilter: hiddenItemsFilter ?? this.hiddenItemsFilter,
       sortKeys: sortKeys ?? this.sortKeys,
       hiddenFolders: hiddenFolders ?? this.hiddenFolders,
@@ -410,11 +425,17 @@ class LibraryViewFilters {
       'statusFilter': statusFilter,
       'whoNames': whoNames,
       'whoMatchAll': whoMatchAll,
+      'whereNames': whereNames,
+      'whereMatchAll': whereMatchAll,
+      'whatNames': whatNames,
+      'whatMatchAll': whatMatchAll,
       'hiddenItemsFilter': hiddenItemsFilter,
       'sortKeys': [for (final k in sortKeys) k.toJson()],
       'hiddenFolders': hiddenFolders,
       'hiddenItemIds': hiddenItemIds,
     };
+    if (capturedFrom != null) json['capturedFrom'] = capturedFrom;
+    if (capturedTo != null) json['capturedTo'] = capturedTo;
     final open = expandedDirs;
     if (open != null) json['expandedDirs'] = open;
     return json;
@@ -431,6 +452,15 @@ class LibraryViewFilters {
       }
     }
     final matchAll = json['whoMatchAll'];
+    List<String> names(Object? raw) => [
+      if (raw is List)
+        for (final n in raw)
+          if (n is String && n.isNotEmpty) n,
+    ];
+    final whereMatchAll = json['whereMatchAll'];
+    final whatMatchAll = json['whatMatchAll'];
+    final from = json['capturedFrom'];
+    final to = json['capturedTo'];
     final hidden = json['hiddenItemsFilter'];
     final keysRaw = json['sortKeys'];
     final keys = <CollectionSortKey>[];
@@ -475,6 +505,12 @@ class LibraryViewFilters {
       statusFilter: status is String && status.isNotEmpty ? status : null,
       whoNames: who,
       whoMatchAll: matchAll is bool ? matchAll : false,
+      whereNames: names(json['whereNames']),
+      whereMatchAll: whereMatchAll is bool ? whereMatchAll : false,
+      whatNames: names(json['whatNames']),
+      whatMatchAll: whatMatchAll is bool ? whatMatchAll : false,
+      capturedFrom: from is String && from.isNotEmpty ? from : null,
+      capturedTo: to is String && to.isNotEmpty ? to : null,
       hiddenItemsFilter: hiddenName,
       sortKeys: keys,
       hiddenFolders: folders,
@@ -490,6 +526,12 @@ class LibraryViewFilters {
       other.statusFilter == statusFilter &&
       _listEquals(other.whoNames, whoNames) &&
       other.whoMatchAll == whoMatchAll &&
+      _listEquals(other.whereNames, whereNames) &&
+      other.whereMatchAll == whereMatchAll &&
+      _listEquals(other.whatNames, whatNames) &&
+      other.whatMatchAll == whatMatchAll &&
+      other.capturedFrom == capturedFrom &&
+      other.capturedTo == capturedTo &&
       other.hiddenItemsFilter == hiddenItemsFilter &&
       _listEquals(other.sortKeys, sortKeys) &&
       _listEquals(other.hiddenFolders, hiddenFolders) &&
@@ -502,6 +544,12 @@ class LibraryViewFilters {
     statusFilter,
     Object.hashAll(whoNames),
     whoMatchAll,
+    Object.hashAll(whereNames),
+    whereMatchAll,
+    Object.hashAll(whatNames),
+    whatMatchAll,
+    capturedFrom,
+    capturedTo,
     hiddenItemsFilter,
     Object.hashAll(sortKeys),
     Object.hashAll(hiddenFolders),
